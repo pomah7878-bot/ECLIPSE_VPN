@@ -532,14 +532,16 @@
     <div class="toast" id="toast">✅ Готово!</div>
 
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
+    <!-- ⚠️ ВНИМАНИЕ ПРИ УСТАНОВКЕ: замените YOUR-DOMAIN-HERE.example.com
+     на реальный домен вашего бота (3 места ниже) перед деплоем. -->
+<script>
     (()=>{
         // ============ TELEGRAM WEBAPP ============
         const tg = window.Telegram?.WebApp;
         if (tg) { tg.ready(); tg.expand(); }
 
         // ============ API ============
-        const API_BASE = 'https://eclipse.unlimited.bot.nu';
+        const API_BASE = 'https://YOUR-DOMAIN-HERE.example.com';
         const BOT_USER = 'vless_keysvpn_bot';
 
         // Открыто ли внутри Telegram: доверяем ТОЛЬКО подписанному initData
@@ -786,7 +788,7 @@
             const safeKey = key || '';
             if (!safeKey) return;
             copyKey(safeKey);
-            const redirectUrl = 'https://eclipse.unlimited.bot.nu/import?scheme=happ&url=' + encodeURIComponent(safeKey);
+            const redirectUrl = 'https://YOUR-DOMAIN-HERE.example.com/import?scheme=happ&url=' + encodeURIComponent(safeKey);
             if (tg && tg.openLink) {
                 try { tg.openLink(redirectUrl); } catch(e) { window.open(redirectUrl, '_blank'); }
             } else {
@@ -799,7 +801,7 @@
             const safeKey = key || '';
             if (!safeKey) return;
             copyKey(safeKey);
-            const redirectUrl = 'https://eclipse.unlimited.bot.nu/import?scheme=incy&url=' + encodeURIComponent(safeKey);
+            const redirectUrl = 'https://YOUR-DOMAIN-HERE.example.com/import?scheme=incy&url=' + encodeURIComponent(safeKey);
             if (tg && tg.openLink) {
                 try { tg.openLink(redirectUrl); } catch(e) { window.open(redirectUrl, '_blank'); }
             } else {
