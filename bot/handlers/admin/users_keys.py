@@ -63,8 +63,11 @@ async def on_find_clients_by_tgid(callback: CallbackQuery):
             found_any = True
             lines.append(f"✅ <b>{server['name']}</b>: найдено {len(clients)}")
             for c in clients[:5]:
-                email = c.get('email', '—')
-                lines.append(f"   • <code>{email}</code>")
+                # Ответ панели вкладывает данные клиента в поле "client"
+                client_data = c.get('client', c)
+                email = client_data.get('email', '—')
+                used_gb = round(c.get('usedTraffic', 0) / (1024**3), 2)
+                lines.append(f"   • <code>{email}</code> ({used_gb} ГБ)")
         else:
             lines.append(f"— <b>{server['name']}</b>: не найдено")
 
