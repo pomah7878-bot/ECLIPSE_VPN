@@ -111,6 +111,7 @@ def user_view_kb(telegram_id: int, vpn_keys: List[Dict[str, Any]], is_banned: bo
     else:
         ban_text = '🚫 Заблокировать'
     builder.row(InlineKeyboardButton(text=ban_text, callback_data=f'admin_user_toggle_ban:{telegram_id}'))
+    builder.row(InlineKeyboardButton(text='🔍 Найти на всех панелях (по Telegram ID)', callback_data=f'admin_find_by_tgid:{telegram_id}'))
     builder.row(back_button('admin_users_list'), home_button())
     return builder.as_markup()
 
