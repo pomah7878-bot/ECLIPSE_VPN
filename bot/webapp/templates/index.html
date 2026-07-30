@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>💎ECLIPSE Unlimited💎</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --void: #0A0A10;
+            --panel: #14151D;
+            --panel-2: #1B1C27;
+            --hairline: rgba(255,255,255,0.07);
+            --gold: #D9AE6C;
+            --gold-bright: #F2C879;
+            --teal: #2FD1C4;
+            --alert: #F2685C;
+            --amber: #F0A345;
+            --ink: #F4F1E9;
+            --mist: #8B90A0;
+            --mist-dim: #565A68;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background-color: var(--void);
+            color: var(--ink);
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+        .bg-panel { background: var(--panel); }
+        .bg-panel-2 { background: var(--panel-2); }
+        .card { background: var(--panel); border: 1px solid var(--hairline); }
+        .divider-top { border-top: 1px solid var(--hairline); }
+        .divider-bottom { border-bottom: 1px solid var(--hairline); }
+        .text-ink { color: var(--ink); }
+        .text-mist { color: var(--mist); }
+        .text-mist-dim { color: var(--mist-dim); }
+        .text-gold { color: var(--gold); }
+        .text-teal { color: var(--teal); }
+        .text-alert { color: var(--alert); }
+        .text-amber { color: var(--amber); }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+            color: #1A1305;
+            box-shadow: 0 6px 20px -6px rgba(217,174,108,0.45);
+        }
+        .btn-primary:active { transform: scale(0.98); box-shadow: 0 3px 10px -4px rgba(217,174,108,0.4); }
+        .btn-secondary {
+            background: var(--panel-2);
+            color: var(--ink);
+            border: 1px solid var(--hairline);
+        }
+        .btn-secondary:active { transform: scale(0.97); background: #23242F; }
+        .btn-danger-soft { background: rgba(242,104,92,0.10); color: var(--alert); }
+        .btn-danger-soft:active { background: rgba(242,104,92,0.18); }
+
+        button:focus-visible, a:focus-visible {
+            outline: 2px solid var(--gold-bright);
+            outline-offset: 2px;
+        }
+
+        .traffic-bar-bg { height: 5px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+        .traffic-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+        .tf-normal { background: linear-gradient(90deg, #1F9E93, var(--teal)); }
+        .tf-warn   { background: linear-gradient(90deg, #C97D1E, var(--amber)); }
+        .tf-danger { background: linear-gradient(90deg, #C23B31, var(--alert)); }
+
+        .ping-good { color: var(--teal); }
+        .ping-warn { color: var(--amber); }
+        .ping-bad  { color: var(--alert); }
+        .ping-none { color: var(--mist-dim); }
+        .ping-chip { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .ping-chip:active { opacity: 0.6; }
+
+        .corona-glow {
+            position: absolute; top: 50%; left: -20px; width: 180px; height: 180px;
+            transform: translateY(-50%);
+            background: radial-gradient(circle, rgba(217,174,108,0.16) 0%, rgba(217,174,108,0) 70%);
+            pointer-events: none;
+        }
+        @keyframes coronaBreathe {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+        .corona-glow { animation: coronaBreathe 6s ease-in-out infinite; }
+
+        #toast {
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(20px);
+            background: rgba(20,21,29,0.97); color: var(--ink); padding: 12px 22px;
+            border-radius: 12px; font-size: 13.5px; font-weight: 600;
+            opacity: 0; transition: all 0.3s; pointer-events: none; z-index: 3000;
+            border: 1px solid var(--hairline);
+            backdrop-filter: blur(10px);
+            font-family: 'Manrope', sans-serif;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+        #qrOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75); z-index: 2000;
+            justify-content: center; align-items: center;
+        }
+        #qrOverlay.active { display: flex; }
+        #payOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75); z-index: 2100;
+            justify-content: center; align-items: center;
+        }
+        #payOverlay.active { display: flex; }
+        .modal-box { animation: modalPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes modalPop {
+            from { transform: scale(0.9); opacity: 0; }
+            to   { transform: scale(1); opacity: 1; }
+        }
+
+        #sheetOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6); z-index: 2100;
+            align-items: flex-end; justify-content: center;
+        }
+        #sheetOverlay.active { display: flex; }
+        .sheet-box {
+            width: 100%; max-width: 480px;
+            padding: 8px 8px calc(env(safe-area-inset-bottom, 0px) + 8px);
+            animation: sheetUp 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        @keyframes sheetUp {
+            from { transform: translateY(100%); }
+            to   { transform: translateY(0); }
+        }
+
+        /* --- AI floating button --- */
+        .ai-fab-ring {
+            position: fixed; z-index: 1499;
+            right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+            width: 60px; height: 60px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(217,174,108,0.4) 0%, rgba(217,174,108,0) 72%);
+            animation: aiPulse 2.6s ease-out infinite;
+            pointer-events: none;
+        }
+        @keyframes aiPulse {
+            0%   { transform: scale(1);   opacity: 0.85; }
+            100% { transform: scale(1.9); opacity: 0; }
+        }
+        .ai-fab {
+            position: fixed; z-index: 1500;
+            right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+            width: 60px; height: 60px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+            box-shadow: 0 10px 30px -6px rgba(217,174,108,0.6), 0 2px 8px rgba(0,0,0,0.3);
+            border: none; cursor: pointer; font-size: 26px;
+            transition: transform 0.15s ease;
+        }
+        .ai-fab:active { transform: scale(0.92); }
+
+        /* --- AI chat overlay --- */
+        #aiChatOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6); z-index: 2200;
+            align-items: flex-end; justify-content: center;
+        }
+        #aiChatOverlay.active { display: flex; }
+        .ai-chat-box {
+            width: 100%; max-width: 480px; height: 86vh;
+            border-radius: 24px 24px 0 0;
+            display: flex; flex-direction: column;
+            animation: sheetUp 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .ai-bubble-user {
+            background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+            color: #1A1305;
+        }
+        .ai-bubble-ai {
+            background: var(--panel-2);
+            color: var(--ink);
+            border: 1px solid var(--hairline);
+        }
+        .ai-link-chip {
+            display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+            background: rgba(217,174,108,0.16); color: var(--gold-bright);
+            padding: 3px 8px; border-radius: 8px; word-break: break-all; cursor: pointer;
+            border: 1px solid rgba(217,174,108,0.28); margin: 2px 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .ai-link-chip:active { opacity: 0.7; }
+        .ai-typing-dot {
+            display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+            background: var(--mist); margin-right: 4px;
+            animation: aiTypingBounce 1.2s infinite ease-in-out;
+        }
+        .ai-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+        .ai-typing-dot:nth-child(3) { animation-delay: 0.3s; margin-right: 0; }
+        @keyframes aiTypingBounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+            30% { transform: translateY(-4px); opacity: 1; }
+        }
+        #aiInput:focus { outline: none; border-color: rgba(217,174,108,0.4); }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(217,174,108,0.3); border-radius: 4px; }
+
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid rgba(217,174,108,0.15);
+            border-top-color: var(--gold); border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .fade-in { animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001ms !important;
+            }
+        }
+    </style>
+</head>
+<body class="p-4 min-h-screen pb-8">
+
+    <header class="flex items-center justify-between mb-5 fade-in">
+        <div class="flex items-center gap-3">
+            <svg width="38" height="38" viewBox="0 0 38 38" class="flex-shrink-0">
+                <defs>
+                    <linearGradient id="logoCorona" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#F2C879"/>
+                        <stop offset="100%" stop-color="#D9AE6C"/>
+                    </linearGradient>
+                </defs>
+                <circle cx="19" cy="19" r="16.5" fill="none" stroke="url(#logoCorona)" stroke-width="2"/>
+                <circle cx="21.5" cy="17.5" r="14" fill="#0A0A10"/>
+            </svg>
+            <div>
+                <h1 class="font-display text-base font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
+                <p id="user-greeting" class="text-xs text-mist mt-0.5">Привет, Пользователь!</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button onclick="openPersonalCabinet()" title="Личный кабинет"
+                class="text-mist-dim hover:text-gold transition text-base leading-none px-1"
+                style="background:none;border:none;cursor:pointer;">🌐</button>
+            <span class="bg-panel border border-[color:var(--hairline)] text-teal text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1.5 font-mono">
+                <span class="w-1.5 h-1.5 rounded-full bg-[color:var(--teal)] inline-block"></span> ONLINE
+            </span>
+        </div>
+    </header>
+
+    <main id="app" class="space-y-3">
+        <div class="flex justify-center py-20"><div class="spinner"></div></div>
+    </main>
+
+    <div id="toast">Готово</div>
+
+    <div class="ai-fab-ring"></div>
+    <button class="ai-fab" onclick="openAiChat()" title="AI Помощник">🤖</button>
+
+    <div id="aiChatOverlay" onclick="if(event.target===this)closeAiChat()">
+        <div class="ai-chat-box bg-panel border-t border-[color:var(--hairline)]">
+            <div class="flex items-center justify-between px-4 py-3 divider-bottom flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🤖</span>
+                    <div>
+                        <div class="font-display font-bold text-[15px]">AI Помощник</div>
+                        <div class="text-[10px] text-mist-dim">Знает вашу подписку и историю</div>
+                    </div>
+                </div>
+                <button onclick="closeAiChat()" class="w-8 h-8 flex items-center justify-center rounded-full text-mist-dim hover:text-ink hover:bg-[color:var(--panel-2)] transition text-lg">✕</button>
+            </div>
+            <div id="aiMessages" class="flex-1 overflow-y-auto px-4 py-3 space-y-2.5"></div>
+            <div id="aiImagePreview" class="hidden px-3 pt-2"></div>
+            <div class="flex items-center gap-2 px-3 py-3 divider-top flex-shrink-0" style="padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);">
+                <input id="aiImageInput" type="file" accept="image/*" class="hidden" onchange="onAiImageSelected(event)">
+                <button onclick="document.getElementById('aiImageInput').click()" class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-panel-2 border border-[color:var(--hairline)] text-lg transition" title="Прикрепить скриншот">📎</button>
+                <input id="aiInput" type="text" placeholder="Задайте вопрос…" autocomplete="off"
+                    class="flex-1 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-2.5 text-sm text-ink"
+                    style="outline:none;">
+                <button onclick="sendAiMessage()" class="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl btn-primary text-lg font-bold transition">➤</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="qrOverlay" onclick="if(event.target===this)closeQR()">
+        <div class="modal-box bg-panel border border-[color:var(--hairline)] rounded-3xl p-6 max-w-xs w-[90%] text-center shadow-2xl">
+            <h3 class="font-display text-base font-bold mb-1">QR-код подписки</h3>
+            <p class="text-xs text-mist mb-4">Отсканируйте в приложении VPN</p>
+            <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[244px] h-[244px] flex items-center justify-center">
+                <img id="qrImage" src="" alt="QR" class="w-[218px] h-[218px] rounded-lg">
+            </div>
+            <div class="text-[10px] text-mist break-all bg-panel-2 rounded-lg p-2 mb-4 font-mono" id="qrLinkText"></div>
+            <button onclick="copyQrLink()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-2">Скопировать ссылку</button>
+            <button onclick="closeQR()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
+        </div>
+    </div>
+
+    <div id="payOverlay" onclick="if(event.target===this)closePay()">
+        <div class="modal-box bg-panel border border-[color:var(--hairline)] rounded-3xl p-6 max-w-xs w-[90%] text-center shadow-2xl" id="payContent"></div>
+    </div>
+
+    <div id="sheetOverlay" onclick="if(event.target===this)closeSheet()">
+        <div class="sheet-box bg-panel border border-[color:var(--hairline)] rounded-t-3xl" id="sheetContent"></div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.expand();
+            tg.ready();
+            tg.setHeaderColor?.('#0A0A10');
+            tg.setBackgroundColor?.('#0A0A10');
+        }
+
+        const initData = tg?.initData || '';
+        const container = document.getElementById('app');
+        let _cachedKeys = [];
+        let _cachedPings = {};
+        let BOT_USERNAME = (tg?.initDataUnsafe?.bot?.username) || 'vless_keysvpn_bot';
+
+        async function fetchAPI(endpoint) {
+            // ВАЖНО: endpoint иногда уже содержит свой query-параметр
+            // (например 'tariffs?vpn_key_id=19') — тогда initData нужно
+            // добавлять через &, а не ?, иначе получится невалидный URL
+            // с двумя ? подряд и запрос молча упадёт по авторизации.
+            const separator = endpoint.includes('?') ? '&' : '?';
+            const url = `/api/${endpoint}${separator}initData=${encodeURIComponent(initData)}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        async function postAPI(endpoint, body) {
+            const res = await fetch(`/api/${endpoint}?initData=${encodeURIComponent(initData)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        function ruPlural(n, one, few, many) {
+            const abs = Math.abs(n) % 100;
+            const n1 = abs % 10;
+            if (abs > 10 && abs < 20) return many;
+            if (n1 > 1 && n1 < 5) return few;
+            if (n1 === 1) return one;
+            return many;
+        }
+        function daysWord(n) { return ruPlural(n, 'день', 'дня', 'дней'); }
+
+        function renderSummary(status) {
+            if (status && status.bot_username) BOT_USERNAME = status.bot_username;
+            if (!status) return '';
+
+            const expiryText = status.nearest_expiry
+                ? (status.nearest_expiry.remaining_human || status.nearest_expiry.date)
+                : '—';
+
+            const user = tg?.initDataUnsafe?.user;
+            if (user) {
+                const greetEl = document.getElementById('user-greeting');
+                if (greetEl) {
+                    const name = user.first_name || user.username || 'Пользователь';
+                    greetEl.textContent = `Привет, ${name}!`;
+                }
+            }
+
+            const total = status.total_keys || 0;
+            const active = status.active_keys || 0;
+            const frac = total > 0 ? active / total : 0;
+            const isHealthy = active > 0;
+            const R = 38;
+            const C = 2 * Math.PI * R;
+            const offset = C * (1 - frac);
+            const ringColor = isHealthy ? 'url(#ringGradGood)' : 'var(--mist-dim)';
+            const statusWord = isHealthy ? 'АКТИВНА' : 'НЕ АКТИВНА';
+            const statusColorCls = isHealthy ? 'text-teal' : 'text-alert';
+
+            return `
+                <div class="card rounded-2xl p-5 relative overflow-hidden fade-in">
+                    <div class="corona-glow"></div>
+                    <div class="relative flex items-center gap-5">
+                        <div class="relative flex-shrink-0" style="width:84px;height:84px;">
+                            <svg viewBox="0 0 84 84" width="84" height="84" style="transform:rotate(-90deg)">
+                                <defs>
+                                    <linearGradient id="ringGradGood" x1="0" y1="0" x2="1" y2="1">
+                                        <stop offset="0%" stop-color="#F2C879"/>
+                                        <stop offset="100%" stop-color="#2FD1C4"/>
+                                    </linearGradient>
+                                </defs>
+                                <circle cx="42" cy="42" r="${R}" fill="none" stroke="var(--hairline)" stroke-width="6"/>
+                                <circle cx="42" cy="42" r="${R}" fill="none" stroke="${ringColor}" stroke-width="6"
+                                    stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${offset}"/>
+                            </svg>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                <span class="font-display text-xl font-bold text-ink">${active}</span>
+                                <span class="text-[9px] uppercase tracking-wider text-mist-dim">из ${total}</span>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-[10px] uppercase tracking-[0.15em] text-mist-dim mb-1">Статус подписки</p>
+                            <h2 class="font-display text-lg font-bold ${statusColorCls}">${statusWord}</h2>
+                            <div class="flex items-center gap-4 mt-2.5">
+                                <div>
+                                    <div class="font-mono text-[13px] font-semibold text-ink leading-none">${escapeHtml(status.traffic_total_used)}</div>
+                                    <div class="text-[9px] text-mist-dim uppercase tracking-wide mt-1">Трафик</div>
+                                </div>
+                                <div class="w-px h-7" style="background:var(--hairline)"></div>
+                                <div>
+                                    <div class="font-mono text-[13px] font-semibold text-ink leading-none">${escapeHtml(expiryText)}</div>
+                                    <div class="text-[9px] text-mist-dim uppercase tracking-wide mt-1">До окончания</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function trafficBar(traffic) {
+            if (traffic.is_unlimited) {
+                return `
+                    <div class="mt-3">
+                        <div class="flex justify-between text-[11px] text-mist-dim mb-1.5">
+                            <span>Трафик</span>
+                            <span class="font-mono">${escapeHtml(traffic.used_human)} / <span class="text-teal">∞</span></span>
+                        </div>
+                        <div class="traffic-bar-bg"><div class="traffic-fill tf-normal" style="width:5%"></div></div>
+                    </div>
+                `;
+            }
+            const pct = Math.min(100, traffic.percent);
+            let fillCls = 'tf-normal', pctCls = 'text-teal';
+            if (pct > 80) { fillCls = 'tf-danger'; pctCls = 'text-alert'; }
+            else if (pct > 60) { fillCls = 'tf-warn'; pctCls = 'text-amber'; }
+            return `
+                <div class="mt-3">
+                    <div class="flex justify-between text-[11px] text-mist-dim mb-1.5">
+                        <span>Трафик</span>
+                        <span class="font-mono">${escapeHtml(traffic.used_human)} / ${escapeHtml(traffic.limit_human)} <span class="font-semibold ${pctCls}">${pct}%</span></span>
+                    </div>
+                    <div class="traffic-bar-bg"><div class="traffic-fill ${fillCls}" style="width:${pct}%"></div></div>
+                </div>
+            `;
+        }
+
+        function getPingClass(ms) {
+            if (ms === null || ms === undefined) return 'ping-none';
+            if (ms < 100) return 'ping-good';
+            if (ms < 200) return 'ping-warn';
+            return 'ping-bad';
+        }
+        function getPingText(ms) {
+            if (ms === null || ms === undefined) return 'нет ответа';
+            return ms + ' мс';
+        }
+        function getPingHtml(serverId) {
+            if (!_cachedPings || _cachedPings[serverId] === undefined) {
+                return '<span class="text-[11px] text-mist-dim font-mono">измеряю…</span>';
+            }
+            const ms = _cachedPings[serverId];
+            return '<span class="ping-chip text-[11px] font-mono font-semibold ' + getPingClass(ms) + '" onclick="rePingKey()">● ' + getPingText(ms) + '</span>';
+        }
+        async function fetchPings() {
+            try {
+                const data = await fetchAPI('ping');
+                _cachedPings = data.pings || {};
+                _cachedKeys.forEach(key => {
+                    const el = document.getElementById('ping-' + key.id);
+                    if (el) el.innerHTML = getPingHtml(key.server_id);
+                });
+            } catch(e) { console.error('Ping fetch failed:', e); }
+        }
+        async function rePingKey() {
+            showToast('Измеряю задержку…');
+            await fetchPings();
+            showToast('Пинг обновлён');
+        }
+
+        function showQR(keyId) {
+            const key = _cachedKeys.find(k => k.id === keyId);
+            if (!key || !key.sub_url) { showToast('Ссылка недоступна'); return; }
+            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=2&data=' + encodeURIComponent(key.sub_url);
+            document.getElementById('qrImage').src = qrUrl;
+            document.getElementById('qrLinkText').textContent = key.sub_url;
+            document.getElementById('qrOverlay').classList.add('active');
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+        }
+        function closeQR() { document.getElementById('qrOverlay').classList.remove('active'); }
+
+        // --- Оплата тарифа через ЮKassa QR ---
+        let _payVpnKeyId = null;
+        let _payPollTimer = null;
+
+        function openPayFlow(vpnKeyId) {
+            _payVpnKeyId = vpnKeyId || null;
+            document.getElementById('payOverlay').classList.add('active');
+            renderTariffSelection();
+        }
+
+        function closePay() {
+            document.getElementById('payOverlay').classList.remove('active');
+            if (_payPollTimer) { clearInterval(_payPollTimer); _payPollTimer = null; }
+        }
+
+        async function renderTariffSelection() {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div>';
+            try {
+                const tariffsUrl = _payVpnKeyId ? `tariffs?vpn_key_id=${_payVpnKeyId}` : 'tariffs';
+                const res = await fetchAPI(tariffsUrl);
+                const tariffs = res.tariffs || [];
+                if (tariffs.length === 0) {
+                    box.innerHTML = '<p class="text-sm text-mist py-6">Тарифы сейчас недоступны.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+                    return;
+                }
+                let html = '<h3 class="font-display text-base font-bold mb-1">Выберите тариф</h3><p class="text-xs text-mist mb-4">Оплата через ЮKassa (QR-код)</p><div class="space-y-2">';
+                tariffs.forEach(t => {
+                    const currentBadge = t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : '';
+                    const currentClass = t.is_current ? ' ring-2 ring-teal' : '';
+                    html += `<button onclick="selectTariffAndPay(${t.id})" class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold transition flex justify-between items-center${currentClass}">
+                        <span>${escapeHtml(t.name)}${currentBadge}</span>
+                        <span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>
+                    </button>`;
+                });
+                html += '</div><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-3">Отмена</button>';
+                html += `<button onclick="closePay();goRenewInBot(${_payVpnKeyId || 'null'})" class="w-full text-[11px] text-mist-dim underline transition mt-3">Оплатить в чате бота</button>`;
+                box.innerHTML = html;
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Не удалось загрузить тарифы.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        async function selectTariffAndPay(tariffId) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center">Создаём платёж…</p>';
+            try {
+                const res = await postAPI('pay/create', { tariff_id: tariffId, vpn_key_id: _payVpnKeyId });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось создать платёж.')}</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>`;
+                    return;
+                }
+                if (res.status === 'paid') {
+                    showPaySuccess(res.message, res.is_draft);
+                    return;
+                }
+                renderPayQR(res);
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>';
+            }
+        }
+
+        function renderPayQR(pay) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = `
+                <h3 class="font-display text-base font-bold mb-1">Оплата ${pay.amount_rub.toFixed(0)} ₽</h3>
+                <p class="text-xs text-mist mb-4">Отсканируйте QR или откройте ссылку</p>
+                <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[244px] h-[244px] flex items-center justify-center">
+                    <img src="${pay.qr_image_url}" alt="QR" class="w-[218px] h-[218px] rounded-lg">
+                </div>
+                <a href="${pay.qr_url}" target="_blank" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-2">Открыть страницу оплаты</a>
+                <div id="payStatusNote" class="text-xs text-mist mb-2">Ожидаем оплату…</div>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
+            `;
+            startPayPolling(pay.order_id);
+        }
+
+        function startPayPolling(orderId) {
+            let attempts = 0;
+            const maxAttempts = 60; // ~5 минут при интервале в 5с
+            _payPollTimer = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(_payPollTimer);
+                    _payPollTimer = null;
+                    const note = document.getElementById('payStatusNote');
+                    if (note) note.textContent = 'Не дождались оплаты. Если вы уже оплатили — откройте бота ещё раз чуть позже.';
+                    return;
+                }
+                try {
+                    const res = await postAPI('pay/check', { order_id: orderId });
+                    if (res.status === 'paid') {
+                        clearInterval(_payPollTimer);
+                        _payPollTimer = null;
+                        showPaySuccess(res.message, res.is_draft);
+                    } else if (res.status === 'failed') {
+                        clearInterval(_payPollTimer);
+                        _payPollTimer = null;
+                        const note = document.getElementById('payStatusNote');
+                        if (note) note.textContent = 'Платёж не прошёл. Попробуйте ещё раз.';
+                    }
+                } catch(e) {
+                    // единичный сбой опроса — тихо игнорируем, попробуем на следующем тике
+                }
+            }, 5000);
+        }
+
+        function showPaySuccess(message, isDraft) {
+            const box = document.getElementById('payContent');
+            const messageHtml = (message || '').replace(/\n/g, '<br>');
+            let draftNote = '';
+            let draftBtn = '';
+            if (isDraft) {
+                draftNote = '<div class="text-xs bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 mb-4 text-left">⚠️ Осталось выбрать сервер для нового ключа — этот шаг пока доступен только в чате бота.</div>';
+                draftBtn = `<button onclick="closePay();goRenewInBot(null)" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-2">Выбрать сервер в боте</button>`;
+            }
+            box.innerHTML = `
+                <div class="text-4xl mb-3">✅</div>
+                <h3 class="font-display text-base font-bold mb-2">Готово!</h3>
+                <div class="text-xs text-mist mb-4 text-left">${messageHtml}</div>
+                ${draftNote}
+                ${draftBtn}
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">${isDraft ? 'Позже' : 'Отлично'}</button>
+            `;
+            if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            setTimeout(() => { init(); }, 300);
+        }
+        function copyQrLink() {
+            const linkText = document.getElementById('qrLinkText').textContent;
+            navigator.clipboard.writeText(linkText).then(() => showToast('Ссылка скопирована!')).catch(() => showToast('Не удалось скопировать'));
+        }
+
+        function actionRow(icon, label, handler, danger) {
+            const cls = danger ? 'btn-danger-soft' : 'text-ink';
+            const hover = danger ? '' : 'hover:bg-[color:var(--panel-2)]';
+            return `<button onclick="closeSheet();${handler}" class="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-semibold transition active:scale-[0.98] ${cls} ${hover}">
+                <span class="text-base">${icon}</span>${label}
+            </button>`;
+        }
+        function openActions(keyId) {
+            const key = _cachedKeys.find(k => k.id === keyId);
+            if (!key) return;
+            const isActive = key.is_active && key.expiry.is_active;
+            let rows = actionRow('✏️', 'Переименовать', `renameKey(${key.id})`);
+            if (isActive) {
+                rows += actionRow('🔀', 'Заменить ключ', `replaceKey(${key.id})`);
+            } else {
+                rows += actionRow('🗑️', 'Удалить ключ', `deleteKey(${key.id})`, true);
+            }
+            rows += `<button onclick="closeSheet()" class="w-full text-center py-3 mt-1 text-xs font-semibold text-mist-dim">Отмена</button>`;
+            document.getElementById('sheetContent').innerHTML = rows;
+            document.getElementById('sheetOverlay').classList.add('active');
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+        function closeSheet() { document.getElementById('sheetOverlay').classList.remove('active'); }
+
+        async function renameKey(keyId) {
+            const key = _cachedKeys.find(k => k.id === keyId);
+            if (!key) return;
+            const newName = prompt('Новое название ключа:', key.name || '');
+            if (newName === null) return;
+            if (newName.length > 30) { showToast('Максимум 30 символов'); return; }
+            try {
+                const res = await postAPI('rename', { key_id: keyId, new_name: newName });
+                if (res.success) {
+                    showToast('Ключ переименован!');
+                    key.name = newName || ('Ключ #' + keyId);
+                    renderKeyList();
+                } else { showToast('Ошибка при переименовании'); }
+            } catch(e) { showToast('Ошибка сети'); }
+        }
+
+        async function deleteKey(keyId) {
+            if (!confirm('Удалить ключ? Действие необратимо.')) return;
+            try {
+                const res = await postAPI('delete', { key_id: keyId });
+                if (res.success) {
+                    showToast('Ключ удалён');
+                    _cachedKeys = _cachedKeys.filter(k => k.id !== keyId);
+                    if (_cachedKeys.length === 0) { init(); } else { renderKeyList(); }
+                } else { showToast('Ошибка при удалении'); }
+            } catch(e) { showToast('Ошибка сети'); }
+        }
+
+        function replaceKey(keyId) {
+            const url = 'https://t.me/' + BOT_USERNAME + '?start=replace_' + keyId;
+            if (tg && tg.openTelegramLink) { tg.openTelegramLink(url); }
+            else { window.location.href = url; }
+        }
+
+        function importToApp(scheme, keyId) {
+            const key = _cachedKeys.find(k => k.id === keyId);
+            if (!key || !key.sub_url) { showToast('Ссылка недоступна'); return; }
+            const url = window.location.origin + '/import?scheme=' + scheme + '&url=' + encodeURIComponent(key.sub_url);
+            if (tg && tg.openLink) { tg.openLink(url); } else { window.open(url, '_blank'); }
+        }
+
+        async function copySubLink(keyId) {
+            const key = _cachedKeys.find(k => k.id === keyId);
+            if (key && key.sub_url) {
+                navigator.clipboard.writeText(key.sub_url).then(() => showToast('Ссылка скопирована!')).catch(() => showToast('Не удалось скопировать'));
+            } else {
+                showToast('Ссылка недоступна');
+            }
+        }
+
+        let _inboundsCache = {};
+
+        function badgeClass(kind, value) {
+            const map = {
+                protocol: { 'Vless': 'bg-[color:rgba(59,130,246,0.15)] text-[#60a5fa]', 'Hysteria2': 'bg-[color:rgba(236,72,153,0.15)] text-[#f472b6]' },
+                transport: { 'TCP': 'bg-[color:rgba(45,212,191,0.15)] text-teal', 'XHTTP': 'bg-[color:rgba(251,146,60,0.15)] text-[#fb923c]' },
+                security: { 'REALITY': 'bg-[color:rgba(168,85,247,0.15)] text-[#c084fc]', 'TLS': 'bg-[color:rgba(45,212,191,0.15)] text-teal' },
+            };
+            return (map[kind] && map[kind][value]) || 'bg-panel-2 text-mist';
+        }
+
+        async function toggleInbounds(keyId) {
+            const box = document.getElementById('inbounds-' + keyId);
+            const isHidden = box.style.display === 'none' || !box.style.display;
+            if (!isHidden) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
+            try {
+                const initDataParam = encodeURIComponent(initData);
+                const res = await fetch(`/api/key/${keyId}/inbounds?initData=${initDataParam}`);
+                const data = await res.json();
+                const groups = data.groups || [];
+                _inboundsCache[keyId] = groups;
+                box.innerHTML = renderInboundGroups(keyId, groups);
+                measureClientPings(keyId, groups);
+            } catch (e) {
+                box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить подключения</p>';
+            }
+        }
+
+        async function clientPing(host, port) {
+            // Реальная задержка от УСТРОЙСТВА пользователя до сервера — не от
+            // сервера бота. Браузер не умеет "чистый" TCP-пинг, поэтому засекаем
+            // время до ответа (или до отказа) HTTPS-запроса на этот host:port —
+            // сама попытка соединения/TLS-хендшейка достаточно точно отражает
+            // сетевую задержку до этого сервера.
+            const start = performance.now();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            try {
+                await fetch(`https://${host}:${port}/`, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+                clearTimeout(timeoutId);
+                return Math.round(performance.now() - start);
+            } catch (e) {
+                clearTimeout(timeoutId);
+                const elapsed = performance.now() - start;
+                if (e.name === 'AbortError' || elapsed > 3900) return null;
+                return Math.round(elapsed);
+            }
+        }
+
+        async function measureClientPings(keyId, groups) {
+            for (let gi = 0; gi < groups.length; gi++) {
+                const group = groups[gi];
+                const tcpPings = [];
+                for (let ii = 0; ii < group.inbounds.length; ii++) {
+                    const ib = group.inbounds[ii];
+                    if (ib.protocol === 'hysteria2') continue;
+                    const ms = await clientPing(group.host, ib.port);
+                    const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
+                    if (el) el.textContent = ms !== null ? ms + 'мс' : '—';
+                    if (ms !== null) tcpPings.push(ms);
+                }
+                if (tcpPings.length) {
+                    const approx = Math.round(tcpPings.reduce((a, b) => a + b, 0) / tcpPings.length);
+                    group.inbounds.forEach((ib, ii) => {
+                        if (ib.protocol === 'hysteria2') {
+                            const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
+                            if (el) el.textContent = '≈' + approx + 'мс';
+                        }
+                    });
+                }
+            }
+        }
+
+        function renderInboundGroups(keyId, groups) {
+            if (!groups.length) return '<p class="text-xs text-mist py-3 text-center">Нет данных о подключениях</p>';
+            return groups.map((g, gi) => `
+                <div class="mb-3">
+                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)}</div>
+                    ${g.inbounds.map((ib, ii) => {
+                        const ping = ib.protocol === 'hysteria2' ? '…' : '…';
+                        return `
+                        <div class="flex items-center gap-1.5 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-2.5 py-2 mb-1.5 text-[11px]">
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('protocol', ib.protocol_label)}">${ib.protocol_label}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('transport', ib.transport_label)}">${ib.transport_label}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('security', ib.security_label)}">${ib.security_label}</span>
+                            <span class="text-mist-dim flex-1"></span>
+                            <span class="text-mist-dim" id="ping-${keyId}-${gi}-${ii}">${ping}</span>
+                            <button onclick="copyInboundLink(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">⧉</button>
+                            <button onclick="showInboundQR(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">▦</button>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `).join('');
+        }
+
+        function copyInboundLink(keyId, gi, ii) {
+            const link = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii]?.link;
+            if (!link) { showToast('Ссылка недоступна'); return; }
+            navigator.clipboard.writeText(link).then(() => showToast('Ссылка скопирована!')).catch(() => showToast('Не удалось скопировать'));
+        }
+
+        function showInboundQR(keyId, gi, ii) {
+            const link = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii]?.link;
+            if (!link) { showToast('Ссылка недоступна'); return; }
+            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(link);
+            const win = document.createElement('div');
+            win.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
+            win.onclick = () => win.remove();
+            win.innerHTML = `<div class="bg-white rounded-2xl p-3"><img src="${qrUrl}" class="w-[240px] h-[240px] rounded-lg"></div>`;
+            document.body.appendChild(win);
+        }
+
+        function renderKeyList() {
+            const listEl = document.getElementById('keyListContainer');
+            if (!listEl) { init(); return; }
+            let html = '';
+            _cachedKeys.forEach(key => { html += renderKey(key); });
+            listEl.innerHTML = html;
+        }
+
+        function renderKey(key) {
+            const isActive = key.is_active && key.expiry.is_active;
+            const dotCls = isActive ? 'bg-[color:var(--teal)]' : 'bg-[color:var(--alert)]';
+            const statusCls = isActive
+                ? 'text-teal border-[color:rgba(47,209,196,0.25)]'
+                : 'text-alert border-[color:rgba(242,104,92,0.25)]';
+            const statusText = isActive ? 'Активен' : 'Истёк';
+            const cardOpacity = isActive ? '' : 'opacity-60';
+
+            let expiryColor = 'text-ink';
+            if (!isActive) expiryColor = 'text-alert';
+            else if (key.expiry.days_left <= 7) expiryColor = 'text-amber';
+
+            const expiryText = key.expiry.is_active
+                ? (key.expiry.days_left <= 30 ? `Осталось ${key.expiry.remaining_human}` : `До ${key.expiry.date}`)
+                : `Истёк ${key.expiry.date}`;
+
+            const urgentNote = (isActive && key.expiry.days_left <= 7)
+                ? `<p class="text-[11px] text-amber mt-1.5">Продлите в течение ${key.expiry.days_left} ${daysWord(key.expiry.days_left)}, чтобы не потерять доступ</p>`
+                : '';
+
+            const primaryBtn = isActive
+                ? `<button onclick="goRenew(${key.id})" class="w-full py-3 btn-primary rounded-xl text-sm font-bold transition mt-4">Продлить</button>`
+                : `<button onclick="goRenew(${key.id})" class="w-full py-3 btn-primary rounded-xl text-sm font-bold transition mt-4">Возобновить</button>`;
+
+            let iconRow = '';
+            if (isActive) {
+                const cols = key.sub_url ? 'grid-cols-4' : 'grid-cols-2';
+                iconRow = `<div class="grid ${cols} gap-2 mt-2">
+                    <button onclick="showQR(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
+                        <span class="text-sm">▦</span>QR
+                    </button>
+                    <button onclick="copySubLink(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
+                        <span class="text-sm">⧉</span>Копия
+                    </button>`;
+                if (key.sub_url) {
+                    iconRow += `
+                    <button onclick="importToApp('happ', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
+                        <span class="text-sm">↗</span>Happ
+                    </button>
+                    <button onclick="importToApp('incy', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
+                        <span class="text-sm">↗</span>INCY
+                    </button>
+                    <button onclick="importToApp('karing', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
+                        <span class="text-sm">↗</span>Karing
+                    </button>`;
+                }
+                iconRow += `</div>`;
+            }
+
+            return `
+                <div class="card rounded-2xl p-4 transition-all active:scale-[0.99] ${cardOpacity}">
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="w-2 h-2 rounded-full ${dotCls} flex-shrink-0"></span>
+                            <span class="font-display font-semibold text-[15px] truncate">${escapeHtml(key.name)}</span>
+                        </div>
+                        <div class="flex items-center gap-2 flex-shrink-0">
+                            <span class="text-[10px] font-bold px-2.5 py-1 rounded-full border ${statusCls}">${statusText}</span>
+                            <button onclick="openActions(${key.id})" class="w-7 h-7 flex items-center justify-center rounded-full text-mist-dim hover:text-ink hover:bg-[color:var(--panel-2)] transition text-base leading-none">⋯</button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 text-[13px] text-mist">
+                        <span>${escapeHtml(key.server)}</span>
+                        <span class="text-mist-dim">·</span>
+                        <span>${escapeHtml(key.protocol)}</span>
+                        <span class="text-mist-dim">·</span>
+                        <span id="ping-${key.id}">${getPingHtml(key.server_id)}</span>
+                    </div>
+
+                    ${trafficBar(key.traffic)}
+
+                    <div class="flex justify-between items-center mt-3 pt-3 divider-top">
+                        <span class="text-[11px] text-mist-dim uppercase tracking-wide">Срок действия</span>
+                        <span class="text-[13px] font-semibold ${expiryColor}">${escapeHtml(expiryText)}</span>
+                    </div>
+                    ${urgentNote}
+                    ${primaryBtn}
+                    ${iconRow}
+                    ${isActive ? `
+                    <button onclick="toggleInbounds(${key.id})" class="w-full py-2 mt-2 text-[11px] text-mist-dim hover:text-ink transition text-center">🔌 Все подключения</button>
+                    <div id="inbounds-${key.id}" style="display:none;"></div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderEmpty() {
+            return `
+                <div class="text-center py-14 fade-in">
+                    <svg width="72" height="72" viewBox="0 0 72 72" class="mx-auto mb-4">
+                        <circle cx="36" cy="36" r="30" fill="none" stroke="var(--hairline)" stroke-width="4"/>
+                        <circle cx="39" cy="33" r="25" fill="var(--panel)"/>
+                    </svg>
+                    <h2 class="font-display text-lg font-bold mb-2">Подписка не активна</h2>
+                    <p class="text-sm text-mist mb-6 px-4">Оформите подписку, чтобы получить доступ к серверам ECLIPSE.</p>
+                    <button onclick="goBuy()" class="px-8 py-3.5 btn-primary rounded-xl font-bold text-base transition w-full max-w-xs mx-auto block">Купить подписку</button>
+                    <div id="trial-btn-empty" class="mt-3" style="display:none;">
+                        <button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full max-w-xs mx-auto block">Пробная подписка</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderError(msg) {
+            return `
+                <div class="text-center py-14 fade-in">
+                    <div class="text-4xl mb-4 text-alert">⚠</div>
+                    <h2 class="font-display text-base font-bold mb-2">Не удалось загрузить</h2>
+                    <p class="text-sm text-mist mb-6">${escapeHtml(msg)}</p>
+                    <button onclick="location.reload()" class="px-6 py-3 btn-primary rounded-xl font-bold transition">Обновить страницу</button>
+                </div>
+            `;
+        }
+
+        function renderReferral(refData) {
+            if (!refData) return '';
+            const link = refData.referral_link || '';
+            const balance = refData.balance_human || '0 ₽';
+            const count = refData.referrals_count || 0;
+            return `
+                <div class="card rounded-2xl p-5 fade-in">
+                    <h3 class="font-display text-[15px] font-bold mb-1">Реферальная программа</h3>
+                    <p class="text-xs text-mist mb-3">Приглашайте друзей и получайте бонусы</p>
+                    <div class="flex gap-2">
+                        <div class="flex-1 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3 py-2.5 text-[11px] text-mist break-all font-mono" id="refLink">${escapeHtml(link)}</div>
+                        <button onclick="copyRefLink()" class="px-4 btn-secondary rounded-xl text-sm transition flex-shrink-0">⧉</button>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 mt-4">
+                        <div class="text-center">
+                            <div class="font-display text-xl font-bold text-teal">${balance}</div>
+                            <div class="text-[10px] text-mist-dim uppercase tracking-wide mt-1">Баланс</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="font-display text-xl font-bold text-gold">${count}</div>
+                            <div class="text-[10px] text-mist-dim uppercase tracking-wide mt-1">Приглашено</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function copyRefLink() {
+            const link = document.getElementById('refLink')?.textContent || '';
+            navigator.clipboard.writeText(link).then(() => showToast('Ссылка скопирована!')).catch(() => showToast('Не удалось скопировать'));
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showToast(text) {
+            const toast = document.getElementById('toast');
+            toast.textContent = text;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 2000);
+        }
+
+        function goRenew(keyId) {
+            openPayFlow(keyId);
+        }
+        function goBuy() {
+            openPayFlow(null);
+        }
+        function goRenewInBot(keyId) {
+            const url = keyId
+                ? 'https://t.me/' + BOT_USERNAME + '?start=renew_' + keyId
+                : 'https://t.me/' + BOT_USERNAME + '?start=buy';
+            if (tg && tg.openTelegramLink) { tg.openTelegramLink(url); } else { window.location.href = url; }
+        }
+
+        async function openInBrowser() {
+            try {
+                const res = await fetchAPI('weblink');
+                if (res && res.url) {
+                    if (tg && tg.openLink) { tg.openLink(res.url); }
+                    else { window.open(res.url, '_blank'); }
+                } else {
+                    showToast('Не удалось получить ссылку');
+                }
+            } catch(e) {
+                showToast('Ошибка получения ссылки');
+            }
+        }
+        function openPersonalCabinet() {
+            const url = window.location.origin + '/shop';
+            if (tg && tg.openLink) { tg.openLink(url); }
+            else { window.open(url, '_blank'); }
+        }
+        function goTrial() {
+            const url = 'https://t.me/' + BOT_USERNAME + '?start=trial';
+            if (tg && tg.openTelegramLink) { tg.openTelegramLink(url); } else { window.location.href = url; }
+        }
+
+        // === AI Chat ===
+        let _aiSending = false;
+        let _aiPendingImage = null;
+
+        function openAiChat() {
+            document.getElementById('aiChatOverlay').classList.add('active');
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            const wrap = document.getElementById('aiMessages');
+            if (!wrap.dataset.greeted) {
+                wrap.dataset.greeted = '1';
+                appendAiMessage('ai', 'Привет! Я вижу вашу подписку, ключи и историю платежей — спрашивайте что угодно по вашему аккаунту.');
+            }
+            setTimeout(() => document.getElementById('aiInput')?.focus(), 300);
+        }
+
+        function closeAiChat() {
+            document.getElementById('aiChatOverlay').classList.remove('active');
+        }
+
+        function copyAiLink(url) {
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('Ссылка скопирована!');
+                if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+            }).catch(() => showToast('Не удалось скопировать'));
+        }
+
+        function formatAiText(text) {
+            // ВАЖНО: бэкенд AI уже гарантирует безопасные теги (b, i, code, a href).
+            // Сначала "защищаем" уже готовые <a href="">текст</a>, превращая их в
+            // чипы и подставляя ВРЕМЕННЫЙ плейсхолдер вместо готового HTML — иначе
+            // URL внутри onclick-атрибута чипа будет повторно найден следующим шагом
+            // (поиск голых ссылок) и сломает разметку. В конце возвращаем чипы на место.
+            const placeholders = [];
+            text = text.replace(/<a\s+href="([^"]+)">([\s\S]*?)<\/a>/g, function(match, url, linkText) {
+                const jsSafe = url.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const chip = `<span class="ai-link-chip" onclick="copyAiLink('${jsSafe}')">🔗 ${linkText}</span>`;
+                const token = '\u0000P' + placeholders.length + '\u0000';
+                placeholders.push(chip);
+                return token;
+            });
+
+            text = text.replace(/https?:\/\/\S+/g, function(match) {
+                let raw = match;
+                let trailing = '';
+                while (raw.length && '.,;:!?)'.includes(raw[raw.length - 1])) {
+                    trailing = raw[raw.length - 1] + trailing;
+                    raw = raw.slice(0, -1);
+                }
+                const jsSafe = raw.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                return `<span class="ai-link-chip" onclick="copyAiLink('${jsSafe}')">🔗 ${raw}</span>${trailing}`;
+            });
+
+            placeholders.forEach(function(chip, i) {
+                text = text.replace('\u0000P' + i + '\u0000', chip);
+            });
+
+            return text;
+        }
+        function appendAiMessage(role, html, responseId) {
+            const wrap = document.getElementById('aiMessages');
+            const cls = role === 'user' ? 'ai-bubble-user ml-auto' : 'ai-bubble-ai mr-auto';
+            const div = document.createElement('div');
+            div.className = 'max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-snug ' + cls;
+            div.innerHTML = html;
+            wrap.appendChild(div);
+
+            if (role === 'ai' && responseId) {
+                const fbId = 'fb-' + responseId;
+                const fbDiv = document.createElement('div');
+                fbDiv.id = fbId;
+                fbDiv.className = 'flex gap-3 mr-auto px-1.5';
+                fbDiv.innerHTML =
+                    '<button onclick="sendAiFeedback(\'' + responseId + '\',\'up\',\'' + fbId + '\')" class="text-base opacity-60 hover:opacity-100 transition">👍</button>' +
+                    '<button onclick="sendAiFeedback(\'' + responseId + '\',\'down\',\'' + fbId + '\')" class="text-base opacity-60 hover:opacity-100 transition">👎</button>';
+                wrap.appendChild(fbDiv);
+            }
+
+            wrap.scrollTop = wrap.scrollHeight;
+        }
+
+        async function sendAiFeedback(responseId, rating, fbId) {
+            const fbDiv = document.getElementById(fbId);
+            if (fbDiv) fbDiv.innerHTML = '<span class="text-[11px] text-mist">Спасибо за отзыв!</span>';
+            try {
+                await postAPI('ai-feedback', { response_id: responseId, rating: rating });
+            } catch(e) {
+                // фидбек необязательная фича — молча игнорируем сбой отправки
+            }
+        }
+
+        function appendAiSystemNote(text) {
+            const wrap = document.getElementById('aiMessages');
+            const div = document.createElement('div');
+            div.className = 'text-center text-[11px] text-amber px-4';
+            div.textContent = text;
+            wrap.appendChild(div);
+            wrap.scrollTop = wrap.scrollHeight;
+        }
+
+        function appendAiTyping() {
+            const wrap = document.getElementById('aiMessages');
+            const div = document.createElement('div');
+            const id = 'typing-' + Date.now();
+            div.id = id;
+            div.className = 'max-w-[50%] rounded-2xl px-3.5 py-3 mr-auto ai-bubble-ai';
+            div.innerHTML = '<span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>';
+            wrap.appendChild(div);
+            wrap.scrollTop = wrap.scrollHeight;
+            return id;
+        }
+
+        function removeAiTyping(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function onAiImageSelected(event) {
+            const file = event.target.files && event.target.files[0];
+            event.target.value = ''; // сброс, чтобы можно было выбрать тот же файл повторно
+            if (!file) return;
+
+            if (!file.type.startsWith('image/')) {
+                appendAiSystemNote('Можно прикрепить только изображение.');
+                return;
+            }
+            if (file.size > 8 * 1024 * 1024) {
+                appendAiSystemNote('Файл слишком большой (максимум 8 МБ). Пришлите скриншот поменьше.');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => {
+                _aiPendingImage = reader.result; // уже готовый data URL
+                const preview = document.getElementById('aiImagePreview');
+                preview.classList.remove('hidden');
+                preview.innerHTML = `
+                    <div class="flex items-center gap-2 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-2.5 py-2 w-fit">
+                        <img src="${_aiPendingImage}" class="w-10 h-10 rounded-lg object-cover" alt="preview">
+                        <span class="text-xs text-mist">Скриншот прикреплён</span>
+                        <button onclick="clearAiImage()" class="text-mist-dim hover:text-ink text-sm px-1">✕</button>
+                    </div>`;
+            };
+            reader.onerror = () => appendAiSystemNote('Не удалось прочитать файл. Попробуйте другой.');
+            reader.readAsDataURL(file);
+        }
+
+        function clearAiImage() {
+            _aiPendingImage = null;
+            const preview = document.getElementById('aiImagePreview');
+            preview.classList.add('hidden');
+            preview.innerHTML = '';
+        }
+
+        async function sendAiMessage() {
+            if (_aiSending) return;
+            const input = document.getElementById('aiInput');
+            const text = input.value.trim();
+            if (!text && !_aiPendingImage) return;
+            input.value = '';
+
+            const imageToSend = _aiPendingImage;
+            clearAiImage();
+
+            if (imageToSend) {
+                appendAiMessage('user', `<img src="${imageToSend}" class="rounded-lg max-w-[180px] mb-1.5">${text ? escapeHtml(text) : ''}`);
+            } else {
+                appendAiMessage('user', escapeHtml(text));
+            }
+
+            _aiSending = true;
+            const typingId = appendAiTyping();
+            try {
+                const res = await postAPI('ai-consult', { message: text, image_base64: imageToSend });
+                removeAiTyping(typingId);
+                if (res && res.reply) {
+                    appendAiMessage('ai', formatAiText(res.reply), res.response_id);
+                    if (res.escalate) {
+                        appendAiSystemNote('Рекомендуем также написать в поддержку — вопрос может требовать участия администратора.');
+                    }
+                } else {
+                    appendAiMessage('ai', 'Не удалось получить ответ. Попробуйте ещё раз.');
+                }
+            } catch(e) {
+                removeAiTyping(typingId);
+                appendAiMessage('ai', 'Ошибка соединения с AI. Попробуйте позже.');
+            } finally {
+                _aiSending = false;
+            }
+        }
+
+        async function init() {
+            try {
+                if (!initData) {
+                    container.innerHTML = renderError('Telegram initData не обнаружен. Откройте через бота.');
+                    return;
+                }
+
+                const [keysRes, statusRes, refRes] = await Promise.allSettled([
+                    fetchAPI('keys'), fetchAPI('status'), fetchAPI('referral')
+                ]);
+
+                let html = '';
+
+                if (statusRes.status === 'fulfilled') {
+                    if (statusRes.value.trial_available) window._trialAvailable = true;
+                    html += renderSummary(statusRes.value);
+                } else { html += renderSummary(null); }
+
+                if (keysRes.status === 'fulfilled') {
+                    const keys = keysRes.value.keys || [];
+                    _cachedKeys = keys;
+                    if (keys.length === 0) {
+                        html += renderEmpty();
+                    } else {
+                        html += '<div class="space-y-3" id="keyListContainer">';
+                        keys.forEach(key => { html += renderKey(key); });
+                        html += '</div>';
+                    }
+                } else {
+                    html += renderError('Не удалось загрузить данные. Попробуйте обновить.');
+                }
+
+                if (refRes.status === 'fulfilled') {
+                    html += renderReferral(refRes.value);
+                }
+
+                html += '<div class="mt-4"><button onclick="goBuy()" class="px-8 py-3.5 btn-primary rounded-xl font-bold text-base transition w-full">Купить подписку</button></div>';
+
+                if (window._trialAvailable) {
+                    html += '<div class="mt-2"><button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full">Пробная подписка</button></div>';
+                }
+
+                html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ECLIPSE UNLIMITED · ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
+
+                container.innerHTML = html;
+                fetchPings();
+
+                if (window._trialAvailable) {
+                    const trialBtnEmpty = document.getElementById('trial-btn-empty');
+                    if (trialBtnEmpty) trialBtnEmpty.style.display = 'block';
+                }
+            } catch(err) {
+                container.innerHTML = renderError('Ошибка инициализации');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="auto">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
+    <meta name="description" content="ECLIPSE Unlimited — Secure VPN Setup Guide. Private. Fast. Unlimited.">
+    <meta name="theme-color" content="#0A0A10">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ECLIPSE VPN">
+    <meta name="telegram:channel" content="@vless_keysvpn_bot">
+    <meta property="og:title" content="ECLIPSE Unlimited • VPN Setup Guide">
+    <meta property="og:description" content="Private. Fast. Unlimited. Secure VPN Platform">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ECLIPSE Unlimited • VPN Setup Guide">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230A0A10' stroke='%23D9AE6C' stroke-width='2'/%3E%3Ctext x='16' y='22' text-anchor='middle' fill='%23D9AE6C' font-size='18' font-weight='bold'%3EE%3C/text%3E%3C/svg%3E">
+    <title>ECLIPSE Unlimited • VPN Setup Guide</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #f0f4ff;
+            --surface: #ffffff;
+            --surface-elevated: rgba(255, 255, 255, 0.75);
+            --border: rgba(0, 0, 0, 0.05);
+            --border-hover: rgba(0, 0, 0, 0.1);
+            --text-primary: #1a1a2e;
+            --text-secondary: #5a6070;
+            --text-tertiary: #9ca3af;
+            --accent: #D9AE6C;
+            --accent-dim: rgba(217, 174, 108, 0.08);
+            --accent-glow: rgba(217, 174, 108, 0.12);
+            --warning: #F0A345;
+            --warning-bg: rgba(245, 158, 11, 0.06);
+            --success: #2FD1C4;
+            --danger: #F2685C;
+            --gradient-1: linear-gradient(135deg, #D9AE6C 0%, #F2C879 100%);
+            --gradient-2: linear-gradient(135deg, #2FD1C4 0%, #D9AE6C 100%);
+            --radius-sm: 10px;
+            --radius-md: 16px;
+            --radius-lg: 24px;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+            --shadow-glow: 0 0 30px rgba(217, 174, 108, 0.15);
+            --transition-fast: 150ms cubic-bezier(0.22, 1, 0.36, 1);
+            --transition: 250ms cubic-bezier(0.22, 1, 0.36, 1);
+            --particle-opacity: 0.15;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0A0A10;
+            --surface: #14151D;
+            --surface-elevated: rgba(17, 24, 39, 0.7);
+            --border: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-tertiary: #64748b;
+            --accent-dim: rgba(217, 174, 108, 0.1);
+            --accent-glow: rgba(217, 174, 108, 0.12);
+            --warning-bg: rgba(245, 158, 11, 0.08);
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+            --particle-opacity: 0.06;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            min-height: 100dvh;
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            transition: background var(--transition), color var(--transition);
+            overflow-x: hidden;
+            padding: 0;
+        }
+        ::selection { background: rgba(217, 174, 108, 0.35); color: #1A1305; }
+
+        .particles-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+        .particle-dot {
+            position: absolute; border-radius: 50%;
+            animation: floatUp linear infinite; opacity: 0;
+        }
+        @keyframes floatUp {
+            0% { transform: translateY(105vh) scale(0); opacity: 0; }
+            10% { opacity: 0.7; }
+            90% { opacity: 0.2; }
+            100% { transform: translateY(-5vh) scale(1); opacity: 0; }
+        }
+
+        #progressBar {
+            position: fixed; top: 0; left: 0; height: 2px;
+            background: var(--gradient-2); z-index: 10000;
+            transition: width 80ms linear; box-shadow: 0 0 10px rgba(217, 174, 108, 0.4);
+        }
+
+        .nav {
+            position: sticky; top: 0; z-index: 1000;
+            background: rgba(240, 244, 255, 0.7);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
+            transition: background var(--transition);
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        [data-theme="dark"] .nav { background: rgba(10, 14, 26, 0.7); }
+        .nav-logo { display: flex; align-items: center; gap: 8px; text-decoration: none; flex-shrink: 0; }
+        .nav-logo svg { width: 30px; height: 30px; }
+        .nav-logo-text { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 0.9rem; color: var(--text-primary); letter-spacing: -0.3px; }
+        .nav-links { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+        .nav-btn {
+            background: transparent; border: 1px solid transparent; color: var(--text-secondary);
+            padding: 5px 10px; border-radius: 30px; cursor: pointer; font-size: 0.7rem;
+            font-weight: 500; transition: all var(--transition-fast); font-family: inherit;
+            text-decoration: none; display: inline-flex; align-items: center; gap: 3px;
+            white-space: nowrap;
+        }
+        .nav-btn:hover { background: var(--accent-dim); color: var(--text-primary); border-color: var(--border); }
+        .nav-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(217, 174, 108, 0.25); }
+        .nav-btn.router-link {
+            background: rgba(217, 174, 108, 0.1);
+            color: var(--accent);
+            border-color: rgba(217, 174, 108, 0.15);
+        }
+        .nav-btn.router-link:hover {
+            background: rgba(217, 174, 108, 0.2);
+            border-color: rgba(217, 174, 108, 0.3);
+        }
+
+        .container { max-width: 680px; margin: 0 auto; padding: 20px 16px 60px; position: relative; z-index: 1; }
+
+        .hero { text-align: center; padding: 28px 8px 24px; }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: var(--accent-dim); border: 1px solid rgba(217, 174, 108, 0.2);
+            color: var(--accent); padding: 4px 14px; border-radius: 30px;
+            font-size: 0.65rem; font-weight: 600; text-decoration: none;
+            transition: all var(--transition-fast); margin-bottom: 18px;
+            letter-spacing: 0.3px; text-transform: uppercase;
+        }
+        .hero-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(1.8rem, 4.5vw, 2.6rem); font-weight: 700; letter-spacing: -1px;
+            line-height: 1.1; margin-bottom: 6px;
+            background: var(--gradient-1);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+            animation: titleGlow 4s ease-in-out infinite;
+        }
+        @keyframes titleGlow {
+            0%, 100% { filter: brightness(1); }
+            50% { filter: brightness(1.15); }
+        }
+        .hero-subtitle { font-size: 0.9rem; color: var(--text-secondary); font-weight: 400; margin-bottom: 12px; }
+        .hero-meta {
+            display: flex; justify-content: center; align-items: center; gap: 8px;
+            flex-wrap: wrap; font-size: 0.7rem; color: var(--text-tertiary); font-weight: 500;
+            margin-bottom: 18px;
+        }
+        .hero-meta .word {
+            display: inline-block; opacity: 0; transform: translateY(8px);
+            animation: wordFadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            padding: 3px 10px; border-radius: 20px; background: var(--accent-dim);
+            transition: all var(--transition-fast);
+        }
+        .hero-meta .word:nth-child(1) { animation-delay: 0.3s; }
+        .hero-meta .word:nth-child(3) { animation-delay: 0.6s; }
+        .hero-meta .word:nth-child(5) { animation-delay: 0.9s; }
+        .hero-meta .dot {
+            opacity: 0; animation: dotBlink 0.4s ease-out forwards;
+            color: var(--accent); font-weight: 700;
+        }
+        .hero-meta .dot:nth-child(2) { animation-delay: 0.45s; }
+        .hero-meta .dot:nth-child(4) { animation-delay: 0.75s; }
+        @keyframes wordFadeIn {
+            0% { opacity: 0; transform: translateY(8px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes dotBlink {
+            0% { opacity: 0; transform: scale(0.5); }
+            60% { opacity: 1; transform: scale(1.3); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        .sub-card {
+            background: var(--surface-elevated); backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); padding: 16px; margin-bottom: 16px;
+            box-shadow: var(--shadow-sm); animation: fadeInUp 0.6s ease-out 1.0s both;
+        }
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .sub-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .sub-title { font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; font-weight: 700; color: var(--text-primary); }
+        .sub-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px; background: var(--accent-dim);
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            margin-bottom: 8px; transition: all var(--transition-fast);
+            flex-wrap: wrap; gap: 8px;
+        }
+        .sub-item:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
+        .sub-info { flex: 1; min-width: 150px; }
+        .sub-name { font-weight: 600; font-size: 0.82rem; color: var(--text-primary); }
+        .sub-details { font-family: 'JetBrains Mono', monospace; font-size: 0.63rem; color: var(--text-secondary); margin-top: 2px; }
+        .sub-status {
+            padding: 3px 10px; border-radius: 20px; font-size: 0.6rem; font-weight: 600;
+            display: inline-block;
+        }
+        .sub-status.active { background: rgba(47, 209, 196, 0.15); color: var(--success); }
+        .sub-status.expired { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+        .sub-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+        .sub-btn {
+            padding: 5px 12px; border-radius: 20px; font-size: 0.65rem; font-weight: 600;
+            cursor: pointer; border: 1px solid var(--border);
+            background: var(--surface); color: var(--text-primary);
+            transition: all var(--transition-fast); font-family: inherit;
+            text-decoration: none; display: inline-flex; align-items: center; gap: 3px;
+        }
+        .sub-btn:hover { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+        .sub-btn.primary {
+            background: var(--gradient-1); color: #1A1305; border: none; font-weight: 700;
+            box-shadow: 0 2px 12px rgba(217, 174, 108, 0.3);
+        }
+        .sub-btn.primary:hover { opacity: 0.92; transform: translateY(-1px); }
+        .empty-state { text-align: center; padding: 20px 16px; color: var(--text-tertiary); }
+        .empty-state p { margin: 6px 0; font-size: 0.75rem; }
+        .traffic-bar {
+            width: 100%; height: 3px; background: var(--border);
+            border-radius: 2px; margin-top: 6px; overflow: hidden;
+        }
+        .traffic-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+        .traffic-fill.low { background: var(--success); }
+        .traffic-fill.medium { background: var(--warning); }
+        .traffic-fill.high { background: var(--danger); }
+
+        .yt-banner {
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            background: linear-gradient(135deg, rgba(255, 0, 0, 0.08), rgba(255, 0, 0, 0.03));
+            border: 1px solid rgba(255, 0, 0, 0.15); border-radius: var(--radius-md);
+            padding: 10px 16px; margin-bottom: 16px;
+            animation: fadeInUp 0.6s ease-out 1.2s both;
+        }
+        .yt-banner svg { width: 26px; height: 26px; flex-shrink: 0; }
+        .yt-banner-text { font-size: 0.72rem; font-weight: 500; color: var(--text-primary); }
+        .yt-banner-text strong { color: #ff0000; }
+
+        .apps-section { margin-bottom: 16px; animation: fadeInUp 0.6s ease-out 1.4s both; }
+        .apps-title {
+            font-size: 0.62rem; font-weight: 600; color: var(--text-tertiary);
+            text-align: center; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .apps-grid {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-bottom: 10px;
+        }
+        .app-icon {
+            display: flex; flex-direction: column; align-items: center; gap: 3px;
+            padding: 8px 12px; background: var(--surface-elevated);
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            cursor: default; transition: all var(--transition-fast); min-width: 56px;
+        }
+        .app-icon:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+        .app-icon svg { width: 22px; height: 22px; }
+        .app-icon span { font-size: 0.5rem; color: var(--text-tertiary); font-weight: 500; }
+
+        .card {
+            background: var(--surface-elevated); backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px); border: 1px solid var(--border);
+            border-radius: var(--radius-lg); padding: 18px; margin-bottom: 14px;
+            box-shadow: var(--shadow-sm); transition: all var(--transition);
+            opacity: 0; transform: translateY(18px);
+        }
+        .card.visible { opacity: 1; transform: translateY(0); }
+        .card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md), var(--shadow-glow); }
+
+        .step { margin-bottom: 20px; opacity: 0; transform: translateY(14px); transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+        .step.visible { opacity: 1; transform: translateY(0); }
+        .step:last-child { margin-bottom: 0; }
+        .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+        .step-num {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--gradient-1); color: #1A1305; width: 28px; height: 28px;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 0.72rem; flex-shrink: 0;
+            box-shadow: 0 2px 10px rgba(217, 174, 108, 0.3);
+            transition: transform var(--transition-fast);
+        }
+        .step:hover .step-num { transform: scale(1.1); }
+        .step-title { font-weight: 600; font-size: 0.85rem; color: var(--text-primary); }
+        .step-desc { font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 8px; padding-left: 38px; line-height: 1.5; }
+
+        .screenshot {
+            background: rgba(0,0,0,0.03); border: 1px solid var(--border);
+            border-radius: var(--radius-sm); padding: 6px; margin: 4px 0 2px;
+            text-align: center; cursor: zoom-in; transition: all var(--transition-fast); overflow: hidden;
+        }
+        [data-theme="dark"] .screenshot { background: rgba(0,0,0,0.2); }
+        .screenshot:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
+        .screenshot img {
+            max-width: 100%; height: auto; max-height: 280px; border-radius: 6px;
+            display: block; margin: 0 auto; box-shadow: var(--shadow-sm);
+            object-fit: contain; transition: transform 0.3s ease;
+        }
+        .screenshot:hover img { transform: scale(1.02); }
+        .fallback-text { padding: 20px; text-align: center; color: var(--text-tertiary); font-size: 0.65rem; border: 1px dashed var(--border); border-radius: 6px; }
+
+        .lightbox {
+            display: none; position: fixed; inset: 0; z-index: 10000;
+            background: rgba(0,0,0,0.92); backdrop-filter: blur(12px);
+            justify-content: center; align-items: center; cursor: zoom-out;
+        }
+        .lightbox.active { display: flex; }
+        .lightbox img { max-width: 90vw; max-height: 85vh; border-radius: var(--radius-sm); animation: fadeScale 0.25s ease-out; }
+        @keyframes fadeScale { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .lightbox-close {
+            position: absolute; top: 16px; right: 16px; width: 36px; height: 36px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 50%; color: #fff; font-size: 1.2rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; transition: all var(--transition-fast);
+        }
+        .lightbox-close:hover { background: rgba(255,255,255,0.15); transform: rotate(90deg); }
+
+        .faq-item {
+            border: 1px solid var(--border); border-radius: var(--radius-sm);
+            margin-bottom: 6px; overflow: hidden; transition: all var(--transition-fast);
+        }
+        .faq-q {
+            background: transparent; padding: 10px 14px; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+            font-weight: 500; font-size: 0.78rem; transition: background var(--transition-fast);
+        }
+        .faq-q:hover { background: var(--accent-dim); }
+        .faq-icon { transition: transform var(--transition); font-size: 0.6rem; color: var(--text-tertiary); }
+        .faq-item.open .faq-icon { transform: rotate(45deg); color: var(--accent); }
+        .faq-a { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; background: rgba(0,0,0,0.02); }
+        .faq-item.open .faq-a { max-height: 250px; }
+        .faq-a-inner { padding: 10px 14px; font-size: 0.7rem; color: var(--text-secondary); line-height: 1.6; }
+
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(120px);
+            background: var(--surface); border: 1px solid var(--border);
+            padding: 10px 20px; border-radius: 40px; font-size: 0.78rem;
+            font-weight: 500; color: var(--text-primary); box-shadow: var(--shadow-lg);
+            z-index: 10001; transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            display: flex; align-items: center; gap: 6px;
+        }
+        .toast.show { transform: translateX(-50%) translateY(0); }
+
+        .footer {
+            text-align: center; padding: 20px 12px 14px;
+            border-top: 1px solid var(--border); margin-top: 24px;
+        }
+        .footer-links { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; }
+        .footer-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.68rem; transition: color var(--transition-fast); }
+        .footer-links a:hover { color: var(--accent); }
+        .footer-copy { font-size: 0.6rem; color: var(--text-tertiary); }
+
+        .visitor-counter {
+            margin-top: 8px; font-size: 0.55rem; color: var(--text-tertiary);
+            opacity: 0.5; transition: opacity var(--transition);
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+        }
+        .visitor-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--success); animation: pulse-dot 2s ease-in-out infinite; }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 0.4; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.8); }
+        }
+
+        @media (max-width: 600px) {
+            .container { padding: 12px 10px 40px; }
+            .card { padding: 14px; border-radius: var(--radius-md); }
+            .step-num { width: 24px; height: 24px; font-size: 0.65rem; }
+            .step-desc { padding-left: 34px; font-size: 0.68rem; }
+            .sub-item { flex-direction: column; align-items: flex-start; }
+            .sub-actions { width: 100%; }
+            .nav { padding: 6px 10px; }
+            .nav-btn { padding: 4px 8px; font-size: 0.6rem; }
+            .nav-logo-text { display: none; }
+            .nav-links { width: 100%; justify-content: center; }
+            .hero { padding: 16px 4px 16px; }
+            .hero-title { font-size: 1.6rem; }
+            .yt-banner { padding: 8px 12px; }
+            .yt-banner svg { width: 20px; height: 20px; }
+            .yt-banner-text { font-size: 0.65rem; }
+            .app-icon { padding: 6px 8px; min-width: 44px; }
+            .app-icon svg { width: 18px; height: 18px; }
+        }
+        @media (max-width: 400px) {
+            .nav-links .nav-btn.router-link { font-size: 0.55rem; padding: 3px 6px; }
+            .nav-btn { font-size: 0.55rem; padding: 3px 6px; }
+            .sub-title { font-size: 0.8rem; }
+            .sub-btn { font-size: 0.55rem; padding: 3px 8px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="progressBar"></div>
+    <div class="particles-bg" id="particlesBg" aria-hidden="true"></div>
+
+    <nav class="nav">
+        <a href="#" class="nav-logo" aria-label="ECLIPSE">
+            <svg viewBox="0 0 36 36"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#D9AE6C"/><stop offset="100%" stop-color="#2FD1C4"/></linearGradient></defs><circle cx="18" cy="18" r="16" fill="none" stroke="url(#g)" stroke-width="2"/><text x="18" y="23" text-anchor="middle" fill="url(#g)" font-size="17" font-weight="800">E</text></svg>
+            <span class="nav-logo-text">ECLIPSE</span>
+        </a>
+        <div class="nav-links">
+            <a href="instrukciya.html" class="nav-btn router-link">
+                📡 Настройка роутера
+            </a>
+            <button class="nav-btn" data-lang="ru" aria-label="Русский">RU</button>
+            <button class="nav-btn" data-lang="en" aria-label="English">EN</button>
+            <button class="nav-btn" id="themeToggle" aria-label="Тема">🌓</button>
+            <a href="https://t.me/vless_keysvpn_bot" target="_blank" rel="noopener" class="nav-btn">Support</a>
+        </div>
+    </nav>
+
+    <main class="container" id="mainContent">
+        <section class="hero">
+            <a href="https://t.me/vless_keysvpn_bot" target="_blank" rel="noopener" class="hero-badge" data-ru="🔒 Безопасная VPN платформа" data-en="🔒 Secure VPN Platform">🔒 Безопасная VPN платформа</a>
+            <h1 class="hero-title">ECLIPSE Unlimited</h1>
+            <p class="hero-subtitle" data-ru="Приватно. Быстро. Безлимитно." data-en="Private. Fast. Unlimited.">Приватно. Быстро. Безлимитно.</p>
+            <div class="hero-meta">
+                <span class="word" data-ru="Сквозное шифрование" data-en="End-to-end encryption">Сквозное шифрование</span>
+                <span class="dot">•</span>
+                <span class="word" data-ru="Глобальная сеть" data-en="Global network">Глобальная сеть</span>
+                <span class="dot">•</span>
+                <span class="word" data-ru="Без логов" data-en="No logs">Без логов</span>
+            </div>
+
+            <div class="yt-banner">
+                <svg viewBox="0 0 24 24" fill="#ff0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.6 3.5 12 3.5 12 3.5s-7.6 0-9.4.6A3 3 0 0 0 .5 6.2 31.4 31.4 0 0 0 0 12a31.4 31.4 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.8.6 9.4.6 9.4.6s7.6 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.4 31.4 0 0 0 24 12a31.4 31.4 0 0 0-.5-5.8zM9.5 15.5V8.5l6.5 3.5-6.5 3.5z"/></svg>
+                <span class="yt-banner-text" data-ru="С подпиской ECLIPSE — <strong>YouTube без рекламы</strong> и быстрая загрузка видео" data-en="With ECLIPSE subscription — <strong>ad-free YouTube</strong> and fast video loading">С подпиской ECLIPSE — <strong>YouTube без рекламы</strong> и быстрая загрузка видео</span>
+            </div>
+
+            <div class="apps-section">
+                <p class="apps-title" data-ru="Популярные приложения" data-en="Popular Apps">Популярные приложения</p>
+                <div class="apps-grid">
+                    <div class="app-icon"><svg viewBox="0 0 24 24" fill="#ff0000"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.6 3.5 12 3.5 12 3.5s-7.6 0-9.4.6A3 3 0 0 0 .5 6.2 31.4 31.4 0 0 0 0 12a31.4 31.4 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.8.6 9.4.6 9.4.6s7.6 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.4 31.4 0 0 0 24 12a31.4 31.4 0 0 0-.5-5.8zM9.5 15.5V8.5l6.5 3.5-6.5 3.5z"/></svg><span>YouTube</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" fill="#E1306C"/><circle cx="12" cy="12" r="5" fill="none" stroke="#fff" stroke-width="1.5"/></svg><span>Instagram</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#000"/><text x="12" y="17" text-anchor="middle" fill="#25f4ee" font-size="9" font-weight="700">♪</text></svg><span>TikTok</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="3" fill="#141414"/><text x="12" y="18" text-anchor="middle" fill="#E50914" font-size="14" font-weight="900">N</text></svg><span>Netflix</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#1DB954"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">♪</text></svg><span>Spotify</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#5865F2"/><text x="12" y="17" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">◉</text></svg><span>Discord</span></div>
+                </div>
+                <p class="apps-title" data-ru="ИИ и чаты" data-en="AI & Chat Apps">ИИ и чаты</p>
+                <div class="apps-grid">
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#10a37f"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">GPT</text></svg><span>ChatGPT</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#4285F4"/><text x="12" y="17" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">G</text></svg><span>Gemini</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#000"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">⌘</text></svg><span>DeepSeek</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#8b5cf6"/><text x="12" y="17" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">C</text></svg><span>Claude</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#0088cc"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">✈</text></svg><span>Telegram</span></div>
+                    <div class="app-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#25D366"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">WA</text></svg><span>WhatsApp</span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- БЛОК ПОДПИСОК -->
+        <div class="sub-card" id="subscriptionsCard">
+            <div class="sub-header">
+                <h3 class="sub-title" data-ru="🔑 Мои подписки" data-en="🔑 My Subscriptions">🔑 Мои подписки</h3>
+                <a href="https://t.me/vless_keysvpn_bot?start=buy" target="_blank" rel="noopener" class="sub-btn primary" data-ru="+ Купить подписку" data-en="+ Buy Subscription">+ Купить подписку</a>
+            </div>
+            <div id="subscriptionsList">
+                <div class="empty-state" id="loadingSubs">
+                    <p data-ru="Загрузка подписок..." data-en="Loading subscriptions...">Загрузка подписок...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Steps -->
+        <article class="card" id="stepsCard">
+            <div class="step">
+                <div class="step-header"><span class="step-num">1</span><span class="step-title" data-ru="Скопируйте ссылку или QR-код" data-en="Copy link or QR code">Скопируйте ссылку или QR-код</span></div>
+                <p class="step-desc" data-ru="Нажмите «Скопировать» или отсканируйте QR‑код, чтобы получить VLESS-ссылку." data-en="Tap «Copy» or scan QR code to get your VLESS link.">Нажмите «Скопировать» или отсканируйте QR‑код, чтобы получить VLESS-ссылку.</p>
+                <div class="screenshot" onclick="openLightbox(this.querySelector('img'))"><img src="image1.jpeg" alt="Step 1" loading="lazy" onerror="handleImgError(this,1)"></div>
+            </div>
+            <div class="step">
+                <div class="step-header"><span class="step-num">2</span><span class="step-title" data-ru="Импортируйте в клиент" data-en="Import into client">Импортируйте в клиент</span></div>
+                <p class="step-desc" data-ru="Откройте Happ, INCY, V2RayNG, NekoRay и выберите импорт из буфера или QR." data-en="Open Happ, INCY, V2RayNG, NekoRay and import from clipboard or QR.">Откройте Happ, INCY, V2RayNG, NekoRay и выберите импорт из буфера или QR.</p>
+                <div class="screenshot" onclick="openLightbox(this.querySelector('img'))"><img src="image2.jpeg" alt="Step 2" loading="lazy" onerror="handleImgError(this,2)"></div>
+            </div>
+            <div class="step">
+                <div class="step-header"><span class="step-num">3</span><span class="step-title" data-ru="Подключитесь" data-en="Connect">Подключитесь</span></div>
+                <p class="step-desc" data-ru="Активируйте профиль — вы в защищённой сети." data-en="Activate the profile — you are on a secure network.">Активируйте профиль — вы в защищённой сети.</p>
+                <div class="screenshot" onclick="openLightbox(this.querySelector('img'))"><img src="image3.jpeg" alt="Step 3" loading="lazy" onerror="handleImgError(this,3)"></div>
+            </div>
+            <div class="step">
+                <div class="step-header"><span class="step-num">4</span><span class="step-title" data-ru="Автообновление" data-en="Auto-renewal">Автообновление</span></div>
+                <p class="step-desc" data-ru="Подписка обновляется автоматически каждые 24 часа." data-en="Subscription auto-renews every 24 hours.">Подписка обновляется автоматически каждые 24 часа.</p>
+                <div class="screenshot" onclick="openLightbox(this.querySelector('img'))"><img src="image4.jpeg" alt="Step 4" loading="lazy" onerror="handleImgError(this,4)"></div>
+            </div>
+        </article>
+
+        <!-- FAQ -->
+        <section class="card">
+            <h2 style="font-size:0.95rem;font-weight:700;margin-bottom:10px;" data-ru="Частые вопросы" data-en="FAQ">Частые вопросы</h2>
+            <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-ru="Как импортировать ключ в Happ?" data-en="How to import key to Happ?">Как импортировать ключ в Happ?</span><span class="faq-icon">+</span></div><div class="faq-a"><div class="faq-a-inner" data-ru="Нажмите «+» → «Из буфера обмена» или отсканируйте QR-код. Готово!" data-en="Tap «+» → «From clipboard» or scan QR code. Done!">Нажмите «+» → «Из буфера обмена» или отсканируйте QR-код. Готово!</div></div></div>
+            <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-ru="Как импортировать ключ в INCY?" data-en="How to import key to INCY?">Как импортировать ключ в INCY?</span><span class="faq-icon">+</span></div><div class="faq-a"><div class="faq-a-inner" data-ru="Откройте INCY → «Добавить» → «Импорт из буфера» или «Сканировать QR»." data-en="Open INCY → «Add» → «Import from clipboard» or «Scan QR».">Откройте INCY → «Добавить» → «Импорт из буфера» или «Сканировать QR».</div></div></div>
+            <div class="faq-item"><div class="faq-q" onclick="toggleFaq(this)"><span data-ru="Подписка не работает — что делать?" data-en="Subscription not working — what to do?">Подписка не работает — что делать?</span><span class="faq-icon">+</span></div><div class="faq-a"><div class="faq-a-inner" data-ru="Проверьте срок действия, обновите ключ в боте или обратитесь в поддержку." data-en="Check expiry date, refresh key in bot or contact support.">Проверьте срок действия, обновите ключ в боте или обратитесь в поддержку.</div></div></div>
+        </section>
+
+        <footer class="footer">
+            <div class="footer-links">
+                <a href="#" data-ru="Конфиденциальность" data-en="Privacy">Конфиденциальность</a>
+                <a href="https://t.me/vless_keysvpn_bot" target="_blank" rel="noopener">Support</a>
+                <a href="https://t.me/vless_keysvpn_bot" target="_blank" rel="noopener">Telegram</a>
+                <a href="mailto:infovpn010101@gmail.com">Email</a>
+            </div>
+            <p class="footer-copy">ECLIPSE Unlimited © 2025</p>
+            <div class="visitor-counter" id="visitorCounter">
+                <span class="visitor-dot"></span>
+                <span id="visitorCount">⋯</span>
+                <span data-ru="посетителей" data-en="visitors">посетителей</span>
+            </div>
+        </footer>
+    </main>
+
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()"><button class="lightbox-close" aria-label="Close">&times;</button><img src="" alt="" id="lightboxImg"></div>
+    <div class="toast" id="toast">✅ Готово!</div>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+    (()=>{
+        // ============ TELEGRAM WEBAPP ============
+        const tg = window.Telegram?.WebApp;
+        if (tg) { tg.ready(); tg.expand(); }
+
+        // ============ API ============
+        const API_BASE = 'https://eclipse.unlimited.bot.nu';
+        const BOT_USER = 'vless_keysvpn_bot';
+
+        // Открыто ли внутри Telegram: доверяем ТОЛЬКО подписанному initData
+        const urlToken = new URLSearchParams(window.location.search).get('token') || '';
+
+        const isInTelegram = !!(tg && tg.initData) || !!urlToken;
+
+        function buildQuery() {
+            const initDataStr = tg?.initData || '';
+            if (initDataStr) {
+                return 'initData=' + encodeURIComponent(initDataStr);
+            }
+            if (urlToken) {
+                return 'token=' + encodeURIComponent(urlToken);
+            }
+            return null;
+        }
+
+        async function fetchAPI(endpoint) {
+            const qs = buildQuery();
+            if (!qs) return null;
+            const sep = endpoint.includes('?') ? '&' : '?';
+            const url = `${API_BASE}/api/${endpoint}${sep}${qs}`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        // ============ TRANSLATIONS ============
+        const t={
+            ru:{heroBadge:'🔒 Безопасная VPN платформа',heroSubtitle:'Приватно. Быстро. Безлимитно.',heroMeta1:'Сквозное шифрование',heroMeta2:'Глобальная сеть',heroMeta3:'Без логов',ytBanner:'С подпиской ECLIPSE — <strong>YouTube без рекламы</strong> и быстрая загрузка видео',appsTitle1:'Популярные приложения',appsTitle2:'ИИ и чаты',subTitle:'🔑 Мои подписки',buyBtn:'+ Купить подписку',loading:'Загрузка подписок...',noSubs:'У вас пока нет активных подписок',openInTgHint:'Откройте эту страницу в Telegram, чтобы увидеть свои подписки',openInTgBtn:'📲 Открыть в Telegram',getInBot:'Получить в боте',importBtn:'📲 Импорт в Happ / INCY',importHapp:'🚀 Импорт в Happ',importIncy:'⚡️ Импорт в INCY',copyBtn:'📋 Копировать',expiry:'До:',traffic:'Трафик:',active:'Активна',expired:'Истекла',step1Title:'Скопируйте ссылку или QR-код',step1Desc:'Нажмите «Скопировать» или отсканируйте QR‑код, чтобы получить VLESS-ссылку.',step2Title:'Импортируйте в клиент',step2Desc:'Откройте Happ, INCY, V2RayNG, NekoRay и выберите импорт из буфера или QR.',step3Title:'Подключитесь',step3Desc:'Активируйте профиль — вы в защищённой сети.',step4Title:'Автообновление',step4Desc:'Подписка обновляется автоматически каждые 24 часа.',faqTitle:'Частые вопросы',faq1Q:'Как импортировать ключ в Happ?',faq1A:'Нажмите «+» → «Из буфера обмена» или отсканируйте QR-код. Готово!',faq2Q:'Как импортировать ключ в INCY?',faq2A:'Откройте INCY → «Добавить» → «Импорт из буфера» или «Сканировать QR».',faq3Q:'Подписка не работает — что делать?',faq3A:'Проверьте срок действия, обновите ключ в боте или обратитесь в поддержку.',privacy:'Конфиденциальность',visitors:'посетителей',toastCopied:'✅ Ключ скопирован!',toastError:'❌ Ошибка',f1:'Пример 1 (image1.jpeg)',f2:'Пример 2 (image2.jpeg)',f3:'Пример 3 (image3.jpeg)',f4:'Пример 4 (image4.jpeg)'},
+            en:{heroBadge:'🔒 Secure VPN Platform',heroSubtitle:'Private. Fast. Unlimited.',heroMeta1:'End-to-end encryption',heroMeta2:'Global network',heroMeta3:'No logs',ytBanner:'With ECLIPSE subscription — <strong>ad-free YouTube</strong> and fast video loading',appsTitle1:'Popular Apps',appsTitle2:'AI & Chat Apps',subTitle:'🔑 My Subscriptions',buyBtn:'+ Buy Subscription',loading:'Loading subscriptions...',noSubs:'No active subscriptions yet',openInTgHint:'Open this page in Telegram to see your subscriptions',openInTgBtn:'📲 Open in Telegram',getInBot:'Get in bot',importBtn:'📲 Import to Happ / INCY',importHapp:'🚀 Import to Happ',importIncy:'⚡️ Import to INCY',copyBtn:'📋 Copy',expiry:'Until:',traffic:'Traffic:',active:'Active',expired:'Expired',step1Title:'Copy link or QR code',step1Desc:'Tap «Copy» or scan QR code to get your VLESS link.',step2Title:'Import into client',step2Desc:'Open Happ, INCY, V2RayNG, NekoRay and import from clipboard or QR.',step3Title:'Connect',step3Desc:'Activate the profile — you are on a secure network.',step4Title:'Auto-renewal',step4Desc:'Subscription auto-renews every 24 hours.',faqTitle:'FAQ',faq1Q:'How to import key to Happ?',faq1A:'Tap «+» → «From clipboard» or scan QR code. Done!',faq2Q:'How to import key to INCY?',faq2A:'Open INCY → «Add» → «Import from clipboard» or «Scan QR».',faq3Q:'Subscription not working — what to do?',faq3A:'Check expiry date, refresh key in bot or contact support.',privacy:'Privacy',visitors:'visitors',toastCopied:'✅ Key copied!',toastError:'❌ Error',f1:'Example 1 (image1.jpeg)',f2:'Example 2 (image2.jpeg)',f3:'Example 3 (image3.jpeg)',f4:'Example 4 (image4.jpeg)'}
+        };
+        let l=localStorage.getItem('el')||(navigator.language.startsWith('ru')?'ru':'en');
+        function T(x){l=x;localStorage.setItem('el',l);document.documentElement.lang=l;document.querySelectorAll('.nav-btn[data-lang]').forEach(b=>b.classList.toggle('active',b.dataset.lang===l));document.querySelectorAll('[data-ru]').forEach(e=>{if(e.dataset[l])e.innerHTML=e.dataset[l]});document.querySelectorAll('.fallback-text').forEach((f,i)=>{const k='f'+(i+1);if(t[l][k])f.textContent='📷 '+t[l][k]})}
+        document.querySelectorAll('.nav-btn[data-lang]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.lang!==l)T(b.dataset.lang)}));
+        T(l);
+
+        // ============ THEME (с поддержкой Telegram) ============
+        let th=localStorage.getItem('et')||'auto';
+        const h=document.documentElement,tt=document.getElementById('themeToggle');
+
+        function getPreferredTheme() {
+            if (tg && tg.colorScheme) {
+                return tg.colorScheme === 'dark' ? 'dark' : 'light';
+            }
+            const saved = localStorage.getItem('et');
+            if (saved === 'dark' || saved === 'light') return saved;
+            return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
+        }
+
+        function A(x){
+            th=x;
+            localStorage.setItem('et',th);
+            if(th==='auto'){
+                const s=window.matchMedia('(prefers-color-scheme:dark)').matches;
+                h.setAttribute('data-theme',s?'dark':'light');
+                tt.textContent=s?'☀️':'🌙';
+            } else {
+                h.setAttribute('data-theme',th);
+                tt.textContent=th==='dark'?'☀️':'🌙';
+            }
+            // Обновляем мета-тег
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) {
+                const isDark = h.getAttribute('data-theme') === 'dark';
+                meta.content = isDark ? '#0A0A10' : '#0A0A10';
+            }
+        }
+
+        tt.addEventListener('click',()=>{
+            const current = h.getAttribute('data-theme') || 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            A(next);
+        });
+
+        const sysDark=window.matchMedia('(prefers-color-scheme:dark)');
+        if(th==='auto') h.setAttribute('data-theme',sysDark.matches?'dark':'light');
+        A(th);
+        sysDark.addEventListener('change',()=>{
+            if(!localStorage.getItem('et') || localStorage.getItem('et')==='auto') A('auto');
+        });
+
+        // ============ SCROLL PROGRESS ============
+        window.addEventListener('scroll',()=>{
+            const s=window.scrollY,d=document.documentElement.scrollHeight-window.innerHeight;
+            document.getElementById('progressBar').style.width=(d>0?(s/d)*100:0)+'%';
+        },{passive:true});
+
+        // ============ INTERSECTION OBSERVER ============
+        const io=new IntersectionObserver(e=>e.forEach(e=>{
+            if(e.isIntersecting) e.target.classList.add('visible');
+        }),{threshold:0.08,rootMargin:'0px 0px -30px 0px'});
+        document.querySelectorAll('.step,.card').forEach(e=>io.observe(e));
+
+        // ============ FAQ ============
+        window.toggleFaq=function(q){
+            const i=q.closest('.faq-item'),o=i.classList.contains('open');
+            document.querySelectorAll('.faq-item.open').forEach(x=>x.classList.remove('open'));
+            if(!o) i.classList.add('open');
+        };
+
+        // ============ LIGHTBOX ============
+        const lb=document.getElementById('lightbox'),li=document.getElementById('lightboxImg');
+        window.openLightbox=function(img){
+            if(img&&img.src&&!img.src.includes('fallback')&&img.naturalWidth>0){
+                li.src=img.src;li.alt=img.alt;lb.classList.add('active');
+                document.body.style.overflow='hidden';
+            }
+        };
+        window.closeLightbox=function(){lb.classList.remove('active');document.body.style.overflow='';};
+        document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLightbox()});
+        window.handleImgError=function(img,n){
+            const k='f'+n,text=t[l][k]||('Image '+n);
+            img.parentElement.innerHTML='<div class="fallback-text">📷 '+text+'</div>';
+        };
+
+        // ============ PARTICLES (меньше для Telegram WebView) ============
+        (function particles(){
+            const c=document.getElementById('particlesBg');
+            if(!c)return;
+            const colors=['#D9AE6C','#F2C879','#2FD1C4','#B08A4E','#6FE0D3'];
+            const count = tg ? 15 : 25;
+            for(let i=0;i<count;i++){
+                const d=document.createElement('div');
+                d.className='particle-dot';
+                const s=Math.random()*4+2;
+                const cl=colors[Math.floor(Math.random()*colors.length)];
+                d.style.cssText=`width:${s}px;height:${s}px;left:${Math.random()*100}%;background:${cl};box-shadow:0 0 ${s*2}px ${cl};animation-duration:${Math.random()*15+10}s;animation-delay:${Math.random()*12}s;`;
+                c.appendChild(d);
+            }
+        })();
+
+        // ============ VISITOR COUNTER ============
+        (function visitorCounter(){
+            const key='eclipse_visitor_count';
+            const sessionKey='eclipse_session';
+            let count=parseInt(localStorage.getItem(key))||0;
+            const lastSession=localStorage.getItem(sessionKey);
+            const now=Date.now();
+            if(!lastSession||(now-parseInt(lastSession))>1800000){count++;localStorage.setItem(key,count);}
+            localStorage.setItem(sessionKey,now);
+            const el=document.getElementById('visitorCount');
+            if(el)el.textContent=count.toLocaleString();
+        })();
+
+        // ============ TOAST ============
+        const toast=document.getElementById('toast');
+        let toastTimer;
+        function showToast(msg){toast.textContent=msg;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2500);}
+
+        // ============ SUBSCRIPTIONS ============
+        async function loadSubscriptions() {
+            const listEl = document.getElementById('subscriptionsList');
+            const tl = t[l];
+
+            // Вне Telegram нет доверенного initData — предлагаем открыть в боте
+            if (!isInTelegram) {
+                listEl.innerHTML = `
+                    <div class="empty-state">
+                        <p>${tl.openInTgHint}</p>
+                        <a href="https://t.me/${BOT_USER}?start=help" target="_blank" class="sub-btn primary" style="margin-top:12px;display:inline-block;">${tl.openInTgBtn}</a>
+                    </div>`;
+                return;
+            }
+
+            listEl.innerHTML = `<div class="empty-state"><p>${tl.loading}</p></div>`;
+
+            try {
+                const data = await fetchAPI('keys');
+
+                if (!data || !data.keys || data.keys.length === 0) {
+                    let trialBtn = '';
+                    try {
+                        const status = await fetchAPI('status');
+                        if (status && status.trial_available) {
+                            trialBtn = `<a href="https://t.me/${BOT_USER}?start=trial" target="_blank" class="sub-btn" style="margin-top:8px;display:inline-block;">🎁 ${l === 'ru' ? 'Пробный период' : 'Free Trial'}</a>`;
+                        }
+                    } catch(e) {}
+
+                    listEl.innerHTML = `
+                        <div class="empty-state">
+                            <p>${tl.noSubs}</p>
+                            <a href="https://t.me/${BOT_USER}?start=buy" target="_blank" class="sub-btn primary" style="margin-top:12px;display:inline-block;">${tl.buyBtn}</a>
+                            ${trialBtn}
+                        </div>`;
+                    return;
+                }
+
+                listEl.innerHTML = data.keys.map(key => {
+                    const displayName = key.name || 'ECLIPSE Premium';
+                    const serverName = key.server || '';
+                    const traffic = key.traffic || {};
+                    const expiry = key.expiry || {};
+
+                    const usedHuman = traffic.used_human || '0 GB';
+                    const limitHuman = traffic.is_unlimited ? '∞' : (traffic.limit_human || '∞');
+                    const trafficPercent = traffic.percent !== undefined ? Math.min(traffic.percent, 100) : 0;
+                    const trafficClass = trafficPercent > 80 ? 'high' : trafficPercent > 50 ? 'medium' : 'low';
+
+                    const isActive = key.is_active;
+                    const expiryDate = expiry.date || '∞';
+                    const remaining = expiry.remaining_human || '';
+                    const subUrl = key.sub_url || '';
+
+                    const renewBtn = isActive
+                        ? `<a href="https://t.me/${BOT_USER}?start=renew_${key.id}" target="_blank" class="sub-btn">🔄 ${l === 'ru' ? 'Продлить' : 'Renew'}</a>`
+                        : `<a href="https://t.me/${BOT_USER}?start=renew_${key.id}" target="_blank" class="sub-btn primary">🔄 ${l === 'ru' ? 'Продлить' : 'Renew'}</a>`;
+                    const replaceBtn = isActive
+                        ? `<a href="https://t.me/${BOT_USER}?start=replace_${key.id}" target="_blank" class="sub-btn">🔁 ${l === 'ru' ? 'Заменить' : 'Replace'}</a>`
+                        : '';
+
+                    const serverInfo = serverName ? ` • ${serverName}` : '';
+                    const remainingInfo = remaining ? ` (${remaining})` : '';
+
+                    return `
+                    <div class="sub-item">
+                        <div class="sub-info">
+                            <div class="sub-name">${displayName}</div>
+                            <div class="sub-details">${tl.expiry} ${expiryDate}${remainingInfo}${serverInfo} • ${tl.traffic} ${usedHuman}/${limitHuman}</div>
+                            <div class="traffic-bar"><div class="traffic-fill ${trafficClass}" style="width:${trafficPercent}%"></div></div>
+                        </div>
+                        <span class="sub-status ${isActive ? 'active' : 'expired'}">${isActive ? tl.active : tl.expired}</span>
+                        <div class="sub-actions">
+                            ${isActive ? `<button class="sub-btn" style="background:#D9AE6C;color:#1A1305;" onclick="importToHapp('${subUrl.replace(/'/g, "\\'")}')">${tl.importHapp}</button><button class="sub-btn" style="background:#2FD1C4;color:#062824;" onclick="importToIncy('${subUrl.replace(/'/g, "\\'")}')">${tl.importIncy}</button>` : ''}
+                            <button class="sub-btn primary" onclick="copyKey('${subUrl.replace(/'/g, "\\'")}')">${tl.copyBtn}</button>
+                            ${renewBtn}
+                            ${replaceBtn}
+                        </div>
+                    </div>`;
+                }).join('');
+
+            } catch(e) {
+                console.error('Load subscriptions error:', e);
+                listEl.innerHTML = `
+                    <div class="empty-state">
+                        <p>❌ ${l === 'ru' ? 'Ошибка загрузки подписок' : 'Error loading subscriptions'}</p>
+                        <a href="https://t.me/${BOT_USER}" target="_blank" class="sub-btn primary" style="margin-top:12px;display:inline-block;">${l === 'ru' ? 'Написать в поддержку' : 'Contact support'}</a>
+                    </div>`;
+            }
+        }
+
+        window.importToHapp = function(key) {
+            const safeKey = key || '';
+            if (!safeKey) return;
+            copyKey(safeKey);
+            const redirectUrl = 'https://eclipse.unlimited.bot.nu/import?scheme=happ&url=' + encodeURIComponent(safeKey);
+            if (tg && tg.openLink) {
+                try { tg.openLink(redirectUrl); } catch(e) { window.open(redirectUrl, '_blank'); }
+            } else {
+                window.open(redirectUrl, '_blank');
+            }
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+        };
+
+        window.importToIncy = function(key) {
+            const safeKey = key || '';
+            if (!safeKey) return;
+            copyKey(safeKey);
+            const redirectUrl = 'https://eclipse.unlimited.bot.nu/import?scheme=incy&url=' + encodeURIComponent(safeKey);
+            if (tg && tg.openLink) {
+                try { tg.openLink(redirectUrl); } catch(e) { window.open(redirectUrl, '_blank'); }
+            } else {
+                window.open(redirectUrl, '_blank');
+            }
+            if (tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+        };
+
+        window.copyKey = function(key) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(key).then(() => {
+                    showToast(t[l].toastCopied);
+                }).catch(() => {
+                    fallbackCopy(key);
+                });
+            } else {
+                fallbackCopy(key);
+            }
+        };
+
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none;';
+            document.body.appendChild(ta);
+            ta.select();
+            try {
+                document.execCommand('copy');
+                showToast(t[l].toastCopied);
+            } catch(e) {
+                showToast(t[l].toastError);
+            }
+            document.body.removeChild(ta);
+        }
+
+        // ============ INIT ============
+        loadSubscriptions();
+        setTimeout(() => {
+            const c = document.getElementById('stepsCard');
+            if (c) c.classList.add('visible');
+        }, 80);
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+aiogram>=3.29.1,<4
+aiohttp
+qrcode
+pillow

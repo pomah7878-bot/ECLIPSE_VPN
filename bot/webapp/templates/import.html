@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Импорт подписки</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       background: #0f172a; color: #e2e8f0;
+       display: flex; align-items: center; justify-content: center;
+       min-height: 100vh; margin: 0; padding: 20px; }
+.card { background: #1e293b; border-radius: 16px; padding: 32px 24px;
+        max-width: 380px; width: 100%; text-align: center;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+.icon { font-size: 48px; margin-bottom: 12px; }
+h1 { font-size: 20px; margin: 0 0 12px; font-weight: 700; }
+p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }
+.status { color: #22c55e; font-weight: 600; font-size: 14px; margin: 10px 0; }
+.sub-box { background: #334155; padding: 10px 12px; border-radius: 8px;
+           font-size: 11px; word-break: break-all; margin: 16px 0;
+           color: #64748b; font-family: monospace; }
+.btn { display: block; width: 100%; padding: 14px; border: none;
+       border-radius: 12px; font-size: 15px; font-weight: 600;
+       margin: 8px 0; cursor: pointer; transition: opacity 0.15s;
+       text-decoration: none; }
+.btn:active { opacity: 0.8; }
+.btn-primary { background: #3b82f6; color: white; }
+.btn-emerald { background: #10b981; color: white; }
+.btn-violet { background: #8b5cf6; color: white; }
+.btn-secondary { background: #334155; color: #e2e8f0; }
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="icon" id="app-icon">🔗</div>
+    <h1 id="title">Импорт подписки</h1>
+    <p id="message">Перенаправление...</p>
+    <div id="status-msg"></div>
+    <div class="sub-box" id="sub-display" style="display:none;"></div>
+    <button class="btn btn-primary" id="open-btn" style="display:none;">📂 Открыть приложение</button>
+    <button class="btn btn-secondary" id="copy-btn" style="display:none;">📋 Копировать ссылку</button>
+    <button class="btn btn-secondary" id="store-btn" style="display:none;">📲 Скачать приложение</button>
+</div>
+<script>
+(function () {
+    var params = new URLSearchParams(window.location.search);
+    var scheme = params.get('scheme') || '';
+    var subUrl = params.get('url') || '';
+    var appName = scheme === 'happ' ? 'Happ' : (scheme === 'incy' ? 'INCY' : (scheme === 'karing' ? 'Karing' : 'VPN-приложение'));
+    var icon = scheme === 'happ' ? '🚀' : (scheme === 'incy' ? '⚡️' : (scheme === 'karing' ? '🎯' : '🔗'));
+
+    var titleEl = document.getElementById('title');
+    var msgEl = document.getElementById('message');
+    var statusEl = document.getElementById('status-msg');
+    var subEl = document.getElementById('sub-display');
+    var copyBtn = document.getElementById('copy-btn');
+    var openBtn = document.getElementById('open-btn');
+    var storeBtn = document.getElementById('store-btn');
+    var iconEl = document.getElementById('app-icon');
+
+    iconEl.textContent = icon;
+    titleEl.textContent = 'Импорт в ' + appName;
+
+    if (!subUrl) {
+        titleEl.textContent = 'Ошибка';
+        msgEl.textContent = 'Ссылка подписки не передана. Вернитесь назад и попробуйте снова.';
+        return;
+    }
+
+    // Show the sub URL
+    subEl.textContent = subUrl;
+    subEl.style.display = 'block';
+
+    // --- Clipboard: copy ONLY sub_url, NEVER overwrite with anything else ---
+    function copyNow() {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(subUrl).then(function () {
+                    statusEl.innerHTML = '<div class="status">✓ Ссылка скопирована в буфер обмена</div>';
+                }).catch(function () { fallbackCopy(); });
+            } else {
+                fallbackCopy();
+            }
+        } catch (e) { fallbackCopy(); }
+    }
+    function fallbackCopy() {
+        var ta = document.createElement('textarea');
+        ta.value = subUrl;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        statusEl.innerHTML = '<div class="status">✓ Ссылка скопирована в буфер обмена</div>';
+    }
+
+    // Copy immediately
+    copyNow();
+
+    // Manual copy button
+    copyBtn.style.display = 'block';
+    copyBtn.onclick = function () { copyNow(); };
+
+    // --- Happ: happ://add/<sub_url> — simple, no encryption, no base64 mangling ---
+    if (scheme === 'happ') {
+        msgEl.innerHTML = 'Ссылка подписки скопирована в буфер.<br>' +
+            'Сейчас откроется <b>Happ</b> с импортом подписки.';
+        var happLink = 'happ://add/' + subUrl;
+
+        // Auto-launch Happ with subscription
+        setTimeout(function () {
+            window.location.href = happLink;
+        }, 1000);
+
+        openBtn.className = 'btn btn-emerald';
+        openBtn.textContent = '🚀 Открыть Happ';
+        openBtn.style.display = 'block';
+        openBtn.onclick = function () {
+            window.location.href = happLink;
+        };
+
+        storeBtn.textContent = '📲 Скачать Happ';
+        storeBtn.style.display = 'block';
+        storeBtn.onclick = function () {
+            window.location.href = 'https://happ.su';
+        };
+
+    // --- INCY: incy://add/<sub_url> — mirrors Happ, passes subscription URL to app ---
+    } else if (scheme === 'incy') {
+        var incyLink = 'incy://add/' + subUrl;
+
+        msgEl.innerHTML = 'Ссылка подписки скопирована в буфер.<br>' +
+            'Сейчас откроется <b>INCY</b> с импортом подписки.';
+
+        // Auto-launch INCY with subscription
+        setTimeout(function () {
+            window.location.href = incyLink;
+        }, 1000);
+
+        openBtn.className = 'btn btn-violet';
+        openBtn.textContent = '⚡️ Открыть INCY';
+        openBtn.style.display = 'block';
+        openBtn.onclick = function () {
+            window.location.href = incyLink;
+        };
+
+        storeBtn.textContent = '📲 Скачать INCY';
+        storeBtn.style.display = 'block';
+        storeBtn.onclick = function () {
+            window.location.href = 'https://incy-app.com';
+        };
+
+    // --- Karing: karing://install-config?url=<sub_url>&name=<name> — url ДОЛЖЕН быть urlencoded ---
+    } else if (scheme === 'karing') {
+        var karingLink = 'karing://install-config?url=' + encodeURIComponent(subUrl) + '&name=ECLIPSE';
+
+        msgEl.innerHTML = 'Ссылка подписки скопирована в буфер.<br>' +
+            'Сейчас откроется <b>Karing</b> с импортом подписки.';
+
+        setTimeout(function () {
+            window.location.href = karingLink;
+        }, 1000);
+
+        openBtn.className = 'btn btn-primary';
+        openBtn.textContent = '🎯 Открыть Karing';
+        openBtn.style.display = 'block';
+        openBtn.onclick = function () {
+            window.location.href = karingLink;
+        };
+
+        storeBtn.textContent = '📲 Скачать Karing';
+        storeBtn.style.display = 'block';
+        storeBtn.onclick = function () {
+            window.location.href = 'https://karing.app/en/download';
+        };
+
+    } else {
+        msgEl.textContent = 'Ссылка подписки скопирована в буфер обмена.';
+    }
+})();
+</script>
+</body>
+</html>

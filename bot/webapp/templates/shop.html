@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💎 ECLIPSE Unlimited — премиальный VPN</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --void: #0A0A10;
+            --panel: #14151D;
+            --panel-2: #1B1C27;
+            --hairline: rgba(255,255,255,0.07);
+            --gold: #D9AE6C;
+            --gold-bright: #F2C879;
+            --teal: #2FD1C4;
+            --alert: #F2685C;
+            --amber: #F0A345;
+            --ink: #F4F1E9;
+            --mist: #8B90A0;
+            --mist-dim: #565A68;
+        }
+        * { box-sizing: border-box; }
+        body {
+            background-color: var(--void);
+            color: var(--ink);
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+        }
+        .font-display { font-family: 'Space Grotesk', sans-serif; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .bg-panel { background: var(--panel); }
+        .bg-panel-2 { background: var(--panel-2); }
+        .card { background: var(--panel); border: 1px solid var(--hairline); }
+        .text-ink { color: var(--ink); }
+        .text-mist { color: var(--mist); }
+        .text-mist-dim { color: var(--mist-dim); }
+        .text-gold { color: var(--gold); }
+        .text-teal { color: var(--teal); }
+        .text-alert { color: var(--alert); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+            color: #1A1305;
+            box-shadow: 0 6px 20px -6px rgba(217,174,108,0.45);
+            cursor: pointer;
+            transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+        }
+        .btn-primary:hover { filter: brightness(1.08); box-shadow: 0 8px 24px -6px rgba(217,174,108,0.6); }
+        .btn-primary:active { transform: scale(0.98); }
+        .btn-secondary {
+            background: var(--panel-2); color: var(--ink); border: 1px solid var(--hairline);
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+        }
+        .btn-secondary:hover { background: #23242F; border-color: rgba(217,174,108,0.35); }
+        .btn-secondary:active { transform: scale(0.97); background: #23242F; }
+        .btn-tg {
+            background: #2AABEE; color: #fff;
+            cursor: pointer;
+            transition: filter 0.15s ease, transform 0.1s ease;
+        }
+        .btn-tg:hover { filter: brightness(1.1); }
+        .btn-tg:active { transform: scale(0.98); }
+        a, button, [onclick] { cursor: pointer; }
+        .sub-url-box {
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .sub-url-box:hover { border-color: rgba(217,174,108,0.4); background: #20212C; }
+        .tariff-card { cursor: pointer; transition: border-color 0.15s ease, transform 0.1s ease; }
+        .tariff-card:hover { border-color: rgba(217,174,108,0.4); transform: translateY(-1px); }
+        .tariff-card:active { transform: scale(0.98); }
+        .tab-btn { transition: all 0.2s; }
+        .tab-btn.active { background: var(--panel-2); color: var(--gold); }
+        .tab-btn:not(.active) { color: var(--mist); }
+        .spinner {
+            width: 28px; height: 28px; border-radius: 50%;
+            border: 3px solid var(--hairline); border-top-color: var(--gold);
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75); z-index: 100;
+            justify-content: center; align-items: center; padding: 16px;
+        }
+        .overlay.active { display: flex; }
+        .modal-box { max-width: 380px; width: 100%; }
+        .traffic-bar-bg { height: 6px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+        .traffic-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; background: linear-gradient(90deg, #1F9E93, var(--teal)); }
+        .traffic-fill.warn { background: linear-gradient(90deg, #C97D1E, var(--amber)); }
+        .traffic-fill.danger { background: linear-gradient(90deg, #C23B31, var(--alert)); }
+        .corona-glow {
+            position: absolute; top: -60px; left: 50%; width: 260px; height: 260px;
+            transform: translateX(-50%);
+            background: radial-gradient(circle, rgba(217,174,108,0.14) 0%, rgba(217,174,108,0) 70%);
+            pointer-events: none;
+        }
+        .feature-chip { background: var(--panel-2); border: 1px solid var(--hairline); }
+        #toast {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+            background: rgba(20,21,29,0.97); color: var(--ink); padding: 12px 22px;
+            border-radius: 14px; border: 1px solid var(--hairline);
+            font-size: 13px; z-index: 300; opacity: 0; transition: all 0.25s;
+            pointer-events: none;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    </style>
+</head>
+<body>
+    <div class="relative overflow-hidden">
+        <div class="corona-glow"></div>
+
+        <div class="max-w-md mx-auto px-4 pt-8 pb-4 relative">
+            <div class="flex flex-col items-center text-center">
+                <svg width="52" height="52" viewBox="0 0 38 38" class="mb-3">
+                    <defs>
+                        <linearGradient id="logoCorona" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#F2C879"/>
+                            <stop offset="100%" stop-color="#D9AE6C"/>
+                        </linearGradient>
+                    </defs>
+                    <circle cx="19" cy="19" r="16.5" fill="none" stroke="url(#logoCorona)" stroke-width="2"/>
+                    <circle cx="21.5" cy="17.5" r="14" fill="#0A0A10"/>
+                </svg>
+                <h1 class="font-display text-2xl font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
+                <p class="text-sm text-mist mt-2 max-w-xs">Быстрый, надёжный VPN без ограничений. Оплатите прямо здесь — ключ будет готов мгновенно, Telegram не нужен.</p>
+            </div>
+
+            <div class="flex justify-center gap-2 mt-5">
+                <span class="feature-chip rounded-full px-3 py-1.5 text-[11px] text-mist">🔒 Без логов</span>
+                <span class="feature-chip rounded-full px-3 py-1.5 text-[11px] text-mist">⚡ Высокая скорость</span>
+                <span class="feature-chip rounded-full px-3 py-1.5 text-[11px] text-mist">🌍 Global Auto</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-md mx-auto px-4">
+        <div id="authGate" class="card rounded-2xl p-5 mb-6">
+            <div class="text-xs text-mist mb-4 text-center leading-relaxed">
+                ⚠️ Используя VPN-сервис, вы подтверждаете, что действуете самостоятельно и на свой страх и риск, и несёте ответственность за соблюдение законодательства своей страны.
+            </div>
+            <div class="text-sm font-semibold mb-3 text-center">Войдите, чтобы увидеть тарифы</div>
+            <div id="oauthButtons" class="space-y-2 mb-4 hidden">
+                <button onclick="location.href='/auth/google/start'" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2" data-provider="google">
+                    <span>🔵</span> Войти через Google
+                </button>
+                <button onclick="location.href='/auth/yandex/start'" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2" data-provider="yandex">
+                    <span>🟡</span> Войти через Яндекс
+                </button>
+                <button onclick="location.href='/auth/vk/start'" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2" data-provider="vk">
+                    <span>🔷</span> Войти через VK
+                </button>
+                <div class="flex items-center gap-3 my-3">
+                    <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
+                    <span class="text-[11px] text-mist-dim">или по коду</span>
+                    <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
+                </div>
+            </div>
+            <h3 class="font-display text-sm font-bold mb-1">Вход по коду доступа</h3>
+            <p class="text-xs text-mist mb-4">Код был выдан вам сразу после покупки, либо получите его в боте («Мои ключи» → «Управлять на сайте»).</p>
+            <input id="accountCodeInput" type="text" placeholder="XXXX-XXXX" autocomplete="off"
+                class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink font-mono tracking-wider text-center mb-3 uppercase"
+                style="outline:none;" maxlength="9">
+            <button onclick="doAccountLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Войти</button>
+            <div id="accountLoginError" class="text-xs text-alert mt-2 text-center"></div>
+        </div>
+
+        <div id="mainApp" class="hidden">
+        <div class="flex gap-1 bg-panel-2 rounded-2xl p-1 mb-5">
+            <button id="tabBuyBtn" onclick="switchTab('buy')" class="tab-btn active flex-1 py-2.5 rounded-xl text-sm font-semibold">🛒 Купить</button>
+            <button id="tabAccountBtn" onclick="switchTab('account')" class="tab-btn flex-1 py-2.5 rounded-xl text-sm font-semibold">👤 Личный кабинет</button>
+        </div>
+
+        <div id="buyTab">
+            <div id="trialBanner"></div>
+            <div id="tariffList" class="space-y-3 mb-6">
+                <div class="flex justify-center py-10"><div class="spinner"></div></div>
+            </div>
+            <div class="card rounded-2xl p-4 text-xs text-mist text-center mb-6">
+                После оплаты — рабочий ключ сразу на этой странице. Код доступа сохранит его в личном кабинете и позволит забрать в Telegram одним тапом.
+            </div>
+        </div>
+
+        <div id="accountTab" class="hidden">
+            <div id="accountDataBox"></div>
+        </div>
+        </div>
+
+        <div class="text-center text-xs text-mist-dim mt-4 pb-8">
+            Оплата через ЮKassa · Безопасно и быстро
+        </div>
+    </div>
+
+    <div id="payOverlay" class="overlay" onclick="if(event.target===this)closePay()">
+        <div class="modal-box bg-panel border border-[color:var(--hairline)] rounded-3xl p-6 text-center shadow-2xl" id="payContent"></div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        const BOT_USERNAME = 'vless_keysvpn_bot';
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        function showToast(text) {
+            const el = document.getElementById('toast');
+            el.textContent = text;
+            el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 2200);
+        }
+
+        async function postAPI(endpoint, body) {
+            const res = await fetch(`/api/public/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        async function fetchAPI(endpoint) {
+            const res = await fetch(`/api/public/${endpoint}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+        }
+
+        function switchTab(tab) {
+            document.getElementById('tabBuyBtn').classList.toggle('active', tab === 'buy');
+            document.getElementById('tabAccountBtn').classList.toggle('active', tab === 'account');
+            document.getElementById('buyTab').classList.toggle('hidden', tab !== 'buy');
+            document.getElementById('accountTab').classList.toggle('hidden', tab !== 'account');
+        }
+
+        // ==================== ПОКУПКА ====================
+
+        async function loadTariffs() {
+            const box = document.getElementById('tariffList');
+            try {
+                const res = await fetchAPI('tariffs');
+                const tariffs = res.tariffs || [];
+                renderTrialBanner(res.trial_available);
+                if (tariffs.length === 0) {
+                    box.innerHTML = '<p class="text-sm text-mist text-center py-6">Тарифы сейчас недоступны. Загляните позже.</p>';
+                    return;
+                }
+                box.innerHTML = tariffs.map(t => `
+                    <button onclick="selectTariffAndPay(${t.id})" class="tariff-card w-full card rounded-2xl p-4 flex justify-between items-center transition active:scale-[0.98]">
+                        <div class="text-left">
+                            <div class="font-semibold text-sm">${escapeHtml(t.name)}</div>
+                            <div class="text-xs text-mist mt-0.5">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
+                        </div>
+                        <div class="text-gold font-display font-bold text-lg">${t.price_rub.toFixed(0)} ₽</div>
+                    </button>
+                `).join('');
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert text-center py-6">Не удалось загрузить тарифы. Обновите страницу.</p>';
+            }
+        }
+
+        const TURNSTILE_SITE_KEY = '0x4AAAAAAEAojQtsPtxgktYh';
+
+        function renderTrialBanner(trialAvailable) {
+            const box = document.getElementById('trialBanner');
+            if (!trialAvailable) { box.innerHTML = ''; return; }
+            box.innerHTML = `
+                <button onclick="openTrialFlow()" class="w-full card rounded-2xl p-4 mb-3 flex items-center justify-between transition active:scale-[0.98]" style="border-color:var(--gold);">
+                    <div class="text-left">
+                        <div class="font-display font-bold text-sm text-gold">🎁 Пробный период бесплатно</div>
+                        <div class="text-xs text-mist mt-0.5">Попробуйте сервис перед покупкой — без оплаты</div>
+                    </div>
+                    <div class="text-gold text-xl">→</div>
+                </button>
+            `;
+        }
+
+        function openTrialFlow() {
+            document.getElementById('payOverlay').classList.add('active');
+            const box = document.getElementById('payContent');
+            box.innerHTML = `
+                <h3 class="font-display text-base font-bold mb-2">🎁 Пробный период</h3>
+                <p class="text-xs text-mist mb-4">Подтвердите, что вы не робот, и получите бесплатный доступ</p>
+                <div id="turnstileWidget" class="flex justify-center mb-4"></div>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Отмена</button>
+            `;
+            if (window.turnstile) {
+                window.turnstile.render('#turnstileWidget', {
+                    sitekey: TURNSTILE_SITE_KEY,
+                    callback: onTurnstileSuccess,
+                    'error-callback': () => showToast('Не удалось загрузить проверку. Обновите страницу.'),
+                });
+            } else {
+                box.innerHTML = '<p class="text-sm text-alert py-4 text-center">Проверка недоступна. Обновите страницу и попробуйте снова.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        async function onTurnstileSuccess(token) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center">Активируем пробный период…</p>';
+            try {
+                const res = await postAPI('trial/create', { turnstile_token: token });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось активировать пробный период.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
+                    return;
+                }
+                showPaySuccess(res);
+                refreshAccountDashboard();
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-4">Не удалось активировать пробный период. Попробуйте позже.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        let _payPollTimer = null;
+        let _payMode = 'buy'; // 'buy' | 'renew'
+        let _renewCode = null;
+
+        function closePay() {
+            document.getElementById('payOverlay').classList.remove('active');
+            if (_payPollTimer) { clearInterval(_payPollTimer); _payPollTimer = null; }
+        }
+
+        async function selectTariffAndPay(tariffId) {
+            _payMode = 'buy';
+            document.getElementById('payOverlay').classList.add('active');
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Создаём платёж…</p>';
+            try {
+                const res = await postAPI('pay/create', { tariff_id: tariffId });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось создать платёж.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
+                    return;
+                }
+                renderPayQR(res);
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        async function selectTariffAndRenew(tariffId) {
+            _payMode = 'renew';
+            document.getElementById('payOverlay').classList.add('active');
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Создаём платёж на продление…</p>';
+            try {
+                const res = await postAPI('account/renew/create', { code: _renewCode, tariff_id: tariffId });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось создать платёж.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
+                    return;
+                }
+                renderPayQR(res);
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        function renderPayQR(pay) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = `
+                <h3 class="font-display text-base font-bold mb-1">Оплата ${pay.amount_rub.toFixed(0)} ₽</h3>
+                <p class="text-xs text-mist mb-4">Отсканируйте QR или откройте ссылку</p>
+                <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[244px] h-[244px] flex items-center justify-center">
+                    <img src="${pay.qr_image_url}" alt="QR" class="w-[218px] h-[218px] rounded-lg">
+                </div>
+                <a href="${pay.qr_url}" target="_blank" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-2">Открыть страницу оплаты</a>
+                <div id="payStatusNote" class="text-xs text-mist mb-2">Ожидаем оплату…</div>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
+            `;
+            startPayPolling(pay.order_id);
+        }
+
+        function startPayPolling(orderId) {
+            let attempts = 0;
+            const maxAttempts = 90;
+            _payPollTimer = setInterval(async () => {
+                attempts++;
+                if (attempts > maxAttempts) {
+                    clearInterval(_payPollTimer);
+                    _payPollTimer = null;
+                    const note = document.getElementById('payStatusNote');
+                    if (note) note.textContent = 'Не дождались оплаты. Если уже оплатили — напишите в поддержку, Order ID: ' + orderId;
+                    return;
+                }
+                try {
+                    const endpoint = _payMode === 'renew' ? 'account/key/renew/check' : 'pay/check';
+                    const res = await postAPI(endpoint, { order_id: orderId });
+                    if (res.status === 'paid') {
+                        clearInterval(_payPollTimer);
+                        _payPollTimer = null;
+                        if (_payMode === 'renew') {
+                            showRenewSuccess(res.message);
+                        } else {
+                            showPaySuccess(res);
+                        }
+                    } else if (res.status === 'failed') {
+                        clearInterval(_payPollTimer);
+                        _payPollTimer = null;
+                        const note = document.getElementById('payStatusNote');
+                        if (note) note.textContent = 'Платёж не прошёл. Попробуйте ещё раз.';
+                    }
+                } catch(e) { /* тихо игнорируем единичный сбой опроса */ }
+            }, 5000);
+        }
+
+        function showPaySuccess(pay) {
+            const box = document.getElementById('payContent');
+            const claimLink = `https://t.me/${BOT_USERNAME}?start=claim_${encodeURIComponent(pay.claim_code)}`;
+            let subBlock = '';
+            if (pay.sub_url) {
+                subBlock = `
+                    <div class="text-xs text-mist mb-1 text-left">Ссылка для подключения (вставьте в Happ / INCY / v2rayN):</div>
+                    <div class="bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 mb-4 text-left">
+                        <code class="text-[11px] break-all font-mono">${escapeHtml(pay.sub_url)}</code>
+                    </div>
+                `;
+            } else {
+                subBlock = `<div class="text-xs bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 mb-4 text-left">⚠️ Оплата прошла, но при выдаче ключа возникла заминка — используйте код ниже или напишите в поддержку.</div>`;
+            }
+            box.innerHTML = `
+                <div class="text-4xl mb-3">✅</div>
+                <h3 class="font-display text-base font-bold mb-3">Готово! VPN уже работает</h3>
+                ${subBlock}
+                <div class="text-xs text-mist mb-1 text-left">Код доступа (сохраните — вход в личный кабинет и привязка к Telegram):</div>
+                <div class="bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 mb-4">
+                    <span class="font-mono text-lg font-bold text-gold tracking-wider">${escapeHtml(pay.claim_code)}</span>
+                </div>
+                <a href="${claimLink}" class="block w-full py-3 btn-tg rounded-xl font-bold text-sm transition mb-2">📲 Открыть в Telegram (привязать)</a>
+                <button onclick="closePay();prefillAccountCode('${pay.claim_code}')" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Перейти в личный кабинет</button>
+            `;
+        }
+
+        function showRenewSuccess(message) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = `
+                <div class="text-4xl mb-3">✅</div>
+                <h3 class="font-display text-base font-bold mb-3">Продлено!</h3>
+                <p class="text-sm text-mist mb-4">${escapeHtml(message || 'Ключ успешно продлён.')}</p>
+                <button onclick="closePay();refreshAccountDashboard()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Обновить личный кабинет</button>
+            `;
+        }
+
+        async function refreshAccountDashboard() {
+            try {
+                const res = await fetchAPI('account/session');
+                if (res.logged_in) renderAccountData(res);
+            } catch(e) {}
+        }
+
+        function prefillAccountCode(code) {
+            switchTab('account');
+            document.getElementById('accountCodeInput').value = code;
+            doAccountLogin();
+        }
+
+        // ==================== ЛИЧНЫЙ КАБИНЕТ ====================
+
+        let _sessionKeys = []; // ключи текущей сессии (может быть несколько)
+
+        async function initOAuthButtons() {
+            try {
+                const res = await fetchAPI('oauth/providers');
+                const configured = res.providers || [];
+                if (configured.length === 0) return;
+                document.querySelectorAll('#oauthButtons [data-provider]').forEach(btn => {
+                    if (!configured.includes(btn.dataset.provider)) btn.remove();
+                });
+                document.getElementById('oauthButtons').classList.remove('hidden');
+            } catch(e) { /* тихо — просто не показываем OAuth-кнопки */ }
+        }
+
+        function revealApp(session) {
+            document.getElementById('authGate').classList.add('hidden');
+            document.getElementById('mainApp').classList.remove('hidden');
+            loadTariffs();
+            renderAccountData(session);
+            if (window.location.hash === '#account') {
+                switchTab('account');
+            }
+        }
+
+        async function checkExistingSession() {
+            try {
+                const res = await fetchAPI('account/session');
+                if (res.logged_in) {
+                    revealApp(res);
+                }
+            } catch(e) { /* не залогинены — ничего страшного, покажем форму входа */ }
+        }
+
+        async function doAccountLogin() {
+            const input = document.getElementById('accountCodeInput');
+            const code = input.value.trim().toUpperCase();
+            const errBox = document.getElementById('accountLoginError');
+            errBox.textContent = '';
+            if (!code) { errBox.textContent = 'Введите код.'; return; }
+
+            try {
+                const res = await postAPI('account/session-login', { code });
+                if (!res.ok) {
+                    errBox.textContent = res.message || 'Код не найден.';
+                    return;
+                }
+                const sessionRes = await fetchAPI('account/session');
+                revealApp(sessionRes);
+            } catch(e) {
+                errBox.textContent = 'Ошибка соединения. Попробуйте ещё раз.';
+            }
+        }
+
+        async function doLinkExistingCode() {
+            const input = document.getElementById('linkCodeInput');
+            const code = input.value.trim().toUpperCase();
+            const errBox = document.getElementById('linkCodeError');
+            errBox.textContent = '';
+            if (!code) { errBox.textContent = 'Введите код.'; return; }
+
+            try {
+                const res = await postAPI('account/link-code', { code });
+                if (!res.ok) {
+                    errBox.textContent = res.message || 'Не удалось привязать.';
+                    return;
+                }
+                showToast('Аккаунт привязан!');
+                const sessionRes = await fetchAPI('account/session');
+                renderAccountData(sessionRes);
+            } catch(e) {
+                errBox.textContent = 'Ошибка соединения. Попробуйте ещё раз.';
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes || bytes <= 0) return '0 ГБ';
+            const gb = bytes / (1024 ** 3);
+            return gb >= 10 ? gb.toFixed(0) + ' ГБ' : gb.toFixed(1) + ' ГБ';
+        }
+
+        function daysLeft(expiresAt) {
+            if (!expiresAt) return null;
+            const diff = new Date(expiresAt.replace(' ', 'T') + 'Z') - new Date();
+            return Math.ceil(diff / (1000 * 60 * 60 * 24));
+        }
+
+        function renderKeyCard(key) {
+            const days = daysLeft(key.expires_at);
+            const daysText = days === null ? '—' : (days > 0 ? `${days} дн.` : 'истекла');
+            const daysClass = days !== null && days <= 3 ? 'text-alert' : 'text-ink';
+
+            let trafficBlock = '';
+            if (key.traffic_limit && key.traffic_limit > 0) {
+                const pct = Math.min(100, Math.round((key.traffic_used / key.traffic_limit) * 100));
+                const fillClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
+                trafficBlock = `
+                    <div class="mt-4">
+                        <div class="flex justify-between text-xs text-mist mb-1.5">
+                            <span>Трафик</span>
+                            <span>${formatBytes(key.traffic_used)} / ${formatBytes(key.traffic_limit)}</span>
+                        </div>
+                        <div class="traffic-bar-bg"><div class="traffic-fill ${fillClass}" style="width:${pct}%"></div></div>
+                    </div>
+                `;
+            } else {
+                trafficBlock = `<div class="mt-4 text-xs text-mist">Трафик: <span class="text-ink font-semibold">безлимит</span> (использовано ${formatBytes(key.traffic_used)})</div>`;
+            }
+
+            let subBlock = '';
+            if (key.sub_url) {
+                const subUrlId = `sub-url-${key.key_id}`;
+                subBlock = `
+                    <div class="mt-4">
+                        <div class="text-xs text-mist mb-1.5">Ссылка для подключения (нажмите, чтобы выделить и скопировать)</div>
+                        <div class="sub-url-box bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 flex items-center gap-2 mb-2" onclick="copySubUrl(this, '${subUrlId}')" data-url="${escapeHtml(key.sub_url)}">
+                            <code id="${subUrlId}" class="text-[11px] break-all font-mono flex-1">${escapeHtml(key.sub_url)}</code>
+                            <span class="flex-shrink-0 text-mist text-sm">📋</span>
+                        </div>
+                        <div class="flex gap-2 mb-2">
+                            <button onclick="copySubUrl(this, '${subUrlId}')" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">📋 Копировать</button>
+                            <button onclick="showKeyQR(this)" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">▦ Показать QR</button>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="location.href='/import?scheme=happ&url='+encodeURIComponent('${escapeHtml(key.sub_url)}')" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>
+                            <button onclick="location.href='/import?scheme=incy&url='+encodeURIComponent('${escapeHtml(key.sub_url)}')" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>
+                            <button onclick="location.href='/import?scheme=karing&url='+encodeURIComponent('${escapeHtml(key.sub_url)}')" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="card rounded-2xl p-5 mb-4">
+                    <div class="flex justify-between items-start mb-1">
+                        <div>
+                            <div class="text-xs text-mist">${key.server_name ? escapeHtml(key.server_name) : 'Ключ'}</div>
+                            <div class="font-display font-bold text-sm mt-0.5">${escapeHtml(key.display_name || ('Ключ #' + key.key_id))}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs text-mist">Осталось</div>
+                            <div class="font-display font-bold text-sm mt-0.5 ${daysClass}">${daysText}</div>
+                        </div>
+                    </div>
+                    ${trafficBlock}
+                    ${subBlock}
+                    <button onclick="toggleInbounds(${key.key_id})" class="w-full py-2 mt-2 text-xs text-mist-dim hover:text-ink transition text-center">🔌 Все подключения</button>
+                    <div id="inbounds-${key.key_id}" style="display:none;"></div>
+                    <button onclick="openRenewForKey(${key.key_id})" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mt-4">Продлить</button>
+                </div>
+            `;
+        }
+
+        let _inboundsCache = {};
+
+        function inboundBadgeClass(kind, value) {
+            const map = {
+                protocol: { 'Vless': 'bg-[color:rgba(59,130,246,0.15)] text-[#60a5fa]', 'Hysteria2': 'bg-[color:rgba(236,72,153,0.15)] text-[#f472b6]' },
+                transport: { 'TCP': 'bg-[color:rgba(45,212,191,0.15)] text-teal', 'XHTTP': 'bg-[color:rgba(251,146,60,0.15)] text-[#fb923c]' },
+                security: { 'REALITY': 'bg-[color:rgba(168,85,247,0.15)] text-[#c084fc]', 'TLS': 'bg-[color:rgba(45,212,191,0.15)] text-teal' },
+            };
+            return (map[kind] && map[kind][value]) || 'bg-panel-2 text-mist';
+        }
+
+        async function toggleInbounds(keyId) {
+            const box = document.getElementById('inbounds-' + keyId);
+            const isHidden = box.style.display === 'none' || !box.style.display;
+            if (!isHidden) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
+            try {
+                const res = await fetchAPI(`key/${keyId}/inbounds`);
+                const groups = res.groups || [];
+                _inboundsCache[keyId] = groups;
+                box.innerHTML = renderInboundGroups(keyId, groups);
+                measureClientPings(keyId, groups);
+            } catch (e) {
+                box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить подключения</p>';
+            }
+        }
+
+        async function clientPing(host, port) {
+            const start = performance.now();
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 4000);
+            try {
+                await fetch(`https://${host}:${port}/`, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+                clearTimeout(timeoutId);
+                return Math.round(performance.now() - start);
+            } catch (e) {
+                clearTimeout(timeoutId);
+                const elapsed = performance.now() - start;
+                if (e.name === 'AbortError' || elapsed > 3900) return null;
+                return Math.round(elapsed);
+            }
+        }
+
+        async function measureClientPings(keyId, groups) {
+            for (let gi = 0; gi < groups.length; gi++) {
+                const group = groups[gi];
+                const tcpPings = [];
+                for (let ii = 0; ii < group.inbounds.length; ii++) {
+                    const ib = group.inbounds[ii];
+                    if (ib.protocol === 'hysteria2') continue;
+                    const ms = await clientPing(group.host, ib.port);
+                    const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
+                    if (el) el.textContent = ms !== null ? ms + 'мс' : '—';
+                    if (ms !== null) tcpPings.push(ms);
+                }
+                if (tcpPings.length) {
+                    const approx = Math.round(tcpPings.reduce((a, b) => a + b, 0) / tcpPings.length);
+                    group.inbounds.forEach((ib, ii) => {
+                        if (ib.protocol === 'hysteria2') {
+                            const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
+                            if (el) el.textContent = '≈' + approx + 'мс';
+                        }
+                    });
+                }
+            }
+        }
+
+        function renderInboundGroups(keyId, groups) {
+            if (!groups.length) return '<p class="text-xs text-mist py-3 text-center">Нет данных о подключениях</p>';
+            return groups.map((g, gi) => `
+                <div class="mb-3">
+                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)}</div>
+                    ${g.inbounds.map((ib, ii) => {
+                        const ping = '…';
+                        return `
+                        <div class="flex items-center gap-1.5 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-2.5 py-2 mb-1.5 text-[11px]">
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${inboundBadgeClass('protocol', ib.protocol_label)}">${ib.protocol_label}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${inboundBadgeClass('transport', ib.transport_label)}">${ib.transport_label}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${inboundBadgeClass('security', ib.security_label)}">${ib.security_label}</span>
+                            <span class="text-mist-dim flex-1"></span>
+                            <span class="text-mist-dim" id="ping-${keyId}-${gi}-${ii}">${ping}</span>
+                            <button onclick="copyInboundLink(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">⧉</button>
+                            <button onclick="showInboundQR(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">▦</button>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `).join('');
+        }
+
+        function copyInboundLink(keyId, gi, ii) {
+            const link = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii]?.link;
+            if (!link) return;
+            navigator.clipboard.writeText(link).catch(() => {});
+        }
+
+        function showInboundQR(keyId, gi, ii) {
+            const link = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii]?.link;
+            if (!link) return;
+            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(link);
+            const win = document.createElement('div');
+            win.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
+            win.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:50;';
+            win.onclick = () => win.remove();
+            win.innerHTML = `<div style="background:white;border-radius:16px;padding:12px;"><img src="${qrUrl}" style="width:240px;height:240px;border-radius:8px;"></div>`;
+            document.body.appendChild(win);
+        }
+
+        async function renderAccountData(session) {
+            const box = document.getElementById('accountDataBox');
+            box.classList.remove('hidden');
+
+            _sessionKeys = session.keys || [];
+
+            if (_sessionKeys.length === 0) {
+                box.innerHTML = `
+                    <div class="card rounded-2xl p-5 mb-4 text-center">
+                        <p class="text-sm text-mist mb-3">Пока нет активных ключей на этом аккаунте.</p>
+                        <button onclick="switchTab('buy')" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Купить ключ</button>
+                    </div>
+                    <div class="card rounded-2xl p-5 mb-6">
+                        <h3 class="font-display text-sm font-bold mb-1 text-center">Уже пользуетесь ботом?</h3>
+                        <p class="text-xs text-mist mb-4 text-center">Введите код из бота («Мои ключи» → «Управлять на сайте»), чтобы увидеть свои реальные ключи здесь.</p>
+                        <input id="linkCodeInput" type="text" placeholder="XXXX-XXXX" autocomplete="off"
+                            class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink font-mono tracking-wider text-center mb-3 uppercase"
+                            style="outline:none;" maxlength="9">
+                        <button onclick="doLinkExistingCode()" class="w-full py-3 btn-secondary rounded-xl font-bold text-sm transition">Привязать</button>
+                        <div id="linkCodeError" class="text-xs text-alert mt-2 text-center"></div>
+                    </div>
+                    <button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>
+                `;
+                return;
+            }
+
+            let linkOAuthBlock = '';
+            if (session.can_link_oauth) {
+                linkOAuthBlock = `
+                    <div class="card rounded-2xl p-4 mb-4 text-center">
+                        <p class="text-xs text-mist mb-3">Привяжите Google/Яндекс/VK — в следующий раз войдёте одним кликом, без кода.</p>
+                        <div class="flex gap-2 justify-center">
+                            <a href="/auth/google/start?link=1" class="btn-secondary rounded-lg px-3 py-2 text-xs">🔵 Google</a>
+                            <a href="/auth/yandex/start?link=1" class="btn-secondary rounded-lg px-3 py-2 text-xs">🟡 Яндекс</a>
+                            <a href="/auth/vk/start?link=1" class="btn-secondary rounded-lg px-3 py-2 text-xs">🔷 VK</a>
+                        </div>
+                    </div>
+                `;
+            }
+
+            let balanceBlock = '';
+            if (session.balance_human) {
+                balanceBlock = `
+                    <div class="card rounded-2xl p-4 mb-4 flex items-center justify-between">
+                        <div>
+                            <div class="text-[10px] text-mist-dim uppercase tracking-wide">Личный баланс</div>
+                            <div class="font-display text-xl font-bold text-teal">${escapeHtml(session.balance_human)}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            box.innerHTML =
+                balanceBlock +
+                _sessionKeys.map(renderKeyCard).join('') +
+                linkOAuthBlock +
+                `<button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>`;
+        }
+
+        let _renewKeyId = null;
+
+        function openRenewForKey(keyId) {
+            _renewKeyId = keyId;
+            _payMode = 'renew';
+            document.getElementById('payOverlay').classList.add('active');
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Загружаем тарифы…</p>';
+            loadRenewTariffsForOverlay();
+        }
+
+        async function loadRenewTariffsForOverlay() {
+            const box = document.getElementById('payContent');
+            try {
+                const res = await fetchAPI(`tariffs?vpn_key_id=${_renewKeyId}`);
+                const tariffs = res.tariffs || [];
+                box.innerHTML = `
+                    <h3 class="font-display text-base font-bold mb-3">Продлить на</h3>
+                    <div class="space-y-2 mb-2">
+                        ${tariffs.map(t => `
+                            <button onclick="selectTariffAndRenewKey(${t.id})" class="w-full bg-panel-2 border ${t.is_current ? 'border-teal ring-2 ring-teal' : 'border-[color:var(--hairline)]'} rounded-xl p-3 flex justify-between items-center transition active:scale-[0.98]">
+                                <span class="text-sm font-semibold">${escapeHtml(t.name)}${t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : ''}</span>
+                                <span class="text-gold font-display font-bold text-sm">${t.price_rub.toFixed(0)} ₽</span>
+                            </button>
+                        `).join('')}
+                    </div>
+                    <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Отмена</button>
+                `;
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Не удалось загрузить тарифы.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        async function selectTariffAndRenewKey(tariffId) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Создаём платёж на продление…</p>';
+            try {
+                const res = await postAPI('account/key/renew/create', { key_id: _renewKeyId, tariff_id: tariffId });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось создать платёж.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
+                    return;
+                }
+                renderPayQR(res);
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        function copySubUrl(btn, textElId) {
+            const url = btn.getAttribute('data-url');
+
+            // Визуально выделяем сам текст ссылки, чтобы было видно, что именно скопировалось
+            if (textElId) {
+                const el = document.getElementById(textElId);
+                if (el && window.getSelection) {
+                    const range = document.createRange();
+                    range.selectNodeContents(el);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                }
+            }
+
+            navigator.clipboard.writeText(url).then(() => {
+                showToast('Ссылка скопирована');
+            }).catch(() => {
+                showToast('Не удалось скопировать');
+            });
+        }
+
+        function showImportGuide(app) {
+            const box = document.getElementById('payContent');
+            const guides = {
+                happ: {
+                    title: 'Добавление в Happ',
+                    steps: [
+                        'Скопируйте ссылку кнопкой «Копировать» выше',
+                        'Откройте приложение Happ',
+                        'Нажмите «+» в правом верхнем углу главного экрана',
+                        'Выберите «Добавить подписку» — приложение само распознает скопированную ссылку из буфера обмена',
+                    ],
+                },
+                incy: {
+                    title: 'Добавление в INCY',
+                    steps: [
+                        'Скопируйте ссылку кнопкой «Копировать» выше',
+                        'Откройте приложение INCY',
+                        'Нажмите «+» на главном экране',
+                        'Выберите «Импорт из буфера обмена» — ссылка подставится автоматически',
+                    ],
+                },
+                karing: {
+                    title: 'Добавление в Karing',
+                    steps: [
+                        'Скопируйте ссылку кнопкой «Копировать» выше',
+                        'Откройте приложение Karing',
+                        'Нажмите «+» на главном экране',
+                        'Выберите «Import Configuration Link» и вставьте ссылку (или просто откройте Karing — он сам подхватит ссылку из буфера обмена)',
+                    ],
+                },
+            };
+            const guide = guides[app];
+            if (!guide) return;
+            box.innerHTML = `
+                <h3 class="font-display text-base font-bold mb-4">${guide.title}</h3>
+                <ol class="text-left text-sm space-y-3 mb-5">
+                    ${guide.steps.map((s, i) => `<li class="flex gap-2.5"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-panel-2 border border-[color:var(--hairline)] flex items-center justify-center text-[11px] text-gold font-bold">${i + 1}</span><span class="text-mist">${s}</span></li>`).join('')}
+                </ol>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Понятно</button>
+            `;
+            document.getElementById('payOverlay').classList.add('active');
+        }
+
+        function showKeyQR(btn) {
+            const url = btn.getAttribute('data-url');
+            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(url);
+            document.getElementById('payContent').innerHTML = `
+                <h3 class="font-display text-base font-bold mb-4">QR-код подключения</h3>
+                <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[264px] h-[264px] flex items-center justify-center">
+                    <img src="${qrUrl}" alt="QR" class="w-[240px] h-[240px] rounded-lg">
+                </div>
+                <p class="text-[11px] text-mist-dim mb-4">Отсканируйте камерой приложения Happ / INCY / v2rayN</p>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
+            `;
+            document.getElementById('payOverlay').classList.add('active');
+        }
+
+        async function logoutAccount() {
+            try { await postAPI('account/logout', {}); } catch(e) {}
+            _sessionKeys = [];
+            document.getElementById('accountDataBox').innerHTML = '';
+            document.getElementById('mainApp').classList.add('hidden');
+            document.getElementById('authGate').classList.remove('hidden');
+            document.getElementById('accountCodeInput').value = '';
+            history.replaceState(null, '', window.location.pathname);
+        }
+
+        initOAuthButtons();
+        checkExistingSession();
+    </script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+import os
+
+# Telegram Bot API Token
+# Получите у @BotFather
+BOT_TOKEN = "ВАШ_ТОКЕН_БОТА"
+
+# Список Telegram ID администраторов бота
+ADMIN_IDS = [
+    12345678,  # Замените на ваш реальный ID
+]
+
+
+
+################# Ниже необязательные настройки ################# 
+
+# Адрес Telegram Bot API
+# Стандартный: https://api.telegram.org
+# Можно указать один кастомный адрес (прокси/зеркало), например: https://my-proxy.example.com
+TELEGRAM_API_URL = "https://api.telegram.org"
+#
+# Если нужно несколько адресов, укажите список. Бот начнет с первого адреса и
+# переключится на следующий только после сетевого сбоя текущего Telegram API:
+# TELEGRAM_API_URL = [
+#     "https://my-proxy-1.example.com",
+#     "https://my-proxy-2.example.com",
+#     "https://api.telegram.org",
+# ]
+
+# Ссылка на GitHub репозиторий для автообновления
+# Формат: https://github.com/username/repo.git или git@github.com:username/repo.git
+GITHUB_REPO_URL = "https://github.com/pomah7878-bot/ECLIPSE_VPN.git"  # Укажите URL вашего репозитория
+
+# Client Configuration Defaults
+DEFAULT_LIMIT_IP = 1  # Ограничение кол-ва одновременных подключений (1 ключ = 1 устройство)
+DEFAULT_TOTAL_GB = 1024 * 1024 * 1024 * 1024  # 1 TB в байтах (лимит трафика на ключ)
+
+# Rate Limiting Configuration
+RATE_LIMITS = {
+    "commands_per_minute": 30,              # Максимум команд для обычных пользователей
+    "critical_operations_per_minute": 5,    # Лимит для критичных операций (платежи, создание ключей)
+}
+
+# Retry Configuration for API calls
+RETRY_CONFIG = {
+    "max_attempts": 3,      # Максимальное количество попыток
+    "delays": [1, 3, 9],    # Задержки между попытками в секундах (экспоненциальная)
+    "timeout_seconds": 15,  # Таймаут одной попытки обращения к VPN-панели
+}
+
+# WebApp Configuration
+# Укажите ваш собственный домен с настроенным SSL (nginx + Let's Encrypt).
+# Подробности разворачивания — в README.MD.
+WEBAPP_URL = "https://ваш-домен.example.com"  # URL WebApp (через nginx + SSL)
+WEBAPP_HOST = "127.0.0.1"  # Хост aiohttp сервера (только localhost, доступ через nginx)
+WEBAPP_PORT = 3000  # Порт aiohttp сервера
+
+# AI Support Integration
+# Токен для внутреннего взаимодействия бота с AI-сервисом (ai_support_main.py).
+# Любая случайная строка — сгенерируйте, например: python3 -c "import secrets; print(secrets.token_hex(32))"
+SUPPORT_API_TOKEN = os.environ.get('SUPPORT_API_TOKEN', '')
+
+# SQLite Configuration
+# Эти параметры нужны владельцу проекта для тонкой настройки БД.
+# В админ-панели они не редактируются.
+SQLITE_JOURNAL_MODE = "WAL"          # WAL повышает устойчивость при одновременном чтении и записи
+SQLITE_SYNCHRONOUS = "NORMAL"        # Оптимальный режим для WAL: быстрее FULL, но без опасного OFF
+SQLITE_BUSY_TIMEOUT_MS = 10000       # Сколько ждать освобождения БД при временной блокировке
+SQLITE_CACHE_SIZE_KB = 32768         # Размер страничного кэша SQLite на подключение, в КБ
+SQLITE_TEMP_STORE = "MEMORY"         # Временные таблицы и сортировки хранить в памяти
+SQLITE_MMAP_SIZE_BYTES = 134217728   # Лимит memory-mapped I/O, 128 МБ

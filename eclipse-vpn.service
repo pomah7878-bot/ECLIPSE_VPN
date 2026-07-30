@@ -1,0 +1,14 @@
+[Unit]
+Description=ECLIPSE Unlimited VPN Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/EclipseVPN
+ExecStart=/root/EclipseVPN/venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

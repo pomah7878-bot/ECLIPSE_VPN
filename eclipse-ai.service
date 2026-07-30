@@ -1,0 +1,15 @@
+[Unit]
+Description=ECLIPSE Unlimited AI Support Service
+After=network.target
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/EclipseVPN
+EnvironmentFile=-/root/EclipseVPN/secrets.env
+Environment=BOT_DB_PATH=database/vpn_bot.db
+ExecStartPre=-/root/EclipseVPN/free_port.sh 8086
+ExecStart=/root/EclipseVPN/venv/bin/uvicorn ai_support_main:app --host 127.0.0.1 --port 8086
+Restart=always
+RestartSec=5
+[Install]
+WantedBy=multi-user.target
