@@ -2915,6 +2915,28 @@ class XUIClient(BaseVPNClient):
         logger.info(f"Продлен ключ клиента {email} на {days} дней. Новый expiry: {new_expiry}")
         return True
 
+    async def get_clients_by_tg_id(self, tg_id: int) -> List[Dict[str, Any]]:
+        """
+        Находит клиентов на этой панели по полю tgId (доступно с 3x-ui v3.6.0).
+        Полезно как диагностический/восстановительный инструмент — например,
+        когда наша БД разошлась с панелью и нужно найти реальные клиенты
+        конкретного пользователя вручную.
+
+        Args:
+            tg_id: Telegram ID пользователя
+
+        Returns:
+            Список клиентов (может быть пустым, если панель старее 3.6.0
+            или ни один клиент не привязан к этому tg_id)
+        """
+        try:
+            result = await self._request("GET", f"/panel/api/clients/get/tgId/{tg_id}")
+            obj = result.get("obj") if isinstance(result, dict) else result
+            return obj if isinstance(obj, list) else []
+        except Exception as e:
+            logger.debug(f"get_clients_by_tg_id: не удалось получить данные (панель < 3.6.0?): {e}")
+            return []
+
     async def get_client_config(self, email: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves the complete client configuration for the connection.
