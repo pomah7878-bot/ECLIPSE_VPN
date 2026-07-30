@@ -912,7 +912,7 @@ SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimit
   кода. Реферальная программа — статус/проценты смотри в профиле клиента,
   не выдумывай. Поддержка (/support) — живой человек. /start — главное
   меню. /id — свой Telegram ID. Публичная страница
-  https://eclipse.unlimited.bot.nu/shop — для тех, кто хочет посмотреть
+  %PUBLIC_SHOP_URL% — для тех, кто хочет посмотреть
   тарифы без Telegram (упоминай только когда уместно). Если не уверен,
   что функция существует — честно скажи и направь в главное меню/поддержку.
 - Если клиент забанен или заблокировал бота — упомяни это только если это
@@ -1359,7 +1359,9 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
 
     profile_block = _format_customer_profile(customer_profile)
     setup_instructions = get_app_setup_instructions()
-    full_system = SYSTEM_PROMPT + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
+    from database.requests import get_effective_webapp_url
+    public_shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
+    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
     if setup_instructions:
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
