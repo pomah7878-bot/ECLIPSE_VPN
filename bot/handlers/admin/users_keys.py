@@ -36,6 +36,49 @@ def generate_unique_email(user: dict) -> str:
     suffix = uuid.uuid4().hex[:5]
     return f'{get_panel_email_prefix(user)}{suffix}'
 
+@router.callback_query(F.data.startswith('admin_find_by_tgid:'))
+async def on_find_clients_by_tgid(callback: CallbackQuery):
+    """Ищет клиентов пользователя на ВСЕХ активных панелях по полю tgId
+    (доступно с 3x-ui v3.6.0) — диагностический инструмент на случай,
+    если наша БД разошлась с реальным состоянием панелей."""
+    from bot.utils.text import safe_edit_or_send
+    from database.requests import get_active_servers
+    from bot.services.vpn_api import get_client_from_server_data
+
+    telegram_id = int(callback.data.split(':')[1])
+    await callback.answer('🔍 Ищу на всех панелях...')
+
+    servers = get_active_servers()
+    lines = [f"🔍 <b>Поиск по Telegram ID {telegram_id}</b>\n"]
+    found_any = False
+
+    for server in servers:
+        try:
+            client = get_client_from_server_data(server)
+            clients = await client.get_clients_by_tg_id(telegram_id)
+        except Exception as e:
+            lines.append(f"⚠️ <b>{server['name']}</b> — ошибка подключения")
+            continue
+        if clients:
+            found_any = True
+            lines.append(f"✅ <b>{server['name']}</b>: найдено {len(clients)}")
+            for c in clients[:5]:
+                email = c.get('email', '—')
+                lines.append(f"   • <code>{email}</code>")
+        else:
+            lines.append(f"— <b>{server['name']}</b>: не найдено")
+
+    if not found_any:
+        lines.append("\n<i>Ничего не найдено ни на одной панели. Либо у клиента нет ключей, либо панели ещё не обновлены до 3x-ui v3.6.0+ (поле tgId недоступно в старых версиях).</i>")
+
+    from bot.keyboards.admin_misc import back_and_home_kb
+    await safe_edit_or_send(
+        callback.message,
+        "\n".join(lines),
+        reply_markup=back_and_home_kb(f'admin_user_view:{telegram_id}'),
+    )
+
+
 @router.callback_query(F.data.startswith('admin_key_view:'))
 async def show_key_view(callback: CallbackQuery, state: FSMContext):
     """Shows the key management screen."""
