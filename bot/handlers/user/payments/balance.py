@@ -742,7 +742,7 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         if save_result is False:
             raise RuntimeError('Не удалось сохранить идентификатор платежа ЮКассы')
         try:
-            schedule_payment_auto_check(order_id, 'yookassa_qr', first_delay_seconds=120)
+            schedule_payment_auto_check(order_id, 'yookassa_qr', first_delay_seconds=20)
         except Exception as queue_error:
             logger.error(
                 'Не удалось поставить доплату в очередь автопроверки order=%s: %s',
