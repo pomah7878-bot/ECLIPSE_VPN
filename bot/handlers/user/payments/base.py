@@ -622,7 +622,7 @@ async def create_qr_payment_flow(
                 f'Не удалось сохранить внешний идентификатор {error_name}'
             )
         try:
-            schedule_payment_auto_check(order_id, payment_type, first_delay_seconds=120)
+            schedule_payment_auto_check(order_id, payment_type, first_delay_seconds=20)
         except Exception as queue_error:
             logger.error(
                 'Не удалось поставить платёж в очередь автопроверки provider=%s order=%s: %s',
