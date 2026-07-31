@@ -1214,7 +1214,7 @@ async def _run_payment_post_actions(
 
 async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> bool:
     """Notifies a user that background polling completed the payment."""
-    from database.requests import get_user_by_id, mark_user_bot_blocked
+    from database.requests import get_user_by_id, mark_user_bot_blocked, get_key_details_for_user
     from bot.keyboards.user import payment_auto_complete_kb
     from bot.utils.delivery import is_bot_blocked_error
 
@@ -1222,16 +1222,44 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
     telegram_id = int((user or {}).get('telegram_id') or 0)
     if not telegram_id:
         return False
+
+    # Если платёж привязан к ключу, у которого ещё не выбран сервер
+    # (черновой ключ / продление ранее не настроенного ключа) — сразу
+    # даём прямую ссылку на карточку этого ключа вместо общего "Мои ключи",
+    # чтобы клиенту не пришлось искать его в списке вручную.
+    text = (
+        '✅ <b>Оплата получена</b>\n\n'
+        'Платёж обработан автоматически. Откройте «Мои ключи», '
+        'чтобы настроить или посмотреть доступ.'
+    )
+    markup = payment_auto_complete_kb()
+    key_id = order.get('vpn_key_id')
+    if key_id:
+        try:
+            key = get_key_details_for_user(int(key_id), telegram_id)
+            if key and not key.get('server_id'):
+                bot_info = await bot.get_me()
+                deep_link = f"https://t.me/{bot_info.username}?start=replace_{key_id}"
+                from aiogram.utils.keyboard import InlineKeyboardBuilder
+                from aiogram.types import InlineKeyboardButton
+                builder = InlineKeyboardBuilder()
+                builder.row(InlineKeyboardButton(text="⚙️ Настроить ключ", url=deep_link))
+                builder.row(InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
+                markup = builder.as_markup()
+                text = (
+                    '✅ <b>Оплата получена</b>\n\n'
+                    'Платёж обработан автоматически. Ключ создан — осталось выбрать '
+                    'сервер (это займёт один шаг).'
+                )
+        except Exception as e:
+            logger.warning(f"Не удалось проверить черновой статус ключа {key_id} для уведомления: {e}")
+
     try:
         await bot.send_message(
             telegram_id,
-            (
-                '✅ <b>Оплата получена</b>\n\n'
-                'Платёж обработан автоматически. Откройте «Мои ключи», '
-                'чтобы настроить или посмотреть доступ.'
-            ),
+            text,
             parse_mode='HTML',
-            reply_markup=payment_auto_complete_kb(),
+            reply_markup=markup,
         )
         return True
     except Exception as error:
