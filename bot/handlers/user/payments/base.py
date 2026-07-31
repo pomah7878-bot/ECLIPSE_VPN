@@ -660,13 +660,12 @@ async def create_qr_payment_flow(
         )
         payment_context.setdefault('bot_username', bot_name)
         payment_context = build_page_flow_context(callback, **payment_context)
-
         # Sending a QR photo
         from aiogram.types import BufferedInputFile
         photo = BufferedInputFile(qr_image_data, filename=qr_filename)
         runtime_markup = qr_payment_kb(order_id, check_prefix, back_callback, qr_url)
         runtime_rows = getattr(runtime_markup, 'inline_keyboard', None)
-        await render_page(
+        sent_message = await render_page(
             callback,
             page_key=QR_PAYMENT_PAGE_KEY,
             context=payment_context,
@@ -677,6 +676,12 @@ async def create_qr_payment_flow(
             runtime_media=photo,
             runtime_media_type='photo',
         )
+        if sent_message is not None:
+            import asyncio
+            asyncio.create_task(_payment_waiting_heartbeat(
+                callback.bot, sent_message.chat.id, sent_message.message_id,
+                sent_message.caption or '', sent_message.reply_markup, order_id,
+            ))
     except Exception as e:
         logger.warning('Не удалось создать платёж %s order=%s: %s', error_name, order_id, e)
         await show_payment_status_message(
@@ -689,6 +694,39 @@ async def create_qr_payment_flow(
             payment_provider_title=error_name,
             reply_markup=home_only_kb()
         )
+async def _payment_waiting_heartbeat(bot, chat_id: int, message_id: int, base_caption: str, reply_markup, order_id: str) -> None:
+    """Периодически обновляет подпись QR-сообщения короткой пометкой,
+    что бот продолжает проверять оплату — чтобы у клиента не создавалось
+    впечатление, что процесс завис. Останавливается сама, если платёж
+    уже подтверждён (запись в payments сменила статус) или сообщение
+    больше недоступно для редактирования."""
+    import asyncio
+    from database.connection import get_db
+
+    dots_frames = ['⏳ Проверяем оплату', '⏳ Проверяем оплату.', '⏳ Проверяем оплату..', '⏳ Проверяем оплату...']
+    for i in range(18):  # ~90 секунд при шаге 5с — покрывает типичное время подтверждения
+        await asyncio.sleep(5)
+        try:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT status FROM payments WHERE order_id = ?", (order_id,)
+                ).fetchone()
+            if not row or row["status"] != "pending":
+                return
+        except Exception:
+            return
+        try:
+            await bot.edit_message_caption(
+                chat_id=chat_id,
+                message_id=message_id,
+                caption=base_caption + "\n\n" + dots_frames[i % len(dots_frames)],
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        except Exception:
+            return
+
+
 async def check_qr_payment_flow(
     message,
     state: FSMContext,
