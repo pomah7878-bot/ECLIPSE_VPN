@@ -12,6 +12,7 @@ class AdminStates(StatesGroup):
     # ========== Main menu ==========
     admin_menu = State()  # Admin main screen
     custom_reset_confirm_phrase = State()  # Hidden customization reset confirmation phrase
+    waiting_for_autodelete_days = State()  # Ввод числа дней для автоудаления истёкших ключей
 
     # ========== Интеграции (домен, AI, OAuth) ==========
     integrations_menu = State()          # Экран статуса интеграций
