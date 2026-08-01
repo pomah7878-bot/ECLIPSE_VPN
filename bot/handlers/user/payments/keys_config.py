@@ -339,32 +339,50 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
         _tariff_data = get_tariff_by_id(order['tariff_id'])
         limit_gb = (_tariff_data.get('traffic_limit_gb', 0) or 0) if _tariff_data else 0
 
+        # Оптимизация: раньше клиент создавался в каждом inbound ПОСЛЕДОВАТЕЛЬНО
+        # (2 HTTP-запроса на inbound), что на 12+ inbound давало 20+ секунд
+        # ожидания сети при каждой новой покупке/пробном периоде. Теперь все
+        # inbound обрабатываются ПАРАЛЛЕЛЬНО с ограничением одновременных
+        # запросов (semaphore), чтобы не перегружать панель.
+        import asyncio
+        _CONCURRENCY_LIMIT = 6
+        _semaphore = asyncio.Semaphore(_CONCURRENCY_LIMIT)
+
+        async def _add_client_to_inbound(inb):
+            async with _semaphore:
+                try:
+                    flow = await client.get_inbound_flow(inb['id'])
+                    res = await client.add_client(
+                        inbound_id=inb['id'],
+                        email=panel_email,
+                        total_gb=limit_gb,
+                        expire_days=days,
+                        limit_ip=_tariff_data.get('max_ips', 1) if _tariff_data else 1,
+                        enable=True,
+                        tg_id=str(telegram_id),
+                        flow=flow,
+                        sub_id=sub_id,
+                    )
+                    return (inb['id'], res['uuid'], None)
+                except Exception as e:
+                    return (inb['id'], None, e)
+
+        results = await asyncio.gather(*[_add_client_to_inbound(inb) for inb in inbounds])
+
         first_uuid = None
         first_inbound_id = None
         ready_count = 0
-        for inb in inbounds:
-            try:
-                flow = await client.get_inbound_flow(inb['id'])
-                res = await client.add_client(
-                    inbound_id=inb['id'],
-                    email=panel_email,
-                    total_gb=limit_gb,
-                    expire_days=days,
-                    limit_ip=_tariff_data.get('max_ips', 1) if _tariff_data else 1,
-                    enable=True,
-                    tg_id=str(telegram_id),
-                    flow=flow,
-                    sub_id=sub_id,
-                )
-                if first_uuid is None or inb['id'] < first_inbound_id:
-                    first_uuid = res['uuid']
-                    first_inbound_id = inb['id']
-                ready_count += 1
-            except Exception as e:
+        for inbound_id, uuid_result, error in results:
+            if error is not None:
                 logger.warning(
-                    f"subscription_final: не удалось создать клиента в inbound {inb['id']} "
-                    f"(key_id={key_id}): {e}. Допустимо — синхронизатор доберёт позже."
+                    f"subscription_final: не удалось создать клиента в inbound {inbound_id} "
+                    f"(key_id={key_id}): {error}. Допустимо — синхронизатор доберёт позже."
                 )
+                continue
+            if first_uuid is None or inbound_id < first_inbound_id:
+                first_uuid = uuid_result
+                first_inbound_id = inbound_id
+            ready_count += 1
 
         if ready_count == 0 or first_uuid is None or first_inbound_id is None:
             raise RuntimeError('Не удалось создать ни одного клиента на сервере')
