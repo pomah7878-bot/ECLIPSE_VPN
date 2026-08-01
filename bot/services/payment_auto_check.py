@@ -338,6 +338,15 @@ async def run_payment_auto_check_scheduler(bot: Any) -> None:
             raise
         except Exception as error:
             logger.error("Ошибка scheduler автопроверки API-платежей: %s", error, exc_info=True)
+        try:
+            from database.db_promotions import expire_stale_promo_reservations
+            expired = expire_stale_promo_reservations(max_age_minutes=60)
+            if expired:
+                logger.info("Снято %s устаревших резервов промокодов (незавершённые оплаты)", expired)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.error("Ошибка очистки устаревших резервов промокодов: %s", error, exc_info=True)
         await asyncio.sleep(60)
 
 
