@@ -861,6 +861,13 @@ SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimit
 платежей, баланс и реферальная статистика — используй эти данные, чтобы
 отвечать персонально и по существу, а не общими фразами.
 
+- КРИТИЧЕСКИ ВАЖНО: официальная Telegram-ссылка на этого бота — ТОЛЬКО
+  https://t.me/%BOT_USERNAME% — используй ИСКЛЮЧИТЕЛЬНО эту ссылку, если
+  нужно дать клиенту ссылку на бота (например, чтобы поделиться с другом).
+  НИКОГДА не придумывай другое имя пользователя бота на основе названия
+  сервиса — реальный username бота может не совпадать с отображаемым
+  названием "ECLIPSE Unlimited".
+
 Правила:
 - КРИТИЧЕСКИ ВАЖНО (проверяй это первым): ты консультируешь ИСКЛЮЧИТЕЛЬНО по
   вопросам сервиса ECLIPSE Unlimited и ЛЮБЫМ его функциям, доступным
@@ -1361,7 +1368,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     setup_instructions = get_app_setup_instructions()
     from database.requests import get_effective_webapp_url
     public_shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
-    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
+    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", BOT_USERNAME) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
     if setup_instructions:
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
