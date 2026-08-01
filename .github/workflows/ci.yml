@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt --break-system-packages || pip install -r requirements.txt
+
+      - name: Syntax check (all .py files)
+        run: |
+          find . -name "*.py" -not -path "./venv/*" -not -path "./.git/*" -print0 \
+            | xargs -0 -n1 python -m py_compile
+
+      - name: Create config.py from template (for import check only)
+        run: cp config.py.example config.py
+
+      - name: Real import check (catches broken imports/exports, like today's bug)
+        env:
+          SUPPORT_API_TOKEN: "dummy_ci_token_for_syntax_check_only"
+          BOT_DB_PATH: "database/vpn_bot.db"
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          # Реальный импорт (не просто разбор синтаксиса!) — именно это поймало бы
+          # сегодняшний баг: ImportError из-за пропущенной записи в __all__.
+          import bot.handlers.admin
+          print('bot.handlers.admin: импорт прошёл успешно, включая всю цепочку роутеров')
+          "
+
+      - name: Check for accidentally committed secrets
+        run: |
+          if find . -name "secrets.env" -not -name "*.example" | grep -q .; then
+            echo "::error::Найден закоммиченный secrets.env — это НЕЛЬЗЯ пушить в репозиторий!"
+            exit 1
+          fi
+          echo "Секретных файлов в репозитории не обнаружено"
