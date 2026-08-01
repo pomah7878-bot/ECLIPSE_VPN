@@ -509,23 +509,36 @@ async def broadcast_preview(callback: CallbackQuery, bot: Bot):
 # FILTERS
 # ============================================================================
 
-@router.callback_query(F.data.startswith("broadcast_filter:"))
-async def broadcast_set_filter(callback: CallbackQuery):
-    """Sets the recipient filter."""
+@router.callback_query(F.data.startswith("broadcast_filter_toggle:"))
+async def broadcast_toggle_filter(callback: CallbackQuery):
+    """Включает/выключает фильтр в комбинации (можно выбрать сразу несколько)."""
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    
+
     filter_key = callback.data.split(":")[1]
-    
+
     if filter_key not in BROADCAST_FILTERS:
         await callback.answer("❌ Неизвестный фильтр", show_alert=True)
         return
-    
-    set_broadcast_filter_with_revision(filter_key)
-    
-    await render_broadcast_menu(callback.message, current_filter=filter_key)
-    await callback.answer(f"Фильтр: {BROADCAST_FILTERS[filter_key]}")
+
+    current_filters = _parse_current_filters()
+
+    if filter_key == 'all':
+        # "Все пользователи" исключает любую комбинацию — сбрасываем остальные
+        new_filters = ['all']
+    else:
+        if filter_key in current_filters:
+            new_filters = [f for f in current_filters if f != filter_key]
+        else:
+            new_filters = [f for f in current_filters if f != 'all'] + [filter_key]
+        if not new_filters:
+            new_filters = ['all']
+
+    set_broadcast_filter_with_revision(','.join(new_filters))
+
+    await render_broadcast_menu(callback.message, current_filters=new_filters)
+    await callback.answer()
 
 
 # ============================================================================
