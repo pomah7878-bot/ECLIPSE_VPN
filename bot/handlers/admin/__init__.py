@@ -14,6 +14,7 @@ from bot.handlers.admin.users_list import router as users_list_router
 from bot.handlers.admin.users_manage import router as users_manage_router
 from bot.handlers.admin.users_keys import router as users_keys_router
 from bot.handlers.admin.users_keys_deleted import router as users_keys_deleted_router
+from bot.handlers.admin.expired_key_autodelete_admin import router as expired_key_autodelete_router
 from bot.handlers.admin.system import router as system_router
 from bot.handlers.admin.trial import router as trial_router
 from bot.handlers.admin.referral import router as referral_router
@@ -38,6 +39,7 @@ admin_router.include_router(users_manage_router)
 admin_router.include_router(support_router)
 admin_router.include_router(users_keys_router)
 admin_router.include_router(users_keys_deleted_router)
+admin_router.include_router(expired_key_autodelete_router)
 admin_router.include_router(system_router)
 admin_router.include_router(trial_router)
 admin_router.include_router(referral_router)
