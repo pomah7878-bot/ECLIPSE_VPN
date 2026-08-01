@@ -579,6 +579,31 @@ def reserve_promo_for_order(
         return {"ok": True, "reason": None, "promo": dict(promo_row)}
 
 
+def expire_stale_promo_reservations(max_age_minutes: int = 60) -> int:
+    """
+    Снимает резерв ('reserved' -> 'canceled') с промокодов у заказов,
+    которые были начаты, но платёж так и не завершился (клиент закрыл
+    приложение, оплата не прошла и т.п.) — иначе такая запись НАВСЕГДА
+    занимает место в лимите использования промокода/купона, блокируя
+    клиенту любые следующие попытки оплаты с этим же кодом без единой
+    ошибки в логах.
+
+    Returns:
+        Количество снятых резервов
+    """
+    with get_db() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE promo_redemptions
+            SET status = 'canceled'
+            WHERE status = 'reserved'
+              AND created_at < datetime('now', ? || ' minutes')
+            """,
+            (f"-{max_age_minutes}",),
+        )
+        return cursor.rowcount
+
+
 def cancel_promo_reservation_for_order(order_id: str) -> bool:
     with get_db() as conn:
         cursor = conn.execute(
