@@ -288,17 +288,38 @@ def pull_updates() -> Tuple[bool, str]:
     if blocked_message:
         return False, blocked_message
 
+    # Если есть незакоммиченные локальные изменения (например, черновая работа
+    # из другой сессии) — безопасно откладываем их в stash перед pull и
+    # возвращаем обратно после. Раньше это просто блокировало обновление
+    # с ошибкой, что делало кнопку неиспользуемой при наличии черновиков.
     success, status = run_git_command(['status', '--porcelain'])
-    if success and status.strip():
-        return False, "❌ Есть локальные изменения. Сделайте commit или stash перед обновлением."
-    
+    has_local_changes = bool(success and status.strip())
+
+    if has_local_changes:
+        stash_success, stash_output = run_git_command(
+            ['stash', 'push', '-u', '-m', 'auto-stash before bot self-update'],
+            timeout=30,
+        )
+        if not stash_success:
+            return False, f"❌ Не удалось сохранить локальные изменения перед обновлением:\n{stash_output}"
+
     success, output = run_git_command(['pull', 'origin'], timeout=120)
-    
+
     if not success:
+        if has_local_changes:
+            run_git_command(['stash', 'pop'], timeout=30)
         if 'conflict' in output.lower():
             return False, "❌ Конфликт слияния. Требуется ручное разрешение."
         return False, f"❌ Ошибка обновления:\n{output}"
-    
+
+    if has_local_changes:
+        pop_success, pop_output = run_git_command(['stash', 'pop'], timeout=30)
+        if not pop_success:
+            return False, (
+                "⚠️ Обновление прошло, но не удалось вернуть отложенные локальные "
+                f"изменения (конфликт при stash pop). Разрешите вручную на сервере:\n{pop_output}"
+            )
+
     commit_info = get_last_commit_info('HEAD')
     return True, f"✅ Обновление успешно!\n\n🔹 Последний коммит:\n<pre>{escape_html(commit_info)}</pre>"
 
