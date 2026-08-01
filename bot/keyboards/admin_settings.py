@@ -104,6 +104,22 @@ def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None) -> InlineK
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 
+def expired_key_autodelete_settings_kb(enabled: bool, days: int) -> InlineKeyboardMarkup:
+    """Клавиатура настроек автоудаления истекших ключей."""
+    builder = InlineKeyboardBuilder()
+    builder.row(*state_pair_buttons(
+        enabled,
+        'Включено',
+        'admin_autodelete_set:1',
+        'Выключено',
+        'admin_autodelete_set:0',
+    ))
+    builder.row(InlineKeyboardButton(text=f'📅 Дней до удаления: {days}', callback_data='admin_autodelete_edit_days'))
+    builder.row(InlineKeyboardButton(text='✏️ Изменить текст уведомления', callback_data='admin_autodelete_edit_text'))
+    builder.row(back_button('admin_panel'), home_button())
+    return builder.as_markup()
+
+
 def trial_tariff_select_kb(tariffs: List[Dict[str, Any]], selected_id: Optional[int]=None) -> InlineKeyboardMarkup:
     """
     Keyboard for selecting a tariff for a trial subscription.
