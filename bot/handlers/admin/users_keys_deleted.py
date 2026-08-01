@@ -174,18 +174,17 @@ async def on_sync_deleted_panel_ask(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == 'admin_sync_deleted_panel_confirm')
-@regular_panel_operation
-async def on_sync_deleted_panel_confirm(callback: CallbackQuery):
-    """Removing 'orphaned' keys from VPN servers."""
-    await safe_edit_or_send(
-        callback.message,
-        "⏳ <b>Очистка панели: собираю данные...</b>\n\nПожалуйста, подождите."
-    )
+async def cleanup_orphaned_panel_clients() -> dict:
+    """
+    Основная логика очистки панели от 'осиротевших' клиентов (user_*, которых
+    нет в БД бота). Вынесена отдельно от Telegram-обработчика, чтобы её можно
+    было запускать и вручную (кнопка админа), и по расписанию (планировщик).
 
+    Returns:
+        dict со статистикой: deleted_count, errors_count, failed_servers
+    """
     servers = get_active_servers()
 
-    # Collecting ALL panel_emails from the database (including keys without server_id)
     from database.connection import get_db
     with get_db() as conn:
         rows = conn.execute(
@@ -209,7 +208,6 @@ async def on_sync_deleted_panel_confirm(callback: CallbackQuery):
 
                 for cl in clients:
                     cl_email = cl.get('email', '')
-                    # Only the keys of our bot (user_*), which are not in the database
                     if cl_email.lower().startswith('user_') and cl_email.lower() not in db_emails_all:
                         try:
                             client_uuid = cl.get('id') or cl.get('password')
@@ -225,16 +223,34 @@ async def on_sync_deleted_panel_confirm(callback: CallbackQuery):
             errors_count += 1
             failed_servers.append({'id': server['id'], 'name': server['name']})
 
+    return {
+        'deleted_count': deleted_count,
+        'errors_count': errors_count,
+        'failed_servers': failed_servers,
+    }
+
+
+@router.callback_query(F.data == 'admin_sync_deleted_panel_confirm')
+@regular_panel_operation
+async def on_sync_deleted_panel_confirm(callback: CallbackQuery):
+    """Removing 'orphaned' keys from VPN servers (ручной запуск админом)."""
+    await safe_edit_or_send(
+        callback.message,
+        "⏳ <b>Очистка панели: собираю данные...</b>\n\nПожалуйста, подождите."
+    )
+
+    stats = await cleanup_orphaned_panel_clients()
+
     text_append = ""
-    if failed_servers:
-        failed_names = ", ".join([f"<b>{fs['name']}</b>" for fs in failed_servers])
+    if stats['failed_servers']:
+        failed_names = ", ".join([f"<b>{fs['name']}</b>" for fs in stats['failed_servers']])
         text_append = f"\n\n⚠️ <b>Не удалось подключиться к серверам:</b> {failed_names}"
 
     await safe_edit_or_send(
         callback.message,
         f"✅ <b>Очистка панели завершена</b>\n\n"
-        f"🗑 Удалено ключей-сирот: <b>{deleted_count}</b>\n"
-        f"❌ Ошибок: <b>{errors_count}</b>{text_append}",
+        f"🗑 Удалено ключей-сирот: <b>{stats['deleted_count']}</b>\n"
+        f"❌ Ошибок: <b>{stats['errors_count']}</b>{text_append}",
         reply_markup=sync_deleted_menu_kb()
     )
     await callback.answer()
