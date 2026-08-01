@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = [
     'get_users_for_broadcast',
+    'get_users_for_broadcast_combined',
     'count_users_for_broadcast',
     'get_expiring_keys',
     'is_notification_sent_today',
