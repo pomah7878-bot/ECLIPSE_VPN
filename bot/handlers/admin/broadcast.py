@@ -564,7 +564,8 @@ async def broadcast_start(callback: CallbackQuery):
         return
     
     current_filter = get_setting('broadcast_filter', 'all')
-    user_count = count_users_for_broadcast(current_filter)
+    current_filters_list = [f.strip() for f in current_filter.split(',') if f.strip()] or ['all']
+    user_count = len(get_users_for_broadcast_combined(current_filters_list))
     
     if user_count == 0:
         await callback.answer("❌ Нет пользователей для рассылки!", show_alert=True)
@@ -576,7 +577,7 @@ async def broadcast_start(callback: CallbackQuery):
         await callback.answer(str(error), show_alert=True)
         return
 
-    filter_name = BROADCAST_FILTERS.get(current_filter, 'Все')
+    filter_name = ', '.join(BROADCAST_FILTERS.get(f, f) for f in current_filters_list)
     
     content_lines = []
     if msg_data.get('kind') == BROADCAST_KIND_POLL:
@@ -699,7 +700,8 @@ async def broadcast_confirm(callback: CallbackQuery, bot: Bot):
         return
     
     current_filter = get_setting('broadcast_filter', 'all')
-    user_ids = get_users_for_broadcast(current_filter)
+    current_filters_list = [f.strip() for f in current_filter.split(',') if f.strip()] or ['all']
+    user_ids = get_users_for_broadcast_combined(current_filters_list)
 
     try:
         current_revision = int(get_setting('broadcast_config_revision', '0') or 0)
