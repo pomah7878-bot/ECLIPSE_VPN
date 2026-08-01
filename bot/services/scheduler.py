@@ -819,6 +819,18 @@ async def run_daily_tasks(bot: Bot) -> None:
                     )
             except Exception as e:
                 logger.error(f"Ошибка автоочистки панели: {e}")
+
+            # Автоудаление истекших ключей (30+ дней по умолчанию) с уведомлением
+            try:
+                from bot.services.expired_key_autodelete import process_expired_key_autodeletion
+                autodelete_stats = await process_expired_key_autodeletion(bot)
+                if not autodelete_stats.get('skipped') and (autodelete_stats['deleted_count'] or autodelete_stats['errors_count']):
+                    logger.info(
+                        "🗑 Автоудаление истекших ключей: уведомлено %s, удалено %s, ошибок %s",
+                        autodelete_stats['notified_count'], autodelete_stats['deleted_count'], autodelete_stats['errors_count'],
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка автоудаления истекших ключей: {e}")
             
             # Wait 5 minutes
             await asyncio.sleep(300)
