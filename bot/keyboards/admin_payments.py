@@ -54,6 +54,7 @@ def payments_menu_kb(stars_enabled: bool, cards_enabled: bool, qr_enabled: bool=
     builder.row(InlineKeyboardButton(text='📂 Группы тарифов', callback_data='admin_groups'))
     builder.row(InlineKeyboardButton(text='📋 Тарифы', callback_data='admin_tariffs'))
     builder.row(InlineKeyboardButton(text='🎁 Пробная подписка', callback_data='admin_trial'))
+    builder.row(InlineKeyboardButton(text='🗑 Автоудаление истекших ключей', callback_data='admin_autodelete'))
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 
