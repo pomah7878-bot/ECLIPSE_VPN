@@ -14,7 +14,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 from database.requests import (
     get_setting, set_setting,
-    get_users_for_broadcast, count_users_for_broadcast,
+    get_users_for_broadcast, count_users_for_broadcast, get_users_for_broadcast_combined,
     mark_user_bot_blocked, set_broadcast_filter_with_revision,
 )
 from bot.states.admin_states import AdminStates
@@ -74,6 +74,15 @@ _broadcast_state_lock = asyncio.Lock()
 # ============================================================================
 
 
+
+
+def _parse_current_filters() -> list[str]:
+    """Разбирает сохранённые фильтры (через запятую) в список ключей."""
+    raw = get_setting('broadcast_filter', 'all')
+    if not raw:
+        return ['all']
+    keys = [k.strip() for k in raw.split(',') if k.strip()]
+    return keys if keys else ['all']
 
 
 def get_broadcast_message() -> dict | None:
@@ -190,15 +199,15 @@ def get_broadcast_menu_text(in_progress: bool = False) -> str:
 
 async def render_broadcast_menu(
     message: Message,
-    current_filter: str | None = None,
+    current_filters: list[str] | None = None,
     force_new: bool = False,
 ) -> None:
     """Shows the current mailing main screen."""
     msg_data = get_broadcast_message()
     has_message = is_broadcast_content_ready(msg_data)
-    current_filter = current_filter or get_setting('broadcast_filter', 'all')
+    current_filters = current_filters or _parse_current_filters()
     in_progress = is_broadcast_in_progress()
-    user_count = count_users_for_broadcast(current_filter)
+    user_count = len(get_users_for_broadcast_combined(current_filters))
     if not msg_data:
         material_label = "не задан"
     elif msg_data.get("kind") == BROADCAST_KIND_POLL:
@@ -212,7 +221,7 @@ async def render_broadcast_menu(
         get_broadcast_menu_text(in_progress)
         + "\n\n<b>Текущие настройки</b>\n"
         + f"• Материал: {escape_html(material_label)}\n"
-        + f"• Фильтр: {escape_html(BROADCAST_FILTERS.get(current_filter, current_filter))}\n"
+        + f"• Фильтр: {escape_html(', '.join(BROADCAST_FILTERS.get(f, f) for f in current_filters))}\n"
         + f"• Получателей: {user_count}\n"
         + f"• Стиль: {escape_html(style_summary)}\n\n"
         + "💡 Напишите <code>/yaa ваша задача</code>, чтобы открыть редактора рассылки."
@@ -223,7 +232,7 @@ async def render_broadcast_menu(
         menu_text,
         reply_markup=broadcast_main_kb(
             has_message,
-            current_filter,
+            current_filters,
             in_progress,
             user_count,
             content_kind=msg_data.get('kind') if msg_data else None,
