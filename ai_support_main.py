@@ -1223,7 +1223,10 @@ def _format_customer_profile(profile: dict) -> str:
             traffic_str = f"{used:.2f} ГБ (безлимит)" if not k.get("traffic_limit") else f"{used:.2f}/{limit:.2f} ГБ"
             name = k.get("custom_name") or f"ключ #{k.get('id')}"
             server = k.get("server_name") or "сервер не указан"
-            parts.append(f"  • {name} — {server}, до {k.get('expires_at')}, трафик {traffic_str}")
+            tariff_str = k.get("tariff_name") or "неизвестен"
+            max_ips = k.get("max_ips")
+            devices_str = f", лимит устройств: {max_ips}" if max_ips else ""
+            parts.append(f"  • {name} — {server}, тариф «{tariff_str}»{devices_str}, до {k.get('expires_at')}, трафик {traffic_str}")
             if k.get("sub_url"):
                 parts.append(f"    Ссылка VPN-конфигурации для импорта в приложение (Happ/INCY и т.п.), НЕ ссылка на оплату: {k['sub_url']}")
             else:
