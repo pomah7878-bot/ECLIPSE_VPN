@@ -807,6 +807,18 @@ async def run_daily_tasks(bot: Bot) -> None:
             # Sending statistics
             logger.info("📊 Запуск отправки суточной статистики...")
             await send_daily_stats(bot)
+
+            # Автоочистка панели от осиротевших ключей (user_*, которых нет в БД)
+            try:
+                from bot.handlers.admin.users_keys_deleted import cleanup_orphaned_panel_clients
+                cleanup_stats = await cleanup_orphaned_panel_clients()
+                if cleanup_stats['deleted_count'] or cleanup_stats['errors_count']:
+                    logger.info(
+                        "🧹 Автоочистка панели: удалено %s, ошибок %s",
+                        cleanup_stats['deleted_count'], cleanup_stats['errors_count'],
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка автоочистки панели: {e}")
             
             # Wait 5 minutes
             await asyncio.sleep(300)
