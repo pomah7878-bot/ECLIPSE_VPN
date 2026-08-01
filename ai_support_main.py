@@ -1100,9 +1100,10 @@ async def query_full_customer_profile(telegram_id: int) -> dict:
         cur.execute(
             """SELECT vk.id, vk.custom_name, vk.expires_at, vk.traffic_used,
                       vk.traffic_limit, vk.created_at, vk.sub_id, vk.server_id,
-                      s.name AS server_name
+                      s.name AS server_name, t.name AS tariff_name, t.max_ips
                FROM vpn_keys vk
                LEFT JOIN servers s ON s.id = vk.server_id
+               LEFT JOIN tariffs t ON t.id = vk.tariff_id
                WHERE vk.user_id = ?
                ORDER BY vk.created_at DESC""",
             (user_id,),
