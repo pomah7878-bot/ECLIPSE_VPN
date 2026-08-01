@@ -4,11 +4,11 @@ from typing import Optional
 
 from .admin_misc import back_button, home_button
 
-BROADCAST_FILTERS = {'all': '👤 Все пользователи', 'active': '✅ С активными ключами', 'inactive': '❌ Без активных ключей', 'never_paid': '🆕 Никогда не покупали', 'expired': '🚫 Ключ истёк'}
+BROADCAST_FILTERS = {'all': '👤 Все пользователи', 'active': '✅ С активными ключами', 'inactive': '❌ Без активных ключей', 'never_paid': '🆕 Никогда не покупали', 'expired': '🚫 Ключ истёк', 'used_trial': '🎁 Брали пробный период'}
 
 def broadcast_main_kb(
     has_message: bool,
-    current_filter: str,
+    current_filters: list,
     broadcast_in_progress: bool,
     user_count: int,
     content_kind: Optional[str] = None,
@@ -18,17 +18,17 @@ def broadcast_main_kb(
     
     Args:
         has_message: Whether there is a saved message
-        current_filter: Current selected filter
+        current_filters: Currently selected filter keys (можно комбинировать несколько)
         broadcast_in_progress: Is broadcasting in progress now?
-        user_count: Number of users by current filter
+        user_count: Number of users by current filter combination
     """
     builder = InlineKeyboardBuilder()
     msg_status = '✅' if has_message else '❌'
     content_label = '📊 Опрос' if content_kind == 'poll' else '✉️ Сообщение'
     builder.row(InlineKeyboardButton(text=f'{content_label}: {msg_status}', callback_data='broadcast_edit_message'), InlineKeyboardButton(text='👁️ Превью', callback_data='broadcast_preview'))
     for (filter_key, filter_name) in BROADCAST_FILTERS.items():
-        radio = '🔘' if filter_key == current_filter else '⚪'
-        builder.row(InlineKeyboardButton(text=f'{radio} {filter_name}', callback_data=f'broadcast_filter:{filter_key}'))
+        checked = '✅' if filter_key in current_filters else '⬜'
+        builder.row(InlineKeyboardButton(text=f'{checked} {filter_name}', callback_data=f'broadcast_filter_toggle:{filter_key}'))
     if broadcast_in_progress:
         builder.row(InlineKeyboardButton(text='🛑 Остановить рассылку', callback_data='broadcast_stop'))
     else:
