@@ -84,10 +84,46 @@ def get_users_for_broadcast(filter_type: str) -> List[int]:
                     WHERE expires_at > datetime('now')
                 )
             """)
+        elif filter_type == 'used_trial':
+            # Использовали пробный период (независимо от текущего статуса ключей)
+            cursor = conn.execute("""
+                SELECT telegram_id FROM users
+                WHERE is_banned = 0 AND is_bot_blocked = 0 AND used_trial = 1
+            """)
         else:
             return []
         
         return [row['telegram_id'] for row in cursor.fetchall()]
+
+
+def get_users_for_broadcast_combined(filter_types: List[str]) -> List[int]:
+    """
+    Комбинирует НЕСКОЛЬКО фильтров через пересечение (AND) — например,
+    "истекли ключи" И "брали пробный период" одновременно.
+
+    Переиспользует существующие однофильтровые запросы без изменений,
+    просто пересекает множества telegram_id в Python — надёжнее и проще,
+    чем строить динамический SQL под произвольную комбинацию условий.
+
+    Args:
+        filter_types: Список ключей фильтров. Если пусто или содержит 'all' —
+            возвращает всех пользователей (как обычный фильтр 'all').
+
+    Returns:
+        Список telegram_id, удовлетворяющих ВСЕМ выбранным фильтрам
+    """
+    if not filter_types or 'all' in filter_types:
+        return get_users_for_broadcast('all')
+
+    result_set = None
+    for ft in filter_types:
+        ids = set(get_users_for_broadcast(ft))
+        result_set = ids if result_set is None else (result_set & ids)
+        if not result_set:
+            break
+
+    return sorted(result_set) if result_set else []
+
 
 def count_users_for_broadcast(filter_type: str) -> int:
     """
