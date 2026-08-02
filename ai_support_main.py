@@ -520,6 +520,24 @@ CHECK_SERVER_STATUS_TOOL = {
 }
 
 
+CHECK_ACTIVE_DEVICES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_active_devices",
+        "description": (
+            "Проверяет, СКОЛЬКО устройств РЕАЛЬНО подключено к VPN-ключу клиента "
+            "ПРЯМО СЕЙЧАС (по факту недавних подключений на панели), в сравнении "
+            "с лимитом устройств. Используй именно этот инструмент, если клиент "
+            "спрашивает 'сколько у меня сейчас подключено', 'сколько ещё можно "
+            "подключить', 'не превысил ли я лимит' — это живые данные с панели, "
+            "а не просто лимит из тарифа (лимит уже есть в профиле клиента выше, "
+            "этот инструмент нужен именно для ФАКТИЧЕСКОГО текущего использования)."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 async def web_search_tavily(query: str) -> str:
     """Выполняет поиск в интернете через Tavily, возвращает краткую текстовую сводку.
     Результат кэшируется на SEARCH_CACHE_TTL_SECONDS по нормализованному запросу —
@@ -684,6 +702,62 @@ async def github_latest_release(repo: str) -> str:
 
     _search_cache[cache_key] = (time.time(), result)
     return result
+
+
+async def check_active_devices(telegram_id: int) -> str:
+    """Проверяет реальное число подключённых устройств (по недавним IP на
+    панели) для активных ключей клиента, в сравнении с лимитом устройств."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось проверить устройства: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.panel_email, vk.server_id, t.max_ips
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               LEFT JOIN tariffs t ON t.id = vk.tariff_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')
+                 AND vk.server_id IS NOT NULL AND vk.panel_email IS NOT NULL""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для проверки устройств: {e}")
+        return "Не удалось проверить устройства из-за ошибки БД."
+    if not key_rows:
+        return "У клиента нет активных ключей с настроенным сервером — проверять нечего."
+
+    from database.db_servers import get_server_by_id
+    from bot.services.vpn_api import get_client_from_server_data
+
+    parts = []
+    for row in key_rows:
+        server_data = get_server_by_id(row["server_id"])
+        name = row["custom_name"] or f"ключ #{row['id']}"
+        if not server_data:
+            parts.append(f"— {name}: сервер не найден")
+            continue
+        try:
+            client = get_client_from_server_data(server_data)
+            result = await asyncio.wait_for(
+                client._request('POST', f"/panel/api/clients/ips/{row['panel_email']}"),
+                timeout=8.0,
+            )
+            ip_list = result.get('obj') or [] if isinstance(result, dict) else []
+            connected = len(ip_list)
+            limit = row.get('max_ips') or '—'
+            parts.append(f"— {name}: подключено устройств {connected} из {limit}")
+        except asyncio.TimeoutError:
+            parts.append(f"— {name}: сервер не ответил вовремя, данные недоступны")
+        except Exception as e:
+            logger.warning(f"Ошибка проверки устройств для ключа {row['id']}: {e}")
+            parts.append(f"— {name}: не удалось проверить (ошибка запроса к панели)")
+
+    return "\n".join(parts)
 
 
 async def check_server_status(telegram_id: int) -> str:
