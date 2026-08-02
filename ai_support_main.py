@@ -533,6 +533,22 @@ CLEAR_DEVICE_IPS_TOOL = {
 }
 
 
+SUGGEST_KEY_REPLACEMENT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "suggest_key_replacement",
+        "description": (
+            "Даёт клиенту прямую ссылку на карточку его ключа с кнопкой "
+            "«Заменить» (пересоздание ключа/подписки, например на другом "
+            "сервере). Используй, когда клиент просит заменить/пересоздать "
+            "ключ. НЕ выполняет замену сам (это делает клиент подтверждением "
+            "в боте) — только доставляет его на нужный экран в один клик."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 async def web_search_tavily(query: str) -> str:
     """Выполняет поиск в интернете через Tavily, возвращает краткую текстовую сводку.
     Результат кэшируется на SEARCH_CACHE_TTL_SECONDS по нормализованному запросу —
@@ -896,6 +912,57 @@ async def clear_device_ips(telegram_id: int) -> str:
     return (
         f"Готово. Список запомненных IP-адресов для «{key_name}» сброшен. "
         f"Лимит устройств теперь свободен — первые новые подключения снова его займут."
+    )
+
+
+async def suggest_key_replacement(telegram_id: int) -> str:
+    """Возвращает deep-link на карточку единственного активного ключа
+    клиента, где есть кнопка «Заменить». Не выполняет замену сам — только
+    доставляет клиента к уже проверенному интерактивному потоку (там порядок
+    операций такой, что клиент сам подтверждает каждый шаг)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось найти ключ: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для замены: {e}")
+        return "Не удалось найти ключ из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных ключей — заменять нечего."
+
+    if len(key_rows) > 1:
+        lines = []
+        for k in key_rows:
+            name = k["custom_name"] or f"ключ #{k['id']}"
+            lines.append(f"— {name} (id={k['id']})")
+        listing = "\n".join(lines)
+        return (
+            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
+            f"именно заменить:\n{listing}\n"
+            f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент ещё раз."
+        )
+
+    key_id = key_rows[0]["id"]
+    key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
+    deep_link = f"https://t.me/{BOT_USERNAME}?start=replace_{key_id}"
+    return (
+        f"Ссылка на карточку ключа «{key_name}» готова: {deep_link}\n"
+        f"На этой карточке есть кнопка «🔄 Заменить» — клиенту нужно нажать её, "
+        f"выбрать сервер и подтвердить. Дай клиенту эту ссылку как HTML-кнопку "
+        f"(<a href=\"{deep_link}\">текст</a>), объясни коротко, что это займёт пару кликов."
     )
 
 
@@ -1687,7 +1754,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -1695,7 +1762,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -1802,6 +1869,14 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": clear_result,
                     })
+                elif tool_call.function.name == "suggest_key_replacement":
+                    logger.info(f"🔄 AI даёт ссылку на замену ключа (user {req.user_id})")
+                    replace_result = await suggest_key_replacement(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": replace_result,
+                    })
                 else:
                     messages.append({
                         "role": "tool",
@@ -1815,7 +1890,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
