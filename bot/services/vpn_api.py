@@ -155,6 +155,30 @@ async def close_all_clients():
         except Exception as e:
             logger.error(f"Ошибка при закрытии клиента {server_id}: {e}")
 
+async def get_connected_devices_count(server_id: int, panel_email: str) -> Optional[int]:
+    """
+    Возвращает количество РЕАЛЬНО подключавшихся устройств (уникальных IP) для
+    ключа по данным панели (эндпоинт /panel/api/clients/ips/{email}). Panel
+    хранит это в скользящем окне (недавняя активность), поэтому число отражает
+    актуальную картину, а не всю историю с момента создания ключа.
+
+    Returns:
+        Число уникальных IP, или None при ошибке связи с панелью (не считать
+        это как "0 устройств" — просто данные сейчас недоступны).
+    """
+    try:
+        client = await get_client(server_id)
+        result = await client._request('POST', f'/panel/api/clients/ips/{panel_email}')
+        if not isinstance(result, dict) or not result.get('success'):
+            return None
+        entries = result.get('obj') or []
+        unique_ips = {e.get('ip') for e in entries if isinstance(e, dict) and e.get('ip')}
+        return len(unique_ips)
+    except Exception as e:
+        logger.warning(f"Не удалось получить количество подключённых устройств для {panel_email}: {e}")
+        return None
+
+
 async def get_client(server_id: int) -> XUIClient:
     """
     Retrieves the client for the server by ID (from the database).
