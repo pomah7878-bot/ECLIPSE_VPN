@@ -538,6 +538,25 @@ CHECK_ACTIVE_DEVICES_TOOL = {
 }
 
 
+TOGGLE_AUTO_RENEWAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "toggle_auto_renewal",
+        "description": (
+            "РЕАЛЬНО включает или выключает автопродление с личного баланса "
+            "для активного ключа клиента (не просто советует, а выполняет "
+            "действие прямо сейчас). Используй, когда клиент явно просит "
+            "включить/выключить/отключить автопродление именно СЕЙЧАС, а не "
+            "спрашивает, как это сделать вручную. Безопасное и полностью "
+            "обратимое действие — не связано с фактическим списанием денег "
+            "прямо в момент вызова. Если у клиента несколько активных ключей, "
+            "инструмент сам укажет, что нужно уточнить, какой именно."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 async def web_search_tavily(query: str) -> str:
     """Выполняет поиск в интернете через Tavily, возвращает краткую текстовую сводку.
     Результат кэшируется на SEARCH_CACHE_TTL_SECONDS по нормализованному запросу —
@@ -779,6 +798,60 @@ async def check_active_devices(telegram_id: int) -> str:
             parts.append(f"— {name}: не удалось проверить (ошибка запроса к панели)")
 
     return "\n".join(parts)
+
+
+async def toggle_auto_renewal(telegram_id: int) -> str:
+    """Включает/выключает автопродление для ЕДИНСТВЕННОГО активного ключа
+    клиента. Явно проверяет принадлежность ключа этому telegram_id перед
+    изменением — toggle_key_auto_renew сама этого не делает."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось выполнить действие: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.auto_renew
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для автопродления: {e}")
+        return "Не удалось выполнить действие из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных ключей — переключать нечего."
+
+    if len(key_rows) > 1:
+        lines = []
+        for k in key_rows:
+            name = k["custom_name"] or f"ключ #{k['id']}"
+            state = "включено" if k["auto_renew"] else "выключено"
+            lines.append(f"— {name}: автопродление сейчас {state}")
+        listing = "\n".join(lines)
+        return (
+            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+            f"именно менять автопродление:\n{listing}\n"
+            f"Не переключай автоматически — сначала спроси клиента, какой ключ он имеет в виду."
+        )
+
+    key_id = key_rows[0]["id"]
+    key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
+    try:
+        from database.db_keys import toggle_key_auto_renew
+        new_state = toggle_key_auto_renew(key_id)
+    except Exception as e:
+        logger.error(f"Ошибка переключения автопродления для ключа {key_id}: {e}")
+        return "Не удалось переключить автопродление из-за технической ошибки."
+
+    state_text = "включено" if new_state else "выключено"
+    logger.info(f"AI переключил автопродление ключа {key_id} на '{state_text}' (user {telegram_id})")
+    return f"Готово. Автопродление для «{key_name}» теперь {state_text}."
 
 
 async def check_server_status(telegram_id: int) -> str:
@@ -1569,7 +1642,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -1577,7 +1650,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -1668,6 +1741,14 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": devices_result,
                     })
+                elif tool_call.function.name == "toggle_auto_renewal":
+                    logger.info(f"🔄 AI переключает автопродление (user {req.user_id})")
+                    renew_result = await toggle_auto_renewal(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": renew_result,
+                    })
                 else:
                     messages.append({
                         "role": "tool",
@@ -1681,7 +1762,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
