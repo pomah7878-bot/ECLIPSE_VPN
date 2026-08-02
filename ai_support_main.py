@@ -733,6 +733,14 @@ async def check_active_devices(telegram_id: int) -> str:
 
     from database.db_servers import get_server_by_id
     from bot.services.vpn_api import get_client_from_server_data
+    import time as _time
+
+    RECENT_WINDOW_SECONDS = 600  # считаем "подключён сейчас", если IP виден за последние 10 минут
+
+    # Один и тот же мастер-сервер может обслуживать сразу несколько ключей клиента
+    # (как правило, все на одном server_id) — кэшируем ответ панели на server_id,
+    # чтобы не дублировать сетевые запросы.
+    guid_cache: dict = {}
 
     parts = []
     for row in key_rows:
@@ -742,13 +750,26 @@ async def check_active_devices(telegram_id: int) -> str:
             parts.append(f"— {name}: сервер не найден")
             continue
         try:
-            client = get_client_from_server_data(server_data)
-            result = await asyncio.wait_for(
-                client._request('POST', f"/panel/api/clients/ips/{row['panel_email']}"),
-                timeout=8.0,
-            )
-            ip_list = result.get('obj') or [] if isinstance(result, dict) else []
-            connected = len(ip_list)
+            if row["server_id"] not in guid_cache:
+                client = get_client_from_server_data(server_data)
+                guid_cache[row["server_id"]] = await asyncio.wait_for(
+                    client._request('POST', '/panel/api/clients/clientIpsByGuid'),
+                    timeout=8.0,
+                )
+            result = guid_cache[row["server_id"]]
+            by_guid = (result.get('obj') or {}) if isinstance(result, dict) else {}
+
+            # Мастер-панель может управлять несколькими нодами — собираем IP
+            # адреса этого клиента со ВСЕХ нод, не только с самой мастер-панели.
+            now = _time.time()
+            unique_ips = set()
+            for node_entries in by_guid.values():
+                for ip_entry in node_entries.get(row['panel_email'], []):
+                    ts = ip_entry.get('timestamp') or 0
+                    if now - ts <= RECENT_WINDOW_SECONDS:
+                        unique_ips.add(ip_entry.get('ip'))
+
+            connected = len(unique_ips)
             limit = row.get('max_ips') or '—'
             parts.append(f"— {name}: подключено устройств {connected} из {limit}")
         except asyncio.TimeoutError:
