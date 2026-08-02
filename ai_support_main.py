@@ -1548,7 +1548,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -1556,7 +1556,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -1639,6 +1639,14 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": status_result,
                     })
+                elif tool_call.function.name == "check_active_devices":
+                    logger.info(f"📱 AI проверяет активные устройства (user {req.user_id})")
+                    devices_result = await check_active_devices(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": devices_result,
+                    })
                 else:
                     messages.append({
                         "role": "tool",
@@ -1652,7 +1660,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
