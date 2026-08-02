@@ -1256,6 +1256,32 @@ async def query_full_customer_profile(telegram_id: int) -> dict:
             (user_id,),
         )
         keys_list = [dict(row) for row in cur.fetchall()]
+
+        # Живой подсчёт реально подключённых устройств (по IP) — только для
+        # активных ключей с сервером, и только для первых 3-х (чтобы не
+        # делать много медленных сетевых запросов на один вопрос клиента)
+        from datetime import datetime, timezone
+        for k in keys_list[:3]:
+            if not k.get('server_id') or not k.get('id'):
+                continue
+            expires_at = k.get('expires_at')
+            is_active = True
+            if expires_at:
+                try:
+                    is_active = datetime.fromisoformat(expires_at.replace('Z', '+00:00')) > datetime.now(timezone.utc)
+                except Exception:
+                    is_active = True
+            if not is_active:
+                continue
+            try:
+                from database.db_keys import get_vpn_key_by_id
+                full_key = get_vpn_key_by_id(k['id'])
+                panel_email = full_key.get('panel_email') if full_key else None
+                if panel_email:
+                    from bot.services.vpn_api import get_connected_devices_count
+                    k['connected_devices'] = await get_connected_devices_count(k['server_id'], panel_email)
+            except Exception as e:
+                logger.warning(f"Не удалось получить число подключённых устройств для ключа {k.get('id')}: {e}")
         profile["keys"] = keys_list
 
         cur.execute(
@@ -1372,7 +1398,13 @@ def _format_customer_profile(profile: dict) -> str:
             server = k.get("server_name") or "сервер не указан"
             tariff_str = k.get("tariff_name") or "неизвестен"
             max_ips = k.get("max_ips")
-            devices_str = f", лимит устройств: {max_ips}" if max_ips else ""
+            connected = k.get("connected_devices")
+            if max_ips and connected is not None:
+                devices_str = f", устройств подключено: {connected} из {max_ips}"
+            elif max_ips:
+                devices_str = f", лимит устройств: {max_ips}"
+            else:
+                devices_str = ""
             parts.append(f"  • {name} — {server}, тариф «{tariff_str}»{devices_str}, до {k.get('expires_at')}, трафик {traffic_str}")
             if k.get("sub_url"):
                 parts.append(f"    Ссылка VPN-конфигурации для импорта в приложение (Happ/INCY и т.п.), НЕ ссылка на оплату: {k['sub_url']}")
