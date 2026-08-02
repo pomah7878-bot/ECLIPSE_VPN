@@ -557,6 +557,28 @@ TOGGLE_AUTO_RENEWAL_TOOL = {
 }
 
 
+CLEAR_DEVICE_IPS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "clear_device_ips",
+        "description": (
+            "РЕАЛЬНО сбрасывает на панели список запомненных IP-адресов "
+            "устройств для активного ключа клиента (не просто советует, а "
+            "выполняет действие). Используй, когда клиент жалуется, что "
+            "упёрся в лимит устройств, хотя реально пользуется меньшим "
+            "числом устройств (например, часто менял телефон/сеть/роутер, "
+            "или переустанавливал приложение) — панель могла запомнить "
+            "старые, уже неактуальные IP как 'занятые' слоты. После сброса "
+            "лимит фактически освобождается, и первые же новые подключения "
+            "снова его заполнят. Безопасно и обратимо — не меняет ни тариф, "
+            "ни срок действия, ни трафик. Если у клиента несколько активных "
+            "ключей, инструмент сам укажет, что нужно уточнить, какой именно."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 async def web_search_tavily(query: str) -> str:
     """Выполняет поиск в интернете через Tavily, возвращает краткую текстовую сводку.
     Результат кэшируется на SEARCH_CACHE_TTL_SECONDS по нормализованному запросу —
@@ -852,6 +874,75 @@ async def toggle_auto_renewal(telegram_id: int) -> str:
     state_text = "включено" if new_state else "выключено"
     logger.info(f"AI переключил автопродление ключа {key_id} на '{state_text}' (user {telegram_id})")
     return f"Готово. Автопродление для «{key_name}» теперь {state_text}."
+
+
+async def clear_device_ips(telegram_id: int) -> str:
+    """Сбрасывает список IP-адресов на панели для ЕДИНСТВЕННОГО активного
+    ключа клиента. Явно проверяет принадлежность ключа этому telegram_id
+    перед изменением, аналогично toggle_auto_renewal."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось выполнить действие: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.server_id, vk.panel_email
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')
+                 AND vk.server_id IS NOT NULL AND vk.panel_email IS NOT NULL""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для сброса IP: {e}")
+        return "Не удалось выполнить действие из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных настроенных ключей — сбрасывать нечего."
+
+    if len(key_rows) > 1:
+        lines = []
+        for k in key_rows:
+            name = k["custom_name"] or f"ключ #{k['id']}"
+            lines.append(f"— {name}")
+        listing = "\n".join(lines)
+        return (
+            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+            f"именно сбрасывать список IP:\n{listing}\n"
+            f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду."
+        )
+
+    key = key_rows[0]
+    key_name = key["custom_name"] or f"ключ #{key['id']}"
+    try:
+        from database.db_servers import get_server_by_id
+        from bot.services.vpn_api import get_client_from_server_data
+
+        server_data = get_server_by_id(key["server_id"])
+        if not server_data:
+            return "Не удалось выполнить действие: сервер ключа не найден."
+        client = get_client_from_server_data(server_data)
+        result = await asyncio.wait_for(
+            client._request('POST', f'/panel/api/clients/clearIps/{key["panel_email"]}'),
+            timeout=8.0,
+        )
+        if not isinstance(result, dict) or not result.get('success'):
+            return "Панель не подтвердила сброс списка IP — попробуйте ещё раз или обратитесь в поддержку."
+    except asyncio.TimeoutError:
+        return "Сервер не ответил вовремя, попробуйте ещё раз чуть позже."
+    except Exception as e:
+        logger.error(f"Ошибка сброса IP для ключа {key['id']}: {e}")
+        return "Не удалось сбросить список IP из-за технической ошибки."
+
+    logger.info(f"AI сбросил список IP для ключа {key['id']} (user {telegram_id})")
+    return (
+        f"Готово. Список запомненных IP-адресов для «{key_name}» сброшен. "
+        f"Лимит устройств теперь свободен — первые новые подключения снова его займут."
+    )
 
 
 async def check_server_status(telegram_id: int) -> str:
@@ -1642,7 +1733,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -1650,7 +1741,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -1749,6 +1840,14 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": renew_result,
                     })
+                elif tool_call.function.name == "clear_device_ips":
+                    logger.info(f"🧹 AI сбрасывает список IP устройств (user {req.user_id})")
+                    clear_result = await clear_device_ips(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": clear_result,
+                    })
                 else:
                     messages.append({
                         "role": "tool",
@@ -1762,7 +1861,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
