@@ -549,6 +549,22 @@ SUGGEST_KEY_REPLACEMENT_TOOL = {
 }
 
 
+CHECK_PAYMENT_NOW_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_payment_now",
+        "description": (
+            "РЕАЛЬНО проверяет прямо сейчас у платёжного провайдера статус "
+            "незавершённого платежа клиента и, если оплата прошла, сразу "
+            "завершает заказ (выдаёт ключ, уведомляет клиента) — не ждёт "
+            "плановую автопроверку. Используй, когда клиент говорит "
+            "'оплатил, а ключ не пришёл' или просит проверить платёж сейчас."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 async def web_search_tavily(query: str) -> str:
     """Выполняет поиск в интернете через Tavily, возвращает краткую текстовую сводку.
     Результат кэшируется на SEARCH_CACHE_TTL_SECONDS по нормализованному запросу —
@@ -964,6 +980,83 @@ async def suggest_key_replacement(telegram_id: int) -> str:
         f"выбрать сервер и подтвердить. Дай клиенту эту ссылку как HTML-кнопку "
         f"(<a href=\"{deep_link}\">текст</a>), объясни коротко, что это займёт пару кликов."
     )
+
+
+_ai_bot_instance = None
+
+
+def _get_ai_bot():
+    """Лениво создаёт единственный экземпляр aiogram Bot для AI-сервиса —
+    нужен только для переиспользования существующей логики завершения
+    платежа (уведомление клиента, выдача ключа), общий на все запросы."""
+    global _ai_bot_instance
+    if _ai_bot_instance is None:
+        from aiogram import Bot
+        _ai_bot_instance = Bot(token=BOT_TOKEN)
+    return _ai_bot_instance
+
+
+async def check_payment_now(telegram_id: int) -> str:
+    """Проверяет и, если нужно, завершает прямо сейчас незавершённый платёж
+    клиента — переиспользует ТУ ЖЕ логику, что и плановая автопроверка
+    (_process_due_row), просто без ожидания расписания."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось проверить платёж: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT pac.*, p.payment_type, p.status AS order_status,
+                   p.user_id, p.vpn_key_id, p.final_amount_cents,
+                   p.amount_cents, p.balance_deduct_cents,
+                   p.yookassa_payment_id, p.wata_link_id,
+                   p.platega_transaction_id, p.cardlink_bill_id
+            FROM payment_auto_checks pac
+            JOIN payments p ON p.order_id = pac.order_id
+            JOIN users u ON u.id = p.user_id
+            WHERE u.telegram_id = ?
+              AND (
+                    (p.status = 'pending' AND pac.state IN ('active', 'provider_succeeded'))
+                 OR (p.status = 'paid' AND pac.state = 'provider_succeeded')
+              )
+            ORDER BY pac.created_at DESC
+            LIMIT 1
+            """,
+            (telegram_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске незавершённого платежа клиента: {e}")
+        return "Не удалось проверить платёж из-за ошибки БД."
+
+    if not row:
+        return "У клиента нет незавершённых платежей для проверки — либо всё уже оплачено, либо активных заказов нет."
+
+    row_dict = dict(row)
+    order_id = row_dict.get('order_id')
+    try:
+        from bot.services.payment_auto_check import _process_due_row
+        bot = _get_ai_bot()
+        outcome = await _process_due_row(bot, row_dict)
+    except Exception as e:
+        logger.error(f"Ошибка проверки платежа {order_id} для {telegram_id}: {e}")
+        return "Не удалось проверить платёж из-за технической ошибки. Направь клиента в поддержку."
+
+    logger.info(f"AI проверил платёж {order_id} (user {telegram_id}): {outcome}")
+
+    if outcome == 'completed':
+        return "Оплата подтверждена и заказ только что завершён — ключ уже выдан клиенту, он получит отдельное уведомление."
+    if outcome == 'pending':
+        return "Платёж пока не подтверждён провайдером. Это нормально в первые минуты — предложи клиенту подождать немного и проверить снова через пару минут."
+    if outcome == 'canceled':
+        return "Платёж отменён провайдером (не прошёл). Клиенту нужно оформить оплату заново."
+    if outcome == 'exhausted':
+        return "Автоматические попытки проверки исчерпаны, платёж завис в неопределённом состоянии — обязательно эскалируй в живую поддержку с деталями (order_id есть в логах)."
+    return "Проверка завершилась с ошибкой — эскалируй в живую поддержку."
 
 
 async def check_server_status(telegram_id: int) -> str:
@@ -1754,7 +1847,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -1762,7 +1855,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -1877,6 +1970,14 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": replace_result,
                     })
+                elif tool_call.function.name == "check_payment_now":
+                    logger.info(f"💳 AI проверяет платёж прямо сейчас (user {req.user_id})")
+                    payment_result = await check_payment_now(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": payment_result,
+                    })
                 else:
                     messages.append({
                         "role": "tool",
@@ -1890,7 +1991,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
