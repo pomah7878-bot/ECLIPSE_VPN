@@ -1022,7 +1022,7 @@ async def check_payment_now(telegram_id: int) -> str:
                     (p.status = 'pending' AND pac.state IN ('active', 'provider_succeeded'))
                  OR (p.status = 'paid' AND pac.state = 'provider_succeeded')
               )
-            ORDER BY pac.created_at DESC
+            ORDER BY pac.started_at DESC
             LIMIT 1
             """,
             (telegram_id,),
