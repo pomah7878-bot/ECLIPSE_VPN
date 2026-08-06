@@ -51,6 +51,8 @@ def build_key_details_replacements(
         f"<b>Статус:</b> {_safe(status)}",
         f"<b>Сервер:</b> {_safe(server)}",
         f"<b>Протокол:</b> {_safe(inbound_name)} ({_safe(protocol)})",
+        f"<b>Тариф:</b> {_safe(key.get('tariff_name') or 'не определён')}"
+        + (f", устройств: {key.get('max_ips')}" if key.get('max_ips') else ""),
         f"<b>Трафик:</b> {_safe(traffic_info)}",
         f"<b>Действует до:</b> {_safe(expires)}",
         f"<b>Автопродление:</b> {'✅ включено' if key.get('auto_renew') else '⛔ выключено'}",
