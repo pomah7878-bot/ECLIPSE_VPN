@@ -21,7 +21,7 @@ def groups_list_kb(groups: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     builder.row(back_button('admin_payments'), home_button())
     return builder.as_markup()
 
-def group_view_kb(group_id: int) -> InlineKeyboardMarkup:
+def group_view_kb(group_id: int, reset_enabled: bool = False) -> InlineKeyboardMarkup:
     """
     Keyboard for viewing tariff groups.
     
@@ -30,6 +30,8 @@ def group_view_kb(group_id: int) -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='✏️ Переименовать', callback_data=f'admin_group_edit:{group_id}'))
+    reset_status = '🟢' if reset_enabled else '⚪'
+    builder.row(InlineKeyboardButton(text=f'{reset_status} Автосброс трафика 1-го числа', callback_data=f'admin_group_toggle_reset:{group_id}'))
     if group_id != 1:
         builder.row(InlineKeyboardButton(text='🗑️ Удалить группу', callback_data=f'admin_group_delete:{group_id}'))
     builder.row(back_button('admin_groups'), home_button())
