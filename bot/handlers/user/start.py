@@ -91,7 +91,10 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         force_new: Force a new message to be sent
     """
     from bot.utils.page_renderer import render_page
-    from database.requests import get_page, is_trial_enabled, get_trial_tariff_id, has_used_trial
+    from database.requests import (
+        get_page, is_trial_enabled, get_trial_tariff_id, has_used_trial,
+        get_trial_mode, get_groups_with_trial, get_claimed_trial_group_ids, get_user_internal_id,
+    )
 
     # Determining telegram_id
     if isinstance(target, CallbackQuery):
@@ -105,7 +108,20 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     tariff_text = _build_tariff_text()
 
     # Dynamic visibility of buttons
-    show_trial = is_trial_enabled() and get_trial_tariff_id() is not None and (not has_used_trial(user_id))
+    if not is_trial_enabled():
+        show_trial = False
+    elif get_trial_mode() == 'per_group':
+        # В режиме "по группам" кнопка видна, если есть хотя бы одна группа
+        # с настроенным пробником, который этот пользователь ещё не брал.
+        groups_with_trial = get_groups_with_trial()
+        if not groups_with_trial:
+            show_trial = False
+        else:
+            internal_id = get_user_internal_id(user_id)
+            claimed = get_claimed_trial_group_ids(internal_id) if internal_id else set()
+            show_trial = any(g['id'] not in claimed for g in groups_with_trial)
+    else:
+        show_trial = get_trial_tariff_id() is not None and (not has_used_trial(user_id))
     show_referral = is_referral_enabled()
 
     visibility = {
