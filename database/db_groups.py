@@ -12,6 +12,8 @@ __all__ = [
     'get_all_groups',
     'get_group_by_id',
     'toggle_group_monthly_reset',
+    'set_group_trial_tariff',
+    'get_groups_with_trial',
     'add_group',
     'update_group_name',
     'delete_group',
@@ -51,7 +53,7 @@ def get_group_by_id(group_id: int) -> Optional[Dict[str, Any]]:
     """
     with get_db() as conn:
         cursor = conn.execute("""
-            SELECT id, name, sort_order, created_at, monthly_reset_enabled
+            SELECT id, name, sort_order, created_at, monthly_reset_enabled, trial_tariff_id
             FROM tariff_groups
             WHERE id = ?
         """, (group_id,))
@@ -76,6 +78,31 @@ def toggle_group_monthly_reset(group_id: int) -> bool:
             (new_state, group_id),
         )
         return bool(new_state)
+
+
+def set_group_trial_tariff(group_id: int, tariff_id: Optional[int]) -> None:
+    """Задаёт (или сбрасывает при tariff_id=None) пробный тариф для группы."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE tariff_groups SET trial_tariff_id = ? WHERE id = ?",
+            (tariff_id, group_id),
+        )
+
+
+def get_groups_with_trial() -> List[Dict[str, Any]]:
+    """
+    Возвращает группы тарифов, у которых настроен свой пробный тариф —
+    используется для показа пользователю выбора группы в режиме
+    'per_group', и админкой для списка настроенных пробников.
+    """
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT id, name, trial_tariff_id
+            FROM tariff_groups
+            WHERE trial_tariff_id IS NOT NULL
+            ORDER BY sort_order ASC
+        """).fetchall()
+        return [dict(row) for row in rows]
 
 
 def add_group(name: str) -> int:
