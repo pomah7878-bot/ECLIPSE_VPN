@@ -12,7 +12,7 @@ from bot.utils.datetime_format import format_datetime_for_display
 from bot.utils.text import escape_html, safe_edit_or_send
 from bot.utils.panel_email import get_panel_email_prefix
 from bot.states.admin_states import AdminStates
-from bot.keyboards.admin import users_menu_kb, users_list_kb, user_view_kb, user_ban_confirm_kb, key_view_kb, add_key_server_kb, add_key_inbound_kb, add_key_step_kb, add_key_confirm_kb, users_input_cancel_kb, key_action_cancel_kb, back_and_home_kb, home_only_kb
+from bot.keyboards.admin import users_menu_kb, users_list_kb, user_view_kb, user_ban_confirm_kb, key_view_kb, add_key_server_kb, add_key_inbound_kb, add_key_step_kb, add_key_confirm_kb, users_input_cancel_kb, key_action_cancel_kb, back_and_home_kb, home_only_kb, key_tariff_select_kb
 from bot.services.vpn_api import (
     get_client_from_server_data,
     VPNAPIError,
@@ -232,6 +232,76 @@ async def reset_key_traffic(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f'Неожиданная ошибка при сбросе трафика: {e}')
         await callback.answer('❌ Ошибка при сбросе трафика', show_alert=True)
+
+@router.callback_query(F.data.startswith('admin_key_change_tariff:'))
+async def start_change_tariff(callback: CallbackQuery, state: FSMContext):
+    """Shows the tariff picker for changing a key's tariff."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    key_id = int(callback.data.split(':')[1])
+    key = get_vpn_key_by_id(key_id)
+    if not key:
+        await callback.answer('Ключ не найден', show_alert=True)
+        return
+    tariffs = get_all_tariffs(include_hidden=True)
+    if not tariffs:
+        await callback.answer('❌ Нет доступных тарифов', show_alert=True)
+        return
+    current_name = key.get('tariff_name') or 'не определён'
+    await safe_edit_or_send(
+        callback.message,
+        f'📋 <b>Смена тарифа</b>\n\nТекущий тариф: <b>{escape_html(current_name)}</b>\n\n'
+        f'Выберите новый тариф. Лимит трафика и устройств обновится сразу, '
+        f'срок действия ключа не изменится.',
+        reply_markup=key_tariff_select_kb(key_id, tariffs),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin_key_set_tariff:'))
+@regular_panel_operation
+async def apply_change_tariff(callback: CallbackQuery, state: FSMContext):
+    """Applies the selected tariff to the key and syncs the panel."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    parts = callback.data.split(':')
+    key_id = int(parts[1])
+    new_tariff_id = int(parts[2])
+    key = get_vpn_key_by_id(key_id)
+    if not key:
+        await callback.answer('Ключ не найден', show_alert=True)
+        return
+    tariffs = get_all_tariffs(include_hidden=True)
+    new_tariff = next((t for t in tariffs if t['id'] == new_tariff_id), None)
+    if not new_tariff:
+        await callback.answer('Тариф не найден', show_alert=True)
+        return
+    traffic_limit_bytes = (new_tariff.get('traffic_limit_gb', 0) or 0) * 1024 ** 3
+    from database.db_keys import update_vpn_key_tariff_and_traffic_limit
+    ok = update_vpn_key_tariff_and_traffic_limit(key_id, new_tariff_id, traffic_limit_bytes)
+    if not ok:
+        await callback.answer('❌ Не удалось изменить тариф', show_alert=True)
+        return
+    result_text = f"✅ Тариф изменён на «{escape_html(new_tariff['name'])}»."
+    if key.get('server_id') and key.get('server_active'):
+        try:
+            from bot.services.vpn_api import sync_key_to_panel_state
+            stats = await sync_key_to_panel_state(key_id)
+            if not stats.get('ok'):
+                result_text += '\n\n⚠️ БД обновлена, но панель синхронизирована не полностью.'
+        except Exception as e:
+            logger.warning(f'Ошибка синхронизации панели после смены тарифа ключа {key_id}: {e}')
+            result_text += '\n\n⚠️ БД обновлена, панель не синхронизирована — повторите синхронизацию позже.'
+    key = get_vpn_key_by_id(key_id)
+    user_telegram_id = key.get('telegram_id') if key else None
+    await safe_edit_or_send(
+        callback.message, result_text, force_new=True,
+        reply_markup=key_view_kb(key_id, user_telegram_id) if key else None,
+    )
+    await callback.answer()
+
 
 @router.callback_query(F.data.startswith('admin_key_change_traffic:'))
 async def start_change_traffic_limit(callback: CallbackQuery, state: FSMContext):
