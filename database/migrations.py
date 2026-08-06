@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 85
+LATEST_VERSION = 86
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1528,6 +1528,36 @@ def migration_85(conn: sqlite3.Connection) -> None:
     logger.info("Migration v85 applied: tariff_groups.monthly_reset_enabled готово")
 
 
+def migration_86(conn: sqlite3.Connection) -> None:
+    """Migration v86: пробный период по группам тарифов.
+
+    - tariff_groups.trial_tariff_id — свой пробный тариф для каждой группы
+      (NULL = у этой группы пробника нет).
+    - Настройка trial_mode ('account' | 'per_group', по умолчанию 'account')
+      — либо один пробник на весь аккаунт (старое поведение), либо
+      пользователь может взять по одному пробнику в каждой группе.
+    - Таблица user_group_trials — учёт того, что пользователь УЖЕ взял
+      пробник именно в этой группе (нужна только в режиме 'per_group';
+      старый общий флаг users.used_trial продолжает работать в режиме
+      'account' без изменений)."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(tariff_groups)").fetchall()}
+    if "trial_tariff_id" not in existing_cols:
+        conn.execute("ALTER TABLE tariff_groups ADD COLUMN trial_tariff_id INTEGER REFERENCES tariffs(id)")
+        logger.info("Migration v86: добавлена колонка tariff_groups.trial_tariff_id")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_group_trials (
+            user_id INTEGER NOT NULL,
+            group_id INTEGER NOT NULL,
+            claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, group_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (group_id) REFERENCES tariff_groups(id) ON DELETE CASCADE
+        )
+    """)
+    logger.info("Migration v86 applied: пробный период по группам тарифов готов")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1541,6 +1571,7 @@ MIGRATIONS = {
     83: migration_83,
     84: migration_84,
     85: migration_85,
+    86: migration_86,
 }
 
 
