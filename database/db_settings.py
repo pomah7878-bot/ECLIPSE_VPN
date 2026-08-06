@@ -320,6 +320,24 @@ def get_trial_tariff_id() -> Optional[int]:
     val = get_setting('trial_tariff_id', '')
     return int(val) if val and val.isdigit() else None
 
+def get_trial_mode() -> str:
+    """
+    Режим пробного периода:
+    - 'account' (по умолчанию) — один пробник на весь аккаунт, как раньше.
+    - 'per_group' — пользователь может взять по одному пробнику в КАЖДОЙ
+      группе тарифов, у которой настроен свой пробный тариф.
+    """
+    value = get_setting('trial_mode', 'account')
+    return value if value in ('account', 'per_group') else 'account'
+
+
+def set_trial_mode(mode: str) -> None:
+    """Устанавливает режим пробного периода ('account' или 'per_group')."""
+    if mode not in ('account', 'per_group'):
+        raise ValueError(f"Недопустимый режим пробника: {mode}")
+    set_setting('trial_mode', mode)
+
+
 def is_demo_payment_enabled() -> bool:
     """Is demo payment by RF card included?"""
     return get_setting('demo_payment_enabled', '0') == '1'
