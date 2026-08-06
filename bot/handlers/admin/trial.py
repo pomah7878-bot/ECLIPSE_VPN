@@ -30,13 +30,14 @@ router = Router()
 async def show_trial_menu(callback: CallbackQuery):
     """Shows the trial subscription settings menu."""
     from database.requests import (
-        get_setting, is_trial_enabled, get_trial_tariff_id, get_tariff_by_id
+        get_setting, is_trial_enabled, get_trial_tariff_id, get_tariff_by_id, get_trial_mode
     )
     from bot.keyboards.admin import trial_settings_kb
 
     enabled = is_trial_enabled()
     tariff_id = get_trial_tariff_id()
     tariff_name = None
+    mode = get_trial_mode()
 
     if tariff_id:
         tariff = get_tariff_by_id(tariff_id)
@@ -46,21 +47,22 @@ async def show_trial_menu(callback: CallbackQuery):
 
     status_text = "🟢 Включена" if enabled else "⚪ Выключена"
     tariff_text = tariff_name if tariff_name else "_не задан_"
+    mode_text = "🎯 Один пробник на весь аккаунт" if mode == 'account' else "📂 По одному пробнику в каждой группе тарифов"
 
     text = (
         "🎁 <b>Пробная подписка</b>\n\n"
         "Управление функцией пробного доступа для новых пользователей.\n\n"
         f"📌 <b>Статус:</b> {escape_html(status_text)}\n"
-        f"📋 <b>Тариф:</b> {tariff_text}\n\n"
+        f"📋 <b>Общий тариф:</b> {tariff_text}\n"
+        f"⚙️ <b>Режим:</b> {mode_text}\n\n"
         "❓ <b>Как работает:</b>\n"
-        "• Если включено и тариф задан — кнопка «🎁 Пробная подписка» появляется на главной у пользователей, которые ещё не использовали пробный период.\n"
-        "• При активации — пользователю выдаётся ключ с выбранным тарифом.\n"
-        "• Каждый пользователь может активировать пробный период только один раз."
+        "• Режим «на весь аккаунт» — этот общий тариф выдаётся один раз, и всё.\n"
+        "• Режим «по группам» — общий тариф игнорируется, вместо него используются пробные тарифы, заданные ОТДЕЛЬНО у каждой группы тарифов (раздел «Группы тарифов»). Пользователь может взять по одному пробнику в каждой такой группе."
     )
 
     await safe_edit_or_send(callback.message, 
         text,
-        reply_markup=trial_settings_kb(enabled, tariff_name)
+        reply_markup=trial_settings_kb(enabled, tariff_name, mode)
     )
     await callback.answer()
 
@@ -115,6 +117,18 @@ async def admin_trial_toggle(callback: CallbackQuery):
     """Compatible toggle for old posts."""
     from database.requests import is_trial_enabled
     await _set_trial_enabled(callback, not is_trial_enabled())
+
+
+@router.callback_query(F.data == "admin_trial_toggle_mode")
+async def admin_trial_toggle_mode(callback: CallbackQuery):
+    """Переключает режим пробника: account <-> per_group."""
+    if not is_admin(callback.from_user.id):
+        return
+    from database.requests import get_trial_mode, set_trial_mode
+    new_mode = 'per_group' if get_trial_mode() == 'account' else 'account'
+    set_trial_mode(new_mode)
+    logger.info(f"Режим пробника изменён на '{new_mode}' (admin: {callback.from_user.id})")
+    await show_trial_menu(callback)
 
 
 # ============================================================================
