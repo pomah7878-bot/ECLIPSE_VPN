@@ -1017,34 +1017,43 @@ async def _monthly_traffic_reset_impl(bot: Bot) -> None:
         update_key_traffic_limit,
         get_tariff_by_id
     )
+    from database.db_groups import get_all_groups
     from bot.services.vpn_api import sync_key_to_panel_state
-    
-    reset_enabled = get_setting('monthly_traffic_reset_enabled', '0') == '1'
+
+    # Автосброс трафика теперь настраивается ОТДЕЛЬНО для каждой группы
+    # тарифов (см. миграцию v85), а не одним общим флагом на весь бот —
+    # это позволяет иметь одновременно линейку тарифов по времени (со
+    # сбросом) и отдельную линейку чисто по трафику (без сброса).
+    groups_reset_map = {g['id']: bool(g.get('monthly_reset_enabled')) for g in get_all_groups()}
+    any_group_reset_enabled = any(groups_reset_map.values())
     all_keys = get_all_active_keys_with_server()
     all_servers = get_all_servers()
     initial_snapshots = await collect_server_snapshots(all_keys, all_servers)
     
-    # === PART 1: Traffic reset (if enabled) ===
+    # === PART 1: Traffic reset (для ключей из групп с включённым автосбросом) ===
     reset_success = 0
     reset_errors = 0
 
-    if reset_enabled:
-        logger.info("🔄 Запуск ежемесячного сброса трафика...")
+    if any_group_reset_enabled:
+        logger.info("🔄 Запуск ежемесячного сброса трафика (по группам тарифов)...")
         keys = all_keys
         keys_with_limit = [k for k in keys if (k.get('traffic_limit', 0) or 0) > 0] if keys else []
 
         for key in keys_with_limit:
             try:
+                tariff_id = key.get('tariff_id')
+                tariff = get_tariff_by_id(tariff_id) if tariff_id else None
+                group_id = tariff.get('group_id') if tariff else None
+                if not groups_reset_map.get(group_id, False):
+                    continue
+
                 panel_snapshot = initial_snapshots.snapshots.get(int(key['server_id']))
                 if panel_snapshot is None:
                     raise RuntimeError("Panel snapshot is unavailable")
 
                 tariff_limit = key.get('traffic_limit', 0) or 0
-                tariff_id = key.get('tariff_id')
-                if tariff_id:
-                    tariff = get_tariff_by_id(tariff_id)
-                    if tariff and (tariff.get('traffic_limit_gb', 0) or 0) > 0:
-                        tariff_limit = tariff['traffic_limit_gb'] * (1024**3)
+                if tariff and (tariff.get('traffic_limit_gb', 0) or 0) > 0:
+                    tariff_limit = tariff['traffic_limit_gb'] * (1024**3)
 
                 # Updating the database
                 update_key_traffic_limit(key['id'], tariff_limit)
