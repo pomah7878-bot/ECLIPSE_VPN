@@ -760,7 +760,7 @@ def get_user_keys_for_display(telegram_id: int) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.execute("""
             SELECT
-                vk.id, vk.client_uuid, vk.custom_name, vk.expires_at,
+                vk.id, vk.client_uuid, vk.custom_name, vk.expires_at, vk.user_id,
                 s.name as server_name, s.id as server_id, vk.panel_email,
                 vk.sub_id,
                 vk.traffic_used, vk.traffic_limit,
@@ -774,21 +774,23 @@ def get_user_keys_for_display(telegram_id: int) -> List[Dict[str, Any]]:
             WHERE u.telegram_id = ?
             ORDER BY vk.expires_at DESC
         """, (telegram_id,))
-        
+
+        rows = cursor.fetchall()
+        seq_numbers: Dict[int, int] = {}
+        prefix = _default_key_name_prefix()
+        if rows:
+            seq_numbers = _sequential_key_numbers(conn, rows[0]['user_id'])
+
         keys = []
-        for row in cursor.fetchall():
+        for row in rows:
             key = dict(row)
             # Forming display_name
             if key['custom_name']:
                 key['display_name'] = key['custom_name']
-            elif key['client_uuid']:
-                uuid = key['client_uuid']
-                key['display_name'] = f"{uuid[:4]}...{uuid[-4:]}"
             else:
-                if not key['server_id']:
-                     key['display_name'] = f"Ключ #{key['id']} (Не настроен)"
-                else:
-                     key['display_name'] = f"Ключ #{key['id']}"
+                seq_num = seq_numbers.get(key['id'], key['id'])
+                suffix = ' (Не настроен)' if not key['server_id'] else ''
+                key['display_name'] = f"{prefix} №{seq_num}{suffix}"
             keys.append(key)
         
         return keys
