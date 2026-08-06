@@ -144,9 +144,29 @@ def key_view_kb(key_id: int, user_telegram_id: int) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='📅 Продлить', callback_data=f'admin_key_extend:{key_id}'))
     builder.row(InlineKeyboardButton(text='🔄 Сбросить трафик', callback_data=f'admin_key_reset_traffic:{key_id}'))
     builder.row(InlineKeyboardButton(text='📊 Изменить лимит трафика', callback_data=f'admin_key_change_traffic:{key_id}'))
+    builder.row(InlineKeyboardButton(text='📋 Сменить тариф', callback_data=f'admin_key_change_tariff:{key_id}'))
     builder.row(InlineKeyboardButton(text='🗑️ Удалить ключ', callback_data=f'admin_key_delete_ask:{key_id}'))
     builder.row(back_button(f'admin_user_view:{user_telegram_id}'), home_button())
     return builder.as_markup()
+
+def key_tariff_select_kb(key_id: int, tariffs: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора нового тарифа для ключа.
+
+    Args:
+        key_id: ID ключа
+        tariffs: Список доступных тарифов (включая неактивные для покупки)
+    """
+    builder = InlineKeyboardBuilder()
+    for t in tariffs:
+        status = '🟢' if t.get('is_active') else '⚪'
+        builder.row(InlineKeyboardButton(
+            text=f"{status} {t['name']} ({t.get('duration_days', 0)} дн.)",
+            callback_data=f"admin_key_set_tariff:{key_id}:{t['id']}",
+        ))
+    builder.row(InlineKeyboardButton(text='❌ Отмена', callback_data=f'admin_key_view:{key_id}'))
+    return builder.as_markup()
+
 
 def add_key_server_kb(servers: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     """
