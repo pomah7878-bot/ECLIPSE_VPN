@@ -21,7 +21,7 @@ def groups_list_kb(groups: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     builder.row(back_button('admin_payments'), home_button())
     return builder.as_markup()
 
-def group_view_kb(group_id: int, reset_enabled: bool = False) -> InlineKeyboardMarkup:
+def group_view_kb(group_id: int, reset_enabled: bool = False, trial_tariff_name: str = None) -> InlineKeyboardMarkup:
     """
     Keyboard for viewing tariff groups.
     
@@ -32,9 +32,25 @@ def group_view_kb(group_id: int, reset_enabled: bool = False) -> InlineKeyboardM
     builder.row(InlineKeyboardButton(text='✏️ Переименовать', callback_data=f'admin_group_edit:{group_id}'))
     reset_status = '🟢' if reset_enabled else '⚪'
     builder.row(InlineKeyboardButton(text=f'{reset_status} Автосброс трафика 1-го числа', callback_data=f'admin_group_toggle_reset:{group_id}'))
+    trial_label = f'🎁 Пробник: {trial_tariff_name}' if trial_tariff_name else '🎁 Пробник: не задан'
+    builder.row(InlineKeyboardButton(text=trial_label, callback_data=f'admin_group_select_trial:{group_id}'))
     if group_id != 1:
         builder.row(InlineKeyboardButton(text='🗑️ Удалить группу', callback_data=f'admin_group_delete:{group_id}'))
     builder.row(back_button('admin_groups'), home_button())
+    return builder.as_markup()
+
+
+def group_trial_select_kb(group_id: int, tariffs: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Клавиатура выбора пробного тарифа для группы (или отмены пробника)."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text='🚫 Без пробника (убрать)', callback_data=f'admin_group_set_trial:{group_id}:0'))
+    for t in tariffs:
+        status = '🟢' if t.get('is_active') else '⚪'
+        builder.row(InlineKeyboardButton(
+            text=f"{status} {t['name']} ({t.get('duration_days', 0)} дн.)",
+            callback_data=f"admin_group_set_trial:{group_id}:{t['id']}",
+        ))
+    builder.row(InlineKeyboardButton(text='❌ Отмена', callback_data=f'admin_group_view:{group_id}'))
     return builder.as_markup()
 
 def group_delete_confirm_kb(group_id: int) -> InlineKeyboardMarkup:
