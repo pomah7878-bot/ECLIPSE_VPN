@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 84
+LATEST_VERSION = 85
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1515,6 +1515,19 @@ def migration_81(conn: sqlite3.Connection) -> None:
     logger.info("Migration v81 applied: vpn_keys.auto_renew готово")
 
 
+def migration_85(conn: sqlite3.Connection) -> None:
+    """Migration v85: добавляет поле monthly_reset_enabled в tariff_groups —
+    автосброс трафика 1-го числа теперь настраивается ОТДЕЛЬНО для каждой
+    группы тарифов, а не одним общим переключателем на весь бот. Это
+    позволяет иметь одновременно линейку тарифов по времени (месяц/полгода/
+    год, со сбросом) и отдельную линейку чисто по трафику (без сброса)."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(tariff_groups)").fetchall()}
+    if "monthly_reset_enabled" not in existing_cols:
+        conn.execute("ALTER TABLE tariff_groups ADD COLUMN monthly_reset_enabled INTEGER DEFAULT 0")
+        logger.info("Migration v85: добавлена колонка tariff_groups.monthly_reset_enabled")
+    logger.info("Migration v85 applied: tariff_groups.monthly_reset_enabled готово")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1527,6 +1540,7 @@ MIGRATIONS = {
     82: migration_82,
     83: migration_83,
     84: migration_84,
+    85: migration_85,
 }
 
 
