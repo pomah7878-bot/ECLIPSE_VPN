@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     'get_all_groups',
     'get_group_by_id',
+    'toggle_group_monthly_reset',
     'add_group',
     'update_group_name',
     'delete_group',
@@ -50,12 +51,32 @@ def get_group_by_id(group_id: int) -> Optional[Dict[str, Any]]:
     """
     with get_db() as conn:
         cursor = conn.execute("""
-            SELECT id, name, sort_order, created_at
+            SELECT id, name, sort_order, created_at, monthly_reset_enabled
             FROM tariff_groups
             WHERE id = ?
         """, (group_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+def toggle_group_monthly_reset(group_id: int) -> bool:
+    """
+    Переключает автосброс трафика 1-го числа для этой группы тарифов.
+    Возвращает НОВОЕ состояние (True — включено).
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT monthly_reset_enabled FROM tariff_groups WHERE id = ?",
+            (group_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Группа {group_id} не найдена")
+        new_state = 0 if row['monthly_reset_enabled'] else 1
+        conn.execute(
+            "UPDATE tariff_groups SET monthly_reset_enabled = ? WHERE id = ?",
+            (new_state, group_id),
+        )
+        return bool(new_state)
+
 
 def add_group(name: str) -> int:
     """
