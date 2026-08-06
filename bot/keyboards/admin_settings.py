@@ -82,13 +82,14 @@ def custom_reset_done_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None) -> InlineKeyboardMarkup:
+def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None, mode: str='account') -> InlineKeyboardMarkup:
     """
     Trial subscription control keyboard.
     
     Args:
         enabled: Whether trial subscription is enabled
         tariff_name: Name of the selected tariff or None
+        mode: 'account' (один пробник на аккаунт) или 'per_group' (по группам)
     """
     builder = InlineKeyboardBuilder()
     builder.row(*state_pair_buttons(
@@ -98,9 +99,11 @@ def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None) -> InlineK
         'Выключено',
         'admin_trial_set:0',
     ))
+    mode_label = '🎯 На весь аккаунт' if mode == 'account' else '📂 По группам тарифов'
+    builder.row(InlineKeyboardButton(text=f'⚙️ Режим: {mode_label}', callback_data='admin_trial_toggle_mode'))
     builder.row(InlineKeyboardButton(text='✏️ Изменить текст', callback_data='admin_trial_edit_text'))
     tariff_label = tariff_name if tariff_name else 'не задан'
-    builder.row(InlineKeyboardButton(text=f'📋 Тариф: {tariff_label}', callback_data='admin_trial_select_tariff'))
+    builder.row(InlineKeyboardButton(text=f'📋 Общий тариф: {tariff_label}', callback_data='admin_trial_select_tariff'))
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 
