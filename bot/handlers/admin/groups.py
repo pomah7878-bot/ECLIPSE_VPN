@@ -216,6 +216,13 @@ async def group_view_handler(callback: CallbackQuery, state: FSMContext):
     is_default = " _(по умолчанию)_" if group_id == 1 else ""
     reset_enabled = bool(group.get('monthly_reset_enabled'))
     reset_text = "🟢 включён" if reset_enabled else "⚪ выключен"
+    trial_tariff_id = group.get('trial_tariff_id')
+    trial_tariff_name = None
+    if trial_tariff_id:
+        from database.requests import get_tariff_by_id
+        trial_tariff = get_tariff_by_id(trial_tariff_id)
+        trial_tariff_name = trial_tariff['name'] if trial_tariff else None
+    trial_text = trial_tariff_name if trial_tariff_name else "не задан"
     
     text = (
         f"📂 <b>{group['name']}</b>{is_default}\n\n"
@@ -223,6 +230,7 @@ async def group_view_handler(callback: CallbackQuery, state: FSMContext):
         f"📋 Активных тарифов: {len(tariffs)}\n"
         f"🖥️ Активных серверов: {len(servers)}\n"
         f"🔄 Автосброс трафика 1-го числа: {reset_text}\n"
+        f"🎁 Пробный тариф группы: {trial_text}\n"
     )
     
     if tariffs:
@@ -239,9 +247,49 @@ async def group_view_handler(callback: CallbackQuery, state: FSMContext):
     
     await safe_edit_or_send(callback.message, 
         text,
-        reply_markup=group_view_kb(group_id, reset_enabled)
+        reply_markup=group_view_kb(group_id, reset_enabled, trial_tariff_name)
     )
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_group_select_trial:"))
+async def group_select_trial_handler(callback: CallbackQuery, state: FSMContext):
+    """Показывает список тарифов для выбора пробного тарифа группы."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    group_id = int(callback.data.split(":")[1])
+    from database.requests import get_all_tariffs
+    from bot.keyboards.admin_groups import group_trial_select_kb
+    tariffs = get_all_tariffs(include_hidden=True)
+    if not tariffs:
+        await callback.answer("❌ Нет доступных тарифов", show_alert=True)
+        return
+    await safe_edit_or_send(
+        callback.message,
+        "🎁 <b>Пробный тариф группы</b>\n\nВыберите тариф, который будет выдаваться как пробный для этой группы, "
+        "или уберите пробник для группы совсем.",
+        reply_markup=group_trial_select_kb(group_id, tariffs),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_group_set_trial:"))
+async def group_set_trial_handler(callback: CallbackQuery, state: FSMContext):
+    """Применяет выбранный пробный тариф к группе (0 = убрать пробник)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    parts = callback.data.split(":")
+    group_id = int(parts[1])
+    tariff_id = int(parts[2])
+    from database.db_groups import set_group_trial_tariff
+    set_group_trial_tariff(group_id, tariff_id if tariff_id != 0 else None)
+    status = "убран" if tariff_id == 0 else "обновлён"
+    await callback.answer(f"Пробный тариф группы {status}")
+    await group_view_handler(callback, state)
+
+
 @router.callback_query(F.data.startswith("admin_group_toggle_reset:"))
 async def group_toggle_reset_handler(callback: CallbackQuery, state: FSMContext):
     """Переключает автосброс трафика 1-го числа для группы тарифов."""
