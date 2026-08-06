@@ -805,7 +805,7 @@ def get_key_details_by_id(key_id: int) -> Optional[Dict[str, Any]]:
             SELECT
                 vk.*,
                 s.name as server_name, s.id as server_id,
-                t.name as tariff_name, t.duration_days, t.price_cents, t.price_stars,
+                t.name as tariff_name, t.duration_days, t.price_cents, t.price_stars, t.max_ips,
                 u.telegram_id, u.username,
                 s.is_active as server_active,
                 CASE
@@ -840,7 +840,7 @@ def get_key_details_for_user(key_id: int, telegram_id: int) -> Optional[Dict[str
             SELECT 
                 vk.*, 
                 s.name as server_name, s.id as server_id,
-                t.name as tariff_name, t.duration_days, t.price_cents, t.price_stars,
+                t.name as tariff_name, t.duration_days, t.price_cents, t.price_stars, t.max_ips,
                 u.telegram_id, u.username,
                 s.is_active as server_active,
                 CASE 
@@ -861,14 +861,10 @@ def get_key_details_for_user(key_id: int, telegram_id: int) -> Optional[Dict[str
         # Forming display_name
         if key['custom_name']:
             key['display_name'] = key['custom_name']
-        elif key['client_uuid']:
-            uuid = key['client_uuid']
-            key['display_name'] = f"{uuid[:4]}...{uuid[-4:]}"
+        elif not key['server_id']:
+            key['display_name'] = f"Ключ #{key['id']} (Не настроен)"
         else:
-            if not key['server_id']:
-                 key['display_name'] = f"Ключ #{key['id']} (Не настроен)"
-            else:
-                 key['display_name'] = f"Ключ #{key['id']}"
+            key['display_name'] = f"Ключ #{key['id']}"
         
         return key
 
