@@ -824,6 +824,27 @@ def get_key_details_by_id(key_id: int) -> Optional[Dict[str, Any]]:
         return dict(row)
 
 
+def _sequential_key_numbers(conn, user_id: int) -> Dict[int, int]:
+    """
+    Возвращает {key_id: порядковый_номер} для всех ключей пользователя,
+    по порядку создания (1, 2, 3...). Используется для имени по умолчанию
+    "Ключ №N" вместо непонятного обрезанного UUID или сырого id из БД
+    (который у разных пользователей идёт не с единицы).
+    """
+    rows = conn.execute(
+        "SELECT id FROM vpn_keys WHERE user_id = ? ORDER BY created_at ASC, id ASC",
+        (user_id,),
+    ).fetchall()
+    return {row['id']: idx + 1 for idx, row in enumerate(rows)}
+
+
+def _default_key_name_prefix() -> str:
+    """Настраиваемая через кастомизатор приставка для имени ключа по
+    умолчанию (обычно "Ключ", но можно заменить, например, на название бота)."""
+    from database.db_settings import get_setting
+    return get_setting('key_default_name_prefix') or 'Ключ'
+
+
 def get_key_details_for_user(key_id: int, telegram_id: int) -> Optional[Dict[str, Any]]:
     """
     Receives detailed information about the key with verification of ownership.
