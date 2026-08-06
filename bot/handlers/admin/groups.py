@@ -214,12 +214,15 @@ async def group_view_handler(callback: CallbackQuery, state: FSMContext):
     servers = get_active_servers_by_group(group_id)
     
     is_default = " _(по умолчанию)_" if group_id == 1 else ""
+    reset_enabled = bool(group.get('monthly_reset_enabled'))
+    reset_text = "🟢 включён" if reset_enabled else "⚪ выключен"
     
     text = (
         f"📂 <b>{group['name']}</b>{is_default}\n\n"
         f"🔢 Порядок: {group['sort_order']}\n"
         f"📋 Активных тарифов: {len(tariffs)}\n"
         f"🖥️ Активных серверов: {len(servers)}\n"
+        f"🔄 Автосброс трафика 1-го числа: {reset_text}\n"
     )
     
     if tariffs:
@@ -236,9 +239,25 @@ async def group_view_handler(callback: CallbackQuery, state: FSMContext):
     
     await safe_edit_or_send(callback.message, 
         text,
-        reply_markup=group_view_kb(group_id)
+        reply_markup=group_view_kb(group_id, reset_enabled)
     )
     await callback.answer()
+@router.callback_query(F.data.startswith("admin_group_toggle_reset:"))
+async def group_toggle_reset_handler(callback: CallbackQuery, state: FSMContext):
+    """Переключает автосброс трафика 1-го числа для группы тарифов."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    group_id = int(callback.data.split(":")[1])
+    from database.db_groups import toggle_group_monthly_reset
+    try:
+        new_state = toggle_group_monthly_reset(group_id)
+    except ValueError:
+        await callback.answer("❌ Группа не найдена", show_alert=True)
+        return
+    status = "включён" if new_state else "выключен"
+    await callback.answer(f"Автосброс трафика {status}")
+    await group_view_handler(callback, state)
 
 
 @router.callback_query(F.data.startswith("admin_group_edit:"))
