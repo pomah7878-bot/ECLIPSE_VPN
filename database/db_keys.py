@@ -884,10 +884,12 @@ def get_key_details_for_user(key_id: int, telegram_id: int) -> Optional[Dict[str
         # Forming display_name
         if key['custom_name']:
             key['display_name'] = key['custom_name']
-        elif not key['server_id']:
-            key['display_name'] = f"Ключ #{key['id']} (Не настроен)"
         else:
-            key['display_name'] = f"Ключ #{key['id']}"
+            prefix = _default_key_name_prefix()
+            seq_numbers = _sequential_key_numbers(conn, key['user_id'])
+            seq_num = seq_numbers.get(key['id'], key['id'])
+            suffix = ' (Не настроен)' if not key['server_id'] else ''
+            key['display_name'] = f"{prefix} №{seq_num}{suffix}"
         
         return key
 
