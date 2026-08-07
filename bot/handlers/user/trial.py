@@ -63,7 +63,7 @@ async def show_trial_subscription(callback: CallbackQuery):
     builder = InlineKeyboardBuilder()
     for g in available:
         builder.row(InlineKeyboardButton(text=f"🎁 {g['name']}", callback_data=f"trial_subscription_group:{g['id']}"))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='main_menu'))
+    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='start'))
     await safe_edit_or_send(
         callback.message,
         "🎁 <b>Выберите пробную группу</b>\n\n"
