@@ -366,7 +366,7 @@ def _validate_pulled_code() -> Tuple[bool, str]:
             return False, (result.stderr or result.stdout or 'Неизвестная ошибка импорта')[-800:]
         return True, ''
     except Exception as e:
-        return False, f'Ошибка запуска проверки импорта: {e}
+        return False, f'Ошибка запуска проверки импорта: {e}'
 
 
 def force_pull_updates() -> Tuple[bool, str]:
