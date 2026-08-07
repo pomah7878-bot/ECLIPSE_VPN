@@ -303,6 +303,11 @@ def pull_updates() -> Tuple[bool, str]:
         if not stash_success:
             return False, f"❌ Не удалось сохранить локальные изменения перед обновлением:\n{stash_output}"
 
+    # Запоминаем коммит ДО pull — если новый код не пройдёт проверку импорта,
+    # откатимся именно сюда, а не оставим бота с рабочим процессом на старом
+    # коде и сломанным кодом на диске, ожидающим следующего перезапуска.
+    pre_pull_commit = get_current_commit()
+
     success, output = run_git_command(['pull', 'origin'], timeout=120)
 
     if not success:
@@ -320,8 +325,48 @@ def pull_updates() -> Tuple[bool, str]:
                 f"изменения (конфликт при stash pop). Разрешите вручную на сервере:\n{pop_output}"
             )
 
+    # Проверка безопасности: пробуем реально импортировать основные модули
+    # бота в ОТДЕЛЬНОМ процессе, прежде чем считать обновление успешным.
+    # Если новый код содержит сломанный импорт (например, забытую запись в
+    # __all__) — откатываемся на предыдущий коммит и НЕ даём боту
+    # перезапуститься на заведомо нерабочем коде.
+    valid, validation_error = _validate_pulled_code()
+    if not valid:
+        if pre_pull_commit:
+            run_git_command(['reset', '--hard', pre_pull_commit], timeout=30)
+        return False, (
+            "❌ Новая версия не прошла проверку импорта и НЕ была установлена "
+            f"(откат на предыдущий коммит):\n<pre>{escape_html(validation_error)}</pre>"
+        )
+
     commit_info = get_last_commit_info('HEAD')
     return True, f"✅ Обновление успешно!\n\n🔹 Последний коммит:\n<pre>{escape_html(commit_info)}</pre>"
+
+
+def _validate_pulled_code() -> Tuple[bool, str]:
+    """
+    Пробует реально импортировать основные модули бота в отдельном
+    подпроцессе (не в текущем работающем процессе — чтобы не рисковать его
+    состоянием и получить чистую проверку). Возвращает (успех, текст_ошибки).
+    """
+    import subprocess as _subprocess
+    project_root = get_project_root()
+    python_bin = os.path.join(project_root, 'venv', 'bin', 'python3')
+    if not os.path.exists(python_bin):
+        python_bin = 'python3'
+    try:
+        result = _subprocess.run(
+            [python_bin, '-c', 'import bot.handlers.admin; import bot.handlers.user.start'],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return False, (result.stderr or result.stdout or 'Неизвестная ошибка импорта')[-800:]
+        return True, ''
+    except Exception as e:
+        return False, f'Ошибка запуска проверки импорта: {e}
 
 
 def force_pull_updates() -> Tuple[bool, str]:
