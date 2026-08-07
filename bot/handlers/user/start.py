@@ -93,7 +93,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     from bot.utils.page_renderer import render_page
     from database.requests import (
         get_page, is_trial_enabled, get_trial_tariff_id, has_used_trial,
-        get_trial_mode, get_groups_with_trial, get_claimed_trial_group_ids, get_user_internal_id,
+        get_trial_mode, get_groups_with_trial, get_user_internal_id, get_eligible_trial_group_ids,
     )
 
     # Determining telegram_id
@@ -118,8 +118,11 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
             show_trial = False
         else:
             internal_id = get_user_internal_id(user_id)
-            claimed = get_claimed_trial_group_ids(internal_id) if internal_id else set()
-            show_trial = any(g['id'] not in claimed for g in groups_with_trial)
+            if not internal_id:
+                show_trial = False
+            else:
+                eligible = get_eligible_trial_group_ids(internal_id, [g['id'] for g in groups_with_trial])
+                show_trial = bool(eligible)
     else:
         show_trial = get_trial_tariff_id() is not None and (not has_used_trial(user_id))
     show_referral = is_referral_enabled()
