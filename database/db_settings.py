@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 __all__ = [
     'get_setting',
     'set_setting',
+    'get_trial_mode',
+    'set_trial_mode',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
