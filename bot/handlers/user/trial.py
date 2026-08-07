@@ -16,7 +16,7 @@ async def show_trial_subscription(callback: CallbackQuery):
     группы, если пробников несколько (режим 'per_group')."""
     from database.requests import (
         is_trial_enabled, get_trial_tariff_id, has_used_trial, get_trial_mode,
-        get_groups_with_trial, get_claimed_trial_group_ids, get_user_internal_id,
+        get_groups_with_trial, get_user_internal_id, get_eligible_trial_group_ids,
     )
     from bot.utils.page_renderer import render_page
 
@@ -46,11 +46,14 @@ async def show_trial_subscription(callback: CallbackQuery):
         return
 
     internal_id = get_user_internal_id(user_id)
-    claimed = get_claimed_trial_group_ids(internal_id) if internal_id else set()
-    available = [g for g in groups if g['id'] not in claimed]
+    if not internal_id:
+        await callback.answer('❌ Ошибка профиля', show_alert=True)
+        return
+    eligible_ids = get_eligible_trial_group_ids(internal_id, [g['id'] for g in groups])
+    available = [g for g in groups if g['id'] in eligible_ids]
 
     if not available:
-        await callback.answer('ℹ️ Вы уже использовали пробники во всех доступных группах', show_alert=True)
+        await callback.answer('ℹ️ Пробный период доступен только новым пользователям без активных или прошлых ключей', show_alert=True)
         return
 
     if len(available) == 1:
@@ -216,7 +219,7 @@ async def activate_trial_subscription_group(callback: CallbackQuery, state: FSMC
     """Активирует пробник конкретной группы в режиме 'per_group'."""
     from database.requests import (
         is_trial_enabled, get_group_by_id, get_user_internal_id,
-        has_used_group_trial, mark_group_trial_used,
+        mark_group_trial_used, get_eligible_trial_group_ids,
     )
 
     if not is_trial_enabled():
@@ -231,8 +234,8 @@ async def activate_trial_subscription_group(callback: CallbackQuery, state: FSMC
 
     user_id = callback.from_user.id
     internal_id = get_user_internal_id(user_id)
-    if internal_id and has_used_group_trial(internal_id, group_id):
-        await callback.answer('ℹ️ Вы уже использовали пробник в этой группе', show_alert=True)
+    if not internal_id or group_id not in get_eligible_trial_group_ids(internal_id, [group_id]):
+        await callback.answer('ℹ️ Пробник для этой группы сейчас недоступен', show_alert=True)
         return
 
     await _activate_trial(
