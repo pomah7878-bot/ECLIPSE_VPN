@@ -16,7 +16,7 @@ from config import BOT_TOKEN
 from database.migrations import run_migrations
 
 from bot.services.vpn_api import close_all_clients
-from bot.services.scheduler import run_daily_tasks, run_update_check_scheduler, run_traffic_sync_scheduler
+from bot.services.scheduler import run_daily_tasks, run_update_check_scheduler, run_traffic_sync_scheduler, run_channel_posts_scheduler
 from bot.services.payment_auto_check import run_payment_auto_check_scheduler
 from bot.webapp.server import run_webapp
 
@@ -195,10 +195,11 @@ async def main():
     # Launch the traffic synchronization scheduler (every 5 minutes)
     traffic_tasks = asyncio.create_task(run_traffic_sync_scheduler(bot))
     payment_check_tasks = asyncio.create_task(run_payment_auto_check_scheduler(bot))
+    channel_posts_tasks = asyncio.create_task(run_channel_posts_scheduler(bot))
     webapp_task = asyncio.create_task(
         run_webapp(host="127.0.0.1", port=3000)
     )
-    background_tasks = [daily_tasks, update_tasks, traffic_tasks, payment_check_tasks, webapp_task]
+    background_tasks = [daily_tasks, update_tasks, traffic_tasks, payment_check_tasks, channel_posts_tasks, webapp_task]
     
     try:
         await dp.start_polling(bot)
