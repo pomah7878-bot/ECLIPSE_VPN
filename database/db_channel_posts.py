@@ -15,6 +15,8 @@ __all__ = [
     'mark_scheduled_post_sent',
     'mark_scheduled_post_failed',
     'get_all_scheduled_posts',
+    'reschedule_post_to_next_day',
+    'record_post_retry_error',
 ]
 
 
@@ -67,6 +69,33 @@ def mark_scheduled_post_failed(post_id: int, error_message: str) -> None:
     with get_db() as conn:
         conn.execute(
             "UPDATE scheduled_channel_posts SET status = 'failed', error_message = ? WHERE id = ?",
+            (error_message[:1000], post_id),
+        )
+
+
+def reschedule_post_to_next_day(post_id: int) -> None:
+    """
+    Переносит пост на тот же час:минуту следующего дня — используется, когда
+    все попытки публикации за текущий день исчерпаны (после 21:00 МСК).
+    Статус остаётся 'pending', попытки продолжатся на следующий день.
+    """
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE scheduled_channel_posts
+               SET scheduled_at = datetime(scheduled_at, '+1 day')
+               WHERE id = ?""",
+            (post_id,),
+        )
+
+
+def record_post_retry_error(post_id: int, error_message: str) -> None:
+    """
+    Записывает ошибку неудачной попытки, НЕ меняя статус (пост остаётся
+    'pending' и будет повторно опробован на следующем цикле планировщика,
+    в пределах текущего дня до 21:00 МСК)."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE scheduled_channel_posts SET error_message = ? WHERE id = ?",
             (error_message[:1000], post_id),
         )
 
