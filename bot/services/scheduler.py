@@ -1316,8 +1316,16 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
     from database.requests import (
         get_due_scheduled_posts,
         mark_scheduled_post_sent,
-        mark_scheduled_post_failed,
+        reschedule_post_to_next_day,
+        record_post_retry_error,
     )
+
+    # Правило повтора: если публикация не удалась, планировщик продолжает
+    # пробовать её на каждом цикле (раз в минуту) в течение дня, но не
+    # позже 21:00 по Москве. Если к этому времени пост так и не опубликован,
+    # он автоматически переносится на то же время следующего дня.
+    MSK_OFFSET_HOURS = 3
+    RETRY_CUTOFF_HOUR_MSK = 21
 
     logger.info("📢 Планировщик постов канала запущен (проверка каждую минуту)")
     await asyncio.sleep(15)
@@ -1325,6 +1333,9 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
     while True:
         try:
             due_posts = get_due_scheduled_posts(limit=10)
+            now_msk = datetime.utcnow() + timedelta(hours=MSK_OFFSET_HOURS)
+            past_cutoff = now_msk.hour >= RETRY_CUTOFF_HOUR_MSK
+
             for post in due_posts:
                 post_id = post['id']
                 channel_id = post['channel_id']
@@ -1346,17 +1357,26 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
                             pass
                 except Exception as post_error:
                     error_text = str(post_error)
-                    mark_scheduled_post_failed(post_id, error_text)
-                    logger.error(f"❌ Не удалось опубликовать пост #{post_id} в {channel_id}: {error_text}")
-                    for admin_id in ADMIN_IDS:
-                        try:
-                            await bot.send_message(
-                                admin_id,
-                                f"❌ Не удалось опубликовать запланированный пост #{post_id} в {channel_id}:\n<pre>{error_text[:500]}</pre>",
-                                parse_mode='HTML',
-                            )
-                        except Exception:
-                            pass
+                    record_post_retry_error(post_id, error_text)
+                    if past_cutoff:
+                        reschedule_post_to_next_day(post_id)
+                        logger.warning(
+                            f"⏰ Пост #{post_id} не опубликован до 21:00 МСК, перенесён на завтра: {error_text}"
+                        )
+                        for admin_id in ADMIN_IDS:
+                            try:
+                                await bot.send_message(
+                                    admin_id,
+                                    f"⏰ Пост #{post_id} в {channel_id} не удалось опубликовать до 21:00 МСК — "
+                                    f"перенесён на то же время завтра.\n<pre>{error_text[:500]}</pre>",
+                                    parse_mode='HTML',
+                                )
+                            except Exception:
+                                pass
+                    else:
+                        logger.warning(
+                            f"⚠️ Пост #{post_id} не опубликован (попробуем снова в течение дня): {error_text}"
+                        )
         except Exception as e:
             logger.error(f"Ошибка в планировщике постов канала: {e}", exc_info=True)
 
