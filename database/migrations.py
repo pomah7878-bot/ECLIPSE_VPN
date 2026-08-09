@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 86
+LATEST_VERSION = 87
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1558,6 +1558,28 @@ def migration_86(conn: sqlite3.Connection) -> None:
     logger.info("Migration v86 applied: пробный период по группам тарифов готов")
 
 
+def migration_87(conn: sqlite3.Connection) -> None:
+    """Migration v87: таблица scheduled_channel_posts — запланированные
+    посты для маркетингового Telegram-канала. Публикуются встроенным
+    планировщиком бота (надёжнее, чем системный at/atd, который оказался
+    нестабилен на этом сервере)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scheduled_channel_posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            scheduled_at DATETIME NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'sent', 'failed')),
+            sent_at DATETIME,
+            error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_scheduled_channel_posts_due ON scheduled_channel_posts(status, scheduled_at)")
+    logger.info("Migration v87 applied: таблица scheduled_channel_posts создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1572,6 +1594,7 @@ MIGRATIONS = {
     84: migration_84,
     85: migration_85,
     86: migration_86,
+    87: migration_87,
 }
 
 
