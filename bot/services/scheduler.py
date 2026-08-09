@@ -1304,6 +1304,65 @@ async def materialize_subscription_state(
         logger.info(f"🔁 materialize_subscription_state завершён: {stats_total}")
 
 
+async def run_channel_posts_scheduler(bot: Bot) -> None:
+    """
+    Фоновая задача публикации запланированных постов в маркетинговый канал.
+    Проверяет очередь каждую минуту, публикует созревшие посты и уведомляет
+    администраторов об успехе или неудаче каждой публикации.
+
+    Заменяет собой системный at/atd, который оказался нестабилен на этом
+    сервере (посты молча не публиковались без видимой причины).
+    """
+    from database.requests import (
+        get_due_scheduled_posts,
+        mark_scheduled_post_sent,
+        mark_scheduled_post_failed,
+    )
+
+    logger.info("📢 Планировщик постов канала запущен (проверка каждую минуту)")
+    await asyncio.sleep(15)
+
+    while True:
+        try:
+            due_posts = get_due_scheduled_posts(limit=10)
+            for post in due_posts:
+                post_id = post['id']
+                channel_id = post['channel_id']
+                try:
+                    msg = await bot.send_message(
+                        channel_id, post['content'], parse_mode='HTML',
+                    )
+                    mark_scheduled_post_sent(post_id)
+                    logger.info(f"📢 Пост #{post_id} опубликован в {channel_id}, message_id={msg.message_id}")
+                    preview = post['content'][:80].replace('\n', ' ')
+                    for admin_id in ADMIN_IDS:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                f"✅ Пост #{post_id} опубликован в {channel_id}\n\n<i>{preview}...</i>",
+                                parse_mode='HTML',
+                            )
+                        except Exception:
+                            pass
+                except Exception as post_error:
+                    error_text = str(post_error)
+                    mark_scheduled_post_failed(post_id, error_text)
+                    logger.error(f"❌ Не удалось опубликовать пост #{post_id} в {channel_id}: {error_text}")
+                    for admin_id in ADMIN_IDS:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                f"❌ Не удалось опубликовать запланированный пост #{post_id} в {channel_id}:\n<pre>{error_text[:500]}</pre>",
+                                parse_mode='HTML',
+                            )
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.error(f"Ошибка в планировщике постов канала: {e}", exc_info=True)
+
+        await asyncio.sleep(60)
+
+
 async def run_traffic_sync_scheduler(bot: Bot) -> None:
     """
     Background task to synchronize traffic every 5 minutes.
