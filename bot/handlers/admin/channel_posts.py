@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 MSK_OFFSET_HOURS = 3
-DEFAULT_CHANNEL_ID = '@eclipse_unlimited_news'
 
 # Автоматически добавляется в конец КАЖДОГО поста, созданного через это меню
 # — чтобы не приходилось вручную набирать ссылки в каждом посте.
@@ -43,9 +42,13 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
     await state.clear()
+    from database.requests import get_marketing_channel_id
+    channel_id = get_marketing_channel_id()
+    channel_text = channel_id if channel_id else '⚠️ не настроен'
     await safe_edit_or_send(
         callback.message,
         '📰 <b>Публикация в канал</b>\n\n'
+        f'Текущий канал: {channel_text}\n\n'
         'Создать новый пост с датой и временем публикации, или посмотреть очередь уже запланированных.',
         reply_markup=channel_posts_menu_kb(),
     )
@@ -57,6 +60,13 @@ async def start_channel_post_new(callback: CallbackQuery, state: FSMContext):
     """Начало создания нового поста — запрос текста."""
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    from database.requests import get_marketing_channel_id
+    if not get_marketing_channel_id():
+        await callback.answer(
+            '⚠️ Сначала настройте канал (кнопка «⚙️ Настроить канал» в меню)',
+            show_alert=True,
+        )
         return
     await state.set_state(AdminStates.channel_post_text)
     await safe_edit_or_send(
@@ -138,11 +148,13 @@ async def process_channel_post_time(message: Message, state: FSMContext):
     await state.update_data(scheduled_at=scheduled_at, msk_display=msk_display)
     await state.set_state(AdminStates.channel_post_preview)
 
+    from database.requests import get_marketing_channel_id
+    channel_id = get_marketing_channel_id() or '—'
     post_text = data['post_text']
     preview_msg = (
         f"👀 <b>Превью поста</b>\n\n"
         f"📅 Публикация: {msk_display} МСК\n"
-        f"📢 Канал: {DEFAULT_CHANNEL_ID}\n\n"
+        f"📢 Канал: {channel_id}\n\n"
         f"—————————\n\n"
         f"{post_text}"
     )
@@ -156,8 +168,13 @@ async def confirm_channel_post(callback: CallbackQuery, state: FSMContext):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
     data = await state.get_data()
-    from database.requests import create_scheduled_post
-    post_id = create_scheduled_post(DEFAULT_CHANNEL_ID, data['post_text'], data['scheduled_at'])
+    from database.requests import create_scheduled_post, get_marketing_channel_id
+    channel_id = get_marketing_channel_id()
+    if not channel_id:
+        await callback.answer('⚠️ Канал не настроен, публикация отменена', show_alert=True)
+        await state.clear()
+        return
+    post_id = create_scheduled_post(channel_id, data['post_text'], data['scheduled_at'])
     await state.clear()
     logger.info(f"Админ {callback.from_user.id} запланировал пост #{post_id} на {data['msk_display']} МСК")
     await safe_edit_or_send(
