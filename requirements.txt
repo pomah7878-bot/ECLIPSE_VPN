@@ -2,3 +2,9 @@ aiogram>=3.29.1,<4
 aiohttp
 qrcode
 pillow
+fastapi
+uvicorn
+pydantic
+httpx
+openai
+slowapi
