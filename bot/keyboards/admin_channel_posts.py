@@ -9,6 +9,7 @@ def channel_posts_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='➕ Создать пост', callback_data='admin_channel_post_new'))
     builder.row(InlineKeyboardButton(text='📋 Очередь публикаций', callback_data='admin_channel_posts_queue'))
+    builder.row(InlineKeyboardButton(text='⚙️ Настроить канал', callback_data='admin_channel_settings'))
     builder.row(back_button('admin_marketing'), home_button())
     return builder.as_markup()
 
