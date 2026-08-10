@@ -23,6 +23,7 @@ from bot.handlers.admin.groups import router as groups_router
 from bot.handlers.admin.support import router as support_router
 from bot.handlers.admin.customization_reset import router as customization_reset_router
 from bot.handlers.admin.integrations import router as integrations_router
+from bot.handlers.admin.channel_posts import router as channel_posts_router
 
 admin_router = Router()
 
@@ -46,4 +47,5 @@ admin_router.include_router(referral_router)
 admin_router.include_router(promotions_router)
 admin_router.include_router(customization_reset_router)
 admin_router.include_router(integrations_router)
+admin_router.include_router(channel_posts_router)
 
