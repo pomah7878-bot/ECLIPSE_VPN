@@ -253,11 +253,23 @@ EOF
     systemctl enable eclipse-vpn > /dev/null 2>&1
 
     print_ok "systemd сервис установлен и включён в автозапуск"
+
+    # AI-консультант — отдельный сервис (FastAPI на порту 8086), работает
+    # только если задан GROQ_API_KEY. Файл сервиса уже есть в репозитории.
+    if [ -f "$INSTALL_DIR/eclipse-ai.service" ]; then
+        cp "$INSTALL_DIR/eclipse-ai.service" /etc/systemd/system/
+        systemctl daemon-reload
+        systemctl enable eclipse-ai > /dev/null 2>&1
+        print_ok "AI-сервис установлен и включён в автозапуск"
+    fi
 }
 
 # Запуск сервиса
 start_service() {
     systemctl start eclipse-vpn
+    if [ -f /etc/systemd/system/eclipse-ai.service ]; then
+        systemctl start eclipse-ai
+    fi
     sleep 2
 
     if systemctl is-active --quiet eclipse-vpn; then
