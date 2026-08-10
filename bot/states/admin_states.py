@@ -133,6 +133,7 @@ class AdminStates(StatesGroup):
     channel_post_date = State()      # Ввод даты публикации
     channel_post_time = State()      # Ввод времени публикации
     channel_post_preview = State()   # Экран превью перед подтверждением
+    channel_settings_input = State() # Ввод username маркетингового канала
 
 
 # ============================================================================
