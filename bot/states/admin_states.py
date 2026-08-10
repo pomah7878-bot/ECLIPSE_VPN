@@ -128,6 +128,12 @@ class AdminStates(StatesGroup):
     tariff_select_group = State()    # Selecting a group when adding a tariff
     server_select_group = State()    # Selecting a group when adding a server
 
+    # Публикация постов в маркетинговый канал
+    channel_post_text = State()      # Ввод текста поста
+    channel_post_date = State()      # Ввод даты публикации
+    channel_post_time = State()      # Ввод времени публикации
+    channel_post_preview = State()   # Экран превью перед подтверждением
+
 
 # ============================================================================
 # SERVER SETTINGS
