@@ -27,6 +27,14 @@ router = Router()
 MSK_OFFSET_HOURS = 3
 DEFAULT_CHANNEL_ID = '@eclipse_unlimited_news'
 
+# Автоматически добавляется в конец КАЖДОГО поста, созданного через это меню
+# — чтобы не приходилось вручную набирать ссылки в каждом посте.
+POST_FOOTER = (
+    "\n\n━━━━━━━━━━━━━━\n"
+    "🤖 Подключиться в боте: <a href=\"https://t.me/vless_keysvpn_bot\">@vless_keysvpn_bot</a>\n"
+    "🛒 Купить на сайте: <a href=\"https://eclipse.unlimited.bot.nu/shop\">eclipse.unlimited.bot.nu</a>"
+)
+
 
 @router.callback_query(F.data == 'admin_channel_posts')
 async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
@@ -66,7 +74,8 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
     text = get_message_text_for_storage(message, 'html')
-    await state.update_data(post_text=text)
+    text_with_footer = text + POST_FOOTER
+    await state.update_data(post_text=text_with_footer)
     await state.set_state(AdminStates.channel_post_date)
     await safe_edit_or_send(
         message,
