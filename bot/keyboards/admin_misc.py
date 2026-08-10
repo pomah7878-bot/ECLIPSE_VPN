@@ -74,6 +74,7 @@ def marketing_menu_kb() -> InlineKeyboardMarkup:
     """Menu of marketing tools."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='📢 Рассылка', callback_data='admin_broadcast'))
+    builder.row(InlineKeyboardButton(text='📰 Группа', callback_data='admin_channel_posts'))
     builder.row(InlineKeyboardButton(text='🔗 Реферальная система', callback_data='admin_referral'))
     builder.row(InlineKeyboardButton(text='🎟 Промокоды', callback_data='admin_promocodes'))
     builder.row(InlineKeyboardButton(text='🎫 Купоны', callback_data='admin_coupons'))
