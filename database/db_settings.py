@@ -15,6 +15,8 @@ __all__ = [
     'set_setting',
     'get_trial_mode',
     'set_trial_mode',
+    'get_marketing_channel_id',
+    'set_marketing_channel_id',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -338,6 +340,21 @@ def set_trial_mode(mode: str) -> None:
     if mode not in ('account', 'per_group'):
         raise ValueError(f"Недопустимый режим пробника: {mode}")
     set_setting('trial_mode', mode)
+
+
+def get_marketing_channel_id() -> Optional[str]:
+    """
+    Username маркетингового Telegram-канала для раздела «📰 Группа» в
+    админке (например, '@my_channel_news'). Пусто по умолчанию — каждый
+    владелец бота должен явно настроить СВОЙ канал, а не публиковать
+    случайно в чужой (при установке из шаблона репозитория)."""
+    value = get_setting('marketing_channel_id', '')
+    return value if value else None
+
+
+def set_marketing_channel_id(channel_id: str) -> None:
+    """Задаёт username маркетингового канала (с символом @ или без — как ввёл админ)."""
+    set_setting('marketing_channel_id', channel_id.strip())
 
 
 def is_demo_payment_enabled() -> bool:
