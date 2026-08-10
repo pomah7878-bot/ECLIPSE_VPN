@@ -55,6 +55,43 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == 'admin_channel_settings')
+async def start_channel_settings(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает username маркетингового канала."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    await state.set_state(AdminStates.channel_settings_input)
+    await safe_edit_or_send(
+        callback.message,
+        '⚙️ <b>Настройка канала</b>\n\n'
+        'Отправьте username канала, куда бот будет публиковать посты (например, <code>@my_channel</code>).\n\n'
+        'Бот должен быть добавлен администратором этого канала с правом «Публикация сообщений».',
+        reply_markup=channel_post_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.channel_settings_input, F.text, ~F.text.startswith('/'))
+async def process_channel_settings_input(message: Message, state: FSMContext):
+    """Сохраняет username канала."""
+    if not is_admin(message.from_user.id):
+        return
+    from database.requests import set_marketing_channel_id
+    text = get_message_text_for_storage(message, 'plain').strip()
+    if not text.startswith('@'):
+        text = f'@{text}'
+    set_marketing_channel_id(text)
+    await state.clear()
+    logger.info(f"Админ {message.from_user.id} настроил канал публикаций: {text}")
+    await safe_edit_or_send(
+        message,
+        f'✅ Канал сохранён: {text}',
+        reply_markup=channel_posts_menu_kb(),
+        force_new=True,
+    )
+
+
 @router.callback_query(F.data == 'admin_channel_post_new')
 async def start_channel_post_new(callback: CallbackQuery, state: FSMContext):
     """Начало создания нового поста — запрос текста."""
