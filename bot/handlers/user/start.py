@@ -177,6 +177,24 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         prepend_buttons = hook_result.prepend_buttons
         append_buttons = _merge_main_append_buttons(hook_result.append_buttons, admin_append_buttons)
 
+    # Кнопка новостного канала с динамическим счётчиком непрочитанных —
+    # добавляется отдельной строкой сразу после AI-помощника (первой в
+    # append_buttons), не как статичная кнопка со страницы. Пост
+    # засчитывается "увиденным" в момент показа счётчика здесь, так как
+    # Telegram не уведомляет бота о клике по внешней url-кнопке.
+    try:
+        from database.requests import count_unread_channel_posts, mark_channel_posts_seen, get_all_scheduled_posts
+        unread_count = count_unread_channel_posts(user_id)
+        news_label = f'📰 Новости ({unread_count})' if unread_count > 0 else '📰 Новости ECLIPSE Unlimited'
+        news_button_row = [InlineKeyboardButton(text=news_label, url='https://t.me/eclipse_unlimited_news')]
+        append_buttons = [news_button_row] + (append_buttons or [])
+        if unread_count > 0:
+            latest_posts = get_all_scheduled_posts(limit=1)
+            if latest_posts:
+                mark_channel_posts_seen(user_id, latest_posts[0]['id'])
+    except Exception as e:
+        logger.warning(f"Не удалось построить кнопку новостей: {e}")
+
     await render_page(
         target,
         page_key='main',
