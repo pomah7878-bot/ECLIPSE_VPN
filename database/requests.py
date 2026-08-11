@@ -15,6 +15,7 @@ from database.db_stats import *
 from database.db_groups import *
 from database.db_trial_groups import *
 from database.db_channel_posts import *
+from database.db_channel_read_status import *
 from database.db_settings import *
 from database.db_pages import *
 from database.db_page_routes import *
