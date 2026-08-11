@@ -37,6 +37,11 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        @keyframes news-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(217,174,108,0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(217,174,108,0); }
+        }
+        .news-badge-pulse { animation: news-pulse 2s ease-out infinite; }
         .font-display { font-family: 'Space Grotesk', sans-serif; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
 
@@ -251,7 +256,7 @@
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
             <a href="https://t.me/eclipse_unlimited_news" target="_blank" title="Новости канала"
-                class="text-mist-dim hover:text-gold transition text-base leading-none px-1"
+                class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2 py-1 rounded-full transition hover:bg-[color:var(--panel-2)]"
                 style="text-decoration:none;">📰</a>
             <button onclick="openPersonalCabinet()" title="Личный кабинет"
                 class="text-mist-dim hover:text-gold transition text-base leading-none px-1"
