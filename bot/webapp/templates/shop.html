@@ -35,6 +35,11 @@
             -webkit-font-smoothing: antialiased;
             min-height: 100vh;
         }
+        @keyframes news-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(217,174,108,0.5); }
+            50% { box-shadow: 0 0 0 6px rgba(217,174,108,0); }
+        }
+        .news-badge-pulse { animation: news-pulse 2s ease-out infinite; }
         .font-display { font-family: 'Space Grotesk', sans-serif; }
         .font-mono { font-family: 'JetBrains Mono', monospace; }
         .bg-panel { background: var(--panel); }
@@ -121,8 +126,8 @@
 
         <div class="max-w-md mx-auto px-4 pt-8 pb-4 relative">
             <a href="https://t.me/eclipse_unlimited_news" target="_blank" title="Новости канала"
-                class="text-mist-dim hover:text-gold transition text-lg leading-none"
-                style="text-decoration:none;position:absolute;top:8px;right:16px;">📰</a>
+                class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
+                style="text-decoration:none;position:absolute;top:12px;right:16px;">📰</a>
             <div class="flex flex-col items-center text-center">
                 <img src="/static/logo.png" alt="ECLIPSE" width="52" height="52" class="mb-3 rounded-full" style="object-fit:cover;">
                 <h1 class="font-display text-2xl font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
