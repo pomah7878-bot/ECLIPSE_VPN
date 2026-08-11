@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 87
+LATEST_VERSION = 88
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1580,6 +1580,21 @@ def migration_87(conn: sqlite3.Connection) -> None:
     logger.info("Migration v87 applied: таблица scheduled_channel_posts создана")
 
 
+def migration_88(conn: sqlite3.Connection) -> None:
+    """Migration v88: таблица user_channel_read_status — учёт, до какого
+    поста маркетингового канала пользователь уже "видел" уведомление в
+    главном меню бота (используется для счётчика непрочитанных, похожего
+    на счётчик непрочитанных сообщений в чатах)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_channel_read_status (
+            telegram_id INTEGER PRIMARY KEY,
+            last_seen_post_id INTEGER NOT NULL DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v88 applied: таблица user_channel_read_status создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1595,6 +1610,7 @@ MIGRATIONS = {
     85: migration_85,
     86: migration_86,
     87: migration_87,
+    88: migration_88,
 }
 
 
