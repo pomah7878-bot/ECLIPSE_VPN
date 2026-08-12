@@ -95,9 +95,16 @@ async def pick_orphan_client(callback: CallbackQuery, state: FSMContext):
     inbound_id = next(iter(client_state.inbound_ids), None)
     expiry_ms = client_state.expiry_time or 0
 
+    # ВАЖНО: ключи в snapshot.clients нормализованы в нижний регистр, а
+    # панель хранит email в оригинальном виде (например, 'Tatik2'). API
+    # панели ищет клиента по точному email, поэтому в БД нужно сохранять
+    # именно оригинальное написание, иначе последующие обновления
+    # клиента будут падать с "record not found".
+    real_email = str(client_raw.get('email') or '').strip() or email
+
     await state.update_data(
         server_id=server_id,
-        email=email,
+        email=real_email,
         client_uuid=client_uuid,
         inbound_id=inbound_id,
         expiry_ms=expiry_ms,
