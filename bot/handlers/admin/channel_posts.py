@@ -19,6 +19,9 @@ from bot.keyboards.admin_channel_posts import (
     channel_post_cancel_kb,
     channel_post_preview_kb,
     channel_posts_queue_kb,
+    channel_post_detail_kb,
+    channel_post_delete_confirm_kb,
+    channel_post_edit_cancel_kb,
 )
 
 logger = logging.getLogger(__name__)
@@ -224,22 +227,134 @@ async def confirm_channel_post(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == 'admin_channel_posts_queue')
 async def show_channel_posts_queue(callback: CallbackQuery, state: FSMContext):
-    """Показывает список последних запланированных/опубликованных постов."""
+    """Показывает список ещё не опубликованных постов — по кнопке на каждый."""
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
-    from database.requests import get_all_scheduled_posts
-    posts = get_all_scheduled_posts(limit=15)
-    if not posts:
+    from database.requests import get_pending_scheduled_posts_list
+    raw_posts = get_pending_scheduled_posts_list(limit=15)
+
+    if not raw_posts:
         text = '📋 <b>Очередь публикаций</b>\n\nПока нет запланированных постов.'
+        buttons_data = []
     else:
-        lines = ['📋 <b>Очередь публикаций</b>\n']
-        status_emoji = {'pending': '🕐', 'sent': '✅', 'failed': '❌'}
-        for p in posts:
-            emoji = status_emoji.get(p['status'], '❓')
+        text = f'📋 <b>Очередь публикаций</b>\n\nВсего в очереди: {len(raw_posts)}. Нажмите на пост, чтобы посмотреть, заменить или удалить.'
+        buttons_data = []
+        for p in raw_posts:
             msk_time = (datetime.fromisoformat(p['scheduled_at']) + timedelta(hours=MSK_OFFSET_HOURS)).strftime('%d.%m %H:%M')
             preview = escape_html(p['content_preview'] or '')
-            lines.append(f"{emoji} <code>{msk_time}</code> — {preview}...")
-        text = '\n'.join(lines)
-    await safe_edit_or_send(callback.message, text, reply_markup=channel_posts_queue_kb())
+            buttons_data.append({'id': p['id'], 'msk_time': msk_time, 'preview': preview})
+
+    await safe_edit_or_send(callback.message, text, reply_markup=channel_posts_queue_kb(buttons_data))
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin_channel_post_view:'))
+async def show_post_detail(callback: CallbackQuery, state: FSMContext):
+    """Полный предпросмотр одного запланированного поста."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    post_id = int(callback.data.split(':')[1])
+    from database.requests import get_scheduled_post_full
+    post = get_scheduled_post_full(post_id)
+    if not post or post['status'] != 'pending':
+        await callback.answer('⚠️ Пост не найден или уже опубликован', show_alert=True)
+        return
+
+    msk_time = (datetime.fromisoformat(post['scheduled_at']) + timedelta(hours=MSK_OFFSET_HOURS)).strftime('%d.%m.%Y %H:%M')
+    text = (
+        f"👀 <b>Пост в очереди</b>\n\n"
+        f"📅 Публикация: {msk_time} МСК\n"
+        f"📢 Канал: {post['channel_id']}\n\n"
+        f"—————————\n\n"
+        f"{post['content']}"
+    )
+    await safe_edit_or_send(callback.message, text, reply_markup=channel_post_detail_kb(post_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin_channel_post_delete_ask:'))
+async def ask_delete_post(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает подтверждение удаления."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    post_id = int(callback.data.split(':')[1])
+    await safe_edit_or_send(
+        callback.message,
+        '⚠️ Удалить этот пост из очереди? Отменить это действие будет нельзя.',
+        reply_markup=channel_post_delete_confirm_kb(post_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin_channel_post_delete_confirm:'))
+async def confirm_delete_post(callback: CallbackQuery, state: FSMContext):
+    """Удаляет пост из очереди."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    post_id = int(callback.data.split(':')[1])
+    from database.requests import delete_scheduled_post
+    deleted = delete_scheduled_post(post_id)
+    logger.info(f"Админ {callback.from_user.id} удалил пост #{post_id} из очереди: {deleted}")
+    if deleted:
+        await safe_edit_or_send(callback.message, '🗑️ Пост удалён из очереди.', reply_markup=channel_posts_menu_kb())
+    else:
+        await safe_edit_or_send(callback.message, '⚠️ Не удалось удалить — возможно, пост уже опубликован.', reply_markup=channel_posts_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin_channel_post_edit:'))
+async def start_edit_post(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает новый текст взамен существующего поста."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    post_id = int(callback.data.split(':')[1])
+    await state.update_data(editing_post_id=post_id)
+    await state.set_state(AdminStates.channel_post_edit_text)
+    await safe_edit_or_send(
+        callback.message,
+        '✏️ <b>Новый текст поста</b>\n\n'
+        'Отправьте новый текст — он полностью заменит текущий (дата и время публикации не изменятся). '
+        'Ссылки на бота и магазин будут добавлены автоматически.',
+        reply_markup=channel_post_edit_cancel_kb(post_id),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.channel_post_edit_text, F.text, ~F.text.startswith('/'))
+async def process_edit_post_text(message: Message, state: FSMContext):
+    """Сохраняет новый текст, заменяя содержимое поста."""
+    if not is_admin(message.from_user.id):
+        return
+    data = await state.get_data()
+    post_id = data.get('editing_post_id')
+    if not post_id:
+        await state.clear()
+        return
+
+    text = get_message_text_for_storage(message, 'html')
+    text_with_footer = text + POST_FOOTER
+
+    from database.requests import update_scheduled_post_content
+    updated = update_scheduled_post_content(post_id, text_with_footer)
+    await state.clear()
+    logger.info(f"Админ {message.from_user.id} заменил текст поста #{post_id}: {updated}")
+
+    if updated:
+        await safe_edit_or_send(
+            message,
+            f'✅ Текст поста #{post_id} заменён.',
+            reply_markup=channel_posts_menu_kb(),
+            force_new=True,
+        )
+    else:
+        await safe_edit_or_send(
+            message,
+            '⚠️ Не удалось заменить — возможно, пост уже опубликован.',
+            reply_markup=channel_posts_menu_kb(),
+            force_new=True,
+        )
