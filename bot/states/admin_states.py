@@ -135,6 +135,9 @@ class AdminStates(StatesGroup):
     channel_post_preview = State()   # Экран превью перед подтверждением
     channel_settings_input = State() # Ввод username маркетингового канала
 
+    # Импорт вручную созданных клиентов панели
+    import_orphan_telegram_id = State()  # Ввод Telegram ID/username для привязки
+
 
 # ============================================================================
 # SERVER SETTINGS
