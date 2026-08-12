@@ -13,6 +13,7 @@ __all__ = [
     'get_vpn_key_by_id',
     'extend_vpn_key',
     'create_vpn_key_from_panel_import',
+    'vpn_key_exists_for_panel_email',
     'create_vpn_key_admin',
     'create_vpn_key_subscription_admin',
     'update_vpn_key_connection',
@@ -43,6 +44,18 @@ __all__ = [
     'add_days_to_first_active_key',
     'get_user_by_panel_email',
 ]
+
+def vpn_key_exists_for_panel_email(server_id: int, panel_email: str) -> bool:
+    """Проверяет, есть ли УЖЕ запись в БД для этого клиента панели —
+    защита от повторного импорта одного и того же клиента (например,
+    при двойном нажатии кнопки или параллельной работе двух админов)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM vpn_keys WHERE server_id = ? AND LOWER(panel_email) = LOWER(?) LIMIT 1",
+            (server_id, panel_email),
+        ).fetchone()
+        return row is not None
+
 
 def create_vpn_key_from_panel_import(
     user_id: int,
