@@ -12,6 +12,7 @@ __all__ = [
     'get_user_vpn_keys',
     'get_vpn_key_by_id',
     'extend_vpn_key',
+    'create_vpn_key_from_panel_import',
     'create_vpn_key_admin',
     'create_vpn_key_subscription_admin',
     'update_vpn_key_connection',
@@ -42,6 +43,39 @@ __all__ = [
     'add_days_to_first_active_key',
     'get_user_by_panel_email',
 ]
+
+def create_vpn_key_from_panel_import(
+    user_id: int,
+    server_id: int,
+    tariff_id: int,
+    panel_inbound_id: int,
+    client_uuid: str,
+    panel_email: str,
+    expires_at: str,
+    traffic_limit: int,
+    sub_id: str,
+    custom_name: str,
+) -> int:
+    """
+    Создаёт запись vpn_keys для клиента, который уже существует на панели
+    (создан вручную администратором), "усыновляя" его в систему бота —
+    без создания нового клиента на панели, только ссылка на существующего.
+
+    Returns:
+        ID созданной записи
+    """
+    with get_db() as conn:
+        cursor = conn.execute(
+            """INSERT INTO vpn_keys
+               (user_id, server_id, tariff_id, panel_inbound_id, client_uuid,
+                panel_email, custom_name, expires_at, traffic_limit, sub_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, server_id, tariff_id, panel_inbound_id, client_uuid,
+             panel_email, custom_name, expires_at, traffic_limit, sub_id),
+        )
+        logger.info(f"Импортирован ручной клиент панели '{panel_email}' -> ключ #{cursor.lastrowid} для пользователя {user_id}")
+        return cursor.lastrowid
+
 
 def get_user_vpn_keys(user_id: int) -> List[Dict[str, Any]]:
     """
