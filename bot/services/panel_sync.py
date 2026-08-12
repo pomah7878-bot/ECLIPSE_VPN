@@ -323,12 +323,19 @@ def build_panel_import_change(
     if allowance_increased:
         notified_pct = 100
 
+    # Если панель считает клиента "без ограничения срока" (expiry_time=0),
+    # panel_expiry получается None — но столбец vpn_keys.expires_at не
+    # допускает NULL. Используем тот же условный "далёкий будущий" fallback,
+    # что и при импорте вручную созданных клиентов, вместо падения с
+    # NOT NULL constraint failed.
+    final_expiry = panel_expiry if expiry_changed else old_expiry
+    if final_expiry is None:
+        final_expiry = datetime(2099, 1, 1, tzinfo=timezone.utc)
+
     return PanelImportChange(
         key_id=int(key["id"]),
         server_id=int(key["server_id"]),
-        expires_at=_format_db_datetime(
-            panel_expiry if expiry_changed else old_expiry
-        ),
+        expires_at=_format_db_datetime(final_expiry),
         traffic_used=new_used,
         traffic_limit=new_limit,
         traffic_notified_pct=notified_pct,
