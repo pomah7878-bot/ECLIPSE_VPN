@@ -17,15 +17,23 @@ __all__ = [
 ]
 
 
-def save_duplicate_pair(server_id: int, bot_email: str, manual_email: str, shared_ips: str) -> None:
-    """Сохраняет найденную пару, если такая ещё не зафиксирована (UNIQUE constraint)."""
+def save_duplicate_pair(server_id: int, bot_email: str, manual_email: str, shared_ips: str) -> bool:
+    """
+    Сохраняет найденную пару, если такая ещё не зафиксирована.
+
+    Returns:
+        True, если это НОВАЯ пара (реально вставлена) — используется,
+        чтобы уведомлять админа только про новые находки, а не повторно
+        про уже известные (и, возможно, уже проигнорированные) пары.
+    """
     with get_db() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """INSERT OR IGNORE INTO detected_duplicate_pairs
                (server_id, bot_email, manual_email, shared_ips)
                VALUES (?, ?, ?, ?)""",
             (server_id, bot_email, manual_email, shared_ips),
         )
+        return cursor.rowcount > 0
 
 
 def get_pending_duplicate_pairs(limit: int = 20) -> List[Dict[str, Any]]:
