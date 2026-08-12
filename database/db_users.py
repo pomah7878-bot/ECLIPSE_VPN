@@ -258,6 +258,18 @@ def get_users_stats() -> Dict[str, int]:
                 WHERE u.is_banned = 0
                 AND u.id NOT IN (SELECT DISTINCT user_id FROM vpn_keys)
             """),
+            'purchased': count("""
+                SELECT COUNT(DISTINCT u.id) as cnt FROM users u
+                JOIN vpn_keys vk ON u.id = vk.user_id
+                WHERE u.is_banned = 0 AND vk.expires_at > datetime('now')
+                AND vk.tariff_id != 1
+            """),
+            'admin_issued': count("""
+                SELECT COUNT(DISTINCT u.id) as cnt FROM users u
+                JOIN vpn_keys vk ON u.id = vk.user_id
+                WHERE u.is_banned = 0 AND vk.expires_at > datetime('now')
+                AND vk.tariff_id = 1
+            """),
             'expired': count("""
                 SELECT COUNT(DISTINCT u.id) as cnt FROM users u
                 JOIN vpn_keys vk ON u.id = vk.user_id
