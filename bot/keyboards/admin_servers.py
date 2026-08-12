@@ -61,6 +61,7 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
     builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f'admin_server_toggle:{server_id}'))
     if show_group_button:
         builder.row(InlineKeyboardButton(text='📂 Изменить группу', callback_data=f'admin_server_change_group:{server_id}'))
+    builder.row(InlineKeyboardButton(text='🔗 Импорт ручных клиентов', callback_data=f'admin_import_orphans:{server_id}'))
     builder.row(InlineKeyboardButton(text='🗑️ Удалить сервер', callback_data=f'admin_server_delete:{server_id}'))
     builder.row(back_button('admin_servers'), home_button())
     return builder.as_markup()
