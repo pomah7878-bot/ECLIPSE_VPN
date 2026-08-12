@@ -17,6 +17,10 @@ __all__ = [
     'get_all_scheduled_posts',
     'reschedule_post_to_next_day',
     'record_post_retry_error',
+    'get_pending_scheduled_posts_list',
+    'get_scheduled_post_full',
+    'delete_scheduled_post',
+    'update_scheduled_post_content',
 ]
 
 
@@ -98,6 +102,51 @@ def record_post_retry_error(post_id: int, error_message: str) -> None:
             "UPDATE scheduled_channel_posts SET error_message = ? WHERE id = ?",
             (error_message[:1000], post_id),
         )
+
+
+def get_pending_scheduled_posts_list(limit: int = 20) -> List[Dict[str, Any]]:
+    """Возвращает только ещё не опубликованные посты (для управления очередью)."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT id, channel_id, scheduled_at,
+                      substr(content, 1, 40) as content_preview
+               FROM scheduled_channel_posts
+               WHERE status = 'pending'
+               ORDER BY scheduled_at ASC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_scheduled_post_full(post_id: int) -> Optional[Dict[str, Any]]:
+    """Возвращает полное содержимое одного поста (для предпросмотра)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_channel_posts WHERE id = ?",
+            (post_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def delete_scheduled_post(post_id: int) -> bool:
+    """Удаляет запланированный (ещё не опубликованный) пост из очереди."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "DELETE FROM scheduled_channel_posts WHERE id = ? AND status = 'pending'",
+            (post_id,),
+        )
+        return cursor.rowcount > 0
+
+
+def update_scheduled_post_content(post_id: int, new_content: str) -> bool:
+    """Заменяет текст ещё не опубликованного поста, сохраняя время публикации."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE scheduled_channel_posts SET content = ? WHERE id = ? AND status = 'pending'",
+            (new_content, post_id),
+        )
+        return cursor.rowcount > 0
 
 
 def get_all_scheduled_posts(limit: int = 20) -> List[Dict[str, Any]]:
