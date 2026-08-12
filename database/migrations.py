@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 88
+LATEST_VERSION = 89
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1595,6 +1595,28 @@ def migration_88(conn: sqlite3.Connection) -> None:
     logger.info("Migration v88 applied: таблица user_channel_read_status создана")
 
 
+def migration_89(conn: sqlite3.Connection) -> None:
+    """Migration v89: таблица detected_duplicate_pairs — найденные по
+    совпадению IP потенциальные дубликаты клиентов (ботовый + вручную
+    созданный), с учётом статуса, чтобы не уведомлять админа повторно об
+    уже рассмотренных парах."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS detected_duplicate_pairs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            server_id INTEGER NOT NULL,
+            bot_email TEXT NOT NULL,
+            manual_email TEXT NOT NULL,
+            shared_ips TEXT,
+            status TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending', 'resolved', 'ignored')),
+            detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            resolved_at DATETIME,
+            UNIQUE(server_id, bot_email, manual_email)
+        )
+    """)
+    logger.info("Migration v89 applied: таблица detected_duplicate_pairs создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1611,6 +1633,7 @@ MIGRATIONS = {
     86: migration_86,
     87: migration_87,
     88: migration_88,
+    89: migration_89,
 }
 
 
