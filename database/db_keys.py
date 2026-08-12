@@ -14,6 +14,7 @@ __all__ = [
     'extend_vpn_key',
     'create_vpn_key_from_panel_import',
     'vpn_key_exists_for_panel_email',
+    'get_vpn_key_by_server_and_email',
     'create_vpn_key_admin',
     'create_vpn_key_subscription_admin',
     'update_vpn_key_connection',
@@ -44,6 +45,16 @@ __all__ = [
     'add_days_to_first_active_key',
     'get_user_by_panel_email',
 ]
+
+def get_vpn_key_by_server_and_email(server_id: int, panel_email: str) -> Optional[Dict[str, Any]]:
+    """Возвращает запись vpn_keys по серверу и email клиента панели."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM vpn_keys WHERE server_id = ? AND LOWER(panel_email) = LOWER(?) LIMIT 1",
+            (server_id, panel_email),
+        ).fetchone()
+        return dict(row) if row else None
+
 
 def vpn_key_exists_for_panel_email(server_id: int, panel_email: str) -> bool:
     """Проверяет, есть ли УЖЕ запись в БД для этого клиента панели —
