@@ -174,7 +174,23 @@ async def confirm_orphan_import(callback: CallbackQuery, state: FSMContext):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
     data = await state.get_data()
-    from database.requests import create_vpn_key_from_panel_import
+    from database.requests import create_vpn_key_from_panel_import, vpn_key_exists_for_panel_email
+
+    # Защита от гонки состояний: клиент мог быть импортирован уже ПОСЛЕ
+    # того, как этот процесс начался (двойное нажатие, второй админ и т.д.)
+    if vpn_key_exists_for_panel_email(data['server_id'], data['email']):
+        await state.clear()
+        await callback.answer(
+            f"⚠️ Клиент {data['email']} уже был импортирован ранее — пропускаю, чтобы не создавать дубликат.",
+            show_alert=True,
+        )
+        await safe_edit_or_send(
+            callback.message,
+            f'⚠️ Клиент <code>{data["email"]}</code> уже есть в базе бота (импортирован ранее). '
+            f'Новая запись не создана.',
+            reply_markup=orphan_import_cancel_kb(data['server_id']),
+        )
+        return
 
     expiry_ms = data.get('expiry_ms') or 0
     if expiry_ms:
