@@ -1383,6 +1383,68 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
         await asyncio.sleep(60)
 
 
+async def run_duplicate_detection_scheduler(bot: Bot) -> None:
+    """
+    Раз в сутки проверяет каждый активный сервер на потенциальные
+    дубликаты клиентов (ботовый + вручную созданный с пересекающимися IP)
+    и уведомляет админов только о НОВЫХ находках — с интерактивными
+    кнопками для ручного решения (удалить / объединить / игнорировать).
+    Ботовый клиент никогда не удаляется автоматически.
+    """
+    from bot.services.duplicate_detection import find_potential_duplicate_clients
+    from bot.keyboards.admin_duplicate_pairs import duplicate_pair_notification_kb
+
+    logger.info("🔍 Планировщик обнаружения дубликатов клиентов запущен (раз в сутки)")
+    await asyncio.sleep(120)
+
+    while True:
+        try:
+            from database.requests import get_active_servers, save_duplicate_pair
+
+            servers = get_active_servers()
+            for server in servers:
+                server_id = int(server['id'])
+                try:
+                    pairs = await find_potential_duplicate_clients(server_id)
+                except Exception as e:
+                    logger.warning(f"Не удалось проверить дубликаты для сервера {server_id}: {e}")
+                    continue
+
+                for pair in pairs:
+                    shared_ips_str = ','.join(sorted(pair['shared_ips']))
+                    is_new = save_duplicate_pair(
+                        server_id, pair['bot_email'], pair['manual_email'], shared_ips_str,
+                    )
+                    if not is_new:
+                        continue
+
+                    from database.requests import get_pending_duplicate_pairs
+                    latest = get_pending_duplicate_pairs(limit=1)
+                    if not latest:
+                        continue
+                    pair_row = latest[0]
+
+                    text = (
+                        f"🔍 <b>Возможный дубликат клиента</b>\n\n"
+                        f"Ботовый: <code>{pair['bot_email']}</code>\n"
+                        f"Вручную созданный: <code>{pair['manual_email']}</code>\n"
+                        f"Общие IP за 30 дней: <code>{shared_ips_str}</code>\n\n"
+                        f"Похоже, это один и тот же человек. Ботовый ключ никогда не удаляется."
+                    )
+                    for admin_id in ADMIN_IDS:
+                        try:
+                            await bot.send_message(
+                                admin_id, text, parse_mode='HTML',
+                                reply_markup=duplicate_pair_notification_kb(pair_row['id']),
+                            )
+                        except Exception:
+                            pass
+        except Exception as e:
+            logger.error(f"Ошибка в планировщике обнаружения дубликатов: {e}", exc_info=True)
+
+        await asyncio.sleep(24 * 60 * 60)
+
+
 async def run_traffic_sync_scheduler(bot: Bot) -> None:
     """
     Background task to synchronize traffic every 5 minutes.
