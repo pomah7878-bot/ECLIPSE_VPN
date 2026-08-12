@@ -138,6 +138,8 @@ class AdminStates(StatesGroup):
     # Импорт вручную созданных клиентов панели
     import_orphan_telegram_id = State()  # Ввод Telegram ID/username для привязки
 
+    channel_post_edit_text = State()  # Ввод нового текста взамен существующего поста в очереди
+
 
 # ============================================================================
 # SERVER SETTINGS
