@@ -1,229 +1,432 @@
 """
-Инструменты диагностики сервера прямо из админки бота: логи подключений
-Xray, состояние сервера (CPU/память/аптайм) и перезапуск Xray.
-Избавляет от необходимости заходить в панель или на сервер по SSH.
-"""
-import logging
-from datetime import datetime
+Раздел админ-панели «Инструменты сервера»: диагностика и обслуживание
+конкретной ноды через API панели 3x-ui, без SSH-доступа.
 
-from aiogram import Router, F
+Все действия — вызовы к API панели выбранного сервера:
+- 📊 Состояние: CPU, RAM, диск, аптайм, нагрузка (server/status)
+- 📋 Логи Xray: хвост логов ядра (server/logs/{count})
+- 🔄 Перезапуск Xray: рестарт ядра (server/restartXrayService)
+- 🧹 Уборка исчерпавших трафик клиентов (inbounds/delDepletedClients/{id})
+- 🔑 Генерация свежих Reality-ключей (server/getNewX25519Cert)
+
+Клиент панели берётся через кеширующую фабрику get_client_from_server_data
+и логинится перед вызовом (login() дёшев на уже валидном токене).
+Ошибки панели ловятся широко на границе хендлера, чтобы любой сбой ноды
+показывался пользователю дружелюбным сообщением, а не падал в общий хендлер.
+"""
+import html
+import logging
+
+from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from bot.utils.admin import is_admin
-from bot.utils.text import safe_edit_or_send, escape_html
+from bot.utils.text import safe_edit_or_send
+from bot.services.vpn_api import get_client_from_server_data
+from database.requests import get_server_by_id
 from bot.keyboards.admin_server_tools import (
     server_tools_menu_kb,
     server_tools_back_kb,
-    server_restart_confirm_kb,
+    xray_logs_count_kb,
+    restart_xray_confirm_kb,
+    delete_depleted_inbounds_kb,
+    delete_depleted_confirm_kb,
 )
 
 logger = logging.getLogger(__name__)
 router = Router()
 
-LOGS_COUNT = 25
+# Запас под лимит сообщения Telegram (4096) с учётом заголовка и тегов <pre>.
+_TG_LIMIT = 4096
 
 
-def _get_panel_client(server_id: int):
-    """Возвращает (клиент панели, данные сервера) или (None, None)."""
-    from database.requests import get_active_servers
-    from bot.services.vpn_api import get_client_from_server_data
-
-    servers = [s for s in get_active_servers() if int(s['id']) == server_id]
-    if not servers:
-        return None, None
-    return get_client_from_server_data(servers[0]), servers[0]
-
-
-def _format_bytes(value) -> str:
+# --------------------------------------------------------------------------- #
+# Вспомогательные функции форматирования
+# --------------------------------------------------------------------------- #
+def _fmt_bytes(value) -> str:
+    """Человекочитаемый размер из байтов."""
     try:
-        num = float(value or 0)
+        num = float(value)
     except (TypeError, ValueError):
         return '—'
     for unit in ('Б', 'КБ', 'МБ', 'ГБ', 'ТБ'):
-        if num < 1024:
+        if abs(num) < 1024.0:
             return f'{num:.1f} {unit}'
-        num /= 1024
+        num /= 1024.0
     return f'{num:.1f} ПБ'
 
 
-def _format_uptime(seconds) -> str:
+def _fmt_uptime(value) -> str:
+    """Аптайм из секунд в формат «Nд Nч Nм»."""
     try:
-        total = int(seconds or 0)
+        seconds = int(value)
     except (TypeError, ValueError):
         return '—'
-    days, rem = divmod(total, 86400)
+    days, rem = divmod(seconds, 86400)
     hours, rem = divmod(rem, 3600)
-    minutes = rem // 60
+    minutes, _ = divmod(rem, 60)
+    parts = []
     if days:
-        return f'{days} дн. {hours} ч.'
+        parts.append(f'{days}д')
     if hours:
-        return f'{hours} ч. {minutes} мин.'
-    return f'{minutes} мин.'
+        parts.append(f'{hours}ч')
+    if minutes:
+        parts.append(f'{minutes}м')
+    return ' '.join(parts) or '<1м'
 
 
+def _pair(status: dict, key: str):
+    """Возвращает (current, total) для полей вида mem/disk = {current, total}."""
+    value = status.get(key) or {}
+    if isinstance(value, dict):
+        return value.get('current'), value.get('total')
+    return None, None
+
+
+def _format_status(server: dict, status: dict) -> str:
+    """Собирает текст дашборда состояния сервера."""
+    name = html.escape(str(server.get('name', '')))
+    lines = [f'📊 <b>Состояние</b> · 🖥 {name}\n']
+
+    cpu = status.get('cpu')
+    if cpu is not None:
+        try:
+            lines.append(f'⚙️ CPU: <b>{float(cpu):.1f}%</b>')
+        except (TypeError, ValueError):
+            pass
+
+    loads = status.get('loads')
+    if isinstance(loads, list) and loads:
+        lines.append(f"📈 Load: <b>{' / '.join(str(x) for x in loads[:3])}</b>")
+
+    mem_cur, mem_total = _pair(status, 'mem')
+    if mem_cur is not None:
+        lines.append(f'🧠 RAM: <b>{_fmt_bytes(mem_cur)}</b> / {_fmt_bytes(mem_total)}')
+
+    disk_cur, disk_total = _pair(status, 'disk')
+    if disk_cur is not None:
+        lines.append(f'💾 Диск: <b>{_fmt_bytes(disk_cur)}</b> / {_fmt_bytes(disk_total)}')
+
+    uptime = status.get('uptime')
+    if uptime is not None:
+        lines.append(f'⏱ Аптайм: <b>{_fmt_uptime(uptime)}</b>')
+
+    xray = status.get('xray') or {}
+    if isinstance(xray, dict) and xray:
+        state = html.escape(str(xray.get('state', '?')))
+        version = html.escape(str(xray.get('version', '?')))
+        lines.append(f'🚀 Xray: <b>{state}</b> (v{version})')
+
+    if len(lines) == 1:
+        lines.append('⚠️ Панель не вернула детальных полей статуса.')
+    return '\n'.join(lines)
+
+
+def _resolve_server(callback: CallbackQuery):
+    """Общая проверка прав + получение сервера. Возвращает (server_id, server) или (None, None)."""
+    server_id = int(callback.data.split(':')[1])
+    server = get_server_by_id(server_id)
+    return server_id, server
+
+
+# --------------------------------------------------------------------------- #
+# Меню раздела
+# --------------------------------------------------------------------------- #
 @router.callback_query(F.data.startswith('admin_server_tools:'))
 async def show_server_tools(callback: CallbackQuery):
-    """Меню инструментов диагностики сервера."""
+    """Открывает меню инструментов конкретного сервера."""
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
-    server_id = int(callback.data.split(':')[1])
-    _, server = _get_panel_client(server_id)
-    name = escape_html(str(server.get('name'))) if server else str(server_id)
-    await safe_edit_or_send(
-        callback.message,
-        f'🛠 <b>Диагностика сервера</b>\n\n{name}\n\nВыберите инструмент:',
-        reply_markup=server_tools_menu_kb(server_id),
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    name = html.escape(str(server.get('name', server_id)))
+    text = (
+        f'🛠 <b>Инструменты сервера</b>\n'
+        f'🖥 {name}\n\n'
+        f'Диагностика и обслуживание ноды напрямую через API панели.'
     )
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=server_tools_menu_kb(server_id))
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith('admin_srv_logs:'))
-async def show_xray_logs(callback: CallbackQuery):
-    """Последние подключения по данным Xray."""
+# --------------------------------------------------------------------------- #
+# 📊 Состояние сервера
+# --------------------------------------------------------------------------- #
+@router.callback_query(F.data.startswith('srvtools_status:'))
+async def show_status(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
-    server_id = int(callback.data.split(':')[1])
-    await callback.answer('📋 Загружаю логи...')
-
-    client, _ = _get_panel_client(server_id)
-    if not client:
-        await safe_edit_or_send(callback.message, '⚠️ Сервер не найден.', reply_markup=server_tools_back_kb(server_id))
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
         return
-
+    await callback.answer('Запрашиваю статус…')
     try:
-        result = await client._request('POST', f'/panel/api/server/xraylogs/{LOGS_COUNT}')
-        entries = result.get('obj') or []
-    except Exception as e:
-        logger.warning(f"Не удалось получить логи Xray сервера {server_id}: {e}")
+        client = get_client_from_server_data(server)
+        await client.login()
+        status = await client.get_server_status()
+    except Exception as exc:  # noqa: BLE001 — граница хендлера, показываем ошибку пользователю
+        logger.warning('srvtools status failed (server %s): %s', server_id, exc)
         await safe_edit_or_send(
             callback.message,
-            f'❌ Не удалось получить логи:\n<pre>{escape_html(str(e))[:400]}</pre>',
-            reply_markup=server_tools_back_kb(server_id),
-        )
+            text=f'❌ Не удалось получить статус.\n\n<code>{html.escape(str(exc))}</code>',
+            reply_markup=server_tools_back_kb(server_id))
         return
-
-    if not entries:
-        text = '📋 <b>Логи подключений</b>\n\nЗа последнее время записей нет.'
+    if not status:
+        text = '⚠️ Панель не вернула данные статуса (возможно, эндпоинт недоступен в этой версии).'
     else:
-        lines = ['📋 <b>Последние подключения</b>\n']
-        for entry in entries[:LOGS_COUNT]:
-            raw_time = str(entry.get('DateTime') or '')
-            try:
-                time_str = datetime.fromisoformat(raw_time.replace('Z', '+00:00')).strftime('%H:%M:%S')
-            except Exception:
-                time_str = raw_time[:19]
-            email = escape_html(str(entry.get('Email') or '—'))
-            target = escape_html(str(entry.get('ToAddress') or '—'))
-            outbound = escape_html(str(entry.get('Outbound') or '—'))
-            lines.append(f'<code>{time_str}</code> <b>{email}</b>\n  → {target} ({outbound})')
-        text = '\n'.join(lines)
-
-    if len(text) > 3900:
-        text = text[:3900] + '\n\n… список обрезан'
-
-    await safe_edit_or_send(callback.message, text, reply_markup=server_tools_back_kb(server_id))
+        text = _format_status(server, status)
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=server_tools_back_kb(server_id))
 
 
-@router.callback_query(F.data.startswith('admin_srv_status:'))
-async def show_server_status(callback: CallbackQuery):
-    """Состояние сервера: CPU, память, аптайм."""
+# --------------------------------------------------------------------------- #
+# 📋 Логи Xray
+# --------------------------------------------------------------------------- #
+@router.callback_query(F.data.startswith('srvtools_logs:'))
+async def logs_pick_count(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
-    server_id = int(callback.data.split(':')[1])
-    await callback.answer('📊 Запрашиваю состояние...')
-
-    client, _ = _get_panel_client(server_id)
-    if not client:
-        await safe_edit_or_send(callback.message, '⚠️ Сервер не найден.', reply_markup=server_tools_back_kb(server_id))
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
         return
-
-    try:
-        result = await client._request('GET', '/panel/api/server/status')
-        obj = result.get('obj') or {}
-    except Exception as e:
-        logger.warning(f"Не удалось получить статус сервера {server_id}: {e}")
-        await safe_edit_or_send(
-            callback.message,
-            f'❌ Не удалось получить состояние:\n<pre>{escape_html(str(e))[:400]}</pre>',
-            reply_markup=server_tools_back_kb(server_id),
-        )
-        return
-
-    mem = obj.get('mem') or {}
-    swap = obj.get('swap') or {}
-    disk = obj.get('disk') or {}
-    xray = obj.get('xray') or {}
-
-    try:
-        cpu_str = f"{float(obj.get('cpu') or 0):.1f}%"
-    except (TypeError, ValueError):
-        cpu_str = '—'
-
-    lines = [
-        '📊 <b>Состояние сервера</b>\n',
-        f"🖥 CPU: {cpu_str} ({obj.get('cpuCores', '—')} ядер)",
-        f"🧠 Память: {_format_bytes(mem.get('current'))} / {_format_bytes(mem.get('total'))}",
-    ]
-    if swap.get('total'):
-        lines.append(f"💾 Swap: {_format_bytes(swap.get('current'))} / {_format_bytes(swap.get('total'))}")
-    if disk.get('total'):
-        lines.append(f"🗄 Диск: {_format_bytes(disk.get('current'))} / {_format_bytes(disk.get('total'))}")
-    if obj.get('uptime'):
-        lines.append(f"⏱ Аптайм: {_format_uptime(obj.get('uptime'))}")
-    if xray:
-        state = xray.get('state') or '—'
-        version = xray.get('version') or '—'
-        lines.append(f"⚙️ Xray: {escape_html(str(state))} (v{escape_html(str(version))})")
-
-    await safe_edit_or_send(callback.message, '\n'.join(lines), reply_markup=server_tools_back_kb(server_id))
-
-
-@router.callback_query(F.data.startswith('admin_srv_restart_ask:'))
-async def ask_restart_xray(callback: CallbackQuery):
-    """Запрашивает подтверждение перезапуска Xray."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer('⛔ Доступ запрещён', show_alert=True)
-        return
-    server_id = int(callback.data.split(':')[1])
-    await safe_edit_or_send(
-        callback.message,
-        '⚠️ <b>Перезапустить Xray?</b>\n\n'
-        'Все активные подключения клиентов кратковременно разорвутся '
-        '(обычно приложения переподключаются автоматически за несколько секунд).',
-        reply_markup=server_restart_confirm_kb(server_id),
-    )
+    text = '📋 <b>Логи Xray</b>\n\nСколько последних строк показать?'
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=xray_logs_count_kb(server_id))
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith('admin_srv_restart_do:'))
-async def restart_xray(callback: CallbackQuery):
-    """Перезапускает Xray на сервере."""
+@router.callback_query(F.data.startswith('srvtools_logs_show:'))
+async def logs_show(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
-    server_id = int(callback.data.split(':')[1])
-    await callback.answer('🔄 Перезапускаю...')
-
-    client, _ = _get_panel_client(server_id)
-    if not client:
-        await safe_edit_or_send(callback.message, '⚠️ Сервер не найден.', reply_markup=server_tools_back_kb(server_id))
+    parts = callback.data.split(':')
+    server_id = int(parts[1])
+    count = int(parts[2])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    await callback.answer('Запрашиваю логи…')
+    try:
+        client = get_client_from_server_data(server)
+        await client.login()
+        lines = await client.get_xray_logs(count)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('srvtools logs failed (server %s): %s', server_id, exc)
+        await safe_edit_or_send(
+            callback.message,
+            text=f'❌ Не удалось получить логи.\n\n<code>{html.escape(str(exc))}</code>',
+            reply_markup=xray_logs_count_kb(server_id))
         return
 
+    header = f'📋 <b>Логи Xray</b> · последние {count} строк\n'
+    # Обрезаем по целым экранированным строкам с конца, чтобы не разорвать
+    # HTML-сущность посередине и не превысить лимит Telegram.
+    limit = _TG_LIMIT - len(header) - len('<pre></pre>') - 40
+    escaped_lines = [html.escape(str(line)) for line in lines]
+    kept: list = []
+    total = 0
+    for line in reversed(escaped_lines):
+        addition = len(line) + 1
+        if total + addition > limit:
+            break
+        kept.append(line)
+        total += addition
+    kept.reverse()
+    if kept:
+        body = '\n'.join(kept)
+    else:
+        body = 'Логи пусты или панель их не вернула.'
+    text = f'{header}<pre>{body}</pre>'
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=xray_logs_count_kb(server_id))
+
+
+# --------------------------------------------------------------------------- #
+# 🔄 Перезапуск Xray
+# --------------------------------------------------------------------------- #
+@router.callback_query(F.data.startswith('srvtools_restart:'))
+async def restart_confirm(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    text = (
+        '🔄 <b>Перезапуск Xray</b>\n\n'
+        '⚠️ Ядро Xray на этой ноде будет перезапущено. Все активные '
+        'подключения кратковременно оборвутся — клиенты переподключатся '
+        'автоматически за несколько секунд.\n\n'
+        'Продолжить?'
+    )
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=restart_xray_confirm_kb(server_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('srvtools_restart_do:'))
+async def restart_do(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    await callback.answer('Перезапускаю Xray…')
     try:
-        await client._request('POST', '/panel/api/server/restartXrayService')
-        logger.info(f"Админ {callback.from_user.id} перезапустил Xray на сервере {server_id}")
+        client = get_client_from_server_data(server)
+        await client.login()
+        ok = await client.restart_xray()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('srvtools restart failed (server %s): %s', server_id, exc)
         await safe_edit_or_send(
             callback.message,
-            '✅ Команда перезапуска Xray отправлена. Через несколько секунд сервис поднимется.',
-            reply_markup=server_tools_back_kb(server_id),
-        )
-    except Exception as e:
-        logger.warning(f"Не удалось перезапустить Xray на сервере {server_id}: {e}")
+            text=f'❌ Не удалось перезапустить Xray.\n\n<code>{html.escape(str(exc))}</code>',
+            reply_markup=server_tools_back_kb(server_id))
+        return
+    if ok:
+        text = '✅ Xray перезапущен.'
+    else:
+        text = '⚠️ Панель вернула отрицательный результат — перезапуск мог не выполниться.'
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=server_tools_back_kb(server_id))
+
+
+# --------------------------------------------------------------------------- #
+# 🧹 Уборка исчерпавших трафик клиентов
+# --------------------------------------------------------------------------- #
+@router.callback_query(F.data.startswith('srvtools_deplete:'))
+async def deplete_pick(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    await callback.answer('Загружаю inbound…')
+    try:
+        client = get_client_from_server_data(server)
+        await client.login()
+        inbounds = await client.get_inbounds()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('srvtools deplete list failed (server %s): %s', server_id, exc)
         await safe_edit_or_send(
             callback.message,
-            f'❌ Не удалось перезапустить Xray:\n<pre>{escape_html(str(e))[:400]}</pre>',
-            reply_markup=server_tools_back_kb(server_id),
+            text=f'❌ Не удалось получить список inbound.\n\n<code>{html.escape(str(exc))}</code>',
+            reply_markup=server_tools_back_kb(server_id))
+        return
+    text = (
+        '🧹 <b>Уборка исчерпавших трафик</b>\n\n'
+        'Будут удалены клиенты, полностью выбравшие лимит трафика и не '
+        'продлившие подписку. Выберите inbound или уберите по всем сразу.'
+    )
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=delete_depleted_inbounds_kb(server_id, inbounds))
+
+
+@router.callback_query(F.data.startswith('srvtools_deplete_confirm:'))
+async def deplete_confirm(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    parts = callback.data.split(':')
+    server_id = int(parts[1])
+    inbound_id = int(parts[2])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    scope = 'по всем inbound' if inbound_id == -1 else f'inbound #{inbound_id}'
+    text = (
+        '🧹 <b>Подтверждение</b>\n\n'
+        f'Удалить всех исчерпавших трафик клиентов ({scope})?\n\n'
+        '⚠️ Действие необратимо — записи клиентов будут удалены с панели.'
+    )
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=delete_depleted_confirm_kb(server_id, inbound_id))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('srvtools_deplete_do:'))
+async def deplete_do(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    parts = callback.data.split(':')
+    server_id = int(parts[1])
+    inbound_id = int(parts[2])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    await callback.answer('Удаляю…')
+    try:
+        client = get_client_from_server_data(server)
+        await client.login()
+        ok = await client.delete_depleted_clients(inbound_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('srvtools deplete do failed (server %s): %s', server_id, exc)
+        await safe_edit_or_send(
+            callback.message,
+            text=f'❌ Не удалось выполнить уборку.\n\n<code>{html.escape(str(exc))}</code>',
+            reply_markup=server_tools_back_kb(server_id))
+        return
+    scope = 'по всем inbound' if inbound_id == -1 else f'inbound #{inbound_id}'
+    if ok:
+        text = f'✅ Уборка выполнена ({scope}).'
+    else:
+        text = '⚠️ Панель вернула отрицательный результат.'
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=server_tools_back_kb(server_id))
+
+
+# --------------------------------------------------------------------------- #
+# 🔑 Генерация Reality-ключей
+# --------------------------------------------------------------------------- #
+@router.callback_query(F.data.startswith('srvtools_reality:'))
+async def reality_keys(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    server_id, server = _resolve_server(callback)
+    if not server:
+        await callback.answer('❌ Сервер не найден', show_alert=True)
+        return
+    await callback.answer('Генерирую ключи…')
+    try:
+        client = get_client_from_server_data(server)
+        await client.login()
+        keys = await client.get_new_x25519_cert()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('srvtools reality failed (server %s): %s', server_id, exc)
+        await safe_edit_or_send(
+            callback.message,
+            text=f'❌ Не удалось сгенерировать ключи.\n\n<code>{html.escape(str(exc))}</code>',
+            reply_markup=server_tools_back_kb(server_id))
+        return
+    private_key = keys.get('private_key') if keys else ''
+    public_key = keys.get('public_key') if keys else ''
+    if not private_key and not public_key:
+        text = '⚠️ Панель не вернула ключи.'
+    else:
+        text = (
+            '🔑 <b>Новая пара Reality-ключей</b>\n\n'
+            f'Private key:\n<code>{html.escape(private_key)}</code>\n\n'
+            f'Public key:\n<code>{html.escape(public_key)}</code>\n\n'
+            '🔒 Private key нигде не сохранён — скопируйте его сейчас.'
         )
+    await safe_edit_or_send(callback.message, text=text,
+                            reply_markup=server_tools_back_kb(server_id))
