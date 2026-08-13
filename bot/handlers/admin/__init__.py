@@ -26,6 +26,7 @@ from bot.handlers.admin.integrations import router as integrations_router
 from bot.handlers.admin.channel_posts import router as channel_posts_router
 from bot.handlers.admin.panel_import import router as panel_import_router
 from bot.handlers.admin.duplicate_pairs import router as duplicate_pairs_router
+from bot.handlers.admin.server_tools import router as server_tools_router
 
 admin_router = Router()
 
@@ -52,4 +53,5 @@ admin_router.include_router(integrations_router)
 admin_router.include_router(channel_posts_router)
 admin_router.include_router(panel_import_router)
 admin_router.include_router(duplicate_pairs_router)
+admin_router.include_router(server_tools_router)
 
