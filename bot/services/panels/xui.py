@@ -1420,6 +1420,44 @@ class XUIClient(BaseVPNClient):
             # Some versions of 3X-UI do not have this endpoint
             return {}
 
+    async def get_xray_logs(self, count: int = 100) -> List[str]:
+        """Хвост логов Xray с панели (POST /panel/api/server/logs/{count})."""
+        try:
+            result = await self._request("POST", f"/panel/api/server/logs/{int(count)}")
+            obj = result.get("obj", [])
+            if isinstance(obj, list):
+                return [str(line) for line in obj]
+            if isinstance(obj, str):
+                return obj.splitlines()
+            return []
+        except VPNAPIError:
+            return []
+
+    async def restart_xray(self) -> bool:
+        """Рестарт ядра Xray (POST /panel/api/server/restartXrayService). Мутирующий."""
+        result = await self._request("POST", "/panel/api/server/restartXrayService")
+        return bool(result.get("success"))
+
+    async def delete_depleted_clients(self, inbound_id: int = -1) -> bool:
+        """Удалить исчерпавших трафик клиентов. inbound_id=-1 → по всем inbound. Мутирующий."""
+        result = await self._request(
+            "POST", f"/panel/api/inbounds/delDepletedClients/{int(inbound_id)}"
+        )
+        return bool(result.get("success"))
+
+    async def get_new_x25519_cert(self) -> Dict[str, str]:
+        """Свежая пара Reality-ключей (POST /panel/api/server/getNewX25519Cert)."""
+        try:
+            result = await self._request("POST", "/panel/api/server/getNewX25519Cert")
+            obj = result.get("obj", {})
+            if isinstance(obj, dict):
+                return {
+                    "private_key": obj.get("privateKey") or obj.get("private") or "",
+                    "public_key": obj.get("publicKey") or obj.get("public") or "",
+                }
+            return {}
+        except VPNAPIError:
+            return {}
     async def get_stats(self) -> Dict[str, Any]:
         """
         Gets server statistics.
