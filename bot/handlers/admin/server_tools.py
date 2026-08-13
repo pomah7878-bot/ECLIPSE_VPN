@@ -29,7 +29,6 @@ from bot.keyboards.admin_server_tools import (
     server_tools_back_kb,
     xray_logs_count_kb,
     restart_xray_confirm_kb,
-    delete_depleted_inbounds_kb,
     delete_depleted_confirm_kb,
 )
 
@@ -308,7 +307,10 @@ async def restart_do(callback: CallbackQuery):
 # 🧹 Уборка исчерпавших трафик клиентов
 # --------------------------------------------------------------------------- #
 @router.callback_query(F.data.startswith('srvtools_deplete:'))
-async def deplete_pick(callback: CallbackQuery):
+async def deplete_confirm(callback: CallbackQuery):
+    """Экран подтверждения уборки. Панель на clients-профиле удаляет
+    исчерпавших только глобально (эндпоинт без inbound id), поэтому выбор
+    конкретного inbound не предлагается — сразу подтверждение."""
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
@@ -316,47 +318,14 @@ async def deplete_pick(callback: CallbackQuery):
     if not server:
         await callback.answer('❌ Сервер не найден', show_alert=True)
         return
-    await callback.answer('Загружаю inbound…')
-    try:
-        client = get_client_from_server_data(server)
-        await client.login()
-        inbounds = await client.get_inbounds()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning('srvtools deplete list failed (server %s): %s', server_id, exc)
-        await safe_edit_or_send(
-            callback.message,
-            text=f'❌ Не удалось получить список inbound.\n\n<code>{html.escape(str(exc))}</code>',
-            reply_markup=server_tools_back_kb(server_id))
-        return
     text = (
         '🧹 <b>Уборка исчерпавших трафик</b>\n\n'
         'Будут удалены клиенты, полностью выбравшие лимит трафика и не '
-        'продлившие подписку. Выберите inbound или уберите по всем сразу.'
+        'продлившие подписку — по всей панели этого сервера.\n\n'
+        '⚠️ Действие необратимо: записи клиентов будут удалены с панели.'
     )
     await safe_edit_or_send(callback.message, text=text,
-                            reply_markup=delete_depleted_inbounds_kb(server_id, inbounds))
-
-
-@router.callback_query(F.data.startswith('srvtools_deplete_confirm:'))
-async def deplete_confirm(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer('⛔ Доступ запрещён', show_alert=True)
-        return
-    parts = callback.data.split(':')
-    server_id = int(parts[1])
-    inbound_id = int(parts[2])
-    server = get_server_by_id(server_id)
-    if not server:
-        await callback.answer('❌ Сервер не найден', show_alert=True)
-        return
-    scope = 'по всем inbound' if inbound_id == -1 else f'inbound #{inbound_id}'
-    text = (
-        '🧹 <b>Подтверждение</b>\n\n'
-        f'Удалить всех исчерпавших трафик клиентов ({scope})?\n\n'
-        '⚠️ Действие необратимо — записи клиентов будут удалены с панели.'
-    )
-    await safe_edit_or_send(callback.message, text=text,
-                            reply_markup=delete_depleted_confirm_kb(server_id, inbound_id))
+                            reply_markup=delete_depleted_confirm_kb(server_id))
     await callback.answer()
 
 
@@ -365,10 +334,7 @@ async def deplete_do(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
-    parts = callback.data.split(':')
-    server_id = int(parts[1])
-    inbound_id = int(parts[2])
-    server = get_server_by_id(server_id)
+    server_id, server = _resolve_server(callback)
     if not server:
         await callback.answer('❌ Сервер не найден', show_alert=True)
         return
@@ -376,7 +342,7 @@ async def deplete_do(callback: CallbackQuery):
     try:
         client = get_client_from_server_data(server)
         await client.login()
-        ok = await client.delete_depleted_clients(inbound_id)
+        deleted = await client.delete_depleted_clients()
     except Exception as exc:  # noqa: BLE001
         logger.warning('srvtools deplete do failed (server %s): %s', server_id, exc)
         await safe_edit_or_send(
@@ -384,11 +350,10 @@ async def deplete_do(callback: CallbackQuery):
             text=f'❌ Не удалось выполнить уборку.\n\n<code>{html.escape(str(exc))}</code>',
             reply_markup=server_tools_back_kb(server_id))
         return
-    scope = 'по всем inbound' if inbound_id == -1 else f'inbound #{inbound_id}'
-    if ok:
-        text = f'✅ Уборка выполнена ({scope}).'
+    if deleted > 0:
+        text = f'✅ Уборка выполнена. Удалено клиентов: <b>{deleted}</b>.'
     else:
-        text = '⚠️ Панель вернула отрицательный результат.'
+        text = '✅ Уборка выполнена. Исчерпавших трафик клиентов не найдено.'
     await safe_edit_or_send(callback.message, text=text,
                             reply_markup=server_tools_back_kb(server_id))
 
