@@ -1438,12 +1438,17 @@ class XUIClient(BaseVPNClient):
         result = await self._request("POST", "/panel/api/server/restartXrayService")
         return bool(result.get("success"))
 
-    async def delete_depleted_clients(self, inbound_id: int = -1) -> bool:
-        """Удалить исчерпавших трафик клиентов. inbound_id=-1 → по всем inbound. Мутирующий."""
-        result = await self._request(
-            "POST", f"/panel/api/inbounds/delDepletedClients/{int(inbound_id)}"
-        )
-        return bool(result.get("success"))
+    async def delete_depleted_clients(self) -> int:
+        """Удалить исчерпавших трафик клиентов по всей панели.
+
+        Панель на clients-профиле (3x-ui 3.6.0) удаляет исчерпавших только
+        глобально: POST /panel/api/clients/delDepleted, без inbound id.
+        Возвращает количество удалённых клиентов (obj.deleted)."""
+        result = await self._request("POST", "/panel/api/clients/delDepleted")
+        obj = result.get("obj") or {}
+        if isinstance(obj, dict):
+            return int(obj.get("deleted", 0))
+        return 0
 
     async def get_new_x25519_cert(self) -> Dict[str, str]:
         """Свежая пара Reality-ключей (POST /panel/api/server/getNewX25519Cert)."""
