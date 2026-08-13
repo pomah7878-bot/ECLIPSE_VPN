@@ -7,8 +7,6 @@
 внутренние действия используют короткий префикс ``srvtools_``,
 вход в раздел из карточки сервера — ``admin_server_tools:{id}``.
 """
-from typing import Any, Dict, List
-
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -62,32 +60,17 @@ def restart_xray_confirm_kb(server_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def delete_depleted_inbounds_kb(server_id: int, inbounds: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Выбор inbound для уборки исчерпавших трафик (или по всем сразу, id=-1)."""
+def delete_depleted_confirm_kb(server_id: int) -> InlineKeyboardMarkup:
+    """Подтверждение уборки исчерпавших трафик клиентов по всей панели.
+
+    Панель на clients-профиле (3x-ui 3.6.0) удаляет исчерпавших только
+    глобально — эндпоинт /panel/api/clients/delDepleted не принимает
+    inbound id, поэтому выбор конкретного inbound здесь не предлагается.
+    """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text='🧹 По всем inbound сразу',
-        callback_data=f'srvtools_deplete_confirm:{server_id}:-1'))
-    for inbound in inbounds:
-        inbound_id = inbound.get('id')
-        if inbound_id is None:
-            continue
-        remark = inbound.get('remark') or inbound.get('tag') or f'inbound {inbound_id}'
-        label = f'#{inbound_id} · {remark}'
-        builder.row(InlineKeyboardButton(
-            text=label[:60],
-            callback_data=f'srvtools_deplete_confirm:{server_id}:{inbound_id}'))
-    builder.row(InlineKeyboardButton(
-        text='⬅️ К инструментам', callback_data=f'admin_server_tools:{server_id}'))
-    return builder.as_markup()
-
-
-def delete_depleted_confirm_kb(server_id: int, inbound_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение удаления исчерпавших трафик клиентов (деструктивное действие)."""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(
-        text='✅ Да, удалить',
-        callback_data=f'srvtools_deplete_do:{server_id}:{inbound_id}'))
+        text='✅ Да, убрать по всей панели',
+        callback_data=f'srvtools_deplete_do:{server_id}'))
     builder.row(InlineKeyboardButton(
         text='❌ Отмена', callback_data=f'admin_server_tools:{server_id}'))
     return builder.as_markup()
