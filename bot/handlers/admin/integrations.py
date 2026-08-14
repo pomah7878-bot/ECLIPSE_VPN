@@ -13,6 +13,7 @@ from aiogram.fsm.context import FSMContext
 from database.requests import (
     get_effective_webapp_url, set_webapp_url,
     get_effective_groq_api_key, set_groq_api_key,
+    get_effective_gemini_api_key, set_gemini_api_key,
     get_effective_tavily_api_key, set_tavily_api_key,
     get_effective_oauth_credentials, set_oauth_credentials,
 )
@@ -47,12 +48,14 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
 
     webapp_url = get_effective_webapp_url()
     groq_key = get_effective_groq_api_key()
+    gemini_key = get_effective_gemini_api_key()
     tavily_key = get_effective_tavily_api_key()
 
     lines = [
         "🌐 <b>Интеграции</b>\n",
         f"🌐 Домен сайта: <code>{webapp_url or 'не задан'}</code>",
         f"🤖 Ключ AI (Groq): <code>{_mask_secret(groq_key)}</code>",
+        f"✨ Ключ AI (Gemini): <code>{_mask_secret(gemini_key)}</code>",
         f"🔍 Ключ веб-поиска (Tavily): <code>{_mask_secret(tavily_key)}</code>",
         "",
     ]
@@ -151,6 +154,53 @@ async def edit_groq_key_save(message: Message, state: FSMContext):
         pass
 
     set_groq_api_key(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(
+        f"✅ Ключ сохранён: <code>{_mask_secret(value)}</code>\n\n"
+        "⚠️ Не забудьте: <code>systemctl restart eclipse-ai</code>",
+        parse_mode="HTML", reply_markup=integrations_menu_kb(),
+    )
+
+
+# ============================================================
+# Ключ AI (Gemini) — резервный лейн
+# ============================================================
+
+@router.callback_query(F.data == "admin_edit_gemini_key")
+async def edit_gemini_key_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.edit_gemini_key)
+    current = get_effective_gemini_api_key()
+    await safe_edit_or_send(
+        callback.message,
+        f"✨ <b>Ключ AI (Gemini)</b>\n\nТекущий: <code>{_mask_secret(current)}</code>\n\n"
+        "Резервный лейн — используется, когда все модели Groq недоступны. "
+        "Получите бесплатный ключ на aistudio.google.com → Get API key, затем отправьте его сюда.\n\n"
+        "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_gemini_key)
+async def edit_gemini_key_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    if len(value) < 10:
+        await safe_edit_or_send(message, "❌ Слишком короткое значение. Проверьте, что скопировали ключ целиком.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    set_gemini_api_key(value)
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(
         f"✅ Ключ сохранён: <code>{_mask_secret(value)}</code>\n\n"
