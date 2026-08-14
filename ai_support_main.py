@@ -220,28 +220,71 @@ client = AsyncOpenAI(
     base_url="https://api.groq.com/openai/v1",
     max_retries=0,
 )
-# ВАЖНО (19.07.2026): Groq официально уведомил (17.06.2026) об устаревании
-# llama-3.3-70b-versatile и llama-3.1-8b-instant — они ещё работают сегодня,
-# но могут быть отключены в любой момент (как уже случилось с qwen/qwen3-32b
-# и meta-llama/llama-4-maverick-17b-128e-instruct — оба подтверждённо мертвы,
-# 404 model_not_found). Официально рекомендованные замены поставлены первыми
-# в цепочке, устаревшие модели оставлены в конце как бонусная подстраховка,
-# пока они ещё отвечают — но их стоит убрать при первом же 404 от Groq.
+
+
+def _resolve_gemini_api_key() -> str:
+    """Ключ Google Gemini (второй провайдер, резервный лейн): приоритет у
+    значения из админ-панели (общая БД), иначе — переменная окружения
+    GEMINI_API_KEY. Применяется после перезапуска сервиса (systemctl restart
+    eclipse-ai)."""
+    try:
+        from database.requests import get_effective_gemini_api_key
+        db_key = get_effective_gemini_api_key()
+        if db_key:
+            return db_key
+    except Exception as e:
+        logger.warning(f"Не удалось прочитать GEMINI_API_KEY из БД, использую окружение: {e}")
+    return os.environ.get("GEMINI_API_KEY", "")
+
+
+# Второй провайдер: Google Gemini через OpenAI-совместимый эндпоинт.
+# Резервный лейн — включается, когда все Groq-модели на кулдауне. Другое
+# семейство и инфраструктура → отказоустойчивость на уровне провайдера.
+gemini_client = AsyncOpenAI(
+    api_key=_resolve_gemini_api_key(),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    max_retries=0,
+)
+# ВАЖНО (14.08.2026): Groq официально уведомил о декоме llama-3.1-8b-instant
+# (дата отключения 16.08.2026, email от Groq). llama-3.3-70b-versatile тоже
+# отмечена как deprecated в доках Groq, но дата отключения не объявлена и
+# модель пока отвечает (проверено 14.08.2026 через GET /v1/models с боевым
+# ключом). Официально рекомендованные замены поставлены первыми в цепочке.
 MODEL_NAME = "openai/gpt-oss-120b"  # официальная замена llama-3.3-70b-versatile, 200K токенов/день
 SECONDARY_MODEL_NAME = "qwen/qwen3.6-27b"  # альтернатива топ-уровня, та же модель что и для vision
 FALLBACK_MODEL_NAME = "openai/gpt-oss-20b"  # официальная замена llama-3.1-8b-instant
-
-# Устаревшие у Groq модели — подтверждённо ещё работают (проверено 19.07.2026),
-# держим как дополнительный резерв, но готовимся убрать при первом сбое.
 _LEGACY_MODEL_70B = "llama-3.3-70b-versatile"
-_LEGACY_MODEL_8B = "llama-3.1-8b-instant"
+_RESERVE_MODEL_SAFEGUARD = "openai/gpt-oss-safeguard-20b"
+# Второй провайдер (резервный лейн): Google Gemini. gemini-flash-latest —
+# скользящий алиас Google на актуальную flash-модель (не ловит 404 при смене
+# линейки). Требует reasoning_effort="none" (иначе thinking съедает бюджет
+# ответа, проверено 14.08.2026). Держит tools — база знаний работает.
+_GEMINI_MODEL = "gemini-flash-latest"
 
+
+class ModelSpec:
+    """Одно звено цепочки: провайдер, клиент, ID модели у провайдера и ключ
+    кулдауна. Ключ включает провайдера, поэтому одинаковые по смыслу модели
+    у разных провайдеров не делят общий кулдаун."""
+    __slots__ = ("provider", "client", "model_id", "cooldown_key")
+
+    def __init__(self, provider, client, model_id, cooldown_key):
+        self.provider = provider
+        self.client = client
+        self.model_id = model_id
+        self.cooldown_key = cooldown_key
+
+
+# Порядок = приоритет фейловера. Groq несёт основную нагрузку; Gemini —
+# последним звеном, включается только когда все Groq-модели на кулдауне
+# (у Gemini свои дневные лимиты, бережём их на случай реального сбоя Groq).
 MODEL_CHAIN = (
-    MODEL_NAME,
-    SECONDARY_MODEL_NAME,
-    FALLBACK_MODEL_NAME,
-    _LEGACY_MODEL_70B,
-    _LEGACY_MODEL_8B,
+    ModelSpec("groq", client, MODEL_NAME, "groq:gpt-oss-120b"),
+    ModelSpec("groq", client, SECONDARY_MODEL_NAME, "groq:qwen"),
+    ModelSpec("groq", client, FALLBACK_MODEL_NAME, "groq:gpt-oss-20b"),
+    ModelSpec("groq", client, _LEGACY_MODEL_70B, "groq:llama-70b"),
+    ModelSpec("groq", client, _RESERVE_MODEL_SAFEGUARD, "groq:safeguard"),
+    ModelSpec("gemini", gemini_client, _GEMINI_MODEL, "gemini:flash-latest"),
 )
 
 
@@ -268,15 +311,17 @@ def _parse_retry_after_seconds(error_message: str) -> float:
 _model_cooldowns: dict[str, float] = {}
 
 
-def _is_on_cooldown(model: str) -> bool:
-    return time.time() < _model_cooldowns.get(model, 0.0)
+def _is_on_cooldown(spec) -> bool:
+    key = spec.cooldown_key if hasattr(spec, "cooldown_key") else spec
+    return time.time() < _model_cooldowns.get(key, 0.0)
 
 
-def _remaining_cooldown(model: str) -> float:
-    return max(0.0, _model_cooldowns.get(model, 0.0) - time.time())
+def _remaining_cooldown(spec) -> float:
+    key = spec.cooldown_key if hasattr(spec, "cooldown_key") else spec
+    return max(0.0, _model_cooldowns.get(key, 0.0) - time.time())
 
 
-async def _call_model(model: str, messages, **kwargs):
+async def _call_model(spec, messages, **kwargs):
     """Вызывает конкретную модель. При успехе снимает с неё паузу (если была),
     при RateLimitError — парсит реальное время ожидания и ставит модель на
     паузу до этого момента, затем пробрасывает исключение выше.
@@ -290,21 +335,27 @@ async def _call_model(model: str, messages, **kwargs):
     # отклоняет их как обычные kwargs (TypeError: unexpected keyword argument),
     # поэтому передаём через extra_body — штатный механизм OpenAI SDK для
     # provider-специфичных полей, которые всё равно попадают в тело запроса.
+    model = spec.model_id
+    active_client = spec.client
     extra_body = kwargs.pop("extra_body", {}) or {}
-    if "gpt-oss" in model:
+    if spec.provider == "gemini":
+        # Gemini: reasoning_effort="none" гасит thinking (иначе пустой ответ);
+        # Groq-специфичный include_reasoning тут отклоняется (400), не шлём.
+        extra_body.setdefault("reasoning_effort", "none")
+    elif "gpt-oss" in model:
         extra_body.setdefault("include_reasoning", False)
     elif "qwen" in model:
         extra_body.setdefault("reasoning_effort", "none")
     if extra_body:
         kwargs["extra_body"] = extra_body
     try:
-        response = await client.chat.completions.create(model=model, messages=messages, **kwargs)
-        _model_cooldowns.pop(model, None)
+        response = await active_client.chat.completions.create(model=model, messages=messages, **kwargs)
+        _model_cooldowns.pop(spec.cooldown_key, None)
         return response
     except RateLimitError as e:
         cooldown = _parse_retry_after_seconds(str(e))
-        _model_cooldowns[model] = time.time() + cooldown
-        logger.warning(f"RateLimitError на {model}, пауза на {cooldown:.0f}с")
+        _model_cooldowns[spec.cooldown_key] = time.time() + cooldown
+        logger.warning(f"RateLimitError на {spec.cooldown_key}, пауза на {cooldown:.0f}с")
         raise
 
 
@@ -352,32 +403,32 @@ async def _chat_completion_with_fallback(messages, **kwargs):
     Разовые сбои не по лимиту (например, известный tool_use_failed у
     некоторых моделей) паузу не ставят — это не проблема с квотой, а
     случайная неполадка конкретного запроса."""
-    candidates = [m for m in MODEL_CHAIN if not _is_on_cooldown(m)]
+    candidates = [s for s in MODEL_CHAIN if not _is_on_cooldown(s)]
 
     if not candidates:
-        soonest = min(_remaining_cooldown(m) for m in MODEL_CHAIN)
+        soonest = min(_remaining_cooldown(s) for s in MODEL_CHAIN)
         logger.warning(f"Все модели на паузе (ближайшая освободится через {soonest:.0f}с) — эскалирую без попытки")
         raise RuntimeError("Все модели временно недоступны по лимиту запросов")
 
-    if candidates[0] != MODEL_NAME:
-        remaining = _remaining_cooldown(MODEL_NAME)
-        logger.info(f"{MODEL_NAME} на паузе ещё {remaining:.0f}с — сразу использую {candidates[0]}")
+    if candidates[0].cooldown_key != MODEL_CHAIN[0].cooldown_key:
+        remaining = _remaining_cooldown(MODEL_CHAIN[0])
+        logger.info(f"{MODEL_NAME} на паузе ещё {remaining:.0f}с — сразу использую {candidates[0].cooldown_key}")
 
     last_error: Exception | None = None
-    for i, model in enumerate(candidates):
+    for i, spec in enumerate(candidates):
         try:
-            return await _call_model(model, messages, **kwargs)
+            return await _call_model(spec, messages, **kwargs)
         except RateLimitError as e:
             last_error = e
             continue  # пробуем следующую модель из оставшихся кандидатов, если есть
         except APIError as e:
-            logger.warning(f"{type(e).__name__} на {model} ({e}), пробую эту же модель без вызова инструментов")
+            logger.warning(f"{type(e).__name__} на {spec.cooldown_key} ({e}), пробую эту же модель без вызова инструментов")
             try:
                 # ВАЖНО: вызываем через _call_model (а не client.chat.completions.create
                 # напрямую), иначе теряется защита от утечки reasoning-токенов модели
                 # в видимый ответ — она встроена именно в _call_model.
                 retry_kwargs = {k: v for k, v in kwargs.items() if k not in ("tools", "tool_choice")}
-                return await _call_model(model, messages, **retry_kwargs)
+                return await _call_model(spec, messages, **retry_kwargs)
             except APIError:
                 last_error = e
                 continue
@@ -2031,6 +2082,58 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
 
     return ConsultResponse(reply=reply_text, escalate=escalate, response_id=response_id)
 
+class OutreachRequest(BaseModel):
+    user_id: int
+    reason: str  # краткий машинный повод, например "key_expiring"
+    context: dict = {}  # доп. детали повода, например {"key_name": "...", "days_left": 2}
+
+
+class OutreachResponse(BaseModel):
+    text: str
+
+
+OUTREACH_SYSTEM_PROMPT = """Ты составляешь короткое ИСХОДЯЩЕЕ сообщение от лица ECLIPSE Unlimited VPN клиенту — это НЕ ответ на его вопрос, а сообщение, которое бот отправит ему сам, по конкретному поводу.
+
+Правила:
+- Пиши только на основе повода и профиля клиента ниже — никогда не выдумывай тарифы, промокоды, даты и цифры, которых нет в профиле.
+- Обращайся по имени, если оно известно из профиля.
+- Тон дружелюбный, короткий, без канцелярита, 2-4 предложения, можно 1-2 уместных эмодзи. HTML-разметка Telegram (<b>, <i>) разрешена, других тегов нет.
+- Никогда не используй слова "мгновенно", "сразу", "моментально" применительно к срокам обработки чего-либо (оплата, активация) — эти сроки не гарантированы.
+- Если в профиле клиента есть доступный промокод (available_promo_codes) — можно упомянуть его как бонус к поводу сообщения, но никогда не выдумывай промокод, если его нет в профиле.
+- Не задавай риторических вопросов вроде "Всё ли у вас хорошо?" — сразу переходи к сути повода.
+- Ответь ТОЛЬКО текстом сообщения целиком, без пояснений от себя до или после."""
+
+
+@app.post("/generate_outreach", response_model=OutreachResponse)
+async def generate_outreach(req: OutreachRequest, token: str = Depends(verify_token)):
+    """Генерирует персонализированный текст ИСХОДЯЩЕГО сообщения для клиента
+    по заданному поводу (например, истекающий ключ). НЕ отправляет сообщение
+    сам — только возвращает текст. НЕ пишет ничего в историю диалога клиента,
+    чтобы не путать контекст его будущих обращений в /consult."""
+    customer_profile = await query_full_customer_profile(req.user_id)
+    if customer_profile.get("found") is False:
+        logger.info(f"Outreach отклонён: пользователь {req.user_id} не найден")
+        return OutreachResponse(text="")
+
+    profile_block = _format_customer_profile(customer_profile)
+    reason_block = f"Повод сообщения: {req.reason}\nДетали повода: {json.dumps(req.context, ensure_ascii=False)}"
+    full_system = OUTREACH_SYSTEM_PROMPT + "\n\n" + reason_block + "\n\nПрофиль клиента:\n" + profile_block
+
+    messages = [{"role": "system", "content": full_system}]
+
+    try:
+        response = await _chat_completion_with_fallback(
+            messages, max_tokens=1000, temperature=0.7, timeout=15.0,
+        )
+        text = response.choices[0].message.content or ""
+        text = _sanitize_reply(text)
+    except Exception as e:
+        logger.error(f"Outreach generation error for user {req.user_id}: {e}")
+        return OutreachResponse(text="")
+
+    return OutreachResponse(text=text)
+
+
 @app.post("/feedback")
 @limiter.limit("30/minute")
 async def feedback(req: FeedbackRequest, request: Request, token: str = Depends(verify_token)):
@@ -2093,13 +2196,15 @@ async def stats(token: str = Depends(verify_token)):
 async def health():
     return {
         "status": "ok",
-        "model_chain": list(MODEL_CHAIN),
+        "model_chain": [s.cooldown_key for s in MODEL_CHAIN],
         "models": {
-            model: {
-                "on_cooldown": _is_on_cooldown(model),
-                "cooldown_remaining_seconds": round(_remaining_cooldown(model)),
+            s.cooldown_key: {
+                "provider": s.provider,
+                "model_id": s.model_id,
+                "on_cooldown": _is_on_cooldown(s),
+                "cooldown_remaining_seconds": round(_remaining_cooldown(s)),
             }
-            for model in MODEL_CHAIN
+            for s in MODEL_CHAIN
         },
         "db_configured": bool(BOT_DB_PATH),
     }
