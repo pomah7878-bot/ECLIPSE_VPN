@@ -66,6 +66,46 @@ def _installed_bot_version_text() -> str:
         f"Текущий коммит: <code>{escape_html(commit)}</code>"
     )
 
+def _format_release_screen() -> str:
+    """Красивый экран версии для "Обновление не требуется": номер версии
+    крупно, подзаголовок, список изменений. Если HEAD не размечен версией —
+    показывает последнюю известную версию из истории + список того, что
+    накопилось поверх неё (см. bot.version.resolve_release_info).
+    """
+    from bot.version import resolve_release_info
+
+    release_info, extra_commits = resolve_release_info()
+
+    if not release_info:
+        return (
+            "📦 <b>Версия не определена</b>\n"
+            "История коммитов не содержит маркера версии."
+        )
+
+    marker = release_info["marker"]
+    version = release_info["version"]
+    title = release_info["title"]
+    bullets = release_info["bullets"]
+
+    badge = {"": "", "!": " 🔴 обязательное", "?": " 🧪 бета"}.get(marker, "")
+    lines = [f"🏷 <b>Версия {escape_html(version)}</b>{badge}"]
+    if title:
+        lines.append(f"<i>{escape_html(title)}</i>")
+    if bullets:
+        lines.append("")
+        lines.extend(f"•  {escape_html(text)}" for _, text in bullets)
+
+    if extra_commits:
+        lines.append("")
+        n = len(extra_commits)
+        suffix = "е" if n == 1 else ("я" if n < 5 else "й")
+        lines.append(f"<b>После этой версии — ещё {n} изменени{suffix}:</b>")
+        lines.extend(f"·  {escape_html(subject)}" for _, subject in extra_commits[:8])
+        if n > 8:
+            lines.append(f"·  ещё {n - 8}")
+
+    return "\n".join(lines)
+
 
 _EXTENSION_STATUS_LABELS = {
     'ok': 'найдена',
@@ -839,9 +879,9 @@ async def show_update_confirm(callback: CallbackQuery, state: FSMContext):
     # If there are no updates
     if commits_behind == 0:
         await safe_edit_or_send(callback.message, 
-            "✅ <b>Обновление не требуется, у вас последняя версия</b>\n\n"
-            f"{installed_version_text}\n\n"
-            f"{commits_text}",
+            "✅ <b>Обновление не требуется</b>\n"
+            "У вас установлена последняя версия.\n\n"
+            f"{_format_release_screen()}",
             reply_markup=update_confirm_kb(has_updates=False)
         )
     elif has_blocking and blocking_commit:
