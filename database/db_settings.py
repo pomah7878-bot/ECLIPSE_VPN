@@ -48,6 +48,8 @@ __all__ = [
     'set_groq_api_key',
     'get_effective_tavily_api_key',
     'set_tavily_api_key',
+    'get_effective_gemini_api_key',
+    'set_gemini_api_key',
     'get_effective_oauth_credentials',
     'set_oauth_credentials',
 ]
@@ -408,6 +410,21 @@ def get_effective_tavily_api_key() -> str:
 def set_tavily_api_key(api_key: str) -> None:
     """Сохраняет ключ Tavily, заданный через админ-панель."""
     set_setting('tavily_api_key', api_key.strip())
+
+
+def get_effective_gemini_api_key() -> str:
+    """Ключ Google Gemini для резервного лейна AI-консультанта. Значение из
+    админки имеет приоритет над переменной окружения GEMINI_API_KEY."""
+    from_db = get_setting('gemini_api_key', '')
+    if from_db:
+        return from_db
+    import os
+    return os.environ.get('GEMINI_API_KEY', '')
+
+
+def set_gemini_api_key(api_key: str) -> None:
+    """Сохраняет ключ Gemini, заданный через админ-панель."""
+    set_setting('gemini_api_key', api_key.strip())
 
 def get_effective_oauth_credentials(provider: str) -> tuple[str, str]:
     """
