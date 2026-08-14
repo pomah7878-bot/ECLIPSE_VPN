@@ -1451,7 +1451,7 @@ class XUIClient(BaseVPNClient):
         return 0
 
     async def get_new_x25519_cert(self) -> Dict[str, str]:
-        """Свежая пара Reality-ключей (POST /panel/api/server/getNewX25519Cert)."""
+        """Свежая пара Reality-ключей (GET /panel/api/server/getNewX25519Cert)."""
         try:
             result = await self._request("GET", "/panel/api/server/getNewX25519Cert")
             obj = result.get("obj", {})
