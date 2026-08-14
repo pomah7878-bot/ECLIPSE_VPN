@@ -36,6 +36,8 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
     from database.requests import (
         get_all_tariffs,
         get_tariffs_by_group,
+        get_all_groups,
+        get_groups_count,
         is_cardlink_configured,
         is_cards_enabled,
         is_crypto_configured,
@@ -55,18 +57,7 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
     cardlink_enabled = is_cardlink_configured()
     demo_enabled = is_demo_payment_enabled()
 
-    group_id = _optional_int(group_id)
-    if group_id is not None:
-        if group_id <= 0:
-            return ''
-        tariffs = get_tariffs_by_group(group_id)
-    else:
-        tariffs = get_all_tariffs()
-    if not tariffs:
-        return ''
-
-    lines = ['📋 <b>Тарифы:</b>'] if include_title else []
-    for tariff in tariffs:
+    def _format_tariff_line(tariff: dict) -> str:
         prices = []
         if crypto_enabled:
             price_usd = tariff['price_cents'] / 100
@@ -84,8 +75,43 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
         ) and tariff.get('price_rub', 0) > 0:
             prices.append(f"{int(tariff['price_rub'])} ₽")
         price_display = ' / '.join(prices) if prices else 'Цена не установлена'
-        lines.append(f"• {escape_html(tariff['name'])} — {price_display}")
+        return f"• {escape_html(tariff['name'])} — {price_display}"
 
+    group_id = _optional_int(group_id)
+
+    if group_id is not None:
+        if group_id <= 0:
+            return ''
+        tariffs = get_tariffs_by_group(group_id)
+        if not tariffs:
+            return ''
+        lines = ['📋 <b>Тарифы:</b>'] if include_title else []
+        lines.extend(_format_tariff_line(t) for t in tariffs)
+        return '\n'.join(lines)
+
+    # Группировка: если групп больше одной — показываем тарифы под заголовками групп
+    if get_groups_count() > 1:
+        groups = get_all_groups()
+        lines = ['📋 <b>Тарифы:</b>'] if include_title else []
+        any_group_shown = False
+        for group in groups:
+            group_tariffs = get_tariffs_by_group(group['id'])
+            if not group_tariffs:
+                continue
+            if any_group_shown or include_title:
+                lines.append('')
+            lines.append(f"<b>{escape_html(group['name'])}</b>")
+            lines.extend(_format_tariff_line(t) for t in group_tariffs)
+            any_group_shown = True
+        if not any_group_shown:
+            return ''
+        return '\n'.join(lines)
+
+    tariffs = get_all_tariffs()
+    if not tariffs:
+        return ''
+    lines = ['📋 <b>Тарифы:</b>'] if include_title else []
+    lines.extend(_format_tariff_line(t) for t in tariffs)
     return '\n'.join(lines)
 
 
