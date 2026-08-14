@@ -18,6 +18,7 @@ class AdminStates(StatesGroup):
     integrations_menu = State()          # Экран статуса интеграций
     edit_webapp_url = State()            # Ввод домена сайта
     edit_groq_key = State()              # Ввод ключа Groq (AI)
+    edit_gemini_key = State()            # Ввод ключа Gemini (AI, резервный лейн)
     edit_tavily_key = State()            # Ввод ключа Tavily (веб-поиск AI)
     edit_oauth_client_id = State()       # Ввод Client ID OAuth-провайдера
     edit_oauth_client_secret = State()   # Ввод Client Secret OAuth-провайдера
