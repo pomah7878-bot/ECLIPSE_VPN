@@ -243,9 +243,9 @@ async def logs_show(callback: CallbackQuery):
     kept.reverse()
     if kept:
         body = '\n'.join(kept)
+        text = f'{header}<pre>{body}</pre>'
     else:
-        body = 'Логи пусты или панель их не вернула.'
-    text = f'{header}<pre>{body}</pre>'
+        text = f'{header}<i>Логи пусты или панель их не вернула.</i>'
     await safe_edit_or_send(callback.message, text=text,
                             reply_markup=xray_logs_count_kb(server_id))
 
