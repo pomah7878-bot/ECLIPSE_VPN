@@ -205,6 +205,7 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
+    builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
     builder.row(InlineKeyboardButton(text='🔵 Google OAuth', callback_data='admin_edit_oauth:google'))
     builder.row(InlineKeyboardButton(text='🟡 Яндекс OAuth', callback_data='admin_edit_oauth:yandex'))
