@@ -43,3 +43,87 @@ def resolve_bot_version() -> tuple[str, str]:
 
 
 BOT_RELEASE, BOT_COMMIT = resolve_bot_version()
+
+
+# ============================================================================
+# Богатая информация о релизе для экрана "Обновление не требуется": ищет
+# версию на HEAD, а если её там нет — идёт назад по истории до последнего
+# коммита с маркером "Версия N.N". Использует существующий формат проекта:
+# "[!?]Версия N.N: заголовок" + тело построчно "+ добавлено" / "- исправлено".
+# ============================================================================
+
+_RELEASE_HEADER_RE = re.compile(
+    r"^([!?]?)\s*версия\s+([0-9]+(?:\.[0-9]+)*)\s*:?\s*(.*)$",
+    flags=re.IGNORECASE,
+)
+
+_RELEASE_SEARCH_DEPTH = 300  # разумный предел обхода истории назад
+
+
+def parse_release_body(body: str) -> dict | None:
+    """Разбирает полное тело коммита-версии (git log --format=%B) на структуру
+    {marker, version, title, bullets: [(kind, text), ...]}. kind — исходный
+    символ строки ('+' или '-'); используется только как маркер начала пункта,
+    а не как индикатор типа изменения (в истории проекта смысл +/- не всегда
+    последователен). Возвращает None, если первая строка не похожа на версию."""
+    lines = [line.rstrip() for line in (body or "").strip("\n").split("\n")]
+    if not lines:
+        return None
+    header_match = _RELEASE_HEADER_RE.match(lines[0].strip())
+    if not header_match:
+        return None
+    marker, version, title = header_match.groups()
+    title = title.strip()
+    bullets: list[tuple[str, str]] = []
+    for line in lines[1:]:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped[0] in "+-" and len(stripped) > 1:
+            bullets.append((stripped[0], stripped[1:].strip()))
+        elif bullets:
+            prev_kind, prev_text = bullets[-1]
+            bullets[-1] = (prev_kind, f"{prev_text} {stripped}")
+        else:
+            title = f"{title} {stripped}".strip() if title else stripped
+    return {"marker": marker, "version": version, "title": title, "bullets": bullets}
+
+
+def resolve_release_info(max_search: int = _RELEASE_SEARCH_DEPTH):
+    """Возвращает (release_info, extra_commits) для экрана статуса версии.
+
+    Если HEAD сам размечен как версия — release_info о ней, extra_commits
+    пуст. Иначе ищет назад по истории (не дальше max_search коммитов)
+    последний коммит-версию; extra_commits — всё, что случилось после неё
+    (новые сверху), как список (short_hash, subject).
+
+    Возвращает (None, []) если версия не найдена вовсе или git недоступен.
+    """
+    ok, head_line = run_git_command(["log", "-1", "--format=%h%x09%s", "HEAD"])
+    if not ok or "\t" not in head_line:
+        return None, []
+    head_short, head_subject = head_line.split("\t", 1)
+
+    if _RELEASE_HEADER_RE.match(head_subject.strip()):
+        ok_body, body = run_git_command(["log", "-1", "--format=%B", head_short])
+        if ok_body:
+            return parse_release_body(body), []
+        return None, []
+
+    ok_bulk, bulk = run_git_command(
+        ["log", "--format=%h%x09%s", "-n", str(max_search), "HEAD"]
+    )
+    if not ok_bulk or not bulk:
+        return None, []
+
+    extra_commits: list[tuple[str, str]] = []
+    for line in bulk.split("\n"):
+        if "\t" not in line:
+            continue
+        short_hash, subject = line.split("\t", 1)
+        if _RELEASE_HEADER_RE.match(subject.strip()):
+            ok_body, body = run_git_command(["log", "-1", "--format=%B", short_hash])
+            info = parse_release_body(body) if ok_body else None
+            return info, extra_commits
+        extra_commits.append((short_hash, subject))
+    return None, extra_commits
