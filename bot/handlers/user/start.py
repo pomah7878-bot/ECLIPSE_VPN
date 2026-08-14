@@ -14,6 +14,7 @@ from bot.utils.page_flow import (
 )
 from bot.utils.text import escape_html, safe_edit_or_send
 from bot.utils.user_pages import render_access_blocked_page
+from bot.handlers.user.support import _start_support_dialog
 
 logger = logging.getLogger(__name__)
 
@@ -340,6 +341,14 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
             logger.exception(f'Ошибка открытия страницы триала: {e}')
         return
     
+
+    if args == 'support':
+        try:
+            await _start_support_dialog(message, state)
+        except Exception as e:
+            logger.exception(f'Ошибка открытия поддержки: {e}')
+        return
+
     if args and (args.startswith('replace_') or args.startswith('renew_')):
         from bot.handlers.user.keys import show_key_details
         try:
