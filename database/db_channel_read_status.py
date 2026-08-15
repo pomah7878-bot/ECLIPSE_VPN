@@ -15,6 +15,7 @@ __all__ = [
     'get_last_seen_channel_post_id',
     'mark_channel_posts_seen',
     'count_unread_channel_posts',
+    'get_max_sent_post_id',
 ]
 
 
@@ -52,3 +53,17 @@ def count_unread_channel_posts(telegram_id: int) -> int:
             (last_seen,),
         ).fetchone()
         return row['cnt'] if row else 0
+
+
+def get_max_sent_post_id() -> int:
+    """ID последнего реально ОТПРАВЛЕННОГО поста (status='sent'). Используется
+    для пометки "увиденным" вместо get_all_scheduled_posts(limit=1), который
+    сортирует по scheduled_at и может вернуть ещё не отправленный (pending)
+    пост из будущего — это отметило бы прочитанным то, чего пользователь не
+    видел, и одновременно "проглатывало" реально отправленные посты с id
+    больше этого pending-поста, из-за чего счётчик никогда не обнулялся."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(MAX(id), 0) as max_id FROM scheduled_channel_posts WHERE status = 'sent'"
+        ).fetchone()
+        return row['max_id'] if row else 0
