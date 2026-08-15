@@ -20,6 +20,8 @@ __all__ = [
     'update_page_custom',
     'update_page_flow',
     'upsert_page_defaults',
+    'get_page_translation',
+    'set_page_translation',
 ]
 
 
@@ -170,3 +172,47 @@ def upsert_page_defaults(
             (text, image, normalized_media_type, buttons, page_key)
         )
     logger.info(f"Дефолты страницы обновлены: {page_key}")
+
+
+def get_page_translation(page_key: str, language: str) -> Optional[str]:
+    """Возвращает переведённый текст страницы для указанного языка, или
+    None, если перевода нет (тогда вызывающий код должен показать
+    русский текст как fallback)."""
+    if language == 'ru':
+        return None
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT translations FROM pages WHERE page_key = ?",
+            (page_key,),
+        ).fetchone()
+        if not row or not row['translations']:
+            return None
+        try:
+            translations = json.loads(row['translations'])
+        except (json.JSONDecodeError, TypeError):
+            return None
+        lang_data = translations.get(language)
+        if isinstance(lang_data, dict):
+            return lang_data.get('text') or None
+        return None
+
+
+def set_page_translation(page_key: str, language: str, text: str) -> None:
+    """Сохраняет перевод текста страницы для указанного языка, не трогая
+    переводы других языков и не трогая text_custom/text_default (русский)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT translations FROM pages WHERE page_key = ?",
+            (page_key,),
+        ).fetchone()
+        try:
+            translations = json.loads(row['translations']) if row and row['translations'] else {}
+        except (json.JSONDecodeError, TypeError):
+            translations = {}
+        if not isinstance(translations, dict):
+            translations = {}
+        translations[language] = {'text': text}
+        conn.execute(
+            "UPDATE pages SET translations = ?, updated_at = CURRENT_TIMESTAMP WHERE page_key = ?",
+            (json.dumps(translations, ensure_ascii=False), page_key),
+        )
