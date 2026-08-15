@@ -184,15 +184,13 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     # засчитывается "увиденным" в момент показа счётчика здесь, так как
     # Telegram не уведомляет бота о клике по внешней url-кнопке.
     try:
-        from database.requests import count_unread_channel_posts, mark_channel_posts_seen, get_all_scheduled_posts
+        from database.requests import count_unread_channel_posts, mark_channel_posts_seen, get_max_sent_post_id
         unread_count = count_unread_channel_posts(user_id)
         news_label = f'📰 Новости ({unread_count})' if unread_count > 0 else '📰 Новости ECLIPSE Unlimited'
         news_button_row = [InlineKeyboardButton(text=news_label, url='https://t.me/eclipse_unlimited_news')]
         append_buttons = [news_button_row] + (append_buttons or [])
         if unread_count > 0:
-            latest_posts = get_all_scheduled_posts(limit=1)
-            if latest_posts:
-                mark_channel_posts_seen(user_id, latest_posts[0]['id'])
+            mark_channel_posts_seen(user_id, get_max_sent_post_id())
     except Exception as e:
         logger.warning(f"Не удалось построить кнопку новостей: {e}")
 
