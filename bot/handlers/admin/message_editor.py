@@ -17,6 +17,7 @@ from bot.utils.text import safe_edit_or_send
 from bot.utils.message_editor import (
     get_message_data, save_message_data, delete_message_media, detect_message_type,
     editor_kb, editor_help_kb, send_editor_message,
+    get_message_translation_data, save_message_translation,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ async def show_message_editor(
     back_callback: str,
     help_text: str = None,
     allowed_types: list = None,
+    language: str = 'ru',
 ) -> Message:
     """Shows a preview of the message with editor buttons.
     
@@ -54,7 +56,10 @@ async def show_message_editor(
     if allowed_types is None:
         allowed_types = ['text', 'photo', 'video', 'animation']
     
-    message_data = get_message_data(key)
+    if language != 'ru':
+        message_data = get_message_translation_data(key, language)
+    else:
+        message_data = get_message_data(key)
     media_type = message_data.get('media_type')
     can_delete_media = bool(message_data.get('media_file_id')) and media_type in allowed_types
 
@@ -63,6 +68,8 @@ async def show_message_editor(
         back_callback,
         has_help=bool(help_text),
         can_delete_media=can_delete_media,
+        show_translate_button=_is_page_key(key),
+        current_language=language,
     )
     
     # Show preview via send_editor_message (single HTML helper)
@@ -80,6 +87,7 @@ async def show_message_editor(
         back_callback=back_callback,
         allowed_types=allowed_types,
         help_text=help_text,
+        editing_language=language,
     )
     
     return result
@@ -189,6 +197,42 @@ async def back_to_preview(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================================
+# CALLBACK: TOGGLE RU/EN EDITING MODE
+# ============================================================================
+
+@router.callback_query(F.data == "msg_editor_toggle_lang")
+async def toggle_editor_language(callback: CallbackQuery, state: FSMContext):
+    """Переключает редактор между русской и английской версией текста
+    страницы, сохраняя тот же key/back_callback/help_text из FSM."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    data = await state.get_data()
+    key = data.get('editing_key')
+    back_callback = data.get('back_callback')
+    help_text = data.get('help_text')
+    allowed_types = data.get('allowed_types', ['text', 'photo', 'video', 'animation'])
+    current_language = data.get('editing_language', 'ru')
+
+    if not key:
+        await callback.answer("❌ Ошибка состояния", show_alert=True)
+        return
+
+    new_language = 'en' if current_language == 'ru' else 'ru'
+
+    await show_message_editor(
+        callback.message, state,
+        key=key,
+        back_callback=back_callback,
+        help_text=help_text,
+        allowed_types=allowed_types,
+        language=new_language,
+    )
+    await callback.answer()
+
+
+# ============================================================================
 # MESSAGE HANDLER: RECEIVING A NEW MESSAGE
 # ============================================================================
 
@@ -228,7 +272,11 @@ async def handle_editor_input(message: Message, state: FSMContext):
         return
     
     # Saving in the database
-    save_message_data(key, message, allowed_types)
+    editing_language = data.get('editing_language', 'ru')
+    if editing_language != 'ru':
+        save_message_translation(key, editing_language, message)
+    else:
+        save_message_data(key, message, allowed_types)
     
     # Delete the user's message (pattern from AGENTS.md)
     try:
@@ -245,6 +293,7 @@ async def handle_editor_input(message: Message, state: FSMContext):
                 back_callback=back_callback,
                 help_text=help_text,
                 allowed_types=allowed_types,
+                language=editing_language,
             )
             return
         except Exception as e:
@@ -257,4 +306,5 @@ async def handle_editor_input(message: Message, state: FSMContext):
         back_callback=back_callback,
         help_text=help_text,
         allowed_types=allowed_types,
+        language=editing_language,
     )
