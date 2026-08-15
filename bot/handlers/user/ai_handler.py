@@ -5,7 +5,7 @@ AI Support Handler - полноценная интеграция AI помощн
 import logging
 import base64
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, LinkPreviewOptions
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -160,7 +160,8 @@ async def ai_command(message: Message, command: CommandObject, state: FSMContext
         await message.answer(
             f"<b>💬 AI:</b>\n\n{_format_ai_reply_html(reply_text)}",
             reply_markup=builder.as_markup(),
-            parse_mode="HTML"
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
 
         if escalate:
@@ -211,7 +212,8 @@ async def handle_ai_screenshot(message: Message, state: FSMContext):
         await processing.edit_text(
             f"<b>💬 AI:</b>\n\n{_format_ai_reply_html(reply_text)}",
             reply_markup=builder.as_markup(),
-            parse_mode="HTML"
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
 
         if escalate:
@@ -246,7 +248,8 @@ async def handle_ai_question(message: Message, state: FSMContext):
         await processing.edit_text(
             f"<b>💬 AI:</b>\n\n{_format_ai_reply_html(reply_text)}",
             reply_markup=builder.as_markup(),
-            parse_mode="HTML"
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
 
         if escalate:
