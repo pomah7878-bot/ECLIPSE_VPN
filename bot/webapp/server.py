@@ -89,6 +89,16 @@ def _get_telegram_id(request: web.Request) -> Optional[int]:
 # ============================================================
 # API handlers
 # ============================================================
+async def handle_language(request: web.Request) -> web.Response:
+    """GET /api/language — язык интерфейса пользователя WebApp (ru/en),
+    определяется по telegram_id из уже проверенного initData."""
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    from database.requests import get_user_language
+
+    return web.json_response({"language": get_user_language(telegram_id)})
 
 def _format_traffic(used: int, limit: int) -> Dict[str, Any]:
     """Форматирует трафик для фронтенда."""
@@ -1936,6 +1946,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/key/{key_id}/inbounds", handle_public_key_inbounds)
     app.router.add_get("/api/status", handle_status)
     app.router.add_get("/api/ping", handle_ping)
+    app.router.add_get("/api/language", handle_language)
     app.router.add_post("/api/ai-consult", handle_ai_consult)
     app.router.add_post("/api/ai-feedback", handle_ai_feedback)
     app.router.add_get("/api/tariffs", handle_tariffs_list)
