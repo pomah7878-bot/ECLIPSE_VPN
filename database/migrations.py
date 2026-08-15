@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 90
+LATEST_VERSION = 91
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1628,6 +1628,17 @@ def migration_90(conn: sqlite3.Connection) -> None:
     logger.info("Migration v90 applied: users.language готово")
 
 
+def migration_91(conn: sqlite3.Connection) -> None:
+    """Migration v91: добавляет поле translations в pages — JSON с переводами
+    редактируемых страниц по языкам, вида {"en": {"text": "..."}}. Кнопки и
+    медиа не переводятся (языконезависимы), только основной текст."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(pages)").fetchall()}
+    if "translations" not in existing_cols:
+        conn.execute("ALTER TABLE pages ADD COLUMN translations TEXT DEFAULT '{}'")
+        logger.info("Migration v91: добавлена колонка pages.translations")
+    logger.info("Migration v91 applied: pages.translations готово")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1646,6 +1657,7 @@ MIGRATIONS = {
     88: migration_88,
     89: migration_89,
     90: migration_90,
+    91: migration_91,
 }
 
 
