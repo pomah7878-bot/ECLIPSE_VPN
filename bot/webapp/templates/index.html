@@ -1233,6 +1233,89 @@
             return fallback;
         }
 
+        // Словарь переводов для перезаписи финального HTML целыми фразами
+        // (не через t() по элементам — многие тексты вшиты внутрь больших
+        // HTML-строк вперемешку с разметкой). Работает через .replaceAll(),
+        // безопасно даже при неполном покрытии — непереведённые фразы
+        // просто остаются на русском.
+        const WEBAPP_TRANSLATIONS = {
+            "Купить подписку": "Buy subscription",
+            "Пробная подписка": "Trial subscription",
+            "Не удалось загрузить данные. Попробуйте обновить.": "Failed to load data. Please refresh.",
+            "Telegram initData не обнаружен. Откройте через бота.": "Telegram initData not found. Please open via the bot.",
+            "Ошибка инициализации": "Initialization error",
+            "AI Помощник": "AI Assistant",
+            "АКТИВНА": "ACTIVE",
+            "Задайте вопрос…": "Ask a question…",
+            "Заменить ключ": "Replace key",
+            "Измеряю задержку…": "Measuring latency…",
+            "Ключ #": "Key #",
+            "Ключ переименован!": "Key renamed!",
+            "Ключ удалён": "Key deleted",
+            "Личный кабинет": "Account",
+            "Максимум 30 символов": "Maximum 30 characters",
+            "Можно прикрепить только изображение.": "Only images can be attached.",
+            "НЕ АКТИВНА": "INACTIVE",
+            "Не дождались оплаты. Если вы уже оплатили — откройте бота ещё раз чуть позже.": "Payment not received yet. If you've already paid — reopen the bot in a bit.",
+            "Не удалось получить ответ. Попробуйте ещё раз.": "Failed to get a response. Please try again.",
+            "Не удалось получить ссылку": "Failed to get the link",
+            "Не удалось прочитать файл. Попробуйте другой.": "Failed to read the file. Please try another one.",
+            "Не удалось скопировать": "Failed to copy",
+            "Новое название ключа:": "New key name:",
+            "Новости канала": "Channel news",
+            "Отлично": "Great",
+            "Ошибка получения ссылки": "Error getting the link",
+            "Ошибка при переименовании": "Error while renaming",
+            "Ошибка при удалении": "Error while deleting",
+            "Ошибка сети": "Network error",
+            "Ошибка соединения с AI. Попробуйте позже.": "AI connection error. Please try later.",
+            "Переименовать": "Rename",
+            "Пинг обновлён": "Ping updated",
+            "Платёж не прошёл. Попробуйте ещё раз.": "Payment failed. Please try again.",
+            "Позже": "Later",
+            "Пользователь": "User",
+            "Привет! Я вижу вашу подписку, ключи и историю платежей — спрашивайте что угодно по вашему аккаунту.": "Hi! I can see your subscription, keys, and payment history — ask me anything about your account.",
+            "Прикрепить скриншот": "Attach screenshot",
+            "Рекомендуем также написать в поддержку — вопрос может требовать участия администратора.": "We also recommend contacting support — this question may need an administrator.",
+            "Ссылка недоступна": "Link unavailable",
+            "Ссылка скопирована!": "Link copied!",
+            "Удалить ключ": "Delete key",
+            "Удалить ключ? Действие необратимо.": "Delete key? This action cannot be undone.",
+            "Файл слишком большой (максимум 8 МБ). Пришлите скриншот поменьше.": "File is too large (max 8 MB). Please send a smaller screenshot.",
+            "день": "day",
+            "дней": "days",
+            "дня": "days",
+            "защищаем": "securing",
+            "мс": "ms",
+            "нет ответа": "no response",
+            "чистый": "clean",
+            "Отмена": "Cancel",
+            "Создаём платёж…": "Creating payment…",
+            "ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ": "SECURE CONNECTION",
+            "⚠️ Осталось выбрать сервер для нового ключа — этот шаг пока доступен только в чате бота.": "⚠️ You still need to choose a server for the new key — this step is currently only available in the bot chat.",
+            "Выберите тариф": "Choose a plan",
+            "Не удалось загрузить тарифы.": "Failed to load plans.",
+            "Ошибка при создании платежа. Попробуйте ещё раз.": "Error creating payment. Please try again.",
+            "Назад": "Back",
+            "Тарифы сейчас недоступны.": "Plans are currently unavailable.",
+            "Не удалось загрузить подключения": "Failed to load connections",
+            "Нет данных о подключениях": "No connection data",
+            "Спасибо за отзыв!": "Thanks for your feedback!",
+            "измеряю…": "measuring…",
+            "Не удалось создать платёж.": "Failed to create payment.",
+            "Активен": "Active",
+            "Истёк": "Expired",
+        };
+
+        function translateHtml(html) {
+            if (window._userLanguage !== 'en') return html;
+            let result = html;
+            for (const ru in WEBAPP_TRANSLATIONS) {
+                result = result.replaceAll(ru, WEBAPP_TRANSLATIONS[ru]);
+            }
+            return result;
+        }
+
         async function init() {
             try {
                 if (!initData) {
@@ -1278,7 +1361,7 @@
 
                 html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ECLIPSE UNLIMITED · ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
 
-                container.innerHTML = html;
+                container.innerHTML = translateHtml(html);
                 fetchPings();
 
                 if (window._trialAvailable) {
