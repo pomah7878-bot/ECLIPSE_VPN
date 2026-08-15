@@ -7,6 +7,16 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
+def language_choice_kb() -> InlineKeyboardMarkup:
+    """Клавиатура выбора языка интерфейса для нового пользователя."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🇷🇺 Русский", callback_data="set_lang:ru"),
+        InlineKeyboardButton(text="🇬🇧 English", callback_data="set_lang:en"),
+    )
+    return builder.as_markup()
+
+
 def payment_auto_complete_kb() -> InlineKeyboardMarkup:
     """Navigation shown after a payment was completed by background polling."""
     builder = InlineKeyboardBuilder()
