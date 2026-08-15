@@ -17,7 +17,7 @@ from bot.utils.text import safe_edit_or_send
 from bot.utils.message_editor import (
     get_message_data, save_message_data, delete_message_media, detect_message_type,
     editor_kb, editor_help_kb, send_editor_message,
-    get_message_translation_data, save_message_translation,
+    get_message_translation_data, save_message_translation, _is_page_key,
 )
 
 logger = logging.getLogger(__name__)
