@@ -1225,6 +1225,14 @@
             }
         }
 
+        // Мультиязычность: заглушка t() — пока просто возвращает исходный
+        // текст (fallback), архитектура готова принять реальные переводы.
+        // window._userLanguage заполняется в init() параллельным запросом,
+        // не добавляя лишний round-trip к уже существующим keys/status/referral.
+        function t(key, fallback) {
+            return fallback;
+        }
+
         async function init() {
             try {
                 if (!initData) {
@@ -1232,9 +1240,10 @@
                     return;
                 }
 
-                const [keysRes, statusRes, refRes] = await Promise.allSettled([
-                    fetchAPI('keys'), fetchAPI('status'), fetchAPI('referral')
+                const [keysRes, statusRes, refRes, langRes] = await Promise.allSettled([
+                    fetchAPI('keys'), fetchAPI('status'), fetchAPI('referral'), fetchAPI('language')
                 ]);
+                window._userLanguage = (langRes.status === 'fulfilled' && langRes.value.language) || 'ru';
 
                 let html = '';
 
