@@ -720,3 +720,24 @@ def get_referral_leaderboard(limit: int = 10) -> list[dict]:
             (limit,),
         )
         return [dict(row) for row in cursor.fetchall()]
+
+
+def get_user_language(telegram_id: int) -> str:
+    """Возвращает язык интерфейса пользователя ('ru' по умолчанию)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT language FROM users WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+        if row and row['language']:
+            return row['language']
+        return 'ru'
+
+
+def set_user_language(telegram_id: int, language: str) -> None:
+    """Сохраняет выбранный пользователем язык интерфейса."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET language = ? WHERE telegram_id = ?",
+            (language, telegram_id),
+        )
