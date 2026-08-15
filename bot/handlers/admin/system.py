@@ -66,17 +66,25 @@ def _installed_bot_version_text() -> str:
         f"Текущий коммит: <code>{escape_html(commit)}</code>"
     )
 
-def _format_release_screen() -> str:
-    """Красивый экран версии для "Обновление не требуется": номер версии
-    крупно, подзаголовок, список изменений. Если HEAD не размечен версией —
-    показывает последнюю известную версию из истории + список того, что
-    накопилось поверх неё (см. bot.version.resolve_release_info).
-    """
-    from bot.version import resolve_release_info
+def _format_release_screen(revision: str = "HEAD", max_search: int | None = None) -> str:
+    """Экран версии для бота: номер релиза крупно, подзаголовок, список
+    изменений. Никаких git-хэшей или сырых сообщений коммитов — это
+    внутренняя информация репозитория, а не то, что нужно администратору.
 
-    release_info, extra_commits = resolve_release_info()
+    revision — "HEAD" (установленная версия) или "origin/main" (то, что
+    подтянется при обновлении). Если нужная revision не размечена версией —
+    ищет последнюю размеченную версию назад по истории и показывает только
+    ЧИСЛО изменений поверх неё, без перечисления коммитов.
+    """
+    from bot.version import resolve_release_info, _RELEASE_SEARCH_DEPTH
+
+    release_info, extra_commits = resolve_release_info(
+        revision, max_search or _RELEASE_SEARCH_DEPTH
+    )
 
     if not release_info:
+        if extra_commits:
+            return f"📦 <b>Доступно изменений:</b> {len(extra_commits)}"
         return (
             "📦 <b>Версия не определена</b>\n"
             "История коммитов не содержит маркера версии."
@@ -99,10 +107,7 @@ def _format_release_screen() -> str:
         lines.append("")
         n = len(extra_commits)
         suffix = "е" if n == 1 else ("я" if n < 5 else "й")
-        lines.append(f"<b>После этой версии — ещё {n} изменени{suffix}:</b>")
-        lines.extend(f"·  {escape_html(subject)}" for _, subject in extra_commits[:8])
-        if n > 8:
-            lines.append(f"·  ещё {n - 8}")
+        lines.append(f"<b>После этой версии — ещё {n} изменени{suffix}.</b>")
 
     return "\n".join(lines)
 
@@ -854,73 +859,64 @@ async def show_update_confirm(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    installed_version_text = _installed_bot_version_text()
-    
     if commits_behind > 0:
         branch = get_current_branch() or "main"
         target_rev = f"origin/{branch}"
     else:
         target_rev = "HEAD"
-        
-    last_commit = get_last_commit_info(target_rev)
-    previous_commits = get_previous_commits_info(5, target_rev)
-    
-    # Generating text with commits
-    commits_text = f"🔹 <b>Последний коммит:</b>\n<code>\n{escape_html(last_commit)}\n</code>\n"
-    if previous_commits != "Нет предыдущих коммитов":
-         commits_text += f"\n🔸 <b>Предыдущие 5 коммитов:</b>\n<code>\n{escape_html(previous_commits)}\n</code>"
-    
+
+    # Экран версии для бота: только номер релиза и changelog, без git-хэшей
+    # и сырых сообщений коммитов — это внутренняя информация репозитория,
+    # не то, что нужно администратору.
+    release_screen = _format_release_screen(target_rev, max_search=max(commits_behind, 1))
+
     # We save data about the blocking commit in the FSM state
     await state.update_data(
         has_blocking=has_blocking,
         blocking_commit=blocking_commit
     )
-    
+
     # If there are no updates
     if commits_behind == 0:
         await safe_edit_or_send(callback.message, 
             "✅ <b>Обновление не требуется</b>\n"
             "У вас установлена последняя версия.\n\n"
-            f"{_format_release_screen()}",
+            f"{release_screen}",
             reply_markup=update_confirm_kb(has_updates=False)
         )
     elif has_blocking and blocking_commit:
         # Install the marked version as a separate update stage.
-        blocking_msg = blocking_commit['message'].lstrip('!')
-        blocking_hash = blocking_commit['hash'][:8]
-        
+        from bot.version import parse_bot_release
+        blocking_version = parse_bot_release(blocking_commit['message'])
+        blocking_label = f"версии {escape_html(blocking_version)}" if blocking_version else "обязательного обновления"
+
         await safe_edit_or_send(callback.message, 
             f"📦 <b>Доступно обновление</b>\n\n"
-            f"<b>Доступно обновлений:</b> {commits_behind}\n"
-            f"{installed_version_text}\n\n"
-            f"Сначала будет установлена версия <code>{blocking_hash}</code>:\n"
-            f"<pre>{escape_html(blocking_msg)}</pre>\n\n"
-            "Обновление пройдёт отдельным этапом, после чего бот автоматически "
-            "перезапустится. Если потребуется дополнительная настройка, бот сообщит об этом после запуска.\n\n"
-            f"{commits_text}",
+            f"{release_screen}\n\n"
+            f"Сначала будет установлена сборка {blocking_label} — это важное "
+            "обновление, устанавливается отдельным этапом.\n\n"
+            "После него бот автоматически перезапустится. Если потребуется "
+            "дополнительная настройка, бот сообщит об этом после запуска.",
             reply_markup=update_confirm_kb(has_updates=True, has_blocking=True)
         )
     elif is_beta_only:
         # Beta updates only
         await safe_edit_or_send(callback.message, 
             f"🧪 <b>Доступна бета-версия!</b>\n\n"
-            f"📦 <b>Доступно бета-коммитов:</b> {commits_behind}\n"
-            f"{installed_version_text}\n\n"
-            f"{commits_text}\n\n"
+            f"{release_screen}\n\n"
             "⚠️ Это тестовая версия. Устанавливайте на свой страх и риск.",
             reply_markup=update_confirm_kb(has_updates=True, has_blocking=False, is_beta_only=True)
         )
     else:
         # There are regular updates
         await safe_edit_or_send(callback.message, 
-            f"📦 <b>Доступно обновлений:</b> {commits_behind}\n\n"
-            f"{installed_version_text}\n\n"
-            f"{commits_text}\n\n"
+            f"📦 <b>Доступно обновление</b>\n\n"
+            f"{release_screen}\n\n"
             "⚠️ После обновления бот автоматически перезапустится.\n"
             "Это займёт несколько секунд.",
             reply_markup=update_confirm_kb(has_updates=True, has_blocking=False, is_beta_only=False)
         )
-    
+
     await callback.answer()
 
 
