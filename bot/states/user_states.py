@@ -23,3 +23,5 @@ class PromoInput(StatesGroup):
     waiting_for_code = State()
 class BalanceTopupCustom(StatesGroup):
     waiting_for_amount = State()
+class StartStates(StatesGroup):
+    choosing_language = State()
