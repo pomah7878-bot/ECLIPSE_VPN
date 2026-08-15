@@ -38,6 +38,8 @@ __all__ = [
     'deduct_from_balance',
     'get_user_referral_coefficient',
     'set_user_referral_coefficient',
+    'get_user_language',
+    'set_user_language',
 ]
 
 def _generate_referral_code() -> str:
