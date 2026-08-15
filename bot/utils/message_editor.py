@@ -172,6 +172,40 @@ def get_message_data(key: str, default_text: str = '') -> dict:
     return _normalize_message_data({'text': raw})
 
 
+
+def get_message_translation_data(key: str, language: str, default_text: str = '') -> dict:
+    """Загружает АНГЛИЙСКУЮ (или другую нерусскую) версию текста страницы
+    для предпросмотра в редакторе. Медиа всегда берётся из русской версии —
+    переводится только текст. Только для ключей из pages (PAGE_KEY_MAP);
+    вызывать для остальных ключей не нужно, там перевода не бывает."""
+    from database.requests import get_page, get_page_translation
+
+    row = get_page(key)
+    if not row:
+        return _normalize_message_data({'text': default_text})
+
+    image = _page_image_value(row)
+    media_type = _page_media_type_value(row, image)
+    translated_text = get_page_translation(key, language)
+    text = translated_text or default_text or '(перевод ещё не добавлен)'
+    return _with_media_fields(text, image, media_type)
+
+
+def save_message_translation(key: str, language: str, message: Message) -> dict:
+    """Сохраняет введённый админом текст как перевод страницы на указанный
+    язык — в pages.translations, НЕ трогая text_custom/text_default
+    (русскую версию) и медиа."""
+    from bot.utils.text import get_message_text_for_storage
+    from database.requests import set_page_translation
+
+    if message.text:
+        text = get_message_text_for_storage(message, 'html')
+    else:
+        text = ''
+    set_page_translation(key, language, text)
+    logger.info(f"Перевод сохранён: {key} [{language}]")
+    return {'text': text}
+
 def save_message_data(key: str, message: Message, allowed_types: Optional[List[str]] = None) -> dict:
     """
     Extracts data from an incoming Telegram message and saves it.
@@ -284,6 +318,8 @@ def editor_kb(
     has_help: bool = False,
     can_delete_photo: bool = False,
     can_delete_media: bool = False,
+    show_translate_button: bool = False,
+    current_language: str = 'ru',
 ) -> InlineKeyboardMarkup:
     """
     Message editor keyboard.
@@ -291,6 +327,7 @@ def editor_kb(
     Layout:
     [⬅️ Back] [🈴 Home]
     [🗑 Remove media] # if there is media
+    [🇬🇧/🇷🇺 переключатель языка] # if show_translate_button
     [📝 Send a new message ⬇️]
     
     Args:
@@ -298,6 +335,8 @@ def editor_kb(
         has_help: Whether there is help text (changes the behavior of the button)
         can_delete_photo: Compatible with old media delete flag name
         can_delete_media: Whether to show a button to delete the current media
+        show_translate_button: Whether to show the RU/EN toggle (only for page-backed keys)
+        current_language: Which version is currently being edited ('ru' or 'en')
     """
     if can_delete_photo:
         can_delete_media = True
@@ -317,6 +356,22 @@ def editor_kb(
                 callback_data="msg_editor_delete_media"
             )
         )
+
+    if show_translate_button:
+        if current_language == 'ru':
+            builder.row(
+                InlineKeyboardButton(
+                    text="🇬🇧 English version",
+                    callback_data="msg_editor_toggle_lang"
+                )
+            )
+        else:
+            builder.row(
+                InlineKeyboardButton(
+                    text="🇷🇺 Русская версия",
+                    callback_data="msg_editor_toggle_lang"
+                )
+            )
     
     # Bottom row: enter button
     if has_help:
