@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramForbiddenError
 from config import ADMIN_IDS
 from database.requests import get_or_create_user, is_user_banned, get_setting, is_referral_enabled, get_user_by_referral_code, set_user_referrer
+from bot.states.user_states import StartStates
 from bot.utils.page_flow import (
     build_page_flow_context,
     parse_registry_names,
@@ -225,19 +226,81 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         return
 
     args = command.args
+
+    if is_new:
+        from bot.keyboards.user import language_choice_kb
+
+        await state.set_state(StartStates.choosing_language)
+        await state.update_data(pending_start_args=args)
+        await message.answer(
+            "🌍 Choose your language / Выберите язык:",
+            reply_markup=language_choice_kb(),
+        )
+        return
+
+    await _continue_start(message, state, user, args, is_new, user_id, username)
+
+
+@router.callback_query(F.data.startswith("set_lang:"), StartStates.choosing_language)
+async def on_language_chosen(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет выбранный язык нового пользователя и продолжает /start
+    с теми параметрами (deep-link args), с которыми он изначально пришёл."""
+    from database.requests import set_user_language
+
+    lang = callback.data.split(":", 1)[1]
+    telegram_id = callback.from_user.id
+    username = callback.from_user.username
+
+    set_user_language(telegram_id, lang)
+
+    data = await state.get_data()
+    args = data.get('pending_start_args')
+    await state.clear()
+
+    (user, _) = get_or_create_user(
+        telegram_id,
+        username,
+        first_name=getattr(callback.from_user, 'first_name', None),
+        last_name=getattr(callback.from_user, 'last_name', None),
+    )
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await _continue_start(callback, state, user, args, True, telegram_id, username)
+    await callback.answer()
+
+
+async def _continue_start(
+    render_target: Message | CallbackQuery,
+    state: FSMContext,
+    user: dict,
+    args: str | None,
+    is_new: bool,
+    telegram_id: int,
+    username: str | None,
+):
+    """Продолжение /start после определения языка (для новых пользователей)
+    или сразу (для существующих). render_target передаётся напрямую только
+    в функции, явно поддерживающие Message|CallbackQuery; для остального
+    используется send_target — гарантированно настоящий Message."""
+    send_target = render_target.message if isinstance(render_target, CallbackQuery) else render_target
+
     if args:
         try:
             from bot.handlers.user.payments.base import handle_payment_deeplink
             if await handle_payment_deeplink(
-                message, state, args,
+                send_target, state, args,
                 user_internal_id=user['id'],
-                telegram_id=message.from_user.id,
+                telegram_id=telegram_id,
             ):
                 return
         except Exception as e:
             logger.exception(f'Ошибка обработки платёжного deep-link: {e}')
             await _show_start_payment_status(
-                message,
+                send_target,
                 title_html='❌ <b>Ошибка проверки платежа</b>',
                 body_text='Произошла ошибка при проверке платежа.',
             )
@@ -258,11 +321,11 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
                 promo_code_id=promo['id'],
                 code=promo['code'],
                 user_id=user['id'],
-                telegram_id=message.from_user.id,
+                telegram_id=telegram_id,
                 start_param=args,
             )
             await render_promo_status_page(
-                message,
+                send_target,
                 title_html="🎟 <b>Промокод сохранён</b>",
                 body_html=(
                     f"Код <b>{escape_html(promo['code'])}</b> "
@@ -272,7 +335,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
             )
         else:
             await render_promo_status_page(
-                message,
+                send_target,
                 title_html="⚠️ <b>Промо-ссылка недоступна</b>",
                 body_text=promo_result['message'],
                 force_new=True,
@@ -284,17 +347,17 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 
         code = args[6:].strip()
         claim_result = await claim_anonymous_purchase(
-            code, message.from_user.id, username=message.from_user.username,
+            code, telegram_id, username=username,
         )
         if claim_result['ok']:
-            await message.answer(
+            await send_target.answer(
                 f"✅ <b>Ключ привязан к вашему аккаунту!</b>\n\n{escape_html(claim_result['message'])}\n\n"
                 "Откройте раздел «Мои ключи», чтобы увидеть его.",
                 parse_mode='HTML',
                 reply_markup=home_only_kb(),
             )
         else:
-            await message.answer(
+            await send_target.answer(
                 f"⚠️ {escape_html(claim_result['message'])}",
                 parse_mode='HTML',
                 reply_markup=home_only_kb(),
@@ -306,10 +369,10 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         referrer = get_user_by_referral_code(ref_code)
         if referrer and referrer['id'] != user['id']:
             if set_user_referrer(user['id'], referrer['id']):
-                logger.info(f"User {user_id} привязан к рефереру {referrer['telegram_id']}")
+                logger.info(f"User {telegram_id} привязан к рефереру {referrer['telegram_id']}")
                 try:
                     from bot.services.notifications import notify_referrers_new_referral
-                    await notify_referrers_new_referral(message.bot, user['id'])
+                    await notify_referrers_new_referral(render_target.bot, user['id'])
                 except Exception as notify_err:
                     logger.warning(f'Ошибка уведомления о новом реферале: {notify_err}')
 
@@ -318,7 +381,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
     if args == 'buy':
         from bot.handlers.user.tariffs import _render_buy_page
         try:
-            await _render_buy_page(message)
+            await _render_buy_page(render_target)
         except Exception as e:
             logger.exception(f'Ошибка открытия страницы покупки: {e}')
         return
@@ -328,13 +391,13 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         from bot.utils.page_renderer import render_page
         try:
             if not is_trial_enabled():
-                await message.answer('❌ Пробная подписка сейчас недоступна')
+                await send_target.answer('❌ Пробная подписка сейчас недоступна')
             elif get_trial_tariff_id() is None:
-                await message.answer('❌ Пробный тариф не настроен')
-            elif has_used_trial(message.from_user.id):
-                await message.answer('ℹ️ Вы уже использовали пробный период')
+                await send_target.answer('❌ Пробный тариф не настроен')
+            elif has_used_trial(telegram_id):
+                await send_target.answer('ℹ️ Вы уже использовали пробный период')
             else:
-                await render_page(message, page_key='trial')
+                await render_page(send_target, page_key='trial')
         except Exception as e:
             logger.exception(f'Ошибка открытия страницы триала: {e}')
         return
@@ -342,7 +405,7 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 
     if args == 'support':
         try:
-            await _start_support_dialog(message, state)
+            await _start_support_dialog(render_target, state)
         except Exception as e:
             logger.exception(f'Ошибка открытия поддержки: {e}')
         return
@@ -355,17 +418,17 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
             key_id = None
         if key_id is not None:
             try:
-                await show_key_details(message.from_user.id, key_id, message, is_callback=False)
+                await show_key_details(telegram_id, key_id, send_target, is_callback=False)
             except Exception as e:
                 logger.exception(f'Ошибка открытия карточки ключа: {e}')
             return
     
     try:
-        await _render_main_page(message, force_new=True)
+        await _render_main_page(render_target, force_new=True)
     except TelegramForbiddenError:
-        logger.warning(f'User {user_id} blocked the bot during /start')
+        logger.warning(f'User {telegram_id} blocked the bot during /start')
     except Exception as e:
-        logger.error(f'Error sending start message to {user_id}: {e}')
+        logger.error(f'Error sending start message to {telegram_id}: {e}')
 
 
 @router.callback_query(F.data == 'start')
