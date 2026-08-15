@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 89
+LATEST_VERSION = 90
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1617,6 +1617,17 @@ def migration_89(conn: sqlite3.Connection) -> None:
     logger.info("Migration v89 applied: таблица detected_duplicate_pairs создана")
 
 
+def migration_90(conn: sqlite3.Connection) -> None:
+    """Migration v90: добавляет поле language в users — язык интерфейса
+    пользователя (мультиязычность бота). DEFAULT 'ru' — существующие
+    пользователи и новые записи без явного языка считаются русскоязычными."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "language" not in existing_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN language TEXT DEFAULT 'ru'")
+        logger.info("Migration v90: добавлена колонка users.language")
+    logger.info("Migration v90 applied: users.language готово")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1634,6 +1645,7 @@ MIGRATIONS = {
     87: migration_87,
     88: migration_88,
     89: migration_89,
+    90: migration_90,
 }
 
 
