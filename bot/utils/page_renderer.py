@@ -61,29 +61,37 @@ def _page_media_type_value(row: Dict[str, Any], image: Optional[str]) -> Optiona
     return _normalize_page_media_type(row.get('media_type_default'), image)
 
 
-def get_page_data(page_key: str) -> Optional[Dict[str, Any]]:
+def get_page_data(page_key: str, language: str = 'ru') -> Optional[Dict[str, Any]]:
     """
     Returns the final page data taking into account customization.
 
-    Text: custom if available, otherwise default.
+    Text: for language != 'ru' — translation from pages.translations if
+    present, otherwise falls back to Russian (custom if available, else
+    default). For language == 'ru' — always custom if available, else default.
     Media: image_custom if not NULL, otherwise image_default; empty image_custom disables media.
-    Buttons: merge buttons_default + buttons_custom by id.
+    Buttons: merge buttons_default + buttons_custom by id (not translated).
 
     Args:
         page_key: Key of the page in the pages table
+        language: Language code, e.g. 'ru' or 'en'. Defaults to 'ru' to keep
+            all existing callers (that don't pass a language) unaffected.
 
     Returns:
         {"text": str, "image": str|None, "media_type": str|None, "buttons": list[dict]}
         or None if page not found
     """
-    from database.requests import get_page
+    from database.requests import get_page, get_page_translation
 
     row = get_page(page_key)
     if not row:
         return None
 
-    # Text: custom → default
-    text = row.get('text_custom') or row.get('text_default') or ''
+    # Text: перевод (если есть и язык не русский) → custom → default
+    text = None
+    if language != 'ru':
+        text = get_page_translation(page_key, language)
+    if not text:
+        text = row.get('text_custom') or row.get('text_default') or ''
     image = _page_image_value(row)
     media_type = _page_media_type_value(row, image)
 
@@ -655,6 +663,7 @@ def render_page_text(
     page_key: str,
     context: Optional[Dict[str, Any]] = None,
     text_replacements: Optional[Dict[str, str]] = None,
+    language: str = 'ru',
 ) -> Optional[str]:
     """
     Renders only page text without sending a message and without the keyboard.
@@ -662,7 +671,7 @@ def render_page_text(
     Needed for technical screens, where the text is already stored in pages, but sending
     remains special: for example, payment via QR with a photo and a runtime keyboard.
     """
-    page_data = get_page_data(page_key)
+    page_data = get_page_data(page_key, language)
     if page_data is None:
         return None
 
@@ -939,7 +948,10 @@ async def render_page(
     sender = send_func or safe_edit_or_send
 
     # 1. Get page data
-    page_data = get_page_data(page_key)
+    from database.requests import get_user_language
+    viewer_id_for_lang = _target_viewer_id(target)
+    language = get_user_language(viewer_id_for_lang) if viewer_id_for_lang else 'ru'
+    page_data = get_page_data(page_key, language)
 
     if page_data is None and fallback_text is None:
         logger.error(f"Страница '{page_key}' не найдена в БД")
