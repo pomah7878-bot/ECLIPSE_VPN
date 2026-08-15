@@ -89,17 +89,20 @@ def parse_release_body(body: str) -> dict | None:
     return {"marker": marker, "version": version, "title": title, "bullets": bullets}
 
 
-def resolve_release_info(max_search: int = _RELEASE_SEARCH_DEPTH):
+def resolve_release_info(revision: str = "HEAD", max_search: int = _RELEASE_SEARCH_DEPTH):
     """Возвращает (release_info, extra_commits) для экрана статуса версии.
 
-    Если HEAD сам размечен как версия — release_info о ней, extra_commits
-    пуст. Иначе ищет назад по истории (не дальше max_search коммитов)
-    последний коммит-версию; extra_commits — всё, что случилось после неё
-    (новые сверху), как список (short_hash, subject).
+    revision — точка отсчёта: "HEAD" (текущий установленный код) или,
+    например, "origin/main" (то, что подтянется при обновлении).
+
+    Если сама revision размечена как версия — release_info о ней,
+    extra_commits пуст. Иначе ищет назад по истории (не дальше max_search
+    коммитов) последний коммит-версию; extra_commits — всё, что случилось
+    после неё (новые сверху), как список (short_hash, subject).
 
     Возвращает (None, []) если версия не найдена вовсе или git недоступен.
     """
-    ok, head_line = run_git_command(["log", "-1", "--format=%h%x09%s", "HEAD"])
+    ok, head_line = run_git_command(["log", "-1", "--format=%h%x09%s", revision])
     if not ok or "\t" not in head_line:
         return None, []
     head_short, head_subject = head_line.split("\t", 1)
@@ -111,7 +114,7 @@ def resolve_release_info(max_search: int = _RELEASE_SEARCH_DEPTH):
         return None, []
 
     ok_bulk, bulk = run_git_command(
-        ["log", "--format=%h%x09%s", "-n", str(max_search), "HEAD"]
+        ["log", "--format=%h%x09%s", "-n", str(max_search), revision]
     )
     if not ok_bulk or not bulk:
         return None, []
