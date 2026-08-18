@@ -48,14 +48,29 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
     from database.requests import get_marketing_channel_id
     channel_id = get_marketing_channel_id()
     channel_text = channel_id if channel_id else '⚠️ не настроен'
+    from database.requests import is_post_footer_enabled
+    footer_enabled = is_post_footer_enabled()
     await safe_edit_or_send(
         callback.message,
         '📰 <b>Публикация в канал</b>\n\n'
         f'Текущий канал: {channel_text}\n\n'
         'Создать новый пост с датой и временем публикации, или посмотреть очередь уже запланированных.',
-        reply_markup=channel_posts_menu_kb(),
+        reply_markup=channel_posts_menu_kb(footer_enabled),
     )
     await callback.answer()
+
+@router.callback_query(F.data == 'admin_toggle_post_footer')
+async def toggle_post_footer(callback: CallbackQuery, state: FSMContext):
+    """Включает/выключает автоматическую рекламу бота в подвале постов канала."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+
+    from database.requests import is_post_footer_enabled, set_post_footer_enabled
+    current = is_post_footer_enabled()
+    set_post_footer_enabled(not current)
+
+    await show_channel_posts_menu(callback, state)
 
 
 @router.callback_query(F.data == 'admin_channel_settings')
@@ -124,7 +139,8 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
     text = get_message_text_for_storage(message, 'html')
-    text_with_footer = text + POST_FOOTER
+    from database.requests import is_post_footer_enabled
+    text_with_footer = text + POST_FOOTER if is_post_footer_enabled() else text
     await state.update_data(post_text=text_with_footer)
     await state.set_state(AdminStates.channel_post_date)
     await safe_edit_or_send(
@@ -337,7 +353,8 @@ async def process_edit_post_text(message: Message, state: FSMContext):
         return
 
     text = get_message_text_for_storage(message, 'html')
-    text_with_footer = text + POST_FOOTER
+    from database.requests import is_post_footer_enabled
+    text_with_footer = text + POST_FOOTER if is_post_footer_enabled() else text
 
     from database.requests import update_scheduled_post_content
     updated = update_scheduled_post_content(post_id, text_with_footer)
