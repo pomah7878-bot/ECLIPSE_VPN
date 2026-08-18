@@ -52,6 +52,8 @@ __all__ = [
     'set_gemini_api_key',
     'get_effective_oauth_credentials',
     'set_oauth_credentials',
+    'is_post_footer_enabled',
+    'set_post_footer_enabled',
 ]
 
 DEFAULT_DISPLAY_TIMEZONE = 'Europe/Moscow'
@@ -315,6 +317,18 @@ def get_cardlink_credentials() -> tuple[str, str]:
 def is_trial_enabled() -> bool:
     """Is the trial subscription feature enabled?"""
     return get_setting('trial_enabled', '0') == '1'
+
+
+def is_post_footer_enabled() -> bool:
+    """Добавлять ли автоматический подвал (ссылки на бота и магазин) к постам
+    маркетингового канала. По умолчанию включено — сохраняет прежнее
+    поведение (подвал добавлялся всегда, без возможности отключить)."""
+    return get_setting('post_footer_enabled', '1') == '1'
+
+
+def set_post_footer_enabled(enabled: bool) -> None:
+    """Включает/выключает автоматический подвал для постов канала."""
+    set_setting('post_footer_enabled', '1' if enabled else '0')
 
 def get_trial_tariff_id() -> Optional[int]:
     """
