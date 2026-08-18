@@ -4,11 +4,13 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from bot.keyboards.admin_misc import back_button, home_button
 
 
-def channel_posts_menu_kb() -> InlineKeyboardMarkup:
+def channel_posts_menu_kb(footer_enabled: bool = True) -> InlineKeyboardMarkup:
     """Главное меню раздела публикации постов в канал."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='➕ Создать пост', callback_data='admin_channel_post_new'))
     builder.row(InlineKeyboardButton(text='📋 Очередь публикаций', callback_data='admin_channel_posts_queue'))
+    footer_label = '✅ Реклама бота в подвале' if footer_enabled else '❌ Реклама бота в подвале'
+    builder.row(InlineKeyboardButton(text=footer_label, callback_data='admin_toggle_post_footer'))
     builder.row(InlineKeyboardButton(text='⚙️ Настроить канал', callback_data='admin_channel_settings'))
     builder.row(back_button('admin_marketing'), home_button())
     return builder.as_markup()
