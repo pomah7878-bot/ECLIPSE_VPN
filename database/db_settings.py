@@ -54,6 +54,10 @@ __all__ = [
     'set_oauth_credentials',
     'is_post_footer_enabled',
     'set_post_footer_enabled',
+    'is_channel_gate_enabled',
+    'set_channel_gate_enabled',
+    'get_gate_channel_id',
+    'set_gate_channel_id',
 ]
 
 DEFAULT_DISPLAY_TIMEZONE = 'Europe/Moscow'
@@ -329,6 +333,28 @@ def is_post_footer_enabled() -> bool:
 def set_post_footer_enabled(enabled: bool) -> None:
     """Включает/выключает автоматический подвал для постов канала."""
     set_setting('post_footer_enabled', '1' if enabled else '0')
+
+
+def is_channel_gate_enabled() -> bool:
+    """Требовать ли от пользователя подписку на канал перед использованием
+    бота. По умолчанию выключено — не влияет на существующие деплои."""
+    return get_setting('channel_gate_enabled', '0') == '1'
+
+
+def set_channel_gate_enabled(enabled: bool) -> None:
+    """Включает/выключает требование обязательной подписки на канал."""
+    set_setting('channel_gate_enabled', '1' if enabled else '0')
+
+
+def get_gate_channel_id() -> Optional[str]:
+    """ID/username канала для обязательной подписки (отдельно от
+    маркетингового канала — может быть другим чатом)."""
+    return get_setting('gate_channel_id')
+
+
+def set_gate_channel_id(channel_id: str) -> None:
+    """Сохраняет канал для обязательной подписки."""
+    set_setting('gate_channel_id', channel_id)
 
 def get_trial_tariff_id() -> Optional[int]:
     """
