@@ -868,7 +868,15 @@ async def show_update_confirm(callback: CallbackQuery, state: FSMContext):
     # Экран версии для бота: только номер релиза и changelog, без git-хэшей
     # и сырых сообщений коммитов — это внутренняя информация репозитория,
     # не то, что нужно администратору.
-    release_screen = _format_release_screen(target_rev, max_search=max(commits_behind, 1))
+    # Глубина поиска версийного маркера: когда обновлений нет
+    # (commits_behind == 0), нельзя ограничиваться одним коммитом — маркер
+    # версии может быть на несколько коммитов назад (например, после него
+    # шли коммиты документации). В этом случае используем дефолтную глубину,
+    # иначе экран не найдёт версию и покажет только счётчик изменений.
+    release_screen = _format_release_screen(
+        target_rev,
+        max_search=max(commits_behind, 1) if commits_behind else None,
+    )
 
     # We save data about the blocking commit in the FSM state
     await state.update_data(
