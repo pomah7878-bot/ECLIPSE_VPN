@@ -7,6 +7,8 @@ from aiogram.exceptions import TelegramForbiddenError
 from config import ADMIN_IDS
 from database.requests import get_or_create_user, is_user_banned, get_setting, is_referral_enabled, get_user_by_referral_code, set_user_referrer
 from bot.states.user_states import StartStates
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from bot.handlers.user.payments.base import PAYMENT_DEEPLINK_PREFIX
 from bot.utils.page_flow import (
     build_page_flow_context,
     parse_registry_names,
@@ -238,6 +240,10 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         )
         return
 
+    if not (args and args.startswith(PAYMENT_DEEPLINK_PREFIX)):
+        if not await _check_channel_gate(message, user_id, state, args):
+            return
+
     await _continue_start(message, state, user, args, is_new, user_id, username)
 
 
@@ -269,7 +275,95 @@ async def on_language_chosen(callback: CallbackQuery, state: FSMContext):
     except Exception:
         pass
 
+    if not (args and args.startswith(PAYMENT_DEEPLINK_PREFIX)):
+        if not await _check_channel_gate(callback.message, telegram_id, state, args):
+            await callback.answer()
+            return
+
     await _continue_start(callback, state, user, args, True, telegram_id, username)
+    await callback.answer()
+
+
+async def _check_channel_gate(send_target, telegram_id: int, state: FSMContext, args: str | None) -> bool:
+    """Проверяет обязательную подписку на канал, если она включена.
+
+    Возвращает True, если пользователь может продолжить (гейт выключен,
+    канал не настроен, проверка технически не удалась — fail-open чтобы не
+    заблокировать всех пользователей из-за сбоя API, или подписка есть).
+    Возвращает False и показывает экран "подпишитесь", если подписки нет —
+    вызывающий код должен прекратить дальнейшую обработку /start. args
+    сохраняется в FSM, чтобы после успешной подписки продолжить с тем же
+    deep-link'ом, откуда пользователь начинал.
+    """
+    from database.requests import is_channel_gate_enabled, get_gate_channel_id
+
+    if not is_channel_gate_enabled():
+        return True
+
+    channel_id = get_gate_channel_id()
+    if not channel_id:
+        return True
+
+    from bot.services.telegram_membership import check_telegram_chat_member
+    result = await check_telegram_chat_member(
+        send_target.bot, chat_id=channel_id, telegram_id=telegram_id,
+    )
+
+    if not result['ok']:
+        logger.warning(
+            f"Проверка подписки на канал не удалась (fail-open, пропускаем): {result.get('reason')}"
+        )
+        return True
+
+    if result['is_member']:
+        return True
+
+    await state.update_data(pending_gate_args=args)
+
+    builder = InlineKeyboardBuilder()
+    if channel_id.startswith('@'):
+        builder.row(InlineKeyboardButton(
+            text='📢 Перейти в канал',
+            url=f'https://t.me/{channel_id.lstrip("@")}',
+        ))
+    builder.row(InlineKeyboardButton(text='✅ Я подписался', callback_data='recheck_channel_gate'))
+
+    await send_target.answer(
+        '🔒 <b>Требуется подписка</b>\n\n'
+        'Чтобы пользоваться ботом, подпишитесь на наш канал и нажмите «Я подписался».',
+        parse_mode='HTML',
+        reply_markup=builder.as_markup(),
+    )
+    return False
+
+
+@router.callback_query(F.data == 'recheck_channel_gate')
+async def recheck_channel_gate(callback: CallbackQuery, state: FSMContext):
+    """Повторная проверка подписки после нажатия «Я подписался»."""
+    telegram_id = callback.from_user.id
+    username = callback.from_user.username
+
+    data = await state.get_data()
+    args = data.get('pending_gate_args')
+
+    if not await _check_channel_gate(callback.message, telegram_id, state, args):
+        await callback.answer('⚠️ Подписка пока не найдена, попробуйте ещё раз через пару секунд', show_alert=True)
+        return
+
+    from database.requests import get_or_create_user
+    (user, _) = get_or_create_user(
+        telegram_id, username,
+        first_name=getattr(callback.from_user, 'first_name', None),
+        last_name=getattr(callback.from_user, 'last_name', None),
+    )
+    await state.clear()
+
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+
+    await _continue_start(callback, state, user, args, False, telegram_id, username)
     await callback.answer()
 
 
