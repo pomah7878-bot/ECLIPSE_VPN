@@ -25,3 +25,5 @@ class BalanceTopupCustom(StatesGroup):
     waiting_for_amount = State()
 class StartStates(StatesGroup):
     choosing_language = State()
+class GateSettings(StatesGroup):
+    waiting_for_channel = State()
