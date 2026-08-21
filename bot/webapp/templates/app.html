@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECLIPSE Unlimited — приложение для Android</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       background: #0b0b0f; color: #e8e6e3; margin: 0; padding: 24px 16px;
+       display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.card { max-width: 420px; width: 100%; text-align: center; }
+.logo { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 18px; display: block; }
+h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; }
+h1 .gold { color: #d69e4a; }
+.tagline { color: #8b8b96; font-size: 14px; margin: 0 0 28px; }
+.btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 14px;
+       font-size: 16px; font-weight: 600; margin: 10px 0; cursor: pointer;
+       text-decoration: none; transition: opacity .15s; }
+.btn:active { opacity: .85; }
+.btn-primary { background: linear-gradient(135deg, #d69e4a, #b8802f); color: #16141a; }
+.btn-ghost { background: #1a1a22; color: #cfcdd6; border: 1px solid #2a2a34; }
+.hint { color: #6f6f7c; font-size: 12px; margin: 6px 0 22px; }
+.steps { text-align: left; background: #14141b; border: 1px solid #23232d;
+         border-radius: 14px; padding: 18px 20px; margin-top: 26px; }
+.steps h2 { font-size: 14px; margin: 0 0 12px; color: #d69e4a; font-weight: 600; }
+.steps ol { margin: 0; padding-left: 20px; }
+.steps li { font-size: 13px; color: #a8a8b4; line-height: 1.7; margin-bottom: 6px; }
+.more { margin-top: 18px; }
+.more summary { color: #7a7a88; font-size: 13px; cursor: pointer; }
+.more a { display: block; color: #9a9aa8; font-size: 13px; padding: 8px 0; text-decoration: none; }
+.more a:hover { color: #d69e4a; }
+.err { color: #e0705a; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="card">
+    <img src="/static/logo.png" alt="ECLIPSE" class="logo">
+    <h1>ECLIPSE <span class="gold">Unlimited</span></h1>
+    <p class="tagline">VPN-приложение для Android</p>
+
+    <a class="btn btn-primary" id="mainBtn" href="#">Загрузка…</a>
+    <p class="hint" id="hint"></p>
+
+    <div class="steps">
+        <h2>Как установить</h2>
+        <ol>
+            <li>Скачайте файл кнопкой выше</li>
+            <li>Откройте его — Android спросит разрешение на установку из неизвестных источников, разрешите</li>
+            <li>Откройте приложение и импортируйте подписку кнопкой из бота</li>
+            <li>Выберите сервер и нажмите кнопку подключения</li>
+        </ol>
+    </div>
+
+    <details class="more">
+        <summary>Другие версии</summary>
+        <div id="others"></div>
+    </details>
+</div>
+
+<script>
+(function () {
+    var REPO = 'pomah7878-bot/ECLIPSE_VPN_Android';
+    var LABELS = {
+        'arm64-v8a':   'Современные телефоны (64-бит)',
+        'armeabi-v7a': 'Старые устройства (32-бит)',
+        'universal':   'Универсальный (любое устройство)',
+        'x86':         'Эмуляторы и x86-планшеты'
+    };
+    var mainBtn = document.getElementById('mainBtn');
+    var hint = document.getElementById('hint');
+    var others = document.getElementById('others');
+
+    fetch('https://api.github.com/repos/' + REPO + '/releases/latest')
+        .then(function (r) {
+            if (!r.ok) throw new Error('no release');
+            return r.json();
+        })
+        .then(function (rel) {
+            var assets = (rel.assets || []).filter(function (a) {
+                return /\.apk$/i.test(a.name);
+            });
+            if (!assets.length) throw new Error('no apk');
+
+            function find(part) {
+                for (var i = 0; i < assets.length; i++) {
+                    if (assets[i].name.indexOf(part) !== -1) return assets[i];
+                }
+                return null;
+            }
+
+            // Большинство современных устройств — arm64
+            var primary = find('arm64-v8a') || find('universal') || assets[0];
+            mainBtn.textContent = '⬇ Скачать (' + (primary.size / 1048576).toFixed(0) + ' МБ)';
+            mainBtn.href = primary.browser_download_url;
+            hint.textContent = 'Версия ' + (rel.tag_name || '') + ' · подходит для большинства телефонов';
+
+            assets.forEach(function (a) {
+                var key = Object.keys(LABELS).filter(function (k) {
+                    return a.name.indexOf(k) !== -1;
+                })[0];
+                var link = document.createElement('a');
+                link.href = a.browser_download_url;
+                link.textContent = (LABELS[key] || a.name) + ' — ' + (a.size / 1048576).toFixed(0) + ' МБ';
+                others.appendChild(link);
+            });
+        })
+        .catch(function () {
+            mainBtn.textContent = 'Скачать с GitHub';
+            mainBtn.href = 'https://github.com/' + REPO + '/releases/latest';
+            hint.className = 'hint err';
+            hint.textContent = 'Не удалось получить прямую ссылку — откройте страницу релизов.';
+        });
+})();
+</script>
+</body>
+</html>
