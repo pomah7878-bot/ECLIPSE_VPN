@@ -889,3 +889,8 @@ async def import_incy_handler(callback: CallbackQuery):
 @router.callback_query(F.data == "import_karing")
 async def import_karing_handler(callback: CallbackQuery):
     await _handle_import_deeplink(callback, "karing", "Karing")
+
+
+@router.callback_query(F.data == "import_eclipse")
+async def import_eclipse_handler(callback: CallbackQuery):
+    await _handle_import_deeplink(callback, "eclipse", "ECLIPSE VPN")
