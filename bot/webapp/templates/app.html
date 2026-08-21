@@ -62,12 +62,20 @@ h1 .gold { color: #d69e4a; }
 <script>
 (function () {
     var REPO = 'pomah7878-bot/ECLIPSE_VPN_Android';
-    var LABELS = {
-        'arm64-v8a':   'Современные телефоны (64-бит)',
-        'armeabi-v7a': 'Старые устройства (32-бит)',
-        'universal':   'Универсальный (любое устройство)',
-        'x86':         'Эмуляторы и x86-планшеты'
-    };
+    // Порядок важен: x86_64 проверяем ДО x86, иначе 'x86' совпадёт первым
+    var LABELS = [
+        ['arm64-v8a',   'Современные телефоны (64-бит)'],
+        ['armeabi-v7a', 'Старые устройства (32-бит)'],
+        ['universal',   'Универсальный (любое устройство)'],
+        ['x86_64',      'Эмуляторы (64-бит)'],
+        ['x86',         'Эмуляторы (32-бит)']
+    ];
+    function labelFor(name) {
+        for (var i = 0; i < LABELS.length; i++) {
+            if (name.indexOf(LABELS[i][0]) !== -1) return LABELS[i][1];
+        }
+        return name;
+    }
     var mainBtn = document.getElementById('mainBtn');
     var hint = document.getElementById('hint');
     var others = document.getElementById('others');
@@ -79,7 +87,7 @@ h1 .gold { color: #d69e4a; }
         })
         .then(function (rel) {
             var assets = (rel.assets || []).filter(function (a) {
-                return /\.apk$/i.test(a.name);
+                return /\.apk$/i.test(a.name) && a.name.indexOf('fdroid') === -1;
             });
             if (!assets.length) throw new Error('no apk');
 
@@ -97,12 +105,9 @@ h1 .gold { color: #d69e4a; }
             hint.textContent = 'Версия ' + (rel.tag_name || '') + ' · подходит для большинства телефонов';
 
             assets.forEach(function (a) {
-                var key = Object.keys(LABELS).filter(function (k) {
-                    return a.name.indexOf(k) !== -1;
-                })[0];
                 var link = document.createElement('a');
                 link.href = a.browser_download_url;
-                link.textContent = (LABELS[key] || a.name) + ' — ' + (a.size / 1048576).toFixed(0) + ' МБ';
+                link.textContent = labelFor(a.name) + ' — ' + (a.size / 1048576).toFixed(0) + ' МБ';
                 others.appendChild(link);
             });
         })
