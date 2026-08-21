@@ -1895,6 +1895,19 @@ async def handle_import(request: web.Request) -> web.Response:
     )
 
 
+async def handle_app_page(request: web.Request) -> web.Response:
+    """GET /app — страница скачивания Android-приложения.
+
+    Сама подтягивает последний релиз из GitHub и предлагает подходящий APK,
+    чтобы клиенту не нужно было разбираться в архитектурах."""
+    app_path = os.path.join(_TEMPLATES_DIR, "app.html")
+    if os.path.exists(app_path):
+        return web.FileResponse(app_path)
+    return web.Response(
+        text="<h1>App page not found</h1>", status=404
+    )
+
+
 # ============================================================
 # CORS: разрешаем запросы с собственного домена WebApp
 # ============================================================
@@ -1941,6 +1954,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/favicon.ico", handle_favicon)
     app.router.add_get("/", handle_index)
     app.router.add_get("/import", handle_import)
+    app.router.add_get("/app", handle_app_page)
     app.router.add_get("/api/keys", handle_keys)
     app.router.add_get("/api/key/{key_id}/inbounds", handle_key_inbounds)
     app.router.add_get("/api/public/key/{key_id}/inbounds", handle_public_key_inbounds)
