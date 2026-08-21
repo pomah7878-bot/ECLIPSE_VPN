@@ -37,6 +37,7 @@ ACTION_REGISTRY: Dict[str, str] = {
     "cmd_ai_support":     "ai_support_open",
     "cmd_import_happ":    "import_happ",
     "cmd_import_incy":    "import_incy",
+    "cmd_import_eclipse": "import_eclipse",
 }
 
 
@@ -532,6 +533,12 @@ def _resolve_key_import_karing(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение Karing."""
     return {"callback_data": "import_karing"}
 
+
+def _resolve_key_import_eclipse(ctx: dict) -> Optional[dict]:
+    """Кнопка быстрого импорта подписки в наше приложение ECLIPSE VPN
+    (форк v2rayNG, схема eclipsevpn://install-sub)."""
+    return {"callback_data": "import_eclipse"}
+
 def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение INCY.
 
@@ -579,6 +586,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_import_happ": _resolve_key_import_happ,
     "btn_key_import_karing": _resolve_key_import_karing,
     "btn_key_import_incy": _resolve_key_import_incy,
+    "btn_key_import_eclipse": _resolve_key_import_eclipse,
 }
 
 
