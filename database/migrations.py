@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 91
+LATEST_VERSION = 92
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1639,6 +1639,26 @@ def migration_91(conn: sqlite3.Connection) -> None:
     logger.info("Migration v91 applied: pages.translations готово")
 
 
+def migration_92(conn: sqlite3.Connection) -> None:
+    """Migration v92: таблица oauth_exchange_codes — одноразовые короткоживущие
+    коды для обмена OAuth-сессии (полученной в системном браузере) на
+    cookie-сессию внутри нативного Android-приложения. По той же схеме, что
+    и site_login_codes, но привязана к site_account_id, а не к telegram_id —
+    OAuth-аккаунт не обязательно связан с Telegram."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS oauth_exchange_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT NOT NULL UNIQUE,
+            account_id INTEGER NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_oauth_exchange_codes_code ON oauth_exchange_codes(code)")
+    logger.info("Migration v92 applied: oauth_exchange_codes table")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1658,6 +1678,7 @@ MIGRATIONS = {
     89: migration_89,
     90: migration_90,
     91: migration_91,
+    92: migration_92,
 }
 
 
