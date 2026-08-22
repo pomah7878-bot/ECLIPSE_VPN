@@ -1160,6 +1160,12 @@ async def handle_oauth_start(request: web.Request) -> web.Response:
     if existing_account_id and request.query.get("link") == "1":
         resp.set_cookie("oauth_link_account_id", str(existing_account_id), max_age=600, httponly=True, secure=True, samesite="Lax")
 
+    # Запрос из нативного Android-приложения (?client=app) — запоминаем,
+    # чтобы в конце callback'а вернуть код обмена сессии вместо cookie
+    # (cookie браузера всё равно не попадёт в OkHttp-клиент приложения).
+    if request.query.get("client") == "app":
+        resp.set_cookie("oauth_client", "app", max_age=600, httponly=True, secure=True, samesite="Lax")
+
     return resp
 
 
@@ -1209,11 +1215,26 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         )
         account_id = account["id"]
 
+    is_app_client = request.cookies.get("oauth_client") == "app"
+
+    if is_app_client:
+        # Запрос из приложения — браузерная cookie бесполезна для OkHttp
+        # клиента приложения. Возвращаем одноразовый короткоживущий код
+        # обмена через deep-link в приложение вместо cookie.
+        from database.requests import create_oauth_exchange_code
+        exchange_code = create_oauth_exchange_code(account_id)
+        resp = web.HTTPFound(f"eclipsevpn://oauth-callback?code={exchange_code}")
+        resp.del_cookie("oauth_state")
+        resp.del_cookie("oauth_link_account_id")
+        resp.del_cookie("oauth_client")
+        return resp
+
     session_value = _sign_session(account_id)
     resp = web.HTTPFound("/shop#account")
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
     resp.del_cookie("oauth_state")
     resp.del_cookie("oauth_link_account_id")
+    resp.del_cookie("oauth_client")
     return resp
 
 
@@ -1259,6 +1280,32 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
 
     session_value = _sign_session(site_account_id)
     resp = web.json_response({"ok": True, "account_type": "guest"})
+    resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
+    return resp
+
+
+async def handle_public_account_oauth_exchange(request: web.Request) -> web.Response:
+    """POST /api/public/account/oauth-exchange — обменивает одноразовый код
+    (полученный приложением через deep-link после OAuth-входа в системном
+    браузере) на cookie-сессию для дальнейших запросов ИЗ приложения.
+    Body JSON: {"code": "..."}"""
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "message": "invalid_json"}, status=400)
+
+    code = (data.get("code") or "").strip()
+    if not code:
+        return web.json_response({"ok": False, "message": "Код не передан."}, status=400)
+
+    from database.requests import consume_oauth_exchange_code
+
+    account_id = consume_oauth_exchange_code(code)
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Код недействителен или истёк."}, status=400)
+
+    session_value = _sign_session(account_id)
+    resp = web.json_response({"ok": True})
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
     return resp
 
@@ -1978,6 +2025,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/auth/{provider}/start", handle_oauth_start)
     app.router.add_get("/auth/{provider}/callback", handle_oauth_callback)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
+    app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/session", handle_public_account_session)
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
