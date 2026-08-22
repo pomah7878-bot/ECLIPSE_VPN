@@ -18,6 +18,8 @@ __all__ = [
     'consume_site_login_code',
     'link_purchase_to_account',
     'get_latest_purchase_for_account',
+    'create_oauth_exchange_code',
+    'consume_oauth_exchange_code',
 ]
 
 
