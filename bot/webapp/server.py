@@ -1067,13 +1067,22 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
         body = await request.json()
     except json.JSONDecodeError:
         body = {}
-    turnstile_token = body.get("turnstile_token", "")
-    if not await _verify_turnstile_token(turnstile_token, client_ip):
-        _trial_rate_limit_record(client_ip)
-        return web.json_response(
-            {"error": "captcha_failed", "message": "Не удалось подтвердить, что вы не робот. Попробуйте ещё раз."},
-            status=400,
-        )
+
+    # Запрос из нативного приложения (не браузер) — Cloudflare Turnstile
+    # там технически невозможен без встроенного WebView-виджета. Пропускаем
+    # проверку капчи для этого канала: реальная защита от накрутки триалов
+    # здесь — rate-limit по IP (уже проверен выше) и обязательное требование
+    # настоящей авторизованной сессии (код из бота или OAuth), а не просто
+    # этот заголовок — он не секрет и не заменяет капчу как таковую.
+    is_app_request = request.headers.get("X-Eclipse-App") == "1"
+    if not is_app_request:
+        turnstile_token = body.get("turnstile_token", "")
+        if not await _verify_turnstile_token(turnstile_token, client_ip):
+            _trial_rate_limit_record(client_ip)
+            return web.json_response(
+                {"error": "captcha_failed", "message": "Не удалось подтвердить, что вы не робот. Попробуйте ещё раз."},
+                status=400,
+            )
 
     from database.requests import (
         is_trial_enabled, get_trial_tariff_id, get_site_account_by_id,
