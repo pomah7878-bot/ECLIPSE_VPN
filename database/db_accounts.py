@@ -189,3 +189,43 @@ def get_latest_purchase_for_account(site_account_id: int) -> Optional[Dict[str, 
             (site_account_id,),
         ).fetchone()
         return dict(row) if row else None
+def create_oauth_exchange_code(account_id: int, ttl_minutes: int = 10) -> str:
+    """Создаёт одноразовый короткоживущий код обмена OAuth-сессии
+    (полученной в системном браузере при входе через Google/Яндекс/VK) на
+    cookie-сессию нативного Android-приложения. Не путать с
+    site_login_code — тот для входа существующего клиента бота по коду
+    ИЗ бота, этот — для передачи OAuth-сессии из браузера в приложение."""
+    import secrets as _secrets
+    import datetime as _dt
+
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    code = "".join(_secrets.choice(alphabet) for _ in range(4)) + "-" + "".join(_secrets.choice(alphabet) for _ in range(4))
+    expires_at = (_dt.datetime.utcnow() + _dt.timedelta(minutes=ttl_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+
+    with get_db() as conn:
+        for _ in range(5):
+            try:
+                conn.execute(
+                    "INSERT INTO oauth_exchange_codes (code, account_id, expires_at) VALUES (?, ?, ?)",
+                    (code, account_id, expires_at),
+                )
+                return code
+            except sqlite3.IntegrityError:
+                code = "".join(_secrets.choice(alphabet) for _ in range(4)) + "-" + "".join(_secrets.choice(alphabet) for _ in range(4))
+        raise RuntimeError("Не удалось сгенерировать уникальный код обмена OAuth")
+
+
+def consume_oauth_exchange_code(code: str) -> Optional[int]:
+    """Проверяет и «сжигает» (одноразово) код обмена OAuth. Возвращает
+    account_id, если код валиден, не использован и не истёк — иначе None."""
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT account_id FROM oauth_exchange_codes
+               WHERE code = ? AND used = 0 AND expires_at > datetime('now')""",
+            (code.strip().upper(),),
+        ).fetchone()
+        if not row:
+            return None
+        conn.execute("UPDATE oauth_exchange_codes SET used = 1 WHERE code = ?", (code.strip().upper(),))
+        return row["account_id"]
+
