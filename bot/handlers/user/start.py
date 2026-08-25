@@ -504,6 +504,20 @@ async def _continue_start(
             logger.exception(f'Ошибка открытия поддержки: {e}')
         return
 
+    if args == 'ai_support':
+        # Локальный импорт — избегаем циклической зависимости с ai_handler.py
+        # (тот при обратном переходе в меню тоже импортирует start.py локально).
+        from bot.handlers.user.ai_handler import AIChatStates
+        try:
+            await state.set_state(AIChatStates.waiting_for_question)
+            await send_target.answer(
+                "🤖 <b>AI Помощник</b>\n\nЗадайте вопрос — я вижу вашу подписку, ключи и историю платежей, отвечу конкретно по вашей ситуации.",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.exception(f'Ошибка открытия AI-помощника: {e}')
+        return
+
     if args and (args.startswith('replace_') or args.startswith('renew_')):
         from bot.handlers.user.keys import show_key_details
         try:
