@@ -1500,13 +1500,22 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
 
     key_id = data.get("key_id")
     tariff_id = data.get("tariff_id")
-    if not key_id or not tariff_id:
-        return web.json_response({"error": "key_id_and_tariff_id_required"}, status=400)
+    if not key_id:
+        return web.json_response({"error": "key_id_required"}, status=400)
 
     from database.requests import get_site_account_by_id
     account = get_site_account_by_id(account_id)
     if not account or not _verify_key_belongs_to_account(int(key_id), account):
         return web.json_response({"error": "key_not_found"}, status=404)
+
+    if not tariff_id:
+        # ECLIPSE: автопродление на тот же тариф, что уже был у ключа —
+        # клиент не выбирает тариф заново при обычном продлении.
+        from database.requests import get_vpn_key_by_id
+        current_key = get_vpn_key_by_id(int(key_id))
+        if not current_key or not current_key.get("tariff_id"):
+            return web.json_response({"error": "current_tariff_not_found"}, status=404)
+        tariff_id = current_key["tariff_id"]
 
     from database.db_tariffs import get_tariff_by_id
     from database.db_payments import create_anonymous_purchase, save_anonymous_purchase_payment_id
