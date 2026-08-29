@@ -518,6 +518,41 @@ async def _continue_start(
             logger.exception(f'Ошибка открытия AI-помощника: {e}')
         return
 
+    if args == 'buy_card':
+        # ECLIPSE: повторяет логику pay_cards_select_tariff() из
+        # bot/handlers/user/payments/yookassa.py, адаптированную под
+        # Message вместо CallbackQuery — та функция делает
+        # "if ':' in callback.data", а у Message такого атрибута нет,
+        # поэтому вызвать её напрямую с send_target нельзя. order_id
+        # здесь всегда None — это вход для НОВОЙ покупки, не продолжение
+        # уже созданного заказа.
+        from database.requests import get_all_tariffs
+        from bot.keyboards.user import tariff_select_kb
+        from bot.keyboards.admin import home_only_kb
+        from bot.handlers.user.payments.tariff_select_page import (
+            show_payment_tariff_select_page, build_payment_tariff_select_page_context,
+        )
+        try:
+            tariffs = get_all_tariffs(include_hidden=False)
+            if not tariffs:
+                await show_payment_tariff_select_page(
+                    send_target,
+                    context=build_payment_tariff_select_page_context(
+                        provider_title_html='💳 <b>TG payments</b>',
+                        instruction_html='😔 Нет доступных тарифов.\n\nПопробуйте позже или обратитесь в поддержку.',
+                    ),
+                    runtime_markup=home_only_kb(),
+                )
+            else:
+                await show_payment_tariff_select_page(
+                    send_target,
+                    context=build_payment_tariff_select_page_context(provider_title_html='💳 <b>TG payments</b>'),
+                    runtime_markup=tariff_select_kb(tariffs, order_id=None, is_cards=True),
+                )
+        except Exception as e:
+            logger.exception(f'Ошибка открытия оплаты картой: {e}')
+        return
+
     if args and (args.startswith('replace_') or args.startswith('renew_')):
         from bot.handlers.user.keys import show_key_details
         try:
