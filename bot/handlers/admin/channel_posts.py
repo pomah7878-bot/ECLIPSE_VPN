@@ -31,11 +31,24 @@ MSK_OFFSET_HOURS = 3
 
 # Автоматически добавляется в конец КАЖДОГО поста, созданного через это меню
 # — чтобы не приходилось вручную набирать ссылки в каждом посте.
-POST_FOOTER = (
-    "\n\n━━━━━━━━━━━━━━\n"
-    "🤖 Подключиться в боте: <a href=\"https://t.me/vless_keysvpn_bot\">@vless_keysvpn_bot</a>\n"
-    "🛒 Купить на сайте: <a href=\"https://eclipse.unlimited.bot.nu/shop\">eclipse.unlimited.bot.nu</a>"
-)
+#
+# Юзернейм бота и ссылка на магазин НЕ хардкодятся — у каждой инсталляции
+# бота свои значения (bot.get_me() и настраиваемый webapp_url), иначе
+# посты в канале white-label клиента вели бы на чужого бота и чужой сайт.
+async def _build_post_footer(bot) -> str:
+    from database.requests import get_effective_webapp_url
+
+    bot_username = (await bot.get_me()).username
+    footer = (
+        "\n\n━━━━━━━━━━━━━━\n"
+        f"🤖 Подключиться в боте: <a href=\"https://t.me/{bot_username}\">@{bot_username}</a>"
+    )
+    webapp_url = get_effective_webapp_url()
+    if webapp_url:
+        shop_url = webapp_url.rstrip('/') + '/shop'
+        shop_display = webapp_url.replace('https://', '').replace('http://', '').rstrip('/')
+        footer += f"\n🛒 Купить на сайте: <a href=\"{shop_url}\">{shop_display}</a>"
+    return footer
 
 
 @router.callback_query(F.data == 'admin_channel_posts')
@@ -140,7 +153,7 @@ async def process_channel_post_text(message: Message, state: FSMContext):
         return
     text = get_message_text_for_storage(message, 'html')
     from database.requests import is_post_footer_enabled
-    text_with_footer = text + POST_FOOTER if is_post_footer_enabled() else text
+    text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
     await state.update_data(post_text=text_with_footer)
     await state.set_state(AdminStates.channel_post_date)
     await safe_edit_or_send(
@@ -354,7 +367,7 @@ async def process_edit_post_text(message: Message, state: FSMContext):
 
     text = get_message_text_for_storage(message, 'html')
     from database.requests import is_post_footer_enabled
-    text_with_footer = text + POST_FOOTER if is_post_footer_enabled() else text
+    text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
 
     from database.requests import update_scheduled_post_content
     updated = update_scheduled_post_content(post_id, text_with_footer)
