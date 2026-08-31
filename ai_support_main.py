@@ -28,7 +28,32 @@ from slowapi.middleware import SlowAPIMiddleware
 import httpx
 from config import BOT_TOKEN, ADMIN_IDS
 
-BOT_USERNAME = "vless_keysvpn_bot"  # для генерации ссылок вида t.me/{BOT_USERNAME}?start=pr_КОД
+# Юзернейм бота НЕ хардкодится — у каждой инсталляции (включая
+# white-label клиентов, ставящих этот код себе) свой собственный бот с
+# собственным юзернеймом. Получаем его через Telegram Bot API (getMe) и
+# кэшируем в памяти процесса, чтобы не дёргать API на каждый запрос.
+_bot_username_cache: str = ""
+
+
+async def _resolve_bot_username() -> str:
+    """Юзернейм этого бота (без @), получаемый через getMe и кэшируемый
+    на время жизни процесса. Используется для генерации deep-ссылок вида
+    t.me/{username}?start=..."""
+    global _bot_username_cache
+    if _bot_username_cache:
+        return _bot_username_cache
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe")
+            data = resp.json()
+            if data.get("ok") and data.get("result", {}).get("username"):
+                _bot_username_cache = data["result"]["username"]
+                return _bot_username_cache
+    except Exception as e:
+        logger.warning(f"Не удалось получить username бота через getMe: {e}")
+    return ""
+
+
 # Telegram разрешает в start-параметре только A-Z a-z 0-9 _ -, максимум 64 символа
 _TELEGRAM_START_PARAM_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}$")  # 60, не 64 — с запасом на префикс "pr_"
 
@@ -1024,7 +1049,10 @@ async def suggest_key_replacement(telegram_id: int) -> str:
 
     key_id = key_rows[0]["id"]
     key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
-    deep_link = f"https://t.me/{BOT_USERNAME}?start=replace_{key_id}"
+    bot_username = await _resolve_bot_username()
+    if not bot_username:
+        return f"Не удалось сформировать ссылку на карточку ключа «{key_name}» — попробуйте ещё раз через минуту или откройте «🔑 Мои ключи» вручную."
+    deep_link = f"https://t.me/{bot_username}?start=replace_{key_id}"
     return (
         f"Ссылка на карточку ключа «{key_name}» готова: {deep_link}\n"
         f"На этой карточке есть кнопка «🔄 Заменить» — клиенту нужно нажать её, "
@@ -1662,7 +1690,7 @@ async def query_full_customer_profile(telegram_id: int) -> dict:
         logger.error(f"DB error: {e}")
         return {"error": str(e)}
 
-def _format_customer_profile(profile: dict) -> str:
+def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
     """Форматирует полный профиль клиента в компактный текстовый блок для system prompt."""
     if not profile or profile.get("found") is False:
         return "Пользователь не найден в базе (возможно, ещё не запускал бота)."
@@ -1739,8 +1767,8 @@ def _format_customer_profile(profile: dict) -> str:
         for p in promo_codes:
             limit_str = f", осталось активаций: {p['activation_limit'] - p['usage_count']}" if p.get("activation_limit") else ""
             link_str = ""
-            if p.get("type") == "promo" and _TELEGRAM_START_PARAM_RE.match(p["code"]):
-                link_str = f" — ссылка для автоматической активации (без ручного ввода): https://t.me/{BOT_USERNAME}?start=pr_{p['code']}"
+            if p.get("type") == "promo" and _TELEGRAM_START_PARAM_RE.match(p["code"]) and bot_username:
+                link_str = f" — ссылка для автоматической активации (без ручного ввода): https://t.me/{bot_username}?start=pr_{p['code']}"
             parts.append(f"  • {p['code']} — скидка {p['discount_percent']}%, действует до {p.get('expires_at') or 'бессрочно'}{limit_str}{link_str}")
     else:
         parts.append("Сейчас нет известных доступных промокодов для этого клиента — НЕ подтверждай существование или скидку по промокоду, который клиент называет сам, если его нет в этом списке; направь в раздел «Промокоды» в боте, там есть реальная проверка.")
@@ -1852,11 +1880,12 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             escalate=False,
         )
 
-    profile_block = _format_customer_profile(customer_profile)
+    bot_username = await _resolve_bot_username()
+    profile_block = _format_customer_profile(customer_profile, bot_username)
     setup_instructions = get_app_setup_instructions()
     from database.requests import get_effective_webapp_url
     public_shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
-    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", BOT_USERNAME) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
+    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
     if setup_instructions:
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
@@ -2118,7 +2147,8 @@ async def generate_outreach(req: OutreachRequest, token: str = Depends(verify_to
         logger.info(f"Outreach отклонён: пользователь {req.user_id} не найден")
         return OutreachResponse(text="")
 
-    profile_block = _format_customer_profile(customer_profile)
+    bot_username = await _resolve_bot_username()
+    profile_block = _format_customer_profile(customer_profile, bot_username)
     reason_block = f"Повод сообщения: {req.reason}\nДетали повода: {json.dumps(req.context, ensure_ascii=False)}"
     full_system = OUTREACH_SYSTEM_PROMPT + "\n\n" + reason_block + "\n\nПрофиль клиента:\n" + profile_block
 
