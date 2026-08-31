@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/EclipseVPN
+EnvironmentFile=-/root/EclipseVPN/secrets.env
 ExecStart=/root/EclipseVPN/venv/bin/python main.py
 Restart=always
 RestartSec=5
