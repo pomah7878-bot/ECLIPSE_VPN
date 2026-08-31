@@ -240,6 +240,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$INSTALL_DIR
+EnvironmentFile=-$INSTALL_DIR/secrets.env
 ExecStart=$VENV_DIR/bin/python main.py
 Restart=always
 RestartSec=5
