@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 93
+LATEST_VERSION = 94
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1711,6 +1711,71 @@ def migration_93(conn: sqlite3.Connection) -> None:
         )
 
 
+def migration_94(conn: sqlite3.Connection) -> None:
+    """Migration v94: добавляет кнопки быстрого импорта подписки в приложение
+    ("📥 Открыть в Happ/Karing/INCY/ECLIPSE VPN") в дефолтный набор кнопок
+    страницы деталей ключа (buttons_default, page_key='key_details').
+
+    Резолверы btn_key_import_happ/karing/incy/eclipse и обработчики
+    import_happ/import_karing/import_incy/import_eclipse (bot/handlers/
+    user/keys.py) полностью реализованы и зарегистрированы в SYSTEM_BUTTONS
+    (bot/utils/action_registry.py), но ни разу не были добавлены в
+    buttons_default этой страницы ни при начальной установке, ни в
+    последующих миграциях — фича была недостижима ни через одну кнопку
+    интерфейса ни у одной установки бота.
+
+    Трогает только buttons_default. Если админ уже кастомизировал эту
+    страницу через редактор (buttons_custom не NULL), кнопки нужно будет
+    добавить туда вручную.
+    """
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if not row:
+        logger.warning("Migration v94: страница 'key_details' не найдена, пропускаю")
+        return
+
+    try:
+        buttons = json.loads(row["buttons_default"] or '[]')
+    except (TypeError, ValueError):
+        buttons = []
+
+    import_button_ids = {
+        "btn_key_import_happ", "btn_key_import_karing",
+        "btn_key_import_incy", "btn_key_import_eclipse",
+    }
+    if any(b.get('id') in import_button_ids for b in buttons):
+        logger.info("Migration v94: кнопки импорта уже есть в buttons_default, пропускаю")
+    else:
+        # Вставляем новыми строками сразу после кнопок действий с ключом,
+        # перед навигацией "Мои ключи"/"На главную" — сдвигаем последние вниз
+        # на 2 строки (под два новых ряда кнопок импорта).
+        nav_ids = {'btn_my_keys', 'btn_back_main'}
+        insert_row = max((b.get('row', 0) for b in buttons if b.get('id') not in nav_ids), default=-1) + 1
+        for b in buttons:
+            if b.get('id') in nav_ids:
+                b['row'] = b.get('row', 0) + 2
+
+        import_buttons = [
+            {"id": "btn_key_import_happ",    "label": "📥 Открыть в Happ",        "color": "secondary", "row": insert_row, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+            {"id": "btn_key_import_eclipse", "label": "📥 Открыть в ECLIPSE VPN", "color": "secondary", "row": insert_row, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
+            {"id": "btn_key_import_incy",    "label": "📥 Открыть в INCY",        "color": "secondary", "row": insert_row + 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+            {"id": "btn_key_import_karing",  "label": "📥 Открыть в Karing",      "color": "secondary", "row": insert_row + 1, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
+        ]
+        buttons.extend(import_buttons)
+        conn.execute(
+            "UPDATE pages SET buttons_default = ? WHERE page_key = 'key_details'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+        logger.info("Migration v94 applied: кнопки быстрого импорта добавлены в buttons_default key_details")
+
+    if row["buttons_custom"]:
+        logger.warning(
+            "Migration v94: у страницы key_details задан buttons_custom (кастомизация админом) — "
+            "кнопки импорта нужно добавить туда вручную через редактор страниц."
+        )
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1732,6 +1797,7 @@ MIGRATIONS = {
     91: migration_91,
     92: migration_92,
     93: migration_93,
+    94: migration_94,
 }
 
 
