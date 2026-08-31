@@ -1,5 +1,5 @@
 """
-Микросервис AI-консультанта для ECLIPSE Unlimited Telegram-бота.
+Микросервис AI-консультанта для Telegram-бота VPN-сервиса.
 Запуск: uvicorn ai_support_main:app --host 127.0.0.1 --port 8086
 Переменные: GROQ_API_KEY, SUPPORT_API_TOKEN, BOT_DB_PATH
 """
@@ -52,6 +52,39 @@ async def _resolve_bot_username() -> str:
     except Exception as e:
         logger.warning(f"Не удалось получить username бота через getMe: {e}")
     return ""
+
+
+def _build_app_recommendation() -> str:
+    """Собирает текст рекомендации VPN-приложения для системного промпта.
+
+    Если у инсталляции настроено собственное Android-приложение
+    (get_effective_own_app_name/url) — рекомендуем его в первую очередь,
+    как раньше делал хардкод на ECLIPSE Unlimited. Если своего приложения
+    нет (типичный случай для white-label клиентов без своего клиента) —
+    рекомендуем только сторонние клиенты, без ложных заявлений о
+    "собственном" приложении.
+    """
+    from database.requests import get_effective_own_app_name, get_effective_own_app_url
+
+    own_app_name = get_effective_own_app_name()
+    own_app_url = get_effective_own_app_url()
+
+    if own_app_name and own_app_url:
+        own_app_tag = f'<a href="{own_app_url}">{own_app_name}</a>'
+        return (
+            f"в первую очередь {own_app_tag} — наш собственный Android-клиент "
+            f"на базе Xray (VLESS/Reality). Он специально заточен под "
+            f"конфигурации сервиса и обеспечивает наилучшую совместимость. "
+            f"Для iOS/ПК и как альтернативы на Android — Happ и INCY. Упомяни, "
+            f"что работают и другие VLESS-клиенты (v2RayNG, v2Box, Streisand, "
+            f"Shadowrocket, FoXray и т.п.), но для лучшей совместимости "
+            f"рекомендован именно {own_app_tag}."
+        )
+    return (
+        "Happ или INCY (Android/iOS/ПК) — универсальные, стабильные VLESS-"
+        "клиенты. Упомяни, что работают и другие VLESS-клиенты (v2RayNG, "
+        "v2Box, Streisand, Shadowrocket, FoXray и т.п.), если это уместно."
+    )
 
 
 # Telegram разрешает в start-параметре только A-Z a-z 0-9 _ -, максимум 64 символа
@@ -1308,7 +1341,7 @@ async def verify_token(api_key: str = Security(token_header)):
         raise HTTPException(status_code=403, detail="Forbidden")
     return api_key
 
-SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimited VPN сервиса.
+SYSTEM_PROMPT = """Ты AI-ассистент поддержки %BRAND_NAME% VPN сервиса.
 Тебе доступен полный профиль клиента: аккаунт, все его VPN-ключи, история
 платежей, баланс и реферальная статистика — используй эти данные, чтобы
 отвечать персонально и по существу, а не общими фразами.
@@ -1320,7 +1353,7 @@ SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimit
   нужно дать клиенту ссылку на бота (например, чтобы поделиться с другом).
   НИКОГДА не придумывай другое имя пользователя бота на основе названия
   сервиса — реальный username бота может не совпадать с отображаемым
-  названием "ECLIPSE Unlimited".
+  названием "%BRAND_NAME%".
 - ВАЖНО про передачу личного ключа: если клиент спрашивает, можно ли отдать
   свою ссылку/ключ подписки другу или знакомому — мягко объясни, что делать
   так небезопасно: это личные данные для подключения именно ЕГО устройства,
@@ -1333,7 +1366,7 @@ SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimit
 
 Правила:
 - КРИТИЧЕСКИ ВАЖНО (проверяй это первым): ты консультируешь ИСКЛЮЧИТЕЛЬНО по
-  вопросам сервиса ECLIPSE Unlimited и ЛЮБЫМ его функциям, доступным
+  вопросам сервиса %BRAND_NAME% и ЛЮБЫМ его функциям, доступным
   пользователю в боте — подписка, ключи, оплата, приложения, настройка,
   подключение, технические проблемы с VPN, пробный период, промокоды,
   реферальная программа, обращение в поддержку, общие вопросы о работе
@@ -1392,7 +1425,7 @@ SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimit
   тебя НЕТ достоверных данных о конкурентах, и любая конкретная цифра или
   утверждение об их продукте — это выдумка, которая может быть неправдой
   и подставить сервис репутационно. Рассказывай ТОЛЬКО о реальных,
-  подтверждённых плюсах ECLIPSE Unlimited (из профиля/базы знаний), не
+  подтверждённых плюсах %BRAND_NAME% (из профиля/базы знаний), не
   сравнивая напрямую с конкретными названными брендами. Общие фразы вроде
   "многие бесплатные VPN продают данные" допустимы, но никогда не приводи
   конкретные факты о НАЗВАННОМ конкуренте.
@@ -1469,14 +1502,9 @@ SYSTEM_PROMPT = """Ты AI-ассистент поддержки ECLIPSE Unlimit
   одного предложения.
 - Если клиент спрашивает про настройку, подключение или выбор приложения
   для VPN — своими словами (не шаблонно, естественно вплетая в контекст
-  разговора) порекомендуй в первую очередь <a href="https://eclipse.unlimited.bot.nu/app">ECLIPSE Unlimited</a> —
-  наш собственный Android-клиент на базе Xray (VLESS/Reality). Он специально
-  заточен под конфигурации сервиса и обеспечивает наилучшую совместимость.
-  Для iOS/ПК и как альтернативы на Android — Happ и INCY. Упомяни, что
-  работают и другие VLESS-клиенты (v2RayNG, v2Box, Streisand, Shadowrocket,
-  FoXray и т.п.), но для лучшей совместимости рекомендован именно
-  <a href="https://eclipse.unlimited.bot.nu/app">ECLIPSE Unlimited</a>. Не повторяй эту рекомендацию, если она не в тему
-  вопроса или уже прозвучала в этом диалоге.
+  разговора) порекомендуй подходящее приложение: %APP_RECOMMENDATION%
+  Не повторяй эту рекомендацию, если она не в тему вопроса или уже
+  прозвучала в этом диалоге.
 - Для вопросов про troubleshooting подключения, безопасность прокси,
   Karing, split-tunneling, медленные российские сайты и подобные детальные
   технические темы — ОБЯЗАТЕЛЬНО вызови search_knowledge_base перед
@@ -1876,7 +1904,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     if customer_profile.get("found") is False:
         logger.info(f"AI consult отклонён: пользователь {req.user_id} не зарегистрирован")
         return ConsultResponse(
-            reply="Похоже, вы ещё не зарегистрированы в боте. Нажмите /start, чтобы начать пользоваться ECLIPSE Unlimited — после этого я смогу вам помочь.",
+            reply="Похоже, вы ещё не зарегистрированы в боте. Нажмите /start, чтобы начать пользоваться сервисом — после этого я смогу вам помочь.",
             escalate=False,
         )
 
@@ -1885,7 +1913,9 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     setup_instructions = get_app_setup_instructions()
     from database.requests import get_effective_webapp_url
     public_shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
-    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
+    from database.requests import get_effective_brand_name
+    brand_name = get_effective_brand_name()
+    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username).replace("%BRAND_NAME%", brand_name).replace("%APP_RECOMMENDATION%", _build_app_recommendation()) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
     if setup_instructions:
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
@@ -2124,7 +2154,7 @@ class OutreachResponse(BaseModel):
     text: str
 
 
-OUTREACH_SYSTEM_PROMPT = """Ты составляешь короткое ИСХОДЯЩЕЕ сообщение от лица ECLIPSE Unlimited VPN клиенту — это НЕ ответ на его вопрос, а сообщение, которое бот отправит ему сам, по конкретному поводу.
+OUTREACH_SYSTEM_PROMPT = """Ты составляешь короткое ИСХОДЯЩЕЕ сообщение от лица %BRAND_NAME% VPN клиенту — это НЕ ответ на его вопрос, а сообщение, которое бот отправит ему сам, по конкретному поводу.
 
 Правила:
 - Пиши только на основе повода и профиля клиента ниже — никогда не выдумывай тарифы, промокоды, даты и цифры, которых нет в профиле.
@@ -2150,7 +2180,8 @@ async def generate_outreach(req: OutreachRequest, token: str = Depends(verify_to
     bot_username = await _resolve_bot_username()
     profile_block = _format_customer_profile(customer_profile, bot_username)
     reason_block = f"Повод сообщения: {req.reason}\nДетали повода: {json.dumps(req.context, ensure_ascii=False)}"
-    full_system = OUTREACH_SYSTEM_PROMPT + "\n\n" + reason_block + "\n\nПрофиль клиента:\n" + profile_block
+    from database.requests import get_effective_brand_name
+    full_system = OUTREACH_SYSTEM_PROMPT.replace("%BRAND_NAME%", get_effective_brand_name()) + "\n\n" + reason_block + "\n\nПрофиль клиента:\n" + profile_block
 
     messages = [{"role": "system", "content": full_system}]
 
