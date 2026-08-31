@@ -1713,16 +1713,24 @@ def migration_93(conn: sqlite3.Connection) -> None:
 
 def migration_94(conn: sqlite3.Connection) -> None:
     """Migration v94: добавляет кнопки быстрого импорта подписки в приложение
-    ("📥 Открыть в Happ/Karing/INCY/ECLIPSE VPN") в дефолтный набор кнопок
-    страницы деталей ключа (buttons_default, page_key='key_details').
+    ("📥 Открыть в Happ/Karing/INCY") в дефолтный набор кнопок страницы
+    деталей ключа (buttons_default, page_key='key_details').
 
-    Резолверы btn_key_import_happ/karing/incy/eclipse и обработчики
-    import_happ/import_karing/import_incy/import_eclipse (bot/handlers/
-    user/keys.py) полностью реализованы и зарегистрированы в SYSTEM_BUTTONS
-    (bot/utils/action_registry.py), но ни разу не были добавлены в
-    buttons_default этой страницы ни при начальной установке, ни в
-    последующих миграциях — фича была недостижима ни через одну кнопку
-    интерфейса ни у одной установки бота.
+    Резолверы btn_key_import_happ/karing/incy и обработчики import_happ/
+    import_karing/import_incy (bot/handlers/user/keys.py) полностью
+    реализованы и зарегистрированы в SYSTEM_BUTTONS (bot/utils/
+    action_registry.py), но ни разу не были добавлены в buttons_default
+    этой страницы ни при начальной установке, ни в последующих
+    миграциях — фича была недостижима ни через одну кнопку интерфейса
+    ни у одной установки бота.
+
+    Кнопка "Открыть в ECLIPSE VPN" (btn_key_import_eclipse) намеренно НЕ
+    включена сюда — она открывает подписку в собственном Android-форке
+    (схема eclipsevpn://install-sub), которого нет ни у одного white-label
+    клиента, разворачивающего этот бот под своим брендом. Резолвер и
+    обработчик import_eclipse остаются в коде рабочими на случай, если
+    конкретная инсталляция (например, основной бот ECLIPSE Unlimited)
+    захочет добавить эту кнопку себе вручную через редактор страниц.
 
     Трогает только buttons_default. Если админ уже кастомизировал эту
     страницу через редактор (buttons_custom не NULL), кнопки нужно будет
@@ -1741,8 +1749,7 @@ def migration_94(conn: sqlite3.Connection) -> None:
         buttons = []
 
     import_button_ids = {
-        "btn_key_import_happ", "btn_key_import_karing",
-        "btn_key_import_incy", "btn_key_import_eclipse",
+        "btn_key_import_happ", "btn_key_import_karing", "btn_key_import_incy",
     }
     if any(b.get('id') in import_button_ids for b in buttons):
         logger.info("Migration v94: кнопки импорта уже есть в buttons_default, пропускаю")
@@ -1757,10 +1764,9 @@ def migration_94(conn: sqlite3.Connection) -> None:
                 b['row'] = b.get('row', 0) + 2
 
         import_buttons = [
-            {"id": "btn_key_import_happ",    "label": "📥 Открыть в Happ",        "color": "secondary", "row": insert_row, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-            {"id": "btn_key_import_eclipse", "label": "📥 Открыть в ECLIPSE VPN", "color": "secondary", "row": insert_row, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
-            {"id": "btn_key_import_incy",    "label": "📥 Открыть в INCY",        "color": "secondary", "row": insert_row + 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-            {"id": "btn_key_import_karing",  "label": "📥 Открыть в Karing",      "color": "secondary", "row": insert_row + 1, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
+            {"id": "btn_key_import_happ",   "label": "📥 Открыть в Happ",   "color": "secondary", "row": insert_row, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+            {"id": "btn_key_import_incy",   "label": "📥 Открыть в INCY",   "color": "secondary", "row": insert_row, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
+            {"id": "btn_key_import_karing", "label": "📥 Открыть в Karing", "color": "secondary", "row": insert_row + 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         ]
         buttons.extend(import_buttons)
         conn.execute(
