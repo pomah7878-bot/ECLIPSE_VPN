@@ -1862,7 +1862,7 @@ async def handle_referral(request: web.Request) -> web.Response:
 
         referral_code = ensure_user_referral_code(user_internal_id)
 
-        # Get bot username
+        # Get bot username from the running bot instance (set at main.py startup)
         bot_username = None
         try:
             from main import bot as _bot
@@ -1871,10 +1871,10 @@ async def handle_referral(request: web.Request) -> web.Response:
         except Exception:
             pass
 
-        if not bot_username:
-            bot_username = "vless_keysvpn_bot"
-
-        referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}"
+        # НЕ подставляем чужой bot_username как fallback — если lookup не
+        # удался, лучше пустая ссылка (клиент попробует обновить страницу),
+        # чем реферальная ссылка, ведущая на другого, чужого бота.
+        referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}" if bot_username else ""
 
         # Count referrals
         referrals_count = 0
