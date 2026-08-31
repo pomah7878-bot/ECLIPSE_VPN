@@ -470,7 +470,24 @@ def restart_bot() -> None:
     Restarts the bot, replacing the current process.
 
     Uses os.execv to replace the current process with a new one.
+
+    Also restarts the separate eclipse-ai systemd unit (AI-support
+    microservice), if present — it's a different process from the bot
+    and won't pick up code/dependency changes on its own. The bot runs
+    as root (see eclipse-vpn.service), so it has permission to call
+    systemctl directly. Best-effort: a failure here must not block the
+    bot's own restart.
     """
+    try:
+        if os.path.exists('/etc/systemd/system/eclipse-ai.service'):
+            subprocess.run(
+                ['systemctl', 'restart', 'eclipse-ai'],
+                capture_output=True, text=True, timeout=30,
+            )
+            logger.info("🔄 eclipse-ai перезапущен вместе с ботом")
+    except Exception as e:
+        logger.warning(f"Не удалось перезапустить eclipse-ai (бот всё равно перезапустится): {e}")
+
     logger.info("🔄 Перезапуск бота...")
     
     # Getting the path to Python and launch arguments
