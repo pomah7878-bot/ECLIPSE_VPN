@@ -407,6 +407,9 @@ do_soft_update() {
 
     # Перезапуск
     systemctl restart eclipse-vpn
+    if [ -f /etc/systemd/system/eclipse-ai.service ]; then
+        systemctl restart eclipse-ai
+    fi
     sleep 2
 
     if systemctl is-active --quiet eclipse-vpn; then
@@ -460,6 +463,9 @@ do_hard_reset() {
 
     # Перезапуск
     systemctl restart eclipse-vpn
+    if [ -f /etc/systemd/system/eclipse-ai.service ]; then
+        systemctl restart eclipse-ai
+    fi
     sleep 2
 
     if systemctl is-active --quiet eclipse-vpn; then
