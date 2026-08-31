@@ -16,6 +16,9 @@ from database.requests import (
     get_effective_gemini_api_key, set_gemini_api_key,
     get_effective_tavily_api_key, set_tavily_api_key,
     get_effective_oauth_credentials, set_oauth_credentials,
+    get_effective_brand_name, set_brand_name,
+    get_effective_own_app_name, set_own_app_name,
+    get_effective_own_app_url, set_own_app_url,
 )
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
@@ -47,6 +50,8 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
 
     webapp_url = get_effective_webapp_url()
+    brand_name = get_effective_brand_name()
+    own_app_name = get_effective_own_app_name()
     groq_key = get_effective_groq_api_key()
     gemini_key = get_effective_gemini_api_key()
     tavily_key = get_effective_tavily_api_key()
@@ -54,6 +59,8 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
     lines = [
         "🌐 <b>Интеграции</b>\n",
         f"🌐 Домен сайта: <code>{webapp_url or 'не задан'}</code>",
+        f"🏷 Название бренда (для AI): <code>{brand_name}</code>",
+        f"📱 Своё приложение: <code>{own_app_name or 'не рекомендуется (только Happ/INCY)'}</code>",
         f"🤖 Ключ AI (Groq): <code>{_mask_secret(groq_key)}</code>",
         f"✨ Ключ AI (Gemini): <code>{_mask_secret(gemini_key)}</code>",
         f"🔍 Ключ веб-поиска (Tavily): <code>{_mask_secret(tavily_key)}</code>",
@@ -114,6 +121,123 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
     set_webapp_url(value)
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(f"✅ Домен сохранён: <code>{value}</code>", parse_mode="HTML", reply_markup=integrations_menu_kb())
+
+
+# ============================================================
+# Название бренда (для текстов AI-помощника)
+# ============================================================
+
+@router.callback_query(F.data == "admin_edit_brand_name")
+async def edit_brand_name_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.edit_brand_name)
+    current = get_effective_brand_name()
+    await safe_edit_or_send(
+        callback.message,
+        f"🏷 <b>Название бренда</b>\n\nТекущее: <code>{current}</code>\n\n"
+        "Как AI-помощник должен называть ваш сервис, отвечая клиентам "
+        "(например: <code>EDITION</code>, <code>MyVPN</code>). Отправьте новое название.\n\n"
+        "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_brand_name)
+async def edit_brand_name_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value or len(value) > 64:
+        await safe_edit_or_send(message, "❌ Название должно быть непустым и короче 64 символов. Попробуйте ещё раз.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    set_brand_name(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(
+        f"✅ Название бренда сохранено: <code>{value}</code>\n\n"
+        "⚠️ Не забудьте: <code>systemctl restart eclipse-ai</code>",
+        parse_mode="HTML", reply_markup=integrations_menu_kb(),
+    )
+
+
+# ============================================================
+# Своё приложение (AI рекомендует его в первую очередь, если задано)
+# ============================================================
+
+@router.callback_query(F.data == "admin_edit_own_app")
+async def edit_own_app_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.edit_own_app_name)
+    current_name = get_effective_own_app_name()
+    current_url = get_effective_own_app_url()
+    current_text = f"{current_name} — {current_url}" if current_name else "не задано (рекомендуются только Happ/INCY)"
+    await safe_edit_or_send(
+        callback.message,
+        f"📱 <b>Своё приложение</b>\n\nТекущее: <code>{current_text}</code>\n\n"
+        "Если у вас есть собственный VPN-клиент — AI-помощник будет рекомендовать "
+        "именно его в первую очередь. Отправьте название и ссылку в двух строках:\n"
+        "<code>Название\nhttps://ссылка-на-приложение</code>\n\n"
+        "Чтобы убрать (рекомендовать только сторонние клиенты) — отправьте одно тире: <code>-</code>\n\n"
+        "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_own_app_name)
+async def edit_own_app_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    raw = get_message_text_for_storage(message, "plain").strip()
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if raw == "-":
+        set_own_app_name("")
+        set_own_app_url("")
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer(
+            "✅ Своё приложение убрано — AI будет рекомендовать только сторонние клиенты (Happ, INCY).\n\n"
+            "⚠️ Не забудьте: <code>systemctl restart eclipse-ai</code>",
+            parse_mode="HTML", reply_markup=integrations_menu_kb(),
+        )
+        return
+
+    lines = [ln.strip() for ln in raw.split("\n") if ln.strip()]
+    if len(lines) != 2 or not (lines[1].startswith("https://") or lines[1].startswith("http://")):
+        await safe_edit_or_send(
+            message,
+            "❌ Нужно ровно две строки: название на первой, ссылка (начинающаяся с https://) на второй. "
+            "Или отправьте <code>-</code>, чтобы убрать рекомендацию своего приложения.",
+        )
+        return
+
+    name, url = lines
+    set_own_app_name(name)
+    set_own_app_url(url)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(
+        f"✅ Своё приложение сохранено: <code>{name}</code> — <code>{url}</code>\n\n"
+        "⚠️ Не забудьте: <code>systemctl restart eclipse-ai</code>",
+        parse_mode="HTML", reply_markup=integrations_menu_kb(),
+    )
 
 
 # ============================================================

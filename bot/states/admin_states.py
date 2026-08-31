@@ -19,6 +19,9 @@ class AdminStates(StatesGroup):
     edit_webapp_url = State()            # Ввод домена сайта
     edit_groq_key = State()              # Ввод ключа Groq (AI)
     edit_gemini_key = State()            # Ввод ключа Gemini (AI, резервный лейн)
+    edit_brand_name = State()            # Ввод названия бренда (для текстов AI)
+    edit_own_app_name = State()          # Ввод названия собственного приложения
+    edit_own_app_url = State()           # Ввод ссылки на собственное приложение
     edit_tavily_key = State()            # Ввод ключа Tavily (веб-поиск AI)
     edit_oauth_client_id = State()       # Ввод Client ID OAuth-провайдера
     edit_oauth_client_secret = State()   # Ввод Client Secret OAuth-провайдера

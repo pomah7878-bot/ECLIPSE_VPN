@@ -17,6 +17,12 @@ __all__ = [
     'set_trial_mode',
     'get_marketing_channel_id',
     'set_marketing_channel_id',
+    'get_effective_brand_name',
+    'set_brand_name',
+    'get_effective_own_app_name',
+    'set_own_app_name',
+    'get_effective_own_app_url',
+    'set_own_app_url',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -420,6 +426,69 @@ def get_effective_webapp_url() -> str:
         return WEBAPP_URL
     except ImportError:
         return ''
+
+def get_effective_brand_name() -> str:
+    """Название сервиса — используется в текстах AI-помощника (самоописание,
+    какой сервис он представляет). Значение из админки имеет приоритет над
+    config.py; если не задано нигде — 'ECLIPSE Unlimited' как исторический
+    дефолт (это сохраняет поведение уже работающих установок без AI-brand
+    настроек в config.py/БД без каких-либо действий с их стороны)."""
+    from_db = get_setting('brand_name', '')
+    if from_db:
+        return from_db
+    try:
+        from config import BRAND_NAME
+        if BRAND_NAME and BRAND_NAME.strip() and BRAND_NAME != 'ВАШ_БРЕНД':
+            return BRAND_NAME.strip()
+    except ImportError:
+        pass
+    return 'ECLIPSE Unlimited'
+
+def set_brand_name(name: str) -> None:
+    """Задаёт название сервиса для текстов AI-помощника."""
+    set_setting('brand_name', name.strip())
+
+def get_effective_own_app_name() -> str:
+    """Название собственного Android-приложения (если есть) — AI-помощник
+    рекомендует его в первую очередь при вопросах о подключении. См.
+    get_effective_own_app_url() про три состояния (БД / нет в config.py /
+    явно пусто в config.py) — та же логика."""
+    from_db = get_setting('own_app_name', '')
+    if from_db:
+        return from_db
+    try:
+        from config import OWN_APP_NAME
+    except ImportError:
+        return 'ECLIPSE Unlimited' if get_effective_own_app_url() else ''
+    return OWN_APP_NAME.strip() if OWN_APP_NAME else ''
+
+def set_own_app_name(name: str) -> None:
+    """Задаёт название собственного Android-приложения (пусто — не рекомендовать)."""
+    set_setting('own_app_name', name.strip())
+
+def get_effective_own_app_url() -> str:
+    """Ссылка на собственное Android-приложение (если есть).
+
+    Три состояния: 1) задано в БД через админку — используем его; 2) в
+    config.py константы OWN_APP_URL нет вообще (старая установка, не
+    знающая об этой настройке) — сохраняем исторический дефолт ECLIPSE
+    Unlimited, чтобы поведение не изменилось без действий админа; 3) в
+    config.py константа ЕСТЬ, но пустая — админ явно указал, что своего
+    приложения нет, возвращаем пустую строку (а не проваливаемся к
+    дефолту).
+    """
+    from_db = get_setting('own_app_url', '')
+    if from_db:
+        return from_db
+    try:
+        from config import OWN_APP_URL
+    except ImportError:
+        return 'https://eclipse.unlimited.bot.nu/app'
+    return OWN_APP_URL.strip() if OWN_APP_URL else ''
+
+def set_own_app_url(url: str) -> None:
+    """Задаёт ссылку на собственное Android-приложение (пусто — не рекомендовать)."""
+    set_setting('own_app_url', url.strip())
 
 def set_webapp_url(url: str) -> None:
     """Сохраняет домен сайта/WebApp, заданный через админ-панель."""
