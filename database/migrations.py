@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 92
+LATEST_VERSION = 93
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1659,6 +1659,58 @@ def migration_92(conn: sqlite3.Connection) -> None:
     logger.info("Migration v92 applied: oauth_exchange_codes table")
 
 
+def migration_93(conn: sqlite3.Connection) -> None:
+    """Migration v93: добавляет кнопку 🤖 AI-помощник в дефолтный набор кнопок
+    главной страницы (buttons_default, page_key='main').
+
+    Раньше action cmd_ai_support уже существовал в action_registry.py и
+    обработчик ai_support_open был полностью реализован (bot/handlers/user/
+    ai_handler.py), но кнопка нигде не подключалась к интерфейсу по
+    умолчанию — единственный вход был через прямой deep-link
+    ?start=ai_support, который требовалось патчить вручную на каждом
+    сервере. Эта миграция чинит это для всех установок бота — новых и уже
+    работающих.
+
+    Трогает только buttons_default. Если админ уже кастомизировал главную
+    страницу через редактор (buttons_custom не NULL), кнопку нужно будет
+    добавить туда вручную — миграция не переопределяет ручные правки.
+    """
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'main'"
+    ).fetchone()
+    if not row:
+        logger.warning("Migration v93: страница 'main' не найдена, пропускаю")
+        return
+
+    try:
+        buttons = json.loads(row["buttons_default"] or '[]')
+    except (TypeError, ValueError):
+        buttons = []
+
+    if any(b.get('action_value') == 'cmd_ai_support' for b in buttons):
+        logger.info("Migration v93: кнопка cmd_ai_support уже есть в buttons_default, пропускаю")
+    else:
+        ai_button = {
+            "id": "btn_ai_support", "label": "🤖 AI-помощник", "color": "primary",
+            "row": 0, "col": 0, "is_hidden": False,
+            "action_type": "internal", "action_value": "cmd_ai_support",
+        }
+        for b in buttons:
+            b['row'] = b.get('row', 0) + 1
+        buttons.insert(0, ai_button)
+        conn.execute(
+            "UPDATE pages SET buttons_default = ? WHERE page_key = 'main'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+        logger.info("Migration v93 applied: кнопка AI-помощника добавлена в buttons_default главной страницы")
+
+    if row["buttons_custom"]:
+        logger.warning(
+            "Migration v93: у главной страницы задан buttons_custom (кастомизация админом) — "
+            "кнопку AI-помощника нужно добавить туда вручную через редактор страниц (/yaa)."
+        )
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1679,6 +1731,7 @@ MIGRATIONS = {
     90: migration_90,
     91: migration_91,
     92: migration_92,
+    93: migration_93,
 }
 
 
