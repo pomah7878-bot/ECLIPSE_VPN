@@ -25,6 +25,8 @@ __all__ = [
     'set_own_app_url',
     'is_start_import_buttons_enabled',
     'set_start_import_buttons_enabled',
+    'is_start_balance_button_enabled',
+    'set_start_balance_button_enabled',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -353,6 +355,17 @@ def is_start_import_buttons_enabled() -> bool:
 def set_start_import_buttons_enabled(enabled: bool) -> None:
     """Включает/выключает кнопки быстрого импорта на главной странице."""
     set_setting('start_import_buttons_enabled', '1' if enabled else '0')
+
+
+def is_start_balance_button_enabled() -> bool:
+    """Показывать ли на главной странице кнопку "💰 Пополнить баланс". По
+    умолчанию включено — у новых пользователей бота кнопка видна сразу."""
+    return get_setting('start_balance_button_enabled', '1') == '1'
+
+
+def set_start_balance_button_enabled(enabled: bool) -> None:
+    """Включает/выключает кнопку пополнения баланса на главной странице."""
+    set_setting('start_balance_button_enabled', '1' if enabled else '0')
 
 
 def is_channel_gate_enabled() -> bool:

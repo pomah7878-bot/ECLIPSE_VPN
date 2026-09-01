@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 95
+LATEST_VERSION = 96
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1842,6 +1842,70 @@ def migration_95(conn: sqlite3.Connection) -> None:
         )
 
 
+def migration_96(conn: sqlite3.Connection) -> None:
+    """Migration v96: добавляет кнопку "💰 Пополнить баланс" в дефолтный
+    набор кнопок ГЛАВНОЙ страницы (buttons_default, page_key='main'), в
+    ту же строку, что и "🎁 Пробная подписка" — по образцу главного бота
+    ECLIPSE Unlimited, где эта кнопка уже была добавлена вручную через
+    buttons_custom.
+
+    Резолвер btn_balance_topup зарегистрирован в SYSTEM_BUTTONS
+    (action_registry.py) и полностью функционален (открывает меню выбора
+    суммы пополнения) независимо от контекста — безопасно включать по
+    умолчанию для любой инсталляции.
+
+    Управляется тогглом is_start_balance_button_enabled() (по умолчанию
+    включено — у новых пользователей бота кнопка видна сразу), так же
+    как кнопки импорта из migration_95.
+
+    Трогает только buttons_default. Если админ уже кастомизировал главную
+    страницу через редактор (buttons_custom не NULL), кнопку нужно будет
+    добавить туда вручную (или переименовать существующий id на
+    'btn_balance_topup', если она там уже есть под другим id — тогда
+    тоггл заработает и для неё).
+    """
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'main'"
+    ).fetchone()
+    if not row:
+        logger.warning("Migration v96: страница 'main' не найдена, пропускаю")
+        return
+
+    try:
+        buttons = json.loads(row["buttons_default"] or '[]')
+    except (TypeError, ValueError):
+        buttons = []
+
+    if any(b.get('id') == 'btn_balance_topup' for b in buttons):
+        logger.info("Migration v96: кнопка пополнения баланса уже есть в buttons_default, пропускаю")
+    else:
+        # Кладём в ту же строку, что и "🎁 Пробная подписка" (col=1, если
+        # там свободно), иначе — отдельной новой строкой.
+        trial_row = next((b.get('row', 0) for b in buttons if b.get('id') == 'btn_trial'), None)
+        if trial_row is not None and not any(b.get('row') == trial_row and b.get('col') == 1 for b in buttons):
+            target_row, target_col = trial_row, 1
+        else:
+            target_row = max((b.get('row', 0) for b in buttons), default=-1) + 1
+            target_col = 0
+
+        buttons.append({
+            "id": "btn_balance_topup", "label": "💰 Пополнить баланс", "color": "secondary",
+            "row": target_row, "col": target_col, "is_hidden": False,
+            "action_type": "system", "action_value": None,
+        })
+        conn.execute(
+            "UPDATE pages SET buttons_default = ? WHERE page_key = 'main'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+        logger.info("Migration v96 applied: кнопка пополнения баланса добавлена в buttons_default главной страницы")
+
+    if row["buttons_custom"]:
+        logger.warning(
+            "Migration v96: у главной страницы задан buttons_custom (кастомизация админом) — "
+            "кнопку пополнения баланса нужно добавить туда вручную через редактор страниц."
+        )
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1865,6 +1929,7 @@ MIGRATIONS = {
     93: migration_93,
     94: migration_94,
     95: migration_95,
+    96: migration_96,
 }
 
 
