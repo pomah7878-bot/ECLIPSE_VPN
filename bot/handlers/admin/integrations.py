@@ -7,7 +7,7 @@ config.py/secrets.env by hand on the server.
 """
 import logging
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.fsm.context import FSMContext
 
 from database.requests import (
@@ -21,6 +21,7 @@ from database.requests import (
     get_effective_own_app_url, set_own_app_url,
     is_start_import_buttons_enabled, set_start_import_buttons_enabled,
     is_start_balance_button_enabled, set_start_balance_button_enabled,
+    is_welcome_page_enabled, set_welcome_page_enabled,
 )
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
@@ -59,6 +60,7 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
     tavily_key = get_effective_tavily_api_key()
     import_buttons_enabled = is_start_import_buttons_enabled()
     balance_button_enabled = is_start_balance_button_enabled()
+    welcome_enabled = is_welcome_page_enabled()
 
     lines = [
         "🌐 <b>Интеграции</b>\n",
@@ -67,6 +69,7 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
         f"📱 Своё приложение: <code>{own_app_name or 'не рекомендуется (только Happ/INCY)'}</code>",
         f"📥 Кнопки импорта на главной: {'🟢 включены' if import_buttons_enabled else '⚪ выключены'}",
         f"💰 Кнопка пополнения баланса: {'🟢 включена' if balance_button_enabled else '⚪ выключена'}",
+        f"🛬 Витрина для новых (/welcome): {'🟢 включена' if welcome_enabled else '⚪ выключена (404)'}",
         f"🤖 Ключ AI (Groq): <code>{_mask_secret(groq_key)}</code>",
         f"✨ Ключ AI (Gemini): <code>{_mask_secret(gemini_key)}</code>",
         f"🔍 Ключ веб-поиска (Tavily): <code>{_mask_secret(tavily_key)}</code>",
@@ -137,7 +140,20 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
 
     set_webapp_url(value)
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer(f"✅ Домен сохранён: <code>{value}</code>", parse_mode="HTML", reply_markup=integrations_menu_kb())
+
+    check_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Проверить домен", web_app=WebAppInfo(url=value))],
+    ])
+    await message.answer(
+        f"✅ Домен сохранён: <code>{value}</code>\n\n"
+        "Нажми кнопку ниже, чтобы сразу открыть личный кабинет и убедиться, что "
+        "всё работает — Telegram передаст туда твои реальные данные (подписку, "
+        "ключи, баланс), точно так же, как увидит любой другой пользователь бота.\n\n"
+        "Если вместо кабинета увидишь ошибку или белый экран — значит на "
+        "сервере что-то не так с nginx/SSL, домен ещё не готов.",
+        parse_mode="HTML", reply_markup=check_kb,
+    )
+    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data == "admin_toggle_start_import_buttons")
@@ -163,6 +179,24 @@ async def toggle_start_balance_button(callback: CallbackQuery, state: FSMContext
     current = is_start_balance_button_enabled()
     set_start_balance_button_enabled(not current)
     await callback.answer("✅ Кнопка включена" if not current else "⚪ Кнопка выключена")
+    await show_integrations_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_toggle_welcome_page")
+async def toggle_welcome_page(callback: CallbackQuery, state: FSMContext):
+    """Включает/выключает публичную страницу-витрину /welcome для новых
+    посетителей (описание сервиса + тарифы, без входа в бота)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    current = is_welcome_page_enabled()
+    set_welcome_page_enabled(not current)
+    webapp_url = get_effective_webapp_url()
+    if not current and webapp_url:
+        await callback.answer(f"✅ Витрина включена: {webapp_url}/welcome", show_alert=True)
+    else:
+        await callback.answer("✅ Витрина включена" if not current else "⚪ Витрина выключена (адрес теперь отдаёт 404)")
     await show_integrations_menu(callback, state)
 
 
