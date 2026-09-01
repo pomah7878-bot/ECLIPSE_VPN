@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Загрузка…</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --bg: #0d0f1a; --bg2: #131627; --accent: #6C5CE7; --accent2: #00D9C0;
+        --ink: #F5F6FA; --mist: #9096B4; --card: #171A2C; --line: rgba(255,255,255,.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; background: radial-gradient(circle at 50% -10%, var(--bg2), var(--bg) 60%);
+        color: var(--ink); font-family: 'Manrope', -apple-system, sans-serif; min-height: 100vh;
+    }
+    .wrap { max-width: 520px; margin: 0 auto; padding: 36px 18px 60px; }
+    .badge {
+        display: inline-block; background: linear-gradient(135deg, var(--accent), var(--accent2));
+        padding: 6px 14px; border-radius: 999px; font-size: 12px; font-weight: 800;
+        letter-spacing: .06em; text-transform: uppercase; margin-bottom: 18px;
+    }
+    .logo { width: 64px; height: 64px; border-radius: 16px; margin-bottom: 16px; display: block; object-fit: cover; }
+    h1 { font-size: 34px; font-weight: 800; line-height: 1.15; margin: 0 0 12px; }
+    h1 .accent { background: linear-gradient(135deg, var(--accent2), var(--accent));
+                 -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { color: var(--mist); font-size: 16px; line-height: 1.55; margin: 0 0 28px; }
+    .cta {
+        display: block; width: 100%; padding: 18px; border: none; border-radius: 16px;
+        font-size: 17px; font-weight: 800; text-decoration: none; text-align: center;
+        background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+        box-shadow: 0 10px 30px -8px rgba(108,92,231,.6);
+    }
+    .benefits { margin: 32px 0; display: flex; flex-direction: column; gap: 12px; }
+    .benefit { display: flex; align-items: flex-start; gap: 12px; }
+    .benefit .icon {
+        width: 38px; height: 38px; flex-shrink: 0; border-radius: 11px;
+        background: var(--card); border: 1px solid var(--line); display: flex;
+        align-items: center; justify-content: center; font-size: 18px;
+    }
+    .benefit .text b { display: block; font-size: 14.5px; font-weight: 700; }
+    .benefit .text span { color: var(--mist); font-size: 13px; }
+    .tariffs-title { font-size: 20px; font-weight: 800; margin: 36px 0 16px; }
+    .tariffs { display: flex; flex-direction: column; gap: 10px; }
+    .tariff {
+        background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+        padding: 18px 20px; display: flex; justify-content: space-between; align-items: center;
+        position: relative; overflow: hidden;
+    }
+    .tariff::before {
+        content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+        background: linear-gradient(180deg, var(--accent), var(--accent2));
+    }
+    .tariff .name { font-weight: 700; font-size: 15px; }
+    .tariff .meta { color: var(--mist); font-size: 12.5px; margin-top: 3px; }
+    .tariff .price { font-weight: 800; font-size: 17px; color: var(--accent2); white-space: nowrap; }
+    .loading, .empty { text-align: center; color: var(--mist); font-size: 13px; padding: 24px 0; }
+    .bottom-cta { margin-top: 40px; text-align: center; }
+    .bottom-cta p { color: var(--mist); font-size: 13px; margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <img src="/static/logo.png" alt="" class="logo" onerror="this.style.display='none'">
+    <span class="badge">🔥 Подключение за 60 секунд</span>
+    <h1 id="brandName">Загрузка…</h1>
+    <p class="lead">Забудь про блокировки и слежку. Один тап — и ты в интернете без границ.</p>
+    <a class="cta" id="ctaTop" href="#">🚀 Начать прямо сейчас</a>
+
+    <div class="benefits">
+        <div class="benefit"><span class="icon">🕶️</span><div class="text"><b>Полная анонимность</b><span>Мы не храним историю вашей активности</span></div></div>
+        <div class="benefit"><span class="icon">⚡</span><div class="text"><b>Без просадок скорости</b><span>Современные протоколы, оптимизированные сервера</span></div></div>
+        <div class="benefit"><span class="icon">🌐</span><div class="text"><b>Сервера в разных странах</b><span>Выбирайте, откуда «заходить» в сеть</span></div></div>
+        <div class="benefit"><span class="icon">📲</span><div class="text"><b>Работает везде</b><span>Android, iOS, Windows, macOS, Linux</span></div></div>
+    </div>
+
+    <div class="tariffs-title">Выберите тариф</div>
+    <div class="tariffs" id="tariffs">
+        <div class="loading">Загружаем тарифы…</div>
+    </div>
+
+    <div class="bottom-cta">
+        <p>Оплата и активация — прямо в Telegram, без лишних шагов</p>
+        <a class="cta" id="ctaBottom" href="#">Подключиться в Telegram</a>
+    </div>
+</div>
+
+<script>
+async function init() {
+    let botUsername = '';
+    try {
+        const siteRes = await fetch('/api/public/site-info');
+        const site = await siteRes.json();
+        botUsername = site.bot_username || '';
+        document.title = site.brand_name || 'VPN';
+        document.getElementById('brandName').innerHTML = (site.brand_name || 'VPN') + ' <span class="accent">без границ</span>';
+    } catch (e) {
+        document.getElementById('brandName').textContent = 'VPN без границ';
+    }
+
+    const botLink = botUsername ? ('https://t.me/' + botUsername) : '#';
+    document.getElementById('ctaTop').href = botLink;
+    document.getElementById('ctaBottom').href = botLink;
+
+    try {
+        const res = await fetch('/api/public/landing-tariffs');
+        const data = await res.json();
+        const box = document.getElementById('tariffs');
+        if (!data.tariffs || data.tariffs.length === 0) {
+            box.innerHTML = '<div class="empty">Тарифы скоро появятся здесь.</div>';
+            return;
+        }
+        box.innerHTML = data.tariffs.map(t => {
+            const days = t.duration_days;
+            const period = days === 30 ? '1 месяц' : days === 90 ? '3 месяца' : days === 180 ? '6 месяцев' : days === 365 ? '1 год' : days + ' дн.';
+            const traffic = t.traffic_limit_gb > 0 ? (t.traffic_limit_gb + ' ГБ') : 'безлимитный трафик';
+            let price = '';
+            if (t.price_rub) price = t.price_rub + ' ₽';
+            else if (t.price_stars) price = t.price_stars + ' ⭐';
+            return '<div class="tariff"><div><div class="name">' + period + '</div>' +
+                   '<div class="meta">' + traffic + '</div></div>' +
+                   '<div class="price">' + price + '</div></div>';
+        }).join('');
+    } catch (e) {
+        document.getElementById('tariffs').innerHTML = '<div class="empty">Не удалось загрузить тарифы — актуальные цены смотрите в боте.</div>';
+    }
+}
+init();
+</script>
+</body>
+</html>

@@ -751,11 +751,13 @@ async def handle_welcome_page(request: web.Request) -> web.Response:
 
     Управляется тогглом is_welcome_page_enabled() — выключена по
     умолчанию, пока админ явно не включит её."""
-    from database.requests import is_welcome_page_enabled
+    from database.requests import is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES
     if not is_welcome_page_enabled():
         return web.Response(text="404: Not Found", status=404)
 
-    welcome_path = os.path.join(_TEMPLATES_DIR, "welcome.html")
+    template_id = get_welcome_template_id()
+    filename = WELCOME_TEMPLATES[template_id]['file']
+    welcome_path = os.path.join(_TEMPLATES_DIR, filename)
     if os.path.exists(welcome_path):
         return web.FileResponse(welcome_path)
     return web.Response(text="<h1>Welcome template not found</h1>", status=404)
