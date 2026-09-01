@@ -131,14 +131,16 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         show_trial = get_trial_tariff_id() is not None and (not has_used_trial(user_id))
     show_referral = is_referral_enabled()
 
-    from database.requests import is_start_import_buttons_enabled
+    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled
     show_start_import_buttons = is_start_import_buttons_enabled()
+    show_balance_button = is_start_balance_button_enabled()
 
     visibility = {
         'btn_trial': show_trial,
         'btn_referral': show_referral,
         'btn_start_import_happ': show_start_import_buttons,
         'btn_start_import_incy': show_start_import_buttons,
+        'btn_balance_topup': show_balance_button,
     }
 
     # Substitution text
