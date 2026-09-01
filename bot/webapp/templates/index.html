@@ -242,6 +242,50 @@
                 transition-duration: 0.001ms !important;
             }
         }
+
+        /* ============================================================
+           АЛЬТЕРНАТИВНЫЕ ТЕМЫ ЛИЧНОГО КАБИНЕТА
+           Логика и разметка выше — общие и единые для всех тем. Здесь —
+           только переопределения через CSS custom properties и
+           селекторы body[data-theme=...] с более высокой специфичностью,
+           чем у утилитных классов Tailwind (.rounded-2xl и т.п.),
+           поэтому !important почти нигде не нужен. Активная тема
+           подставляется в data-theme атрибут body через JS (см. applyBrand).
+           ============================================================ */
+
+        /* Тема "sharp" — строгая, острые углы, электрик-синий акцент */
+        body[data-theme="sharp"] {
+            --gold: #3FA9F5; --gold-bright: #6EC6FF; --teal: #3FA9F5;
+            font-family: 'Space Grotesk', 'Manrope', -apple-system, sans-serif;
+            letter-spacing: 0.01em;
+        }
+        body[data-theme="sharp"] .btn-primary { color: #08131C; }
+        body[data-theme="sharp"] .corona-glow { opacity: 0.35; }
+        body[data-theme="sharp"] .rounded-2xl, body[data-theme="sharp"] .rounded-xl,
+        body[data-theme="sharp"] .rounded-3xl, body[data-theme="sharp"] .rounded-t-3xl,
+        body[data-theme="sharp"] .rounded-lg, body[data-theme="sharp"] .rounded {
+            border-radius: 4px;
+        }
+        body[data-theme="sharp"] .card { border-width: 1px; }
+
+        /* Тема "vivid" — яркая, максимально скруглённая, фиолетово-бирюзовый акцент */
+        body[data-theme="vivid"] {
+            --gold: #A855F7; --gold-bright: #C084FC; --teal: #2DD4BF;
+            font-family: 'Manrope', -apple-system, sans-serif;
+        }
+        body[data-theme="vivid"] .btn-primary {
+            background: linear-gradient(135deg, var(--gold), var(--teal));
+            box-shadow: 0 8px 26px -6px rgba(168,85,247,0.5);
+        }
+        body[data-theme="vivid"] .rounded-2xl, body[data-theme="vivid"] .rounded-xl {
+            border-radius: 22px;
+        }
+        body[data-theme="vivid"] .rounded-3xl, body[data-theme="vivid"] .rounded-t-3xl {
+            border-radius: 28px;
+        }
+        body[data-theme="vivid"] .card {
+            box-shadow: 0 4px 24px -10px rgba(168,85,247,0.25);
+        }
     </style>
 </head>
 <body class="p-4 min-h-screen pb-8">
@@ -352,6 +396,9 @@
                 }
                 if (!BOT_USERNAME && site.bot_username) {
                     BOT_USERNAME = site.bot_username;
+                }
+                if (site.cabinet_theme_id && site.cabinet_theme_id !== 'classic') {
+                    document.body.setAttribute('data-theme', site.cabinet_theme_id);
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
         })();

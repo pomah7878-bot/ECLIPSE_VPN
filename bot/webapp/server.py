@@ -776,7 +776,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     публичными страницами (например /welcome, /), чтобы не хардкодить
     название сервиса в HTML — оно берётся из настроек текущей
     инсталляции, как и везде в остальном боте."""
-    from database.requests import get_effective_brand_name
+    from database.requests import get_effective_brand_name, get_cabinet_theme_id
 
     bot_username = ""
     try:
@@ -789,6 +789,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     resp = web.json_response({
         "brand_name": get_effective_brand_name(),
         "bot_username": bot_username,
+        "cabinet_theme_id": get_cabinet_theme_id(),
     })
     resp.headers['Cache-Control'] = 'no-store'
     return resp

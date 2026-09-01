@@ -32,6 +32,9 @@ __all__ = [
     'WELCOME_TEMPLATES',
     'get_welcome_template_id',
     'set_welcome_template_id',
+    'CABINET_THEMES',
+    'get_cabinet_theme_id',
+    'set_cabinet_theme_id',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -405,6 +408,27 @@ def set_welcome_template_id(template_id: str) -> None:
     if template_id not in WELCOME_TEMPLATES:
         raise ValueError(f"Неизвестный шаблон витрины: {template_id}")
     set_setting('welcome_template_id', template_id)
+
+
+CABINET_THEMES = {
+    'classic': {'label': '🌙 Классический', 'description': 'Тёплое золото, текущий вид — ничего менять не нужно'},
+    'sharp':   {'label': '⚡ Строгий', 'description': 'Острые углы, электрик-синий акцент, геометричный шрифт'},
+    'vivid':   {'label': '🔮 Яркий', 'description': 'Максимально скруглённые карточки, фиолетово-бирюзовый градиент'},
+}
+
+
+def get_cabinet_theme_id() -> str:
+    """id выбранной темы личного кабинета (index.html). По умолчанию 'classic'
+    — визуально ничего не меняется, пока админ явно не выберет другую."""
+    value = get_setting('cabinet_theme_id', 'classic')
+    return value if value in CABINET_THEMES else 'classic'
+
+
+def set_cabinet_theme_id(theme_id: str) -> None:
+    """Задаёт тему личного кабинета."""
+    if theme_id not in CABINET_THEMES:
+        raise ValueError(f"Неизвестная тема кабинета: {theme_id}")
+    set_setting('cabinet_theme_id', theme_id)
 
 
 def is_channel_gate_enabled() -> bool:
