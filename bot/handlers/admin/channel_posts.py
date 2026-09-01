@@ -63,10 +63,25 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
     channel_text = channel_id if channel_id else '⚠️ не настроен'
     from database.requests import is_post_footer_enabled
     footer_enabled = is_post_footer_enabled()
+
+    footer_explanation = (
+        '📌 <b>Что такое «Реклама бота в подвале»?</b>\n'
+        'Если включено — в конец каждого поста, который ты создашь в этом разделе, '
+        'автоматически добавляются две строки со ссылками: на бота (чтобы читатель мог сразу '
+        'перейти в него из поста) и на сайт-магазин (если он настроен). Так не нужно вставлять '
+        'ссылки вручную в каждый пост.\n\n'
+    )
+    if footer_enabled:
+        footer_preview = await _build_post_footer(callback.message.bot)
+        footer_explanation += f'Сейчас включено, вот как выглядит подвал прямо сейчас:{footer_preview}\n\n'
+    else:
+        footer_explanation += 'Сейчас выключено — посты публикуются без этих строк.\n\n'
+
     await safe_edit_or_send(
         callback.message,
         '📰 <b>Публикация в канал</b>\n\n'
         f'Текущий канал: {channel_text}\n\n'
+        f'{footer_explanation}'
         'Создать новый пост с датой и временем публикации, или посмотреть очередь уже запланированных.',
         reply_markup=channel_posts_menu_kb(footer_enabled),
     )
