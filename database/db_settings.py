@@ -29,6 +29,9 @@ __all__ = [
     'set_start_balance_button_enabled',
     'is_welcome_page_enabled',
     'set_welcome_page_enabled',
+    'WELCOME_TEMPLATES',
+    'get_welcome_template_id',
+    'set_welcome_template_id',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -382,6 +385,26 @@ def is_welcome_page_enabled() -> bool:
 def set_welcome_page_enabled(enabled: bool) -> None:
     """Включает/выключает публичную страницу-витрину /welcome."""
     set_setting('welcome_page_enabled', '1' if enabled else '0')
+
+
+WELCOME_TEMPLATES = {
+    'minimal':  {'file': 'welcome_minimal.html',  'label': '🌙 Минимальный', 'description': 'Тёмный, лаконичный дизайн — акцент на бренде и тарифах'},
+    'bold':     {'file': 'welcome_bold.html',     'label': '🔥 Яркий продающий', 'description': 'Крупный CTA, список преимуществ, продающая подача'},
+    'detailed': {'file': 'welcome_detailed.html', 'label': '🛠 Подробный технический', 'description': 'Спецификации протокола, FAQ — для технической аудитории'},
+}
+
+
+def get_welcome_template_id() -> str:
+    """id выбранного шаблона страницы /welcome. По умолчанию 'minimal'."""
+    value = get_setting('welcome_template_id', 'minimal')
+    return value if value in WELCOME_TEMPLATES else 'minimal'
+
+
+def set_welcome_template_id(template_id: str) -> None:
+    """Задаёт выбранный шаблон страницы /welcome."""
+    if template_id not in WELCOME_TEMPLATES:
+        raise ValueError(f"Неизвестный шаблон витрины: {template_id}")
+    set_setting('welcome_template_id', template_id)
 
 
 def is_channel_gate_enabled() -> bool:

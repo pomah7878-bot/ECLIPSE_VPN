@@ -22,6 +22,7 @@ from database.requests import (
     is_start_import_buttons_enabled, set_start_import_buttons_enabled,
     is_start_balance_button_enabled, set_start_balance_button_enabled,
     is_welcome_page_enabled, set_welcome_page_enabled,
+    WELCOME_TEMPLATES, get_welcome_template_id, set_welcome_template_id,
 )
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
@@ -198,6 +199,48 @@ async def toggle_welcome_page(callback: CallbackQuery, state: FSMContext):
     else:
         await callback.answer("✅ Витрина включена" if not current else "⚪ Витрина выключена (адрес теперь отдаёт 404)")
     await show_integrations_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_welcome_template_menu")
+async def show_welcome_template_menu(callback: CallbackQuery, state: FSMContext):
+    """Показывает список доступных шаблонов страницы /welcome с описанием."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    current_id = get_welcome_template_id()
+    lines = ["🎨 <b>Шаблон витрины /welcome</b>\n", "Выберите дизайн — применится сразу, без обновления бота:\n"]
+    for tid, info in WELCOME_TEMPLATES.items():
+        mark = "✅ " if tid == current_id else ""
+        lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    for tid, info in WELCOME_TEMPLATES.items():
+        mark = "✅ " if tid == current_id else ""
+        builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_welcome_template:{tid}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations"))
+
+    await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_set_welcome_template:"))
+async def set_welcome_template_handler(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет выбранный шаблон и возвращает в это же подменю (обновлённое)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    template_id = callback.data.split(":", 1)[1]
+    try:
+        set_welcome_template_id(template_id)
+        await callback.answer(f"✅ Применён шаблон: {WELCOME_TEMPLATES[template_id]['label']}")
+    except ValueError:
+        await callback.answer("❌ Неизвестный шаблон", show_alert=True)
+        return
+
+    await show_welcome_template_menu(callback, state)
 
 
 # ============================================================

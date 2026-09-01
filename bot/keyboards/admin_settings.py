@@ -203,7 +203,7 @@ def referral_back_kb() -> InlineKeyboardMarkup:
 
 def integrations_menu_kb() -> InlineKeyboardMarkup:
     """Меню раздела «Интеграции» — домен сайта, AI, вход через соцсети."""
-    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled
+    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
@@ -219,6 +219,10 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text='🛬 Витрина для новых (/welcome): ✅' if is_welcome_page_enabled() else '🛬 Витрина для новых (/welcome): ❌',
         callback_data='admin_toggle_welcome_page',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🎨 Шаблон витрины: {WELCOME_TEMPLATES[get_welcome_template_id()]['label']}",
+        callback_data='admin_welcome_template_menu',
     ))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
