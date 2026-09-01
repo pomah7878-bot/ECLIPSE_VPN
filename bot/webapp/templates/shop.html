@@ -4,7 +4,7 @@
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💎 ECLIPSE Unlimited — премиальный VPN</title>
+    <title id="pageTitle">💎 ECLIPSE Unlimited — премиальный VPN</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
@@ -132,8 +132,8 @@
                 class="bg-panel border border-[color:var(--hairline)] text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
                 style="position:absolute;top:12px;right:60px;">🇷🇺</button>
             <div class="flex flex-col items-center text-center">
-                <img src="/static/logo.png" alt="ECLIPSE" width="52" height="52" class="mb-3 rounded-full" style="object-fit:cover;">
-                <h1 class="font-display text-2xl font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
+                <img src="/static/logo.png" alt="logo" width="52" height="52" class="mb-3 rounded-full" style="object-fit:cover;">
+                <h1 id="brandHeader" class="font-display text-2xl font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
                 <p class="text-sm text-mist mt-2 max-w-xs">Быстрый, надёжный VPN без ограничений. Оплатите прямо здесь — ключ будет готов мгновенно, Telegram не нужен.</p>
             </div>
 
@@ -374,7 +374,26 @@
         window._shopLanguage = getCookie('shop_lang') ||
             ((navigator.language || '').toLowerCase().startsWith('en') ? 'en' : 'ru');
 
-        const BOT_USERNAME = 'vless_keysvpn_bot';
+        let BOT_USERNAME = '';
+
+        // Название бренда и юзернейм бота — НЕ хардкодятся: подтягиваются с
+        // сервера этой конкретной инсталляции. Раньше здесь было жёстко
+        // зашито "ECLIPSE Unlimited"/"vless_keysvpn_bot" — у white-label
+        // клиента ссылка на получение купленной подписки (claimLink) вела
+        // бы на ЧУЖОГО бота, и покупку было бы невозможно забрать.
+        (async function applyBrand() {
+            try {
+                const res = await fetch('/api/public/site-info');
+                const site = await res.json();
+                if (site.brand_name) {
+                    document.getElementById('pageTitle').textContent = '💎 ' + site.brand_name + ' — премиальный VPN';
+                    document.getElementById('brandHeader').textContent = site.brand_name;
+                }
+                if (site.bot_username) {
+                    BOT_USERNAME = site.bot_username;
+                }
+            } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
+        })();
 
         function escapeHtml(s) {
             return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
