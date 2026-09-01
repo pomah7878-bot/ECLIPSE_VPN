@@ -251,40 +251,96 @@
            чем у утилитных классов Tailwind (.rounded-2xl и т.п.),
            поэтому !important почти нигде не нужен. Активная тема
            подставляется в data-theme атрибут body через JS (см. applyBrand).
+
+           Темы — не просто смена акцентного цвета, а два узнаваемых
+           топовых стиля 2026 года: Neo-Brutalism (жёсткие контрастные
+           рамки, офсетные тени, никакого блюра/градиентов) и Liquid
+           Glass / Glassmorphism (матовое стекло, backdrop-filter blur,
+           полупрозрачные панели поверх цветного фона — стиль iOS/macOS
+           последних версий).
            ============================================================ */
 
-        /* Тема "sharp" — строгая, острые углы, электрик-синий акцент */
+        /* ---------- Тема "sharp" → NEO-BRUTALISM ---------- */
         body[data-theme="sharp"] {
-            --gold: #3FA9F5; --gold-bright: #6EC6FF; --teal: #3FA9F5;
+            --gold: #CFFF04; --gold-bright: #E4FF5C; --teal: #CFFF04;
+            --void: #0A0A0A; --panel: #141414; --panel-2: #1C1C1C;
+            --hairline: #2E2E2E;
             font-family: 'Space Grotesk', 'Manrope', -apple-system, sans-serif;
-            letter-spacing: 0.01em;
+            font-weight: 600;
         }
-        body[data-theme="sharp"] .btn-primary { color: #08131C; }
-        body[data-theme="sharp"] .corona-glow { opacity: 0.35; }
+        body[data-theme="sharp"] .btn-primary {
+            color: #0A0A0A;
+            box-shadow: 4px 4px 0 #000;
+            border: 2px solid #000;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        body[data-theme="sharp"] .btn-primary:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0 0 0 #000;
+        }
+        body[data-theme="sharp"] .btn-secondary {
+            border: 2px solid var(--hairline);
+            box-shadow: 3px 3px 0 rgba(255,255,255,0.06);
+        }
+        body[data-theme="sharp"] .corona-glow { display: none; }
+        body[data-theme="sharp"] .card {
+            border: 2px solid var(--hairline);
+            box-shadow: 5px 5px 0 rgba(207,255,4,0.08);
+        }
         body[data-theme="sharp"] .rounded-2xl, body[data-theme="sharp"] .rounded-xl,
         body[data-theme="sharp"] .rounded-3xl, body[data-theme="sharp"] .rounded-t-3xl,
-        body[data-theme="sharp"] .rounded-lg, body[data-theme="sharp"] .rounded {
-            border-radius: 4px;
+        body[data-theme="sharp"] .rounded-lg, body[data-theme="sharp"] .rounded,
+        body[data-theme="sharp"] .rounded-full {
+            border-radius: 2px;
         }
-        body[data-theme="sharp"] .card { border-width: 1px; }
+        body[data-theme="sharp"] #brandHeader {
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        body[data-theme="sharp"] .traffic-fill { border-radius: 0; }
+        body[data-theme="sharp"] .traffic-bar-bg { border-radius: 0; border: 1px solid var(--hairline); }
 
-        /* Тема "vivid" — яркая, максимально скруглённая, фиолетово-бирюзовый акцент */
+        /* ---------- Тема "vivid" → LIQUID GLASS / GLASSMORPHISM ---------- */
         body[data-theme="vivid"] {
-            --gold: #A855F7; --gold-bright: #C084FC; --teal: #2DD4BF;
+            --gold: #FFFFFF; --gold-bright: #FFFFFF; --teal: #7DF9E1;
+            background: radial-gradient(circle at 15% 0%, #6C5CE7 0%, transparent 45%),
+                        radial-gradient(circle at 85% 15%, #00D9C0 0%, transparent 40%),
+                        radial-gradient(circle at 50% 90%, #B026FF 0%, transparent 50%),
+                        #0A0A14;
+            background-attachment: fixed;
             font-family: 'Manrope', -apple-system, sans-serif;
         }
+        body[data-theme="vivid"] .card {
+            background: rgba(255,255,255,0.07);
+            backdrop-filter: blur(22px) saturate(160%);
+            -webkit-backdrop-filter: blur(22px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.14);
+            box-shadow: 0 8px 32px -8px rgba(0,0,0,0.35);
+        }
         body[data-theme="vivid"] .btn-primary {
-            background: linear-gradient(135deg, var(--gold), var(--teal));
-            box-shadow: 0 8px 26px -6px rgba(168,85,247,0.5);
+            background: rgba(255,255,255,0.16);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.28);
+            box-shadow: 0 6px 20px -6px rgba(108,92,231,0.5);
+        }
+        body[data-theme="vivid"] .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,255,255,0.12);
         }
         body[data-theme="vivid"] .rounded-2xl, body[data-theme="vivid"] .rounded-xl {
-            border-radius: 22px;
+            border-radius: 20px;
         }
         body[data-theme="vivid"] .rounded-3xl, body[data-theme="vivid"] .rounded-t-3xl {
-            border-radius: 28px;
+            border-radius: 26px;
         }
-        body[data-theme="vivid"] .card {
-            box-shadow: 0 4px 24px -10px rgba(168,85,247,0.25);
+        body[data-theme="vivid"] .corona-glow { opacity: 0.5; }
+        body[data-theme="vivid"] #toast, body[data-theme="vivid"] .modal-box, body[data-theme="vivid"] .sheet-box {
+            backdrop-filter: blur(24px) saturate(160%);
+            -webkit-backdrop-filter: blur(24px) saturate(160%);
         }
     </style>
 </head>
