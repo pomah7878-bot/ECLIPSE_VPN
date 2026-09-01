@@ -203,10 +203,15 @@ def referral_back_kb() -> InlineKeyboardMarkup:
 
 def integrations_menu_kb() -> InlineKeyboardMarkup:
     """Меню раздела «Интеграции» — домен сайта, AI, вход через соцсети."""
+    from database.requests import is_start_import_buttons_enabled
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
     builder.row(InlineKeyboardButton(text='📱 Своё приложение', callback_data='admin_edit_own_app'))
+    builder.row(InlineKeyboardButton(
+        text='📥 Кнопки импорта на главной: ✅' if is_start_import_buttons_enabled() else '📥 Кнопки импорта на главной: ❌',
+        callback_data='admin_toggle_start_import_buttons',
+    ))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))

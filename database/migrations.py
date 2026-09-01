@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 94
+LATEST_VERSION = 95
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1782,6 +1782,66 @@ def migration_94(conn: sqlite3.Connection) -> None:
         )
 
 
+def migration_95(conn: sqlite3.Connection) -> None:
+    """Migration v95: добавляет кнопки быстрого импорта подписки
+    ("📥 Импорт HAPP"/"📥 Импорт INCY") в дефолтный набор кнопок ГЛАВНОЙ
+    страницы (buttons_default, page_key='main'), сразу после кнопки
+    AI-помощника — по образцу главного бота ECLIPSE Unlimited, где эти
+    кнопки уже были добавлены вручную через buttons_custom.
+
+    В отличие от кнопок на странице key_details (migration_94, которые
+    привязаны к конкретному ключу через system-резолверы), эти — простые
+    статичные действия (cmd_import_happ/cmd_import_incy из
+    action_registry.py), поэтому их можно включать/выключать одним
+    тогглом: is_start_import_buttons_enabled() (по умолчанию включено —
+    у новых пользователей бота кнопки видны сразу).
+
+    Трогает только buttons_default. Если админ уже кастомизировал главную
+    страницу через редактор (buttons_custom не NULL), кнопки нужно будет
+    добавить туда вручную.
+    """
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'main'"
+    ).fetchone()
+    if not row:
+        logger.warning("Migration v95: страница 'main' не найдена, пропускаю")
+        return
+
+    try:
+        buttons = json.loads(row["buttons_default"] or '[]')
+    except (TypeError, ValueError):
+        buttons = []
+
+    import_button_ids = {"btn_start_import_happ", "btn_start_import_incy"}
+    if any(b.get('id') in import_button_ids for b in buttons):
+        logger.info("Migration v95: кнопки импорта на главной уже есть в buttons_default, пропускаю")
+    else:
+        # AI-помощник (добавлен migration_93) всегда занимает row=0. Вставляем
+        # новую строку сразу после него, сдвигая всё остальное на 1 вниз.
+        ai_button_row = next((b.get('row', 0) for b in buttons if b.get('id') == 'btn_ai_support'), -1)
+        insert_row = ai_button_row + 1
+        for b in buttons:
+            if b.get('id') != 'btn_ai_support' and b.get('row', 0) >= insert_row:
+                b['row'] = b.get('row', 0) + 1
+
+        import_buttons = [
+            {"id": "btn_start_import_happ", "label": "📥 Импорт HAPP", "color": "secondary", "row": insert_row, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_import_happ"},
+            {"id": "btn_start_import_incy", "label": "📥 Импорт INCY", "color": "secondary", "row": insert_row, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_import_incy"},
+        ]
+        buttons.extend(import_buttons)
+        conn.execute(
+            "UPDATE pages SET buttons_default = ? WHERE page_key = 'main'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+        logger.info("Migration v95 applied: кнопки импорта HAPP/INCY добавлены в buttons_default главной страницы")
+
+    if row["buttons_custom"]:
+        logger.warning(
+            "Migration v95: у главной страницы задан buttons_custom (кастомизация админом) — "
+            "кнопки импорта нужно добавить туда вручную через редактор страниц (уже могут быть добавлены)."
+        )
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1804,6 +1864,7 @@ MIGRATIONS = {
     92: migration_92,
     93: migration_93,
     94: migration_94,
+    95: migration_95,
 }
 
 
