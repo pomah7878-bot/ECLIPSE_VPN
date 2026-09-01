@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 96
+LATEST_VERSION = 97
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1906,6 +1906,83 @@ def migration_96(conn: sqlite3.Connection) -> None:
         )
 
 
+def migration_97(conn: sqlite3.Connection) -> None:
+    """Migration v97: переставляет порядок кнопок дефолтной главной
+    страницы (buttons_default, page_key='main') под точное расположение
+    основного бота ECLIPSE Unlimited:
+
+        row0: 🔑 Мои ключи      | 💳 Купить ключ
+        row1: 🎁 Пробная подписка | 💰 Пополнить баланс
+        row2: 🔗 Реферальная ссылка | ❓ Справка
+        row3: 🤖 AI-помощник
+        row4: 📥 Импорт HAPP    | 📥 Импорт INCY
+        row5: 💬 Написать в поддержку
+
+    Кнопки, добавленные миграциями v93-v96 (AI-помощник, импорт, баланс),
+    изначально легли в другом порядке (не совпадающем с боевым ботом,
+    где эти же кнопки были один раз расставлены вручную через
+    buttons_custom). Эта миграция только переставляет row/col у уже
+    существующих кнопок по их id — ничего не добавляет и не удаляет,
+    action_value/label/is_hidden не трогает.
+
+    "💬 Написать в поддержку" на боевом боте отсутствует (там вместо неё
+    используется AI-помощник + эскалация к живому админу), но здесь
+    оставлена — как самостоятельная опция для пользователей, которые
+    хотят сразу писать человеку, а не через AI. Просто размещена
+    последней строкой, не мешая порядку остальных кнопок.
+
+    Трогает только buttons_default. Если админ уже кастомизировал главную
+    страницу через редактор (buttons_custom не NULL), порядок нужно будет
+    поправить там отдельно.
+    """
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'main'"
+    ).fetchone()
+    if not row:
+        logger.warning("Migration v97: страница 'main' не найдена, пропускаю")
+        return
+
+    try:
+        buttons = json.loads(row["buttons_default"] or '[]')
+    except (TypeError, ValueError):
+        buttons = []
+
+    target_positions = {
+        "btn_my_keys": (0, 0),
+        "btn_buy_key": (0, 1),
+        "btn_trial": (1, 0),
+        "btn_balance_topup": (1, 1),
+        "btn_referral": (2, 0),
+        "btn_help": (2, 1),
+        "btn_ai_support": (3, 0),
+        "btn_start_import_happ": (4, 0),
+        "btn_start_import_incy": (4, 1),
+        "btn_support": (5, 0),
+    }
+
+    changed = False
+    for b in buttons:
+        target = target_positions.get(b.get('id'))
+        if target is not None and (b.get('row'), b.get('col')) != target:
+            b['row'], b['col'] = target
+            changed = True
+
+    if changed:
+        conn.execute(
+            "UPDATE pages SET buttons_default = ? WHERE page_key = 'main'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+        logger.info("Migration v97 applied: порядок кнопок главной страницы приведён к боевому расположению")
+    else:
+        logger.info("Migration v97: порядок кнопок уже совпадает с целевым, пропускаю")
+
+    if row["buttons_custom"]:
+        logger.warning(
+            "Migration v97: у главной страницы задан buttons_custom (кастомизация админом) — "
+            "порядок нужно поправить там отдельно (buttons_default эта миграция не влияет на активную кастомизацию)."
+        )
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -1930,6 +2007,7 @@ MIGRATIONS = {
     94: migration_94,
     95: migration_95,
     96: migration_96,
+    97: migration_97,
 }
 
 
