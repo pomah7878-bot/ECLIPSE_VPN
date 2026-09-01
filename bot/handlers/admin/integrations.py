@@ -131,8 +131,14 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
         return
 
     value = get_message_text_for_storage(message, "plain").strip()
-    if not (value.startswith("https://") or value.startswith("http://")):
-        await safe_edit_or_send(message, "❌ Адрес должен начинаться с https:// или http://. Попробуйте ещё раз.")
+    if not value.startswith("https://"):
+        await safe_edit_or_send(
+            message,
+            "❌ Адрес обязательно должен начинаться с <code>https://</code> (не http://).\n\n"
+            "Telegram категорически не позволяет открывать WebApp по обычному HTTP — "
+            "с таким адресом кнопки «Проверить домен» и любые другие WebApp-кнопки в боте "
+            "перестанут работать. Убедитесь, что SSL-сертификат уже настроен, и попробуйте ещё раз.",
+        )
         return
 
     try:
