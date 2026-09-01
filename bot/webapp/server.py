@@ -2039,7 +2039,18 @@ async def handle_app_page(request: web.Request) -> web.Response:
     """GET /app — страница скачивания Android-приложения.
 
     Сама подтягивает последний релиз из GitHub и предлагает подходящий APK,
-    чтобы клиенту не нужно было разбираться в архитектурах."""
+    чтобы клиенту не нужно было разбираться в архитектурах.
+
+    Эта механика (автопроверка релизов конкретно из GitHub-репозитория
+    Android-приложения) целиком специфична для инсталляций, у которых
+    есть СВОЁ Android-приложение (own_app_url настроен) — у white-label
+    клиентов без своего приложения (own_app_url пуст, дефолт для новых
+    установок) страница отдаёт 404, а не показывает чужой репозиторий
+    чужого приложения."""
+    from database.requests import get_effective_own_app_url
+    if not get_effective_own_app_url():
+        return web.Response(text="404: Not Found", status=404)
+
     app_path = os.path.join(_TEMPLATES_DIR, "app.html")
     if os.path.exists(app_path):
         return web.FileResponse(app_path)

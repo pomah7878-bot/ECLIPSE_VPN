@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ECLIPSE Unlimited — приложение для Android</title>
+<title id="pageTitle">ECLIPSE Unlimited — приложение для Android</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <style>
 * { box-sizing: border-box; }
@@ -36,8 +36,8 @@ h1 .gold { color: #d69e4a; }
 </head>
 <body>
 <div class="card">
-    <img src="/static/logo.png" alt="ECLIPSE" class="logo">
-    <h1>ECLIPSE <span class="gold">Unlimited</span></h1>
+    <img src="/static/logo.png" alt="logo" class="logo">
+    <h1 id="brandHeader">ECLIPSE <span class="gold">Unlimited</span></h1>
     <p class="tagline">VPN-приложение для Android</p>
 
     <a class="btn btn-primary" id="mainBtn" href="#">Загрузка…</a>
@@ -61,7 +61,18 @@ h1 .gold { color: #d69e4a; }
 
 <script>
 (function () {
-    var REPO = 'pomah7878-bot/ECLIPSE_VPN_Android';
+    var REPO = 'pomah7878-bot/ECLIPSE_VPN_Android'; // см. докстринг handle_app_page — эта страница
+    // доступна только когда own_app_url настроен именно на неё; для чужого
+    // Android-приложения понадобится свой REPO, но общий случай "нет
+    // своего приложения" уже закрыт 404 на уровне сервера.
+
+    fetch('/api/public/site-info').then(r => r.json()).then(site => {
+        if (site.brand_name) {
+            document.getElementById('pageTitle').textContent = site.brand_name + ' — приложение для Android';
+            document.getElementById('brandHeader').textContent = site.brand_name;
+        }
+    }).catch(function () { /* оставляем дефолтный текст, не критично */ });
+
     // Порядок важен: x86_64 проверяем ДО x86, иначе 'x86' совпадёт первым
     var LABELS = [
         ['arm64-v8a',   'Современные телефоны (64-бит)'],
