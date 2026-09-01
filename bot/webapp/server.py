@@ -759,7 +759,14 @@ async def handle_welcome_page(request: web.Request) -> web.Response:
     filename = WELCOME_TEMPLATES[template_id]['file']
     welcome_path = os.path.join(_TEMPLATES_DIR, filename)
     if os.path.exists(welcome_path):
-        return web.FileResponse(welcome_path)
+        resp = web.FileResponse(welcome_path)
+        # Без этого браузер кэширует /welcome по URL и продолжает
+        # показывать старый шаблон даже после того, как админ выбрал
+        # другой в настройках — адрес-то не меняется, а разные шаблоны
+        # это разные файлы на сервере.
+        resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+        resp.headers['Pragma'] = 'no-cache'
+        return resp
     return web.Response(text="<h1>Welcome template not found</h1>", status=404)
 
 
@@ -779,10 +786,12 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     except Exception:
         pass
 
-    return web.json_response({
+    resp = web.json_response({
         "brand_name": get_effective_brand_name(),
         "bot_username": bot_username,
     })
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 async def handle_landing_tariffs(request: web.Request) -> web.Response:
@@ -804,7 +813,9 @@ async def handle_landing_tariffs(request: web.Request) -> web.Response:
         }
         for t in tariffs
     ]
-    return web.json_response({"tariffs": result})
+    resp = web.json_response({"tariffs": result})
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
 
 
 async def handle_public_tariffs(request: web.Request) -> web.Response:
