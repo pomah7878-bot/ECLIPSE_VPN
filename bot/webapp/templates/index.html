@@ -342,6 +342,87 @@
             backdrop-filter: blur(24px) saturate(160%);
             -webkit-backdrop-filter: blur(24px) saturate(160%);
         }
+
+        /* ---------- Тема "soft" → NEUMORPHISM / SOFT UI ---------- */
+        body[data-theme="soft"] {
+            --void: #1E2028; --panel: #1E2028; --panel-2: #23252F;
+            --gold: #7C93FF; --gold-bright: #9AACFF; --teal: #7C93FF;
+            --hairline: transparent;
+            font-family: 'Manrope', -apple-system, sans-serif;
+        }
+        body[data-theme="soft"] .card {
+            background: var(--panel);
+            border: none;
+            box-shadow: 7px 7px 14px rgba(0,0,0,0.4), -6px -6px 14px rgba(255,255,255,0.03);
+        }
+        body[data-theme="soft"] .btn-primary {
+            background: var(--panel);
+            color: var(--gold-bright);
+            box-shadow: 6px 6px 12px rgba(0,0,0,0.4), -5px -5px 12px rgba(255,255,255,0.03);
+            border: none;
+        }
+        body[data-theme="soft"] .btn-primary:active {
+            box-shadow: inset 4px 4px 8px rgba(0,0,0,0.4), inset -4px -4px 8px rgba(255,255,255,0.03);
+        }
+        body[data-theme="soft"] .btn-secondary {
+            background: var(--panel);
+            border: none;
+            box-shadow: 5px 5px 10px rgba(0,0,0,0.35), -4px -4px 10px rgba(255,255,255,0.03);
+        }
+        body[data-theme="soft"] .btn-secondary:active {
+            box-shadow: inset 3px 3px 7px rgba(0,0,0,0.35), inset -3px -3px 7px rgba(255,255,255,0.03);
+        }
+        body[data-theme="soft"] .rounded-2xl, body[data-theme="soft"] .rounded-xl {
+            border-radius: 20px;
+        }
+        body[data-theme="soft"] .rounded-3xl, body[data-theme="soft"] .rounded-t-3xl {
+            border-radius: 26px;
+        }
+        body[data-theme="soft"] .corona-glow { display: none; }
+        body[data-theme="soft"] .traffic-bar-bg {
+            box-shadow: inset 2px 2px 4px rgba(0,0,0,0.4), inset -2px -2px 4px rgba(255,255,255,0.03);
+            background: var(--panel);
+        }
+
+        /* ---------- Тема "mono" → МИНИМАЛИЗМ С КРУПНОЙ ТИПОГРАФИКОЙ ---------- */
+        body[data-theme="mono"] {
+            --void: #000000; --panel: #000000; --panel-2: #0D0D0D;
+            --gold: #FFFFFF; --gold-bright: #FFFFFF; --teal: #FFFFFF;
+            --hairline: rgba(255,255,255,0.14);
+            --mist: #757575; --mist-dim: #4A4A4A;
+            font-family: 'Space Grotesk', 'Manrope', -apple-system, sans-serif;
+        }
+        body[data-theme="mono"] .card {
+            background: transparent;
+            border: none;
+            border-top: 1px solid var(--hairline);
+            box-shadow: none;
+            border-radius: 0 !important;
+        }
+        body[data-theme="mono"] .rounded-2xl, body[data-theme="mono"] .rounded-xl,
+        body[data-theme="mono"] .rounded-3xl, body[data-theme="mono"] .rounded-t-3xl,
+        body[data-theme="mono"] .rounded-lg, body[data-theme="mono"] .rounded {
+            border-radius: 0;
+        }
+        body[data-theme="mono"] .btn-primary {
+            background: #fff;
+            color: #000;
+            box-shadow: none;
+            border-radius: 0;
+        }
+        body[data-theme="mono"] .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--hairline);
+            box-shadow: none;
+            border-radius: 0;
+        }
+        body[data-theme="mono"] .corona-glow { display: none; }
+        body[data-theme="mono"] #brandHeader {
+            font-size: 1.5em;
+            letter-spacing: -0.02em;
+        }
+        body[data-theme="mono"] .traffic-fill { background: #fff !important; border-radius: 0; }
+        body[data-theme="mono"] .traffic-bar-bg { border-radius: 0; background: rgba(255,255,255,0.08); }
     </style>
 </head>
 <body class="p-4 min-h-screen pb-8">
