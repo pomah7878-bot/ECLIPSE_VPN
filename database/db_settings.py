@@ -23,6 +23,8 @@ __all__ = [
     'set_own_app_name',
     'get_effective_own_app_url',
     'set_own_app_url',
+    'is_start_import_buttons_enabled',
+    'set_start_import_buttons_enabled',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -339,6 +341,18 @@ def is_post_footer_enabled() -> bool:
 def set_post_footer_enabled(enabled: bool) -> None:
     """Включает/выключает автоматический подвал для постов канала."""
     set_setting('post_footer_enabled', '1' if enabled else '0')
+
+
+def is_start_import_buttons_enabled() -> bool:
+    """Показывать ли на главной странице кнопки быстрого импорта подписки
+    в приложение ("Импорт HAPP"/"Импорт INCY"). По умолчанию включено —
+    у новых пользователей бота кнопки видны сразу, без действий админа."""
+    return get_setting('start_import_buttons_enabled', '1') == '1'
+
+
+def set_start_import_buttons_enabled(enabled: bool) -> None:
+    """Включает/выключает кнопки быстрого импорта на главной странице."""
+    set_setting('start_import_buttons_enabled', '1' if enabled else '0')
 
 
 def is_channel_gate_enabled() -> bool:

@@ -19,6 +19,7 @@ from database.requests import (
     get_effective_brand_name, set_brand_name,
     get_effective_own_app_name, set_own_app_name,
     get_effective_own_app_url, set_own_app_url,
+    is_start_import_buttons_enabled, set_start_import_buttons_enabled,
 )
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
@@ -55,12 +56,14 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
     groq_key = get_effective_groq_api_key()
     gemini_key = get_effective_gemini_api_key()
     tavily_key = get_effective_tavily_api_key()
+    import_buttons_enabled = is_start_import_buttons_enabled()
 
     lines = [
         "🌐 <b>Интеграции</b>\n",
         f"🌐 Домен сайта: <code>{webapp_url or 'не задан'}</code>",
         f"🏷 Название бренда (для AI): <code>{brand_name}</code>",
         f"📱 Своё приложение: <code>{own_app_name or 'не рекомендуется (только Happ/INCY)'}</code>",
+        f"📥 Кнопки импорта на главной: {'🟢 включены' if import_buttons_enabled else '⚪ выключены'}",
         f"🤖 Ключ AI (Groq): <code>{_mask_secret(groq_key)}</code>",
         f"✨ Ключ AI (Gemini): <code>{_mask_secret(gemini_key)}</code>",
         f"🔍 Ключ веб-поиска (Tavily): <code>{_mask_secret(tavily_key)}</code>",
@@ -121,6 +124,19 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
     set_webapp_url(value)
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(f"✅ Домен сохранён: <code>{value}</code>", parse_mode="HTML", reply_markup=integrations_menu_kb())
+
+
+@router.callback_query(F.data == "admin_toggle_start_import_buttons")
+async def toggle_start_import_buttons(callback: CallbackQuery, state: FSMContext):
+    """Включает/выключает кнопки быстрого импорта (Happ/INCY) на главной странице."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    current = is_start_import_buttons_enabled()
+    set_start_import_buttons_enabled(not current)
+    await callback.answer("✅ Кнопки включены" if not current else "⚪ Кнопки выключены")
+    await show_integrations_menu(callback, state)
 
 
 # ============================================================
