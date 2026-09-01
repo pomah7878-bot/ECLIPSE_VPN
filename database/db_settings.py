@@ -27,6 +27,8 @@ __all__ = [
     'set_start_import_buttons_enabled',
     'is_start_balance_button_enabled',
     'set_start_balance_button_enabled',
+    'is_welcome_page_enabled',
+    'set_welcome_page_enabled',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -366,6 +368,20 @@ def is_start_balance_button_enabled() -> bool:
 def set_start_balance_button_enabled(enabled: bool) -> None:
     """Включает/выключает кнопку пополнения баланса на главной странице."""
     set_setting('start_balance_button_enabled', '1' if enabled else '0')
+
+
+def is_welcome_page_enabled() -> bool:
+    """Показывать ли публичную страницу-витрину /welcome для новых
+    (ещё не подключившихся) посетителей сайта — описание сервиса и
+    актуальные тарифы, без входа в бота. По умолчанию ВЫКЛЮЧЕНО — это
+    новая опциональная фича, страница отдаёт 404, пока админ явно не
+    включит её (после того как проверит контент/домен)."""
+    return get_setting('welcome_page_enabled', '0') == '1'
+
+
+def set_welcome_page_enabled(enabled: bool) -> None:
+    """Включает/выключает публичную страницу-витрину /welcome."""
+    set_setting('welcome_page_enabled', '1' if enabled else '0')
 
 
 def is_channel_gate_enabled() -> bool:

@@ -743,6 +743,68 @@ async def handle_shop_page(request: web.Request) -> web.Response:
     return web.Response(text="<h1>Shop template not found</h1>", status=404)
 
 
+async def handle_welcome_page(request: web.Request) -> web.Response:
+    """GET /welcome — публичная страница-витрина для новых (ещё не
+    подключившихся) посетителей: описание сервиса + актуальные тарифы,
+    без входа в бота и без Telegram initData. Полностью анонимная,
+    в отличие от /shop.
+
+    Управляется тогглом is_welcome_page_enabled() — выключена по
+    умолчанию, пока админ явно не включит её."""
+    from database.requests import is_welcome_page_enabled
+    if not is_welcome_page_enabled():
+        return web.Response(text="404: Not Found", status=404)
+
+    welcome_path = os.path.join(_TEMPLATES_DIR, "welcome.html")
+    if os.path.exists(welcome_path):
+        return web.FileResponse(welcome_path)
+    return web.Response(text="<h1>Welcome template not found</h1>", status=404)
+
+
+async def handle_public_site_info(request: web.Request) -> web.Response:
+    """GET /api/public/site-info — базовая информация о сервисе, полностью
+    без авторизации: название бренда и юзернейм бота. Используется
+    публичными страницами (например /welcome, /), чтобы не хардкодить
+    название сервиса в HTML — оно берётся из настроек текущей
+    инсталляции, как и везде в остальном боте."""
+    from database.requests import get_effective_brand_name
+
+    bot_username = ""
+    try:
+        from main import bot as _bot
+        if hasattr(_bot, 'my_username') and _bot.my_username:
+            bot_username = _bot.my_username
+    except Exception:
+        pass
+
+    return web.json_response({
+        "brand_name": get_effective_brand_name(),
+        "bot_username": bot_username,
+    })
+
+
+async def handle_landing_tariffs(request: web.Request) -> web.Response:
+    """GET /api/public/landing-tariffs — упрощённый список активных тарифов
+    для публичной страницы-витрины, БЕЗ авторизации (в отличие от
+    /api/public/tariffs, который несмотря на название требует вход).
+    Отдаёт только то, что уместно показывать анонимному посетителю:
+    длительность, объём трафика, цену — без тарифов, скрытых из продажи
+    (is_active=0), без служебных полей."""
+    from database.db_tariffs import get_all_tariffs
+
+    tariffs = get_all_tariffs(include_hidden=False)
+    result = [
+        {
+            "duration_days": t.get("duration_days"),
+            "traffic_limit_gb": t.get("traffic_limit_gb", 0),
+            "price_rub": t.get("price_rub"),
+            "price_stars": t.get("price_stars"),
+        }
+        for t in tariffs
+    ]
+    return web.json_response({"tariffs": result})
+
+
 async def handle_public_tariffs(request: web.Request) -> web.Response:
     """GET /api/public/tariffs — список тарифов. Требует вход (по коду или
     OAuth) — цены и тарифы не должны быть видны анонимно всем подряд."""
@@ -2032,6 +2094,9 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/pay/create", handle_pay_create)
     app.router.add_post("/api/pay/check", handle_pay_check)
     app.router.add_get("/shop", handle_shop_page)
+    app.router.add_get("/welcome", handle_welcome_page)
+    app.router.add_get("/api/public/site-info", handle_public_site_info)
+    app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
     app.router.add_post("/api/public/pay/create", handle_public_pay_create)
     app.router.add_post("/api/public/trial/create", handle_public_trial_create)

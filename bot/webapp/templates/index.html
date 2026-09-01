@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>💎ECLIPSE Unlimited💎</title>
+    <title id="pageTitle">💎ECLIPSE Unlimited💎</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
@@ -248,9 +248,9 @@
 
     <header class="flex items-center justify-between mb-5 fade-in">
         <div class="flex items-center gap-3">
-            <img src="/static/logo.png" alt="ECLIPSE" width="38" height="38" class="flex-shrink-0 rounded-full" style="object-fit:cover;">
+            <img src="/static/logo.png" alt="logo" width="38" height="38" class="flex-shrink-0 rounded-full" style="object-fit:cover;">
             <div>
-                <h1 class="font-display text-base font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
+                <h1 id="brandHeader" class="font-display text-base font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
                 <p id="user-greeting" class="text-xs text-mist mt-0.5">Привет, Пользователь!</p>
             </div>
         </div>
@@ -335,7 +335,26 @@
         const container = document.getElementById('app');
         let _cachedKeys = [];
         let _cachedPings = {};
-        let BOT_USERNAME = (tg?.initDataUnsafe?.bot?.username) || 'vless_keysvpn_bot';
+        let BOT_USERNAME = (tg?.initDataUnsafe?.bot?.username) || '';
+
+        // Название бренда и юзернейм бота — НЕ хардкодятся: подтягиваются с
+        // сервера этой конкретной инсталляции. Раньше здесь был жёстко
+        // зашит "ECLIPSE Unlimited"/"vless_keysvpn_bot" — у любого другого
+        // бота (например white-label клиента) в этом кабинете показывался
+        // бы чужой бренд вместо его собственного.
+        (async function applyBrand() {
+            try {
+                const res = await fetch('/api/public/site-info');
+                const site = await res.json();
+                if (site.brand_name) {
+                    document.getElementById('pageTitle').textContent = '💎' + site.brand_name + '💎';
+                    document.getElementById('brandHeader').textContent = site.brand_name;
+                }
+                if (!BOT_USERNAME && site.bot_username) {
+                    BOT_USERNAME = site.bot_username;
+                }
+            } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
+        })();
 
         async function fetchAPI(endpoint) {
             // ВАЖНО: endpoint иногда уже содержит свой query-параметр
@@ -933,7 +952,7 @@
                         <circle cx="39" cy="33" r="25" fill="var(--panel)"/>
                     </svg>
                     <h2 class="font-display text-lg font-bold mb-2">Подписка не активна</h2>
-                    <p class="text-sm text-mist mb-6 px-4">Оформите подписку, чтобы получить доступ к серверам ECLIPSE.</p>
+                    <p class="text-sm text-mist mb-6 px-4">Оформите подписку, чтобы получить доступ к серверам VPN.</p>
                     <button onclick="goBuy()" class="px-8 py-3.5 btn-primary rounded-xl font-bold text-base transition w-full max-w-xs mx-auto block">Купить подписку</button>
                     <div id="trial-btn-empty" class="mt-3" style="display:none;">
                         <button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full max-w-xs mx-auto block">Пробная подписка</button>
@@ -1359,7 +1378,7 @@
                     html += '<div class="mt-2"><button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full">Пробная подписка</button></div>';
                 }
 
-                html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ECLIPSE UNLIMITED · ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
+                html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
 
                 container.innerHTML = translateHtml(html);
                 fetchPings();
