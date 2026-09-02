@@ -1,5 +1,5 @@
 """
-WebApp сервер для ECLIPSE Unlimited.
+WebApp сервер для VPN-бота.
 
 aiohttp веб-сервер, который:
 - Раздаёт index.html (frontend WebApp)
