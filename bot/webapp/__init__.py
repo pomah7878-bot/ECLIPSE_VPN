@@ -1,1 +1,1 @@
-# ECLIPSE Unlimited WebApp package
+# VPN bot WebApp package
