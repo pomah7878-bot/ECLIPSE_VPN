@@ -56,6 +56,11 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
         )
         return
 
+    from database.requests import get_effective_webapp_url
+    my_keys_append_buttons = None
+    if get_effective_webapp_url():
+        my_keys_append_buttons = [[InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')]]
+
     await render_page(
         target,
         page_key='my_keys',
@@ -66,7 +71,7 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
             '%личный_баланс%': balance_text,
         },
         prepend_buttons=key_buttons,
-        append_buttons=[[InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')]],
+        append_buttons=my_keys_append_buttons,
         force_new=force_new,
     )
 
@@ -115,8 +120,16 @@ async def site_login_code_handler(callback: CallbackQuery):
     (WEBAPP_URL/shop) — там видны все ключи, трафик, продление."""
     from database.requests import create_site_login_code, get_effective_webapp_url
 
+    webapp_url = get_effective_webapp_url()
+    if not webapp_url:
+        # Кнопка не должна была появиться без настроенного домена (см.
+        # show_my_keys), но перестраховываемся на случай нажатия по уже
+        # отправленному сообщению до того, как оно обновилось.
+        await callback.answer("Личный кабинет на сайте пока не настроен админом.", show_alert=True)
+        return
+
     code = create_site_login_code(callback.from_user.id, ttl_minutes=10)
-    site_host = get_effective_webapp_url().replace('https://', '').replace('http://', '').rstrip('/')
+    site_host = webapp_url.replace('https://', '').replace('http://', '').rstrip('/')
     await callback.message.answer(
         f"🌐 <b>Код для входа в личный кабинет на сайте</b>\n\n"
         f"<code>{code}</code>\n\n"
