@@ -309,7 +309,7 @@ gemini_client = AsyncOpenAI(
 # модель пока отвечает (проверено 14.08.2026 через GET /v1/models с боевым
 # ключом). Официально рекомендованные замены поставлены первыми в цепочке.
 MODEL_NAME = "openai/gpt-oss-120b"  # официальная замена llama-3.3-70b-versatile, 200K токенов/день
-SECONDARY_MODEL_NAME = "qwen/qwen3.6-27b"  # альтернатива топ-уровня, та же модель что и для vision
+SECONDARY_MODEL_NAME = "qwen/qwen3.8-27b"  # альтернатива топ-уровня, та же модель что и для vision (qwen3.6-27b deprecated Groq 02.09.2026, decommission 14.09.2026 — переход на 3.8)
 FALLBACK_MODEL_NAME = "openai/gpt-oss-20b"  # официальная замена llama-3.1-8b-instant
 _LEGACY_MODEL_70B = "llama-3.3-70b-versatile"
 _RESERVE_MODEL_SAFEGUARD = "openai/gpt-oss-safeguard-20b"
@@ -417,7 +417,7 @@ async def _call_model(spec, messages, **kwargs):
         raise
 
 
-VISION_MODEL_NAME = "qwen/qwen3.6-27b"  # актуальная vision-модель Groq (подтверждена в официальных доках, 19.07.2026)
+VISION_MODEL_NAME = "qwen/qwen3.8-27b"  # актуальная vision-модель Groq (qwen3.6-27b deprecated 02.09.2026, decommission 14.09.2026 — подтверждено в официальных доках Groq)
 
 
 async def analyze_screenshot(image_data_url: str, question: str, system_prompt: str) -> str:
