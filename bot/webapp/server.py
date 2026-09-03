@@ -802,6 +802,36 @@ async def _resolve_bot_username_for_webapp() -> str:
     return ""
 
 
+def _build_renew_link(key: Dict[str, Any], webapp_url: str, bot_username: str) -> Optional[str]:
+    """Ссылка на кнопке продления в Happ (sub-expire-button-link /
+    sub-info-button-link).
+
+    Предпочитает сайт: если есть домен и telegram_id владельца ключа —
+    генерирует одноразовый код входа (тот же безопасный механизм, что и
+    кнопка «Управлять на сайте» в боте) и ведёт сразу на
+    {домен}/shop?code=...&key_id=... — клиент попадает в свой личный
+    кабинет УЖЕ авторизованным, сразу на нужном ключе, без Telegram.
+
+    Если сайт не настроен или у ключа нет telegram_id (гостевая покупка
+    без привязки к боту) — используется прежний способ: диплинк в
+    Telegram-бота (?start=renew_{id})."""
+    key_id = key.get("id")
+    telegram_id = key.get("telegram_id")
+
+    if webapp_url and telegram_id and key_id:
+        try:
+            from database.requests import create_site_login_code
+            code = create_site_login_code(int(telegram_id), ttl_minutes=30)
+            return f"{webapp_url.rstrip('/')}/shop?code={code}&key_id={key_id}"
+        except Exception as e:
+            logger.warning(f"_build_renew_link: не удалось создать код входа на сайт: {e}")
+
+    if bot_username and key_id:
+        return f"https://t.me/{bot_username}?start=renew_{key_id}"
+
+    return None
+
+
 async def handle_happ_subscription(request: web.Request) -> web.Response:
     """GET /happ-sub/{sub_id} — прокси-обёртка над реальной подпиской,
     отдаваемой панелью 3x-ui, добавляющая заголовки, которые понимает
@@ -898,18 +928,20 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         is_expired = False
         days_left = None
 
-    if is_expired and bot_username:
+    renew_link = _build_renew_link(key, webapp_url, bot_username)
+
+    if is_expired and renew_link:
         # Уже истекла — жёсткий блок Happ: "Subscription has expired!" + Renew
         headers["sub-expire"] = "1"
-        headers["sub-expire-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
-    elif days_left is not None and 0 <= days_left <= 3 and bot_username:
+        headers["sub-expire-button-link"] = renew_link
+    elif days_left is not None and 0 <= days_left <= 3 and renew_link:
         # Ещё активна, но истекает в ближайшие 3 дня — мягкое предупреждение
         # (sub-info-*), а не жёсткий блок: подписка ещё работает, это просто
         # заранее показанное напоминание продлить.
         word = "день" if days_left == 1 else ("дня" if 1 < days_left < 5 else "дней")
         headers["sub-info-text"] = f"⚠️ Подписка истекает через {days_left} {word}!"
-        headers["sub-info-button-text"] = "Продлить"
-        headers["sub-info-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
+        headers["sub-info-button-text"] = "Купить / продлить"
+        headers["sub-info-button-link"] = renew_link
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
