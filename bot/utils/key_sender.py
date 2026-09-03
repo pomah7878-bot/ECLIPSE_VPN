@@ -418,7 +418,7 @@ async def send_key_with_qr(
         key_manage_markup: Key management keyboard
         is_new: Whether the key is newly created
     """
-    from bot.services.vpn_api import is_subscription_mode, get_subscription_url_for_key
+    from bot.services.vpn_api import is_subscription_mode, get_public_subscription_url_for_key
 
     try:
         # We check the availability of the necessary data
@@ -432,7 +432,7 @@ async def send_key_with_qr(
 
         # === Subscription mode: issue subscription URL + QR of this link ===
         if key_data.get('sub_id') and is_subscription_mode():
-            sub_url = await get_subscription_url_for_key(key_data)
+            sub_url = await get_public_subscription_url_for_key(key_data)
             if not sub_url:
                 await _send_error(messageable,
                     "Не удалось получить subscription URL. "

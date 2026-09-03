@@ -1700,14 +1700,14 @@ async def query_full_customer_profile(telegram_id: int) -> dict:
         # Реальные ссылки подписки — только для активных (не истёкших) ключей,
         # тем же способом, что использует сам бот (живой запрос к панели).
         from datetime import datetime as _dt
-        from bot.services.vpn_api import get_subscription_url_for_key
+        from bot.services.vpn_api import get_public_subscription_url_for_key
 
         now_str = _dt.utcnow().isoformat(sep=" ")
         for k in keys_list:
             k["sub_url"] = None
             if k.get("expires_at") and str(k["expires_at"]) > now_str and k.get("sub_id") and k.get("server_id"):
                 try:
-                    k["sub_url"] = await get_subscription_url_for_key(
+                    k["sub_url"] = await get_public_subscription_url_for_key(
                         {"sub_id": k["sub_id"], "server_id": k["server_id"]}
                     )
                 except Exception as e:

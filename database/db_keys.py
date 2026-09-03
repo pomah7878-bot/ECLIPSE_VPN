@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 __all__ = [
     'get_user_vpn_keys',
     'get_vpn_key_by_id',
+    'get_vpn_key_by_sub_id',
     'extend_vpn_key',
     'create_vpn_key_from_panel_import',
     'vpn_key_exists_for_panel_email',
@@ -152,6 +153,40 @@ def get_vpn_key_by_id(key_id: int) -> Optional[Dict[str, Any]]:
             LEFT JOIN users u ON vk.user_id = u.id
             WHERE vk.id = ?
         """, (key_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def get_vpn_key_by_sub_id(sub_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Receives a VPN key by its sub_id (subscription token), with complete
+    information (тот же join, что и get_vpn_key_by_id) — нужно для
+    прокси-эндпоинта подписки /happ-sub/{sub_id}, который добавляет
+    Happ-специфичные заголовки поверх ответа панели 3x-ui.
+
+    Args:
+        sub_id: Subscription ID клиента
+
+    Returns:
+        Dictionary with key data or None
+    """
+    if not sub_id:
+        return None
+    with get_db() as conn:
+        cursor = conn.execute("""
+            SELECT 
+                vk.*,
+                t.name as tariff_name, t.duration_days, t.price_cents,
+                s.name as server_name, s.host, s.port, s.web_base_path,
+                s.login, s.password, s.protocol, s.api_token,
+                s.panel_version, s.panel_api_profile, s.panel_checked_at,
+                s.is_active as server_active,
+                u.telegram_id, u.username, u.is_banned
+            FROM vpn_keys vk
+            LEFT JOIN tariffs t ON vk.tariff_id = t.id
+            LEFT JOIN servers s ON vk.server_id = s.id
+            LEFT JOIN users u ON vk.user_id = u.id
+            WHERE vk.sub_id = ?
+        """, (sub_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
