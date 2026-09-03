@@ -684,6 +684,31 @@
             } catch(e) { /* не залогинены — ничего страшного, покажем форму входа */ }
         }
 
+        async function tryAutoLoginFromUrl() {
+            // Ссылка вида /shop?code=XXXX&key_id=123 — приходит из кнопки
+            // "Купить / продлить" в приложении Happ (см. handle_happ_subscription
+            // в боте). Код одноразовый — логиним автоматически и сразу
+            // открываем окно продления нужного ключа, без ручного ввода кода.
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            const keyId = params.get('key_id');
+            if (!code) return false;
+
+            history.replaceState(null, '', window.location.pathname);
+            try {
+                const res = await postAPI('account/session-login', { code });
+                if (!res.ok) return false;
+                const sessionRes = await fetchAPI('account/session');
+                revealApp(sessionRes);
+                if (keyId) {
+                    openRenewForKey(parseInt(keyId, 10));
+                }
+                return true;
+            } catch(e) {
+                return false;
+            }
+        }
+
         async function doAccountLogin() {
             const input = document.getElementById('accountCodeInput');
             const code = input.value.trim().toUpperCase();
@@ -1108,7 +1133,12 @@
         }
 
         initOAuthButtons();
-        checkExistingSession();
+        (async () => {
+            const autoLoggedIn = await tryAutoLoginFromUrl();
+            if (!autoLoggedIn) {
+                checkExistingSession();
+            }
+        })();
         applyShopTranslation();
     </script>
 </body>
