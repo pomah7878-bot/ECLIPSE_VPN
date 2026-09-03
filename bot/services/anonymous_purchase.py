@@ -32,7 +32,7 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str) -> dict:
         get_tariff_by_id, get_active_servers, create_initial_vpn_key,
         update_vpn_key_config, get_or_create_user,
     )
-    from bot.services.vpn_api import get_client, get_client_subscription_inbounds, sync_key_to_panel_state, get_subscription_url_for_key
+    from bot.services.vpn_api import get_client, get_client_subscription_inbounds, sync_key_to_panel_state, get_public_subscription_url_for_key
     from bot.handlers.admin.users_keys import generate_unique_email
 
     tariff = get_tariff_by_id(tariff_id)
@@ -104,7 +104,7 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str) -> dict:
 
     sub_url = None
     try:
-        sub_url = await get_subscription_url_for_key({"sub_id": sub_id, "server_id": server_id})
+        sub_url = await get_public_subscription_url_for_key({"sub_id": sub_id, "server_id": server_id})
     except Exception as e:
         logger.warning(f"anonymous provisioning: не удалось получить sub_url для ключа {key_id}: {e}")
 

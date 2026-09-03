@@ -848,7 +848,7 @@ async def _get_latest_active_key_with_sub(telegram_id: int):
 
 async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name: str):
     """Формирует и отправляет диплинк для импорта подписки в приложение (Happ/INCY)."""
-    from bot.services.vpn_api import get_subscription_url_for_key
+    from bot.services.vpn_api import get_public_subscription_url_for_key
     key = await _get_latest_active_key_with_sub(callback.from_user.id)
     if not key:
         await callback.answer(
@@ -856,7 +856,7 @@ async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name
             show_alert=True,
         )
         return
-    sub_url = await get_subscription_url_for_key(key)
+    sub_url = await get_public_subscription_url_for_key(key)
     if not sub_url:
         await callback.answer(
             "Не удалось получить ссылку-подписку. Попробуйте позже.",

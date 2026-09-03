@@ -509,15 +509,23 @@ def is_demo_payment_enabled() -> bool:
 # ============================================================================
 
 def get_effective_webapp_url() -> str:
-    """Домен сайта/WebApp. Значение из админки имеет приоритет над config.py."""
+    """Домен сайта/WebApp. Значение из админки имеет приоритет над config.py.
+
+    Игнорирует нетронутый плейсхолдер "https://ваш-домен.example.com" из
+    config.py.example — иначе свежая установка, где админ ещё не настроил
+    домен ни в БД, ни в config.py, ошибочно считала бы, что домен уже
+    настроен, и пыталась бы использовать несуществующий адрес (например,
+    в прокси-ссылках подписки для Happ)."""
     from_db = get_setting('webapp_url', '')
     if from_db:
         return from_db
     try:
         from config import WEBAPP_URL
-        return WEBAPP_URL
+        if WEBAPP_URL and WEBAPP_URL.strip() and WEBAPP_URL.strip() != 'https://ваш-домен.example.com':
+            return WEBAPP_URL.strip()
     except ImportError:
-        return ''
+        pass
+    return ''
 
 def get_effective_brand_name() -> str:
     """Название сервиса — используется в текстах AI-помощника (самоописание,

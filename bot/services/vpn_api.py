@@ -1703,6 +1703,42 @@ async def get_subscription_url_for_key(key: Dict[str, Any]) -> Optional[str]:
         return None
 
 
+async def get_public_subscription_url_for_key(key: Dict[str, Any]) -> Optional[str]:
+    """
+    Ссылка на подписку, которую стоит показывать/отправлять КЛИЕНТАМ (в
+    отличие от get_subscription_url_for_key, которая строит "сырую" ссылку
+    напрямую на панель 3x-ui).
+
+    Если домен сайта настроен (get_effective_webapp_url) — оборачивает
+    подписку в наш собственный прокси-эндпоинт /happ-sub/{sub_id}, который
+    добавляет заголовки, понятные приложению Happ (название бренда,
+    кнопка сайта/поддержки, уведомление об истечении подписки со ссылкой
+    на продление прямо в боте). Само содержимое подписки не меняется —
+    только заголовки поверх ответа панели.
+
+    Если домен не настроен — просто возвращает сырую ссылку на панель, как
+    и раньше (полная обратная совместимость для установок без сайта).
+    """
+    raw_url = await get_subscription_url_for_key(key)
+    if not raw_url:
+        return None
+
+    sub_id = key.get('sub_id')
+    if not sub_id:
+        return raw_url
+
+    try:
+        from database.requests import get_effective_webapp_url
+        webapp_url = get_effective_webapp_url()
+    except Exception:
+        webapp_url = ''
+
+    if not webapp_url:
+        return raw_url
+
+    return f"{webapp_url.rstrip('/')}/happ-sub/{sub_id}"
+
+
 __all__ = [
     "VPNAPIError", "get_client_from_server_data", "invalidate_client_cache",
     "calculate_panel_total_for_key",
@@ -1711,5 +1747,5 @@ __all__ = [
     "push_key_to_panel", "restore_traffic_limit_in_db",
     "get_bot_mode", "is_subscription_mode",
     "ensure_subscription_keys_on_server", "sync_key_to_panel_state",
-    "get_subscription_url_for_key", "get_key_traffic_snapshot",
+    "get_subscription_url_for_key", "get_public_subscription_url_for_key", "get_key_traffic_snapshot",
 ]

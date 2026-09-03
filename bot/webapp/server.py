@@ -285,7 +285,8 @@ async def handle_keys(request: web.Request) -> web.Response:
             # Build real subscription URL from panel settings
             sub_url = None
             try:
-                sub_url = await get_subscription_url_for_key(key)
+                from bot.services.vpn_api import get_public_subscription_url_for_key
+                sub_url = await get_public_subscription_url_for_key(key)
             except Exception:
                 sub_url = None
 
@@ -778,19 +779,117 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     инсталляции, как и везде в остальном боте."""
     from database.requests import get_effective_brand_name, get_cabinet_theme_id
 
-    bot_username = ""
-    try:
-        from main import bot as _bot
-        if hasattr(_bot, 'my_username') and _bot.my_username:
-            bot_username = _bot.my_username
-    except Exception:
-        pass
+    bot_username = await _resolve_bot_username_for_webapp()
 
     resp = web.json_response({
         "brand_name": get_effective_brand_name(),
         "bot_username": bot_username,
         "cabinet_theme_id": get_cabinet_theme_id(),
     })
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
+async def _resolve_bot_username_for_webapp() -> str:
+    """Юзернейм бота — тот же паттерн, что и в handle_public_site_info,
+    вынесен отдельно, чтобы использовать и в handle_happ_subscription."""
+    try:
+        from main import bot as _bot
+        if hasattr(_bot, 'my_username') and _bot.my_username:
+            return _bot.my_username
+    except Exception:
+        pass
+    return ""
+
+
+async def handle_happ_subscription(request: web.Request) -> web.Response:
+    """GET /happ-sub/{sub_id} — прокси-обёртка над реальной подпиской,
+    отдаваемой панелью 3x-ui, добавляющая заголовки, которые понимает
+    приложение Happ (и частично другие VLESS-клиенты, читающие тот же
+    стандарт subscription-userinfo):
+
+      - profile-title       — название бренда
+      - profile-web-page-url — ссылка на сайт (если настроен)
+      - support-url          — ссылка на поддержку в боте
+      - subscription-userinfo — трафик/лимит/дата истечения (из нашей
+        БД, если панель сама не прислала этот заголовок)
+      - sub-expire + sub-expire-button-link — если подписка истекла,
+        Happ покажет "Subscription has expired!" с кнопкой "Renew",
+        ведущей прямо на карточку ключа в боте для продления
+
+    Само содержимое подписки (список VLESS/VMess-ссылок) передаётся от
+    3x-ui БЕЗ ИЗМЕНЕНИЙ — мы только добавляем заголовки поверх.
+
+    Официальный формат заголовков Happ: https://www.happ.su/main/dev-docs/app-management
+    """
+    sub_id = request.match_info.get("sub_id", "")
+    if not sub_id:
+        return web.Response(status=404, text="Not Found")
+
+    from database.requests import get_vpn_key_by_sub_id
+    key = get_vpn_key_by_sub_id(sub_id)
+    if not key:
+        return web.Response(status=404, text="Not Found")
+
+    raw_url = await get_subscription_url_for_key(key)
+    if not raw_url:
+        return web.Response(status=502, text="Subscription temporarily unavailable")
+
+    import aiohttp as _aiohttp
+    try:
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(raw_url, timeout=_aiohttp.ClientTimeout(total=10)) as upstream:
+                body = await upstream.read()
+                upstream_content_type = upstream.headers.get("Content-Type")
+                upstream_userinfo = upstream.headers.get("subscription-userinfo")
+    except Exception as e:
+        logger.warning(f"handle_happ_subscription: не удалось получить подписку у панели ({sub_id[:8]}...): {e}")
+        return web.Response(status=502, text="Upstream subscription unavailable")
+
+    from database.requests import get_effective_brand_name, get_effective_webapp_url
+    headers = {"Content-Type": upstream_content_type or "text/plain; charset=utf-8"}
+
+    brand_name = get_effective_brand_name()
+    if brand_name:
+        headers["profile-title"] = brand_name[:25]
+
+    webapp_url = get_effective_webapp_url()
+    if webapp_url:
+        headers["profile-web-page-url"] = webapp_url
+
+    bot_username = await _resolve_bot_username_for_webapp()
+    if bot_username:
+        headers["support-url"] = f"https://t.me/{bot_username}?start=support"
+
+    if upstream_userinfo:
+        headers["subscription-userinfo"] = upstream_userinfo
+    else:
+        expire_epoch = 0
+        try:
+            expires_at = key.get("expires_at")
+            if expires_at:
+                expire_epoch = int(datetime.fromisoformat(expires_at).timestamp())
+        except Exception:
+            expire_epoch = 0
+        traffic_used = key.get("traffic_used") or 0
+        traffic_limit = key.get("traffic_limit") or 0
+        headers["subscription-userinfo"] = (
+            f"upload=0; download={traffic_used}; total={traffic_limit}; expire={expire_epoch}"
+        )
+
+    is_expired = False
+    try:
+        expires_at = key.get("expires_at")
+        if expires_at:
+            is_expired = datetime.fromisoformat(expires_at) < datetime.now()
+    except Exception:
+        is_expired = False
+
+    if is_expired and bot_username:
+        headers["sub-expire"] = "1"
+        headers["sub-expire-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
+
+    resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp
 
@@ -1441,14 +1540,14 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
 
     if account.get("telegram_id"):
         from database.requests import get_user_keys_for_display
-        from bot.services.vpn_api import get_subscription_url_for_key
+        from bot.services.vpn_api import get_public_subscription_url_for_key
 
         keys = get_user_keys_for_display(account["telegram_id"])
 
         async def _with_sub_url(k):
             sub_url = None
             try:
-                sub_url = await get_subscription_url_for_key({"sub_id": k.get("sub_id"), "server_id": k.get("server_id")})
+                sub_url = await get_public_subscription_url_for_key({"sub_id": k.get("sub_id"), "server_id": k.get("server_id")})
             except Exception as e:
                 logger.warning(f"Не удалось получить sub_url для ключа {k['id']}: {e}")
             return {
@@ -2121,6 +2220,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
     app.router.add_get("/api/public/site-info", handle_public_site_info)
+    app.router.add_get("/happ-sub/{sub_id}", handle_happ_subscription)
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
     app.router.add_post("/api/public/pay/create", handle_public_pay_create)
