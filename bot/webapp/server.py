@@ -813,9 +813,13 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
       - support-url          — ссылка на поддержку в боте
       - subscription-userinfo — трафик/лимит/дата истечения (из нашей
         БД, если панель сама не прислала этот заголовок)
-      - sub-expire + sub-expire-button-link — если подписка истекла,
+      - sub-expire + sub-expire-button-link — если подписка УЖЕ истекла,
         Happ покажет "Subscription has expired!" с кнопкой "Renew",
         ведущей прямо на карточку ключа в боте для продления
+      - sub-info-text + sub-info-button-text/link — если подписка ЕЩЁ
+        активна, но истекает в ближайшие 3 дня, показывает мягкое
+        предупреждение с той же кнопкой продления (не блокирует
+        использование, просто заранее напоминает)
 
     Само содержимое подписки (список VLESS/VMess-ссылок) передаётся от
     3x-ui БЕЗ ИЗМЕНЕНИЙ — мы только добавляем заголовки поверх.
@@ -878,16 +882,34 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         )
 
     is_expired = False
+    days_left = None
     try:
         expires_at = key.get("expires_at")
         if expires_at:
-            is_expired = datetime.fromisoformat(expires_at) < datetime.now()
+            expires_dt = datetime.fromisoformat(expires_at)
+            now = datetime.now()
+            is_expired = expires_dt < now
+            if not is_expired:
+                delta = expires_dt - now
+                days_left = delta.days
+                if delta.seconds > 0:
+                    days_left += 1
     except Exception:
         is_expired = False
+        days_left = None
 
     if is_expired and bot_username:
+        # Уже истекла — жёсткий блок Happ: "Subscription has expired!" + Renew
         headers["sub-expire"] = "1"
         headers["sub-expire-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
+    elif days_left is not None and 0 <= days_left <= 3 and bot_username:
+        # Ещё активна, но истекает в ближайшие 3 дня — мягкое предупреждение
+        # (sub-info-*), а не жёсткий блок: подписка ещё работает, это просто
+        # заранее показанное напоминание продлить.
+        word = "день" if days_left == 1 else ("дня" if 1 < days_left < 5 else "дней")
+        headers["sub-info-text"] = f"⚠️ Подписка истекает через {days_left} {word}!"
+        headers["sub-info-button-text"] = "Продлить"
+        headers["sub-info-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
