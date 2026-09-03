@@ -152,6 +152,7 @@
             </div>
             <div class="text-sm font-semibold mb-3 text-center">Войдите, чтобы увидеть тарифы</div>
             <div id="oauthButtons" class="space-y-2 mb-4 hidden">
+                <div class="text-[11px] text-mist-dim font-semibold mb-2 text-center uppercase tracking-wide">🆕 Новый клиент — войдите так</div>
                 <button onclick="location.href='/auth/google/start'" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2" data-provider="google">
                     <span>🔵</span> Войти через Google
                 </button>
@@ -163,12 +164,12 @@
                 </button>
                 <div class="flex items-center gap-3 my-3">
                     <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
-                    <span class="text-[11px] text-mist-dim">или по коду</span>
+                    <span class="text-[11px] text-mist-dim">или</span>
                     <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
                 </div>
             </div>
-            <h3 class="font-display text-sm font-bold mb-1">Вход по коду доступа</h3>
-            <p class="text-xs text-mist mb-4">Код был выдан вам сразу после покупки, либо получите его в боте («Мои ключи» → «Управлять на сайте»).</p>
+            <h3 class="font-display text-sm font-bold mb-1">🔑 Уже покупали через Telegram-бота?</h3>
+            <p class="text-xs text-mist mb-4">Введите код доступа — так вы увидите именно СВОИ купленные ключи, а не создадите новый пустой аккаунт. Код был выдан сразу после покупки, либо получите его в боте («Мои ключи» → «Управлять на сайте»).</p>
             <input id="accountCodeInput" type="text" placeholder="XXXX-XXXX" autocomplete="off"
                 class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink font-mono tracking-wider text-center mb-3 uppercase"
                 style="outline:none;" maxlength="9">
