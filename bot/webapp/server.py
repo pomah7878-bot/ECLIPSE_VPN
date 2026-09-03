@@ -928,20 +928,24 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         is_expired = False
         days_left = None
 
-    renew_link = _build_renew_link(key, webapp_url, bot_username)
-
-    if is_expired and renew_link:
-        # Уже истекла — жёсткий блок Happ: "Subscription has expired!" + Renew
-        headers["sub-expire"] = "1"
-        headers["sub-expire-button-link"] = renew_link
-    elif days_left is not None and 0 <= days_left <= 3 and renew_link:
+    if is_expired:
+        # Уже истекла — жёсткий блок Happ: "Subscription has expired!" + Renew.
+        # Ведём на сайт (с авто-входом по одноразовому коду), чтобы клиент мог
+        # продлить прямо там, без Telegram — VPN всё равно уже не работает,
+        # так что открывать Telegram специально ради этого не обязательно.
+        renew_link = _build_renew_link(key, webapp_url, bot_username)
+        if renew_link:
+            headers["sub-expire"] = "1"
+            headers["sub-expire-button-link"] = renew_link
+    elif days_left is not None and 0 <= days_left <= 3 and bot_username and key.get("id"):
         # Ещё активна, но истекает в ближайшие 3 дня — мягкое предупреждение
-        # (sub-info-*), а не жёсткий блок: подписка ещё работает, это просто
-        # заранее показанное напоминание продлить.
+        # (sub-info-*), а не жёсткий блок. VPN пока работает, поэтому ведём в
+        # Telegram-бота (не на сайт) — клиент и так, скорее всего, обычно
+        # управляет ключом через бота, пока подписка активна.
         word = "день" if days_left == 1 else ("дня" if 1 < days_left < 5 else "дней")
         headers["sub-info-text"] = f"⚠️ Подписка истекает через {days_left} {word}!"
         headers["sub-info-button-text"] = "Купить / продлить"
-        headers["sub-info-button-link"] = renew_link
+        headers["sub-info-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
