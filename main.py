@@ -13,6 +13,15 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import BOT_TOKEN
+
+# Глобальный (модульный) экземпляр бота. Заполняется внутри main() через
+# `global bot`. До этого — везде, где код делал `from main import bot`
+# (webapp/server.py — построение deep-ссылок, юзернейм бота для Happ-
+# заголовков и т.п.), это падало с ImportError, потому что `bot` был
+# только ЛОКАЛЬНОЙ переменной внутри функции main(), а не атрибутом
+# модуля. Ошибка тихо проглатывалась через try/except, поэтому
+# оставалась незамеченной долгое время.
+bot = None
 from database.migrations import run_migrations
 
 from bot.services.vpn_api import close_all_clients
@@ -141,6 +150,7 @@ async def on_shutdown(bot: Bot):
 
 async def main():
     """The main function of launching the bot."""
+    global bot
     # Importing a custom session with fallback for Markdown errors
     from bot.middlewares.parse_mode_fallback import SafeParseSession
     
