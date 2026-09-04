@@ -908,7 +908,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         traffic_used = key.get("traffic_used") or 0
         traffic_limit = key.get("traffic_limit") or 0
         headers["subscription-userinfo"] = (
-            f"upload=0; download={traffic_used}; total={traffic_limit}; expire={expire_epoch}"
+            f"upload=0;download={traffic_used};total={traffic_limit};expire={expire_epoch}"
         )
 
     is_expired = False
