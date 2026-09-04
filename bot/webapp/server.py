@@ -860,18 +860,30 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         return web.Response(status=502, text="Subscription temporarily unavailable")
 
     import aiohttp as _aiohttp
+    from multidict import CIMultiDict
     try:
         async with _aiohttp.ClientSession() as session:
             async with session.get(raw_url, timeout=_aiohttp.ClientTimeout(total=10)) as upstream:
                 body = await upstream.read()
-                upstream_content_type = upstream.headers.get("Content-Type")
-                upstream_userinfo = upstream.headers.get("subscription-userinfo")
+                # Копируем ВСЕ заголовки от панели как есть, кроме тех, что
+                # должен считать сам сервер при формировании ответа
+                # (Content-Length и т.п.). Раньше здесь копировались
+                # только Content-Type и subscription-userinfo — из-за этого
+                # пропадали любые другие Happ-заголовки от панели (например,
+                # маршрутизация, настроенная во вкладке "Happ" в 3x-ui —
+                # это тоже отдельный заголовок, про который мы просто не
+                # знали и не копировали).
+                _skip = {'content-length', 'transfer-encoding', 'connection', 'date', 'server'}
+                headers = CIMultiDict(
+                    (k, v) for k, v in upstream.headers.items() if k.lower() not in _skip
+                )
     except Exception as e:
         logger.warning(f"handle_happ_subscription: не удалось получить подписку у панели ({sub_id[:8]}...): {e}")
         return web.Response(status=502, text="Upstream subscription unavailable")
 
     from database.requests import get_effective_brand_name, get_effective_webapp_url
-    headers = {"Content-Type": upstream_content_type or "text/plain; charset=utf-8"}
+    if "Content-Type" not in headers:
+        headers["Content-Type"] = "text/plain; charset=utf-8"
 
     brand_name = get_effective_brand_name()
     if brand_name:
@@ -885,9 +897,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if bot_username:
         headers["support-url"] = f"https://t.me/{bot_username}?start=support"
 
-    if upstream_userinfo:
-        headers["subscription-userinfo"] = upstream_userinfo
-    else:
+    if "subscription-userinfo" not in headers:
         expire_epoch = 0
         try:
             expires_at = key.get("expires_at")
