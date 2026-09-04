@@ -342,13 +342,8 @@ async def handle_status(request: web.Request) -> web.Response:
         nearest = _format_expiry(nearest_expiry) if nearest_expiry else None
 
         # Get bot username from the running bot instance (set at main.py startup)
-        bot_username = None
-        try:
-            from main import bot as _bot
-            if hasattr(_bot, 'my_username') and _bot.my_username:
-                bot_username = _bot.my_username
-        except Exception:
-            pass
+        from bot.utils.runtime_state import get_bot_username
+        bot_username = get_bot_username() or None
 
         # Проверка доступности пробной подписки
         trial_available = False
@@ -793,13 +788,8 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
 async def _resolve_bot_username_for_webapp() -> str:
     """Юзернейм бота — тот же паттерн, что и в handle_public_site_info,
     вынесен отдельно, чтобы использовать и в handle_happ_subscription."""
-    try:
-        from main import bot as _bot
-        if hasattr(_bot, 'my_username') and _bot.my_username:
-            return _bot.my_username
-    except Exception:
-        pass
-    return ""
+    from bot.utils.runtime_state import get_bot_username
+    return get_bot_username()
 
 
 def _build_renew_link(key: Dict[str, Any], webapp_url: str, bot_username: str) -> Optional[str]:
@@ -2096,13 +2086,8 @@ async def handle_referral(request: web.Request) -> web.Response:
         referral_code = ensure_user_referral_code(user_internal_id)
 
         # Get bot username from the running bot instance (set at main.py startup)
-        bot_username = None
-        try:
-            from main import bot as _bot
-            if hasattr(_bot, 'my_username') and _bot.my_username:
-                bot_username = _bot.my_username
-        except Exception:
-            pass
+        from bot.utils.runtime_state import get_bot_username
+        bot_username = get_bot_username() or None
 
         # НЕ подставляем чужой bot_username как fallback — если lookup не
         # удался, лучше пустая ссылка (клиент попробует обновить страницу),
