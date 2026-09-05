@@ -30,6 +30,7 @@ class AdminStates(StatesGroup):
     # ========== Server management ==========
     servers_list = State()           # Server list
     server_view = State()            # View a specific server
+    edit_server_inbound_group = State()  # Ввод номера группы inbound'ов (маркер --N)
     
     # ========== Adding a server (step-by-step dialogue) ==========
     add_server_auth_method = State() # Authentication method selection

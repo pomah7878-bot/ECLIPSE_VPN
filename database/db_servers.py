@@ -25,7 +25,7 @@ __all__ = [
 SERVER_SELECT_FIELDS = """
     id, name, host, port, web_base_path, login, password, is_active, protocol,
     api_token, panel_version, panel_api_profile, panel_checked_at,
-    latency_ms, latency_checked_at
+    latency_ms, latency_checked_at, inbound_group
 """
 
 def update_server_latency(server_id: int, latency_ms: int | None) -> None:
@@ -165,7 +165,7 @@ def update_server(server_id: int, **fields) -> bool:
     allowed_fields = {
         'name', 'host', 'port', 'web_base_path', 'login', 'password',
         'is_active', 'protocol', 'api_token', 'panel_version',
-        'panel_api_profile', 'panel_checked_at',
+        'panel_api_profile', 'panel_checked_at', 'inbound_group',
     }
     fields = {k: v for k, v in fields.items() if k in allowed_fields}
     

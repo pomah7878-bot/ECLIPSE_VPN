@@ -11,7 +11,7 @@ Processes:
 """
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 import urllib.parse
 
@@ -31,6 +31,7 @@ from database.requests import (
     toggle_server_group
 )
 from bot.utils.admin import is_admin
+from bot.utils.text import get_message_text_for_storage
 from bot.services.admin_monitoring import (
     build_servers_monitoring_text,
     collect_admin_monitoring_snapshot,
@@ -114,7 +115,8 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
         f"🧩 <b>3x-ui API:</b>",
         f"   Версия: <code>{escape_html(server.get('panel_version') or 'не определена')}</code>",
         f"   Профиль: <code>{escape_html(server.get('panel_api_profile') or 'не определён')}</code>",
-        f"   Проверка: <code>{escape_html(server.get('panel_checked_at') or 'ещё не выполнялась')}</code>\n",
+        f"   Проверка: <code>{escape_html(server.get('panel_checked_at') or 'ещё не выполнялась')}</code>",
+        f"   Группа inbound'ов: <code>{server.get('inbound_group') or 'все (не задана)'}</code>\n",
         f"📊 <b>Статистика:</b>",
         f"   {status_emoji} Статус: {status_text}",
     ])
@@ -992,6 +994,82 @@ async def toggle_server(callback: CallbackQuery, state: FSMContext):
     # Refresh the viewing screen
     # Refresh the viewing screen
     await render_server_view(callback.message, server_id, state)
+
+
+@router.callback_query(F.data.startswith("admin_server_inbound_group:"))
+async def edit_server_inbound_group_start(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает номер группы inbound'ов — для разделения одной
+    физической панели на несколько виртуальных серверов в боте."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    server_id = int(callback.data.split(":")[1])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    await state.update_data(server_id=server_id)
+    await state.set_state(AdminStates.edit_server_inbound_group)
+
+    current = server.get("inbound_group")
+    current_text = str(current) if current else "не задана — используются все inbound-ы"
+    await safe_edit_or_send(
+        callback.message,
+        f"🧩 <b>Группа inbound'ов</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "Позволяет разделить одну физическую панель на несколько отдельных "
+        "виртуальных серверов в боте. Бот будет использовать только те inbound'ы, "
+        "у которых в конце tag стоит маркер <code>--N</code> (например, "
+        "<code>мой-тег--1</code>), где N — число, которое вы сейчас введёте. "
+        "Если inbound должен использоваться сразу несколькими группами — добавьте "
+        "в его тег несколько маркеров подряд: <code>--1--2</code>.\n\n"
+        "📌 Настраивается в панели: <b>Inbounds → изменить подключение → "
+        "Расширенный шаблон → Всё → tag</b>\n\n"
+        "Отправьте число (номер группы), либо <code>0</code> — чтобы убрать "
+        "ограничение и снова использовать все inbound'ы:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_server_view:{server_id}")],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_server_inbound_group)
+async def edit_server_inbound_group_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    server_id = data.get("server_id")
+    if not server_id:
+        await state.clear()
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    try:
+        group = int(value)
+        if group < 0:
+            raise ValueError
+    except ValueError:
+        await safe_edit_or_send(message, "❌ Введите целое число (0 или больше). Попробуйте ещё раз.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    update_server(server_id, inbound_group=(group if group > 0 else None))
+    await invalidate_client_cache(server_id)
+    await state.set_state(AdminStates.server_view)
+
+    if group > 0:
+        await message.answer(f"✅ Группа inbound'ов установлена: {group}. Бот теперь использует только inbound'ы с маркером --{group} в теге.")
+    else:
+        await message.answer("✅ Ограничение снято — бот снова использует все inbound'ы этого сервера.")
+
+    await render_server_view(message, server_id, state)
 
 
 # ============================================================================

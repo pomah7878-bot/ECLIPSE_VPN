@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 98
+LATEST_VERSION = 99
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1997,6 +1997,22 @@ def migration_98(conn: sqlite3.Connection) -> None:
     logger.info("Migration v98 applied: vpn_keys.panel_removed_at готово")
 
 
+def migration_99(conn: sqlite3.Connection) -> None:
+    """Migration v99: добавляет поле inbound_group в servers — позволяет
+    разделить одну физическую панель 3x-ui на несколько отдельных
+    "виртуальных" записей сервера в боте. Если задано (число), бот
+    использует только те inbound'ы панели, у которых в конце tag стоит
+    маркер --N (например, "мой-тег--1" или "мой-тег--1--2", если inbound
+    нужен сразу нескольким группам). Если не задано (NULL, по умолчанию)
+    — используются все inbound'ы, как и раньше (полная обратная
+    совместимость)."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(servers)").fetchall()}
+    if "inbound_group" not in existing_cols:
+        conn.execute("ALTER TABLE servers ADD COLUMN inbound_group INTEGER DEFAULT NULL")
+        logger.info("Migration v99: добавлена колонка servers.inbound_group")
+    logger.info("Migration v99 applied: servers.inbound_group готово")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2023,6 +2039,7 @@ MIGRATIONS = {
     96: migration_96,
     97: migration_97,
     98: migration_98,
+    99: migration_99,
 }
 
 
