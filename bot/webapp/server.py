@@ -9,6 +9,7 @@ aiohttp веб-сервер, который:
 Запускается параллельно с aiogram polling через asyncio.
 """
 import json
+import html as _html_module
 import logging
 import os
 import base64
@@ -731,12 +732,55 @@ def _generate_public_order_id() -> str:
     return "pub" + "".join(_secrets.choice(_PUBLIC_ORDER_ID_ALPHABET) for _ in range(8))
 
 
+def _serve_html_with_brand(filepath: str, title_format: str, header_format: str) -> web.Response:
+    """Отдаёт HTML-файл с названием бренда, подставленным ПРЯМО НА СЕРВЕРЕ —
+    в отличие от JS-подстановки через applyBrand() (она остаётся как
+    подстраховка), здесь бренд уже правильный в самом первом байте ответа,
+    поэтому браузер не успевает на долю секунды показать плейсхолдер
+    "ECLIPSE Unlimited" до его замены — раньше это было заметно как
+    мимолётное мигание чужого бренда.
+
+    title_format / header_format — Python-шаблоны вида "💎{brand}💎" под
+    оформление конкретного файла (title и h1 у index.html/shop.html
+    отличаются по формату). Название бренда обязательно экранируется
+    (html.escape) — это ввод админа, а не доверенная константа,
+    подставлять его в HTML без экранирования небезопасно (риск XSS)."""
+    import re
+
+    if not os.path.exists(filepath):
+        return web.Response(text="<h1>Template not found</h1>", status=404)
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    from database.requests import get_effective_brand_name
+    brand_name = get_effective_brand_name()
+    if brand_name:
+        safe_brand = _html_module.escape(brand_name, quote=False)
+        content = re.sub(
+            r'(<title id="pageTitle">).*?(</title>)',
+            lambda m: m.group(1) + title_format.format(brand=safe_brand) + m.group(2),
+            content, count=1,
+        )
+        content = re.sub(
+            r'(<h1 id="brandHeader"[^>]*>).*?(</h1>)',
+            lambda m: m.group(1) + header_format.format(brand=safe_brand) + m.group(2),
+            content, count=1,
+        )
+
+    resp = web.Response(text=content, content_type="text/html")
+    resp.headers['Cache-Control'] = 'no-store'
+    return resp
+
+
 async def handle_shop_page(request: web.Request) -> web.Response:
     """GET /shop — публичная страница покупки, без Telegram."""
     shop_path = os.path.join(_TEMPLATES_DIR, "shop.html")
-    if os.path.exists(shop_path):
-        return web.FileResponse(shop_path)
-    return web.Response(text="<h1>Shop template not found</h1>", status=404)
+    return _serve_html_with_brand(
+        shop_path,
+        title_format="💎 {brand} — премиальный VPN",
+        header_format="{brand}",
+    )
 
 
 async def handle_welcome_page(request: web.Request) -> web.Response:
@@ -2177,10 +2221,10 @@ async def handle_favicon(request: web.Request) -> web.Response:
 async def handle_index(request: web.Request) -> web.Response:
     """GET / — раздаёт index.html."""
     index_path = os.path.join(_TEMPLATES_DIR, "index.html")
-    if os.path.exists(index_path):
-        return web.FileResponse(index_path)
-    return web.Response(
-        text="<h1>WebApp template not found</h1>", status=404
+    return _serve_html_with_brand(
+        index_path,
+        title_format="💎{brand}💎",
+        header_format="{brand}",
     )
 async def handle_import(request: web.Request) -> web.Response:
     """GET /import — раздаёт страницу-редирект для импорта подписки в Happ/INCY."""

@@ -1394,7 +1394,26 @@ async def edit_link_url_save(message: Message, state: FSMContext):
         await message.delete()
     except Exception:
         pass
-    
+
+    # WebApp-кнопки Telegram работают только по https:// — для обычного
+    # http:// такой выбор технически невозможен, сохраняем сразу как
+    # обычную ссылку, не задавая лишнего вопроса.
+    if new_value.startswith('https://'):
+        await state.update_data(pending_link_value=new_value)
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🔗 Обычная ссылка", callback_data="confirm_help_link_type:url"))
+        builder.row(InlineKeyboardButton(text="📱 WebApp (открыть внутри Telegram)", callback_data="confirm_help_link_type:web_app"))
+        builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=return_to))
+        await safe_edit_or_send(
+            message,
+            f"🔗 <b>Как открывать эту ссылку?</b>\n\n<code>{new_value}</code>\n\n"
+            "🔗 <b>Обычная ссылка</b> — откроется в браузере устройства (подходит для сайтов, каналов, соцсетей)\n\n"
+            "📱 <b>WebApp</b> — откроется прямо внутри Telegram, без выхода в браузер (подходит для личного кабинета, магазина и т.п.)",
+            reply_markup=builder.as_markup(),
+        )
+        return
+
     _update_help_button(btn_id, {'action_type': 'url', 'action_value': new_value})
     await state.clear()
     
@@ -1417,6 +1436,38 @@ async def edit_link_url_save(message: Message, state: FSMContext):
             reply_markup=back_and_home_kb(return_to),
             force_new=True
         )
+
+
+@router.callback_query(F.data.startswith("confirm_help_link_type:"))
+async def confirm_help_link_type(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет ссылку с выбранным типом кнопки (обычная ссылка / WebApp)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from bot.keyboards.admin import back_and_home_kb
+
+    chosen_type = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    btn_id = data.get('editing_btn_id')
+    new_value = data.get('pending_link_value')
+    return_to = data.get('return_to', 'admin_edit_texts')
+
+    if not btn_id or not new_value:
+        await callback.answer("❌ Ошибка состояния, попробуйте заново.", show_alert=True)
+        await state.clear()
+        return
+
+    _update_help_button(btn_id, {'action_type': chosen_type, 'action_value': new_value})
+    await state.clear()
+
+    type_label = "📱 WebApp" if chosen_type == "web_app" else "🔗 Обычная ссылка"
+    await safe_edit_or_send(
+        callback.message,
+        f"✅ <b>Ссылка сохранена!</b> ({type_label})\n\n<code>{new_value}</code>",
+        reply_markup=back_and_home_kb(return_to),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("toggle_link_hidden:"))
