@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 97
+LATEST_VERSION = 98
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1983,6 +1983,20 @@ def migration_97(conn: sqlite3.Connection) -> None:
         )
 
 
+def migration_98(conn: sqlite3.Connection) -> None:
+    """Migration v98: добавляет поле panel_removed_at в vpn_keys — момент,
+    когда клиент был удалён именно с VPN-панели (не из бота) фоновой
+    очисткой неактивных ключей. Ключ при этом остаётся в боте — клиент
+    ещё может продлить подписку в обычный срок (см.
+    expired_key_autodelete_days), просто без активного подключения на
+    панели до момента продления."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(vpn_keys)").fetchall()}
+    if "panel_removed_at" not in existing_cols:
+        conn.execute("ALTER TABLE vpn_keys ADD COLUMN panel_removed_at TEXT DEFAULT NULL")
+        logger.info("Migration v98: добавлена колонка vpn_keys.panel_removed_at")
+    logger.info("Migration v98 applied: vpn_keys.panel_removed_at готово")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2008,6 +2022,7 @@ MIGRATIONS = {
     95: migration_95,
     96: migration_96,
     97: migration_97,
+    98: migration_98,
 }
 
 
