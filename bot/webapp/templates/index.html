@@ -436,9 +436,9 @@
             </div>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-            <a href="https://t.me/eclipse_unlimited_news" target="_blank" title="Новости канала"
+            <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
                 class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2 py-1 rounded-full transition hover:bg-[color:var(--panel-2)]"
-                style="text-decoration:none;">📰</a>
+                style="text-decoration:none;display:none;">📰</a>
             <button onclick="openPersonalCabinet()" title="Личный кабинет"
                 class="text-mist-dim hover:text-gold transition text-base leading-none px-1"
                 style="background:none;border:none;cursor:pointer;">🌐</button>
@@ -536,6 +536,13 @@
                 }
                 if (site.cabinet_theme_id && site.cabinet_theme_id !== 'classic') {
                     document.body.setAttribute('data-theme', site.cabinet_theme_id);
+                }
+                if (site.news_channel_url) {
+                    const newsLink = document.getElementById('newsChannelLink');
+                    if (newsLink) {
+                        newsLink.href = site.news_channel_url;
+                        newsLink.style.display = '';
+                    }
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
         })();

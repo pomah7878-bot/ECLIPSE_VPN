@@ -768,18 +768,22 @@ async def handle_welcome_page(request: web.Request) -> web.Response:
 
 async def handle_public_site_info(request: web.Request) -> web.Response:
     """GET /api/public/site-info — базовая информация о сервисе, полностью
-    без авторизации: название бренда и юзернейм бота. Используется
-    публичными страницами (например /welcome, /), чтобы не хардкодить
-    название сервиса в HTML — оно берётся из настроек текущей
-    инсталляции, как и везде в остальном боте."""
-    from database.requests import get_effective_brand_name, get_cabinet_theme_id
+    без авторизации: название бренда, юзернейм бота, ссылка на новостной
+    канал (если настроен). Используется публичными страницами (например
+    /welcome, /, /shop), чтобы не хардкодить эти данные в HTML — они
+    берутся из настроек текущей инсталляции, как и везде в остальном боте."""
+    from database.requests import get_effective_brand_name, get_cabinet_theme_id, get_marketing_channel_id
 
     bot_username = await _resolve_bot_username_for_webapp()
+
+    channel_id = get_marketing_channel_id()
+    channel_url = f"https://t.me/{channel_id.lstrip('@')}" if channel_id else None
 
     resp = web.json_response({
         "brand_name": get_effective_brand_name(),
         "bot_username": bot_username,
         "cabinet_theme_id": get_cabinet_theme_id(),
+        "news_channel_url": channel_url,
     })
     resp.headers['Cache-Control'] = 'no-store'
     return resp
