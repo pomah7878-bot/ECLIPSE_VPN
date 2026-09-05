@@ -421,6 +421,7 @@ def _build_server_data_from_key(key: Dict[str, Any]) -> Dict[str, Any]:
         'panel_version': key.get('panel_version'),
         'panel_api_profile': key.get('panel_api_profile'),
         'panel_checked_at': key.get('panel_checked_at'),
+        'inbound_group': key.get('inbound_group'),
     }
 
 

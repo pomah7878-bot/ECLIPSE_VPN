@@ -42,6 +42,17 @@ def _build_device_limit_fields(device_count: int) -> Dict[str, int]:
         return {"limitIp": 0, "limitHwid": device_count}
     return {"limitIp": device_count, "limitHwid": 0}
 
+
+def _inbound_belongs_to_group(tag: Optional[str], group: int) -> bool:
+    """Проверяет, помечен ли inbound маркером --N для группы (одна
+    физическая панель, разделённая на несколько виртуальных серверов в
+    боте). Тег вида "мой-тег--1--2" принадлежит группам 1 и 2. Точное
+    совпадение сегмента, а не подстроки — "--12" НЕ совпадёт с группой 1."""
+    if not tag:
+        return False
+    parts = tag.split("--")
+    return str(group) in parts[1:]
+
 READ_ONLY_POST_ENDPOINTS = {
     "/login",
     "/panel/api/inbounds/onlines",
@@ -1255,11 +1266,20 @@ class XUIClient(BaseVPNClient):
         obj = result.get("obj", [])
         if not isinstance(obj, list):
             return []
-        return [
+        inbounds = [
             self._normalize_inbound(inbound)
             for inbound in obj
             if isinstance(inbound, dict)
         ]
+        # Одна физическая панель, разделённая в боте на несколько
+        # виртуальных серверов (см. миграцию v99, servers.inbound_group) —
+        # если для ЭТОЙ записи сервера задана группа, оставляем только
+        # inbound'ы с соответствующим маркером --N в теге. Если группа не
+        # задана — используются все inbound'ы, как и раньше.
+        group = self.server.get("inbound_group") if isinstance(self.server, dict) else None
+        if group:
+            inbounds = [ib for ib in inbounds if _inbound_belongs_to_group(ib.get("tag"), int(group))]
+        return inbounds
 
     async def get_inbounds(self, include_ignored: bool = False) -> List[Dict[str, Any]]:
         """Return regular single-key inbounds; MTProto is subscription-only."""

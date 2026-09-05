@@ -750,5 +750,6 @@ def _build_server_data(key: dict) -> dict:
         'web_base_path': key.get('web_base_path', ''),
         'login': key.get('login'),
         'password': key.get('password'),
-        'protocol': key.get('protocol', 'https')
+        'protocol': key.get('protocol', 'https'),
+        'inbound_group': key.get('inbound_group'),
     }
