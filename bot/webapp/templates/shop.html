@@ -125,9 +125,9 @@
         <div class="corona-glow"></div>
 
         <div class="max-w-md mx-auto px-4 pt-8 pb-4 relative">
-            <a href="https://t.me/eclipse_unlimited_news" target="_blank" title="Новости канала"
+            <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
                 class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
-                style="text-decoration:none;position:absolute;top:12px;right:16px;">📰</a>
+                style="text-decoration:none;position:absolute;top:12px;right:16px;display:none;">📰</a>
             <button onclick="toggleShopLang()" id="langToggleBtn" title="Switch language"
                 class="bg-panel border border-[color:var(--hairline)] text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
                 style="position:absolute;top:12px;right:60px;">🇷🇺</button>
@@ -392,6 +392,13 @@
                 }
                 if (site.bot_username) {
                     BOT_USERNAME = site.bot_username;
+                }
+                if (site.news_channel_url) {
+                    const newsLink = document.getElementById('newsChannelLink');
+                    if (newsLink) {
+                        newsLink.href = site.news_channel_url;
+                        newsLink.style.display = '';
+                    }
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
         })();
