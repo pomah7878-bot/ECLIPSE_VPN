@@ -1482,7 +1482,13 @@ async def complete_payment_flow(
         from bot.errors import TariffNotFoundError
         if isinstance(e, TariffNotFoundError):
             from bot.keyboards.support import support_contact_kb
-            support_link = get_setting('support_channel_link', build_telegram_link('ECLIPSESupport'))
+            from bot.utils.runtime_state import get_bot_username
+            bot_username = get_bot_username()
+            default_support_link = (
+                build_telegram_link(bot_username, start='support') if bot_username
+                else build_telegram_link()
+            )
+            support_link = get_setting('support_channel_link', default_support_link)
             await _show_complete_payment_status(
                 message,
                 title_html='⚠️ <b>Тариф не найден</b>',
