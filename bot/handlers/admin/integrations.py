@@ -292,6 +292,52 @@ async def set_cabinet_theme_handler(callback: CallbackQuery, state: FSMContext):
     await show_cabinet_theme_menu(callback, state)
 
 
+@router.callback_query(F.data == "admin_device_limit_type_menu")
+async def show_device_limit_type_menu(callback: CallbackQuery, state: FSMContext):
+    """Показывает выбор типа ограничения количества устройств на ключ."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import DEVICE_LIMIT_TYPES, get_device_limit_type
+
+    current_id = get_device_limit_type()
+    lines = ["📱 <b>Ограничение устройств на ключ</b>\n", "Общая настройка для всех тарифов и ключей:\n"]
+    for tid, info in DEVICE_LIMIT_TYPES.items():
+        mark = "✅ " if tid == current_id else ""
+        lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    for tid, info in DEVICE_LIMIT_TYPES.items():
+        mark = "✅ " if tid == current_id else ""
+        builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_device_limit_type:{tid}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations"))
+
+    await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_set_device_limit_type:"))
+async def set_device_limit_type_handler(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет выбранный тип ограничения устройств."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import DEVICE_LIMIT_TYPES, set_device_limit_type
+
+    type_id = callback.data.split(":", 1)[1]
+    try:
+        set_device_limit_type(type_id)
+        await callback.answer(f"✅ Применено: {DEVICE_LIMIT_TYPES[type_id]['label']}")
+    except ValueError:
+        await callback.answer("❌ Неизвестный тип", show_alert=True)
+        return
+
+    await show_device_limit_type_menu(callback, state)
+
+
 # ============================================================
 # Название бренда (для текстов AI-помощника)
 # ============================================================

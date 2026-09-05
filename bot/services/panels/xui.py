@@ -29,6 +29,19 @@ JSON_INBOUND_FIELDS = ("settings", "streamSettings", "sniffing")
 SETTING_BASE_LEGACY = "/panel/setting"
 SETTING_BASE_API = "/panel/api/setting"
 MTPROTO_MULTI_CLIENT_MIN_VERSION = (3, 5, 0)
+
+
+def _build_device_limit_fields(device_count: int) -> Dict[str, int]:
+    """Возвращает поля limitIp/limitHwid для JSON клиента панели — в
+    зависимости от глобальной настройки типа ограничения устройств
+    (Интеграции → Ограничение устройств). Только ОДНО из двух полей
+    получает реальное число, второе всегда 0 — иначе оба ограничения
+    действовали бы одновременно, что не то, что имелось в виду."""
+    from database.requests import get_device_limit_type
+    if get_device_limit_type() == 'hwid':
+        return {"limitIp": 0, "limitHwid": device_count}
+    return {"limitIp": device_count, "limitHwid": 0}
+
 READ_ONLY_POST_ENDPOINTS = {
     "/login",
     "/panel/api/inbounds/onlines",
@@ -350,6 +363,7 @@ class XUIClient(BaseVPNClient):
             "email": record.get("email") or fallback_email or "",
             "security": record.get("security", "auto"),
             "limitIp": record.get("limitIp", 1),
+            "limitHwid": record.get("limitHwid", 0),
             "totalGB": record.get("totalGB", 0),
             "expiryTime": record.get("expiryTime", 0),
             "enable": record.get("enable", True),
@@ -1726,7 +1740,7 @@ class XUIClient(BaseVPNClient):
         # Basic client structure
         client_entry = {
             "email": email,
-            "limitIp": limit_ip,
+            **_build_device_limit_fields(limit_ip),
             "totalGB": total_bytes,
             "expiryTime": expire_time,
             "enable": enable,
@@ -2537,6 +2551,7 @@ class XUIClient(BaseVPNClient):
                     "id": target_client.get('id'),
                     "email": target_client.get('email'),
                     "limitIp": target_client.get('limitIp', 1),
+                    "limitHwid": target_client.get('limitHwid', 0),
                     "totalGB": total_bytes,
                     "expiryTime": target_client.get('expiryTime', 0),
                     "enable": target_client.get('enable', True),
@@ -2787,7 +2802,10 @@ class XUIClient(BaseVPNClient):
             "password": target_client.get('password', ''),
             "flow": target_client.get('flow', '') if flow is None else flow,
             "email": target_client.get('email', email),
-            "limitIp": target_client.get('limitIp', 1) if limit_ip is None else limit_ip,
+            **(
+                {"limitIp": target_client.get('limitIp', 1), "limitHwid": target_client.get('limitHwid', 0)}
+                if limit_ip is None else _build_device_limit_fields(limit_ip)
+            ),
             "totalGB": total_gb_bytes,          # ← From our database!
             "expiryTime": expiry_time_ms,        # ← From our database!
             "enable": target_client.get('enable', True) if enable is None else enable,
@@ -2938,6 +2956,7 @@ class XUIClient(BaseVPNClient):
                     "flow": target_client.get('flow', ''),
                     "email": target_client.get('email', ''),
                     "limitIp": target_client.get('limitIp', 1),
+                    "limitHwid": target_client.get('limitHwid', 0),
                     "totalGB": target_client.get('totalGB', 0),
                     "expiryTime": new_expiry,
                     "enable": target_client.get('enable', True),
@@ -3336,6 +3355,7 @@ class XUIClient(BaseVPNClient):
             "flow": target_client.get('flow', ''),
             "email": target_client.get('email', ''),
             "limitIp": target_client.get('limitIp', 1),
+            "limitHwid": target_client.get('limitHwid', 0),
             "totalGB": total_gb_bytes,
             "expiryTime": target_client.get('expiryTime', 0),
             "enable": target_client.get('enable', True),

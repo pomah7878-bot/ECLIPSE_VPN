@@ -203,7 +203,7 @@ def referral_back_kb() -> InlineKeyboardMarkup:
 
 def integrations_menu_kb() -> InlineKeyboardMarkup:
     """Меню раздела «Интеграции» — домен сайта, AI, вход через соцсети."""
-    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES
+    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_device_limit_type, DEVICE_LIMIT_TYPES
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
@@ -227,6 +227,10 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text=f"🎭 Тема личного кабинета: {CABINET_THEMES[get_cabinet_theme_id()]['label']}",
         callback_data='admin_cabinet_theme_menu',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📱 Ограничение устройств: {DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']}",
+        callback_data='admin_device_limit_type_menu',
     ))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
