@@ -891,7 +891,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
 
     webapp_url = get_effective_webapp_url()
     if webapp_url:
-        headers["profile-web-page-url"] = webapp_url
+        headers["profile-web-page-url"] = f"{webapp_url.rstrip('/')}/shop"
 
     bot_username = await _resolve_bot_username_for_webapp()
     if bot_username:
