@@ -34,6 +34,9 @@ __all__ = [
     'set_welcome_template_id',
     'CABINET_THEMES',
     'get_cabinet_theme_id',
+    'DEVICE_LIMIT_TYPES',
+    'get_device_limit_type',
+    'set_device_limit_type',
     'set_cabinet_theme_id',
     'delete_setting',
     'is_update_notifications_enabled',
@@ -507,6 +510,27 @@ def is_demo_payment_enabled() -> bool:
 # (домен сайта, AI, OAuth) — приоритет над config.py/secrets.env, чтобы можно
 # было донастроить бота после установки, если данные не были даны сразу.
 # ============================================================================
+
+DEVICE_LIMIT_TYPES = {
+    'ip': {'label': '🌐 По IP-адресам', 'description': 'Классическое ограничение — считает уникальные IP-адреса подключений'},
+    'hwid': {'label': '📱 По устройствам (HWID)', 'description': 'Панель фиксирует устройство при запросе страницы подписки. Работает только со встроенной подпиской 3x-ui — на своей странице подписки нативно не сработает'},
+}
+
+
+def get_device_limit_type() -> str:
+    """Тип ограничения количества устройств на ключ — 'ip' (по умолчанию,
+    классический способ) или 'hwid' (по фиксации устройства при запросе
+    подписки — поддерживается панелью 3x-ui). Общая настройка для всех
+    тарифов и ключей, не за каждый тариф отдельно."""
+    value = get_setting('device_limit_type', 'ip')
+    return value if value in DEVICE_LIMIT_TYPES else 'ip'
+
+
+def set_device_limit_type(value: str) -> None:
+    """Задаёт тип ограничения устройств — 'ip' или 'hwid'."""
+    if value not in DEVICE_LIMIT_TYPES:
+        raise ValueError(f"Неизвестный тип ограничения устройств: {value}")
+    set_setting('device_limit_type', value)
 
 def get_effective_webapp_url() -> str:
     """Домен сайта/WebApp. Значение из админки имеет приоритет над config.py.
