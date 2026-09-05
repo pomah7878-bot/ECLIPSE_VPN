@@ -831,6 +831,19 @@ async def run_daily_tasks(bot: Bot) -> None:
                     )
             except Exception as e:
                 logger.error(f"Ошибка автоудаления истекших ключей: {e}")
+
+            # Удаление неактивных ключей именно с панели (сам ключ в боте
+            # остаётся, клиент может продлить как обычно)
+            try:
+                from bot.services.panel_only_cleanup import process_panel_only_cleanup
+                panel_cleanup_stats = await process_panel_only_cleanup()
+                if panel_cleanup_stats['cleaned_count'] or panel_cleanup_stats['errors_count']:
+                    logger.info(
+                        "🧹 Очистка неактивных ключей с панели: убрано %s, ошибок %s",
+                        panel_cleanup_stats['cleaned_count'], panel_cleanup_stats['errors_count'],
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка очистки неактивных ключей с панели: {e}")
             
             # Wait 5 minutes
             await asyncio.sleep(300)

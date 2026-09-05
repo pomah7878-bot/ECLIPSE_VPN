@@ -164,6 +164,61 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
+@router.callback_query(F.data == "admin_edit_panel_cleanup_days")
+async def edit_panel_cleanup_days_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from bot.services.panel_only_cleanup import get_panel_cleanup_delay_days
+
+    await state.set_state(AdminStates.edit_panel_cleanup_days)
+    current = get_panel_cleanup_delay_days()
+    await safe_edit_or_send(
+        callback.message,
+        f"🧹 <b>Удаление неактивных ключей с панели</b>\n\nТекущее значение: <code>{current}</code> дней\n\n"
+        "Через сколько дней после истечения подписки клиент удаляется именно с "
+        "VPN-панели 3x-ui (освобождает место в панели). <b>По умолчанию 0</b> — "
+        "удаляется сразу же.\n\n"
+        "⚠️ <b>Не путать</b> с полным удалением ключа из самого бота (отдельная "
+        "настройка, по умолчанию 30 дней) — даже после удаления с панели клиент "
+        "по-прежнему может продлить подписку в боте в обычный срок. После "
+        "продления восстановится та же самая ссылка подписки, клиенту ничего "
+        "менять не нужно.\n\n"
+        "Отправьте число дней (0 — удалять сразу):",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_panel_cleanup_days)
+async def edit_panel_cleanup_days_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    try:
+        days = int(value)
+        if days < 0:
+            raise ValueError
+    except ValueError:
+        await safe_edit_or_send(message, "❌ Введите целое число дней (0 или больше). Попробуйте ещё раз.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    from bot.services.panel_only_cleanup import set_panel_cleanup_delay_days
+    set_panel_cleanup_delay_days(days)
+    await state.set_state(AdminStates.integrations_menu)
+
+    await message.answer(f"✅ Сохранено: клиент будет удаляться с панели через {days} дней после истечения подписки.")
+    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
+
 @router.callback_query(F.data == "admin_toggle_start_import_buttons")
 async def toggle_start_import_buttons(callback: CallbackQuery, state: FSMContext):
     """Включает/выключает кнопки быстрого импорта (Happ/INCY) на главной странице."""

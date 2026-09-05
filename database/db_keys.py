@@ -12,6 +12,7 @@ __all__ = [
     'get_user_vpn_keys',
     'get_vpn_key_by_id',
     'get_vpn_key_by_sub_id',
+    'mark_key_panel_removed',
     'extend_vpn_key',
     'create_vpn_key_from_panel_import',
     'vpn_key_exists_for_panel_email',
@@ -190,6 +191,20 @@ def get_vpn_key_by_sub_id(sub_id: str) -> Optional[Dict[str, Any]]:
         row = cursor.fetchone()
         return dict(row) if row else None
 
+def mark_key_panel_removed(key_id: int) -> None:
+    """Отмечает, что клиент этого ключа был убран с VPN-панели фоновой
+    очисткой неактивных ключей (bot/services/panel_only_cleanup.py).
+    Сам ключ в боте не удаляется. Сбрасывается обратно в NULL при
+    продлении ключа (extend_vpn_key) — после продления клиент снова
+    появляется на панели, и при повторном истечении очистку нужно
+    будет применить заново."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE vpn_keys SET panel_removed_at = datetime('now') WHERE id = ?",
+            (key_id,),
+        )
+        conn.commit()
+
 def extend_vpn_key(key_id: int, days: int) -> bool:
     """
     Extends the VPN key for the specified number of days.
@@ -214,7 +229,8 @@ def extend_vpn_key(key_id: int, days: int) -> bool:
                     END, 
                     ?
                 )
-            )
+            ),
+            panel_removed_at = NULL
             WHERE id = ?
         """, (modifier, key_id))
         success = cursor.rowcount > 0
