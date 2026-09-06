@@ -945,6 +945,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if bot_username:
         headers["support-url"] = f"https://t.me/{bot_username}?start=support"
 
+    from database.requests import get_happ_provider_id
+    provider_id = get_happ_provider_id()
+    if provider_id:
+        headers["providerid"] = provider_id
+
     if "subscription-userinfo" not in headers:
         expire_epoch = 0
         try:

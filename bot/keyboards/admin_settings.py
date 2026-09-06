@@ -237,6 +237,12 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
         text=f"🧹 Удаление с панели через: {get_panel_cleanup_delay_days()} дн.",
         callback_data='admin_edit_panel_cleanup_days',
     ))
+    from database.requests import get_happ_provider_id
+    happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
+    builder.row(InlineKeyboardButton(
+        text=f"🆔 Happ Provider ID: {happ_provider_status}",
+        callback_data='admin_edit_happ_provider_id',
+    ))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))

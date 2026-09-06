@@ -17,6 +17,8 @@ __all__ = [
     'set_trial_mode',
     'get_marketing_channel_id',
     'set_marketing_channel_id',
+    'get_happ_provider_id',
+    'set_happ_provider_id',
     'get_effective_brand_name',
     'set_brand_name',
     'get_effective_own_app_name',
@@ -498,6 +500,23 @@ def get_marketing_channel_id() -> Optional[str]:
 def set_marketing_channel_id(channel_id: str) -> None:
     """Задаёт username маркетингового канала (с символом @ или без — как ввёл админ)."""
     set_setting('marketing_channel_id', channel_id.strip())
+
+
+def get_happ_provider_id() -> Optional[str]:
+    """Provider ID из личного кабинета happ-proxy.com — открывает доступ к
+    'Advanced parameters' у Happ (в т.ч. sub-info/sub-expire, которые мы
+    отправляем в /happ-sub). Без него эти параметры официально не
+    гарантированы к работе (см. доки happ.su/main/dev-docs/provider-id).
+    Пусто по умолчанию — каждый владелец бота регистрирует СВОЙ Provider ID,
+    а не использует чужой (иначе статистика/привязка HWID утечёт в чужой
+    аккаунт happ-proxy.com)."""
+    value = get_setting('happ_provider_id', '')
+    return value if value else None
+
+
+def set_happ_provider_id(provider_id: str) -> None:
+    """Задаёт Happ Provider ID."""
+    set_setting('happ_provider_id', provider_id.strip())
 
 
 def is_demo_payment_enabled() -> bool:
