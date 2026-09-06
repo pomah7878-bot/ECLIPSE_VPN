@@ -801,7 +801,7 @@ async def admin_update_cmd(message: Message, state: FSMContext):
         )
         return
     
-    restart_bot()
+    restart_bot(notify_admin_id=message.from_user.id)
 
 
 # ============================================================================
@@ -999,7 +999,7 @@ async def update_bot_confirmed(callback: CallbackQuery, state: FSMContext):
         return
     
     # Restarting the bot
-    restart_bot()
+    restart_bot(notify_admin_id=callback.from_user.id)
 
 
 
@@ -1116,7 +1116,7 @@ async def force_overwrite_confirmed(callback: CallbackQuery, state: FSMContext):
         return
     
     # Restarting the bot
-    restart_bot()
+    restart_bot(notify_admin_id=callback.from_user.id)
 
 
 # ============================================================================

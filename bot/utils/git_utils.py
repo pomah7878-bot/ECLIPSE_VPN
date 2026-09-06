@@ -465,7 +465,7 @@ def install_requirements() -> Tuple[bool, str]:
         return False, f"❌ Ошибка: {e}"
 
 
-def restart_bot() -> None:
+def restart_bot(notify_admin_id: int | None = None) -> None:
     """
     Restarts the bot, replacing the current process.
 
@@ -477,7 +477,21 @@ def restart_bot() -> None:
     as root (see eclipse-vpn.service), so it has permission to call
     systemctl directly. Best-effort: a failure here must not block the
     bot's own restart.
+
+    Args:
+        notify_admin_id: если передан, сохраняется в настройках (переживает
+            os.execv, который стирает всю память процесса) — после успешного
+            старта новый процесс отправит этому админу уведомление, чтобы не
+            нужно было гадать, поднялся бот или нет, и не нужно было вручную
+            вспоминать нажать /start.
     """
+    if notify_admin_id:
+        try:
+            from database.requests import set_setting
+            set_setting('pending_restart_notify_admin_id', str(notify_admin_id))
+        except Exception as e:
+            logger.warning(f"Не удалось сохранить admin_id для уведомления после рестарта: {e}")
+
     try:
         if os.path.exists('/etc/systemd/system/eclipse-ai.service'):
             subprocess.run(
