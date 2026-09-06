@@ -2775,7 +2775,12 @@ class XUIClient(BaseVPNClient):
             updated_client["expiryTime"] = expiry_time_ms
             updated_client["enable"] = updated_client.get("enable", True) if enable is None else enable
             updated_client["subId"] = updated_client.get("subId", "") if sub_id is None else sub_id
-            updated_client["limitIp"] = updated_client.get("limitIp", 1) if limit_ip is None else limit_ip
+            if limit_ip is None:
+                # Сохраняем оба поля как есть — не трогаем текущий режим
+                updated_client["limitIp"] = updated_client.get("limitIp", 1)
+                updated_client["limitHwid"] = updated_client.get("limitHwid", 0)
+            else:
+                updated_client.update(_build_device_limit_fields(limit_ip))
             updated_client["reset"] = 0
             if flow is not None:
                 updated_client["flow"] = flow
