@@ -279,8 +279,8 @@ TARIFF_PARAMS = [
     },
     {
         "key": "max_ips",
-        "label": "Лимит устройств (IP)",
-        "hint": "Минимум 1 (ограничение по IP адресам)",
+        "label": "Лимит устройств",
+        "hint": "Минимум 1. Тип ограничения (IP или HWID) настраивается в Интеграциях",
         "validate": lambda x: x.isdigit() and 1 <= int(x) <= 999,
         "error": "Введите число от 1 до 999",
         "convert": int,

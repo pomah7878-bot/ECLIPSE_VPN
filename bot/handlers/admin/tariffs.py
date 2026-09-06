@@ -284,7 +284,12 @@ def get_add_step_text(step: int, data: dict) -> str:
     
     lines.append(f"Введите <b>{param['label'].lower()}</b>:")
     lines.append(f"_({param['hint']})_")
-    
+
+    if param['key'] == 'max_ips':
+        from database.requests import get_device_limit_type, DEVICE_LIMIT_TYPES
+        mode_label = DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']
+        lines.append(f"\n📡 Сейчас действует режим: <b>{mode_label}</b> (меняется в Интеграциях)")
+
     # If there is additional help
     if param.get('help'):
         lines.append(f"\n{param['help']}")
@@ -583,7 +588,12 @@ def get_edit_tariff_text(tariff: dict, current_param: int) -> str:
         f"Введите новое значение или используйте кнопки навигации:",
         f"_({param['hint']})_"
     ]
-    
+
+    if param['key'] == 'max_ips':
+        from database.requests import get_device_limit_type, DEVICE_LIMIT_TYPES
+        mode_label = DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']
+        lines.append(f"\n📡 Сейчас действует режим: <b>{mode_label}</b> (меняется в Интеграциях)")
+
     if param.get('help'):
         lines.append(f"\n{param['help']}")
     
