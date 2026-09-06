@@ -473,10 +473,13 @@ def _client_needs_panel_update(
     compare_sub_id: bool = True,
 ) -> bool:
     """True if the panel client is different from the target state from the database."""
+    from bot.services.panels.xui import _build_device_limit_fields
+    expected_limits = _build_device_limit_fields(limit_ip)
     checks = (
         (_panel_int(client.get('expiryTime')), int(expiry_time_ms)),
         (_panel_int(client.get('totalGB')), int(total_gb_bytes)),
-        (_panel_int(client.get('limitIp')), int(limit_ip)),
+        (_panel_int(client.get('limitIp')), expected_limits['limitIp']),
+        (_panel_int(client.get('limitHwid')), expected_limits['limitHwid']),
         (_panel_int(client.get('reset')), 0),
     )
     if any(current != expected for current, expected in checks):
