@@ -92,6 +92,21 @@ async def on_startup(bot: Bot):
     logger.info(f"✅ Бот запущен: @{bot_info.username}")
 
     try:
+        from database.requests import get_setting, set_setting
+        pending_admin_id = get_setting('pending_restart_notify_admin_id', '')
+        if pending_admin_id:
+            set_setting('pending_restart_notify_admin_id', '')
+            await bot.send_message(
+                int(pending_admin_id),
+                "✅ <b>Бот перезапущен и снова готов к работе.</b>\n\n"
+                "Нажмите /start, чтобы открыть меню — старые кнопки в чате "
+                "после перезапуска могли устареть.",
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.warning(f"Не удалось отправить уведомление о завершении перезапуска: {e}")
+
+    try:
         from bot.services.bot_commands import sync_bot_commands, sync_menu_button
         await sync_bot_commands(bot)
         await sync_menu_button(bot)
