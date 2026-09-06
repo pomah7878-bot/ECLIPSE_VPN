@@ -909,9 +909,23 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
 
     import aiohttp as _aiohttp
     from multidict import CIMultiDict
+    # Пробрасываем HWID-идентифицирующие заголовки от РЕАЛЬНОГО клиента
+    # (Happ, INCY, v2rayTUN и т.п.) панели — без этого панель в режиме
+    # HWID-ограничения не может опознать устройство и отдаёт пустое тело
+    # подписки (сама панель добавляет заголовки x-hwid-active/
+    # x-hwid-not-supported, сигнализируя об этом). См. стандарт:
+    # github.com/XTLS/Xray-core/discussions/4877
+    _forward_header_names = ("X-HWID", "User-Agent", "X-Device-OS", "X-Ver-OS", "X-Device-Model")
+    forward_headers = {
+        name: request.headers[name]
+        for name in _forward_header_names
+        if name in request.headers
+    }
     try:
         async with _aiohttp.ClientSession() as session:
-            async with session.get(raw_url, timeout=_aiohttp.ClientTimeout(total=10)) as upstream:
+            async with session.get(
+                raw_url, timeout=_aiohttp.ClientTimeout(total=10), headers=forward_headers
+            ) as upstream:
                 body = await upstream.read()
                 # Копируем ВСЕ заголовки от панели как есть, кроме тех, что
                 # должен считать сам сервер при формировании ответа
