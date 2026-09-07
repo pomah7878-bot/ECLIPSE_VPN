@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 99
+LATEST_VERSION = 100
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2013,6 +2013,24 @@ def migration_99(conn: sqlite3.Connection) -> None:
     logger.info("Migration v99 applied: servers.inbound_group готово")
 
 
+def migration_100(conn: sqlite3.Connection) -> None:
+    """Migration v100: создаёт таблицу trial_verified_phones — общий
+    реестр номеров телефонов, уже использованных для получения пробного
+    периода. Проверяется и с сайта, и из бота, чтобы один и тот же
+    человек не мог получить пробник дважды под разными аккаунтами
+    (Telegram + анонимный OAuth-аккаунт на сайте)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trial_verified_phones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone_normalized TEXT NOT NULL UNIQUE,
+            telegram_id INTEGER,
+            site_account_id INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v100 applied: таблица trial_verified_phones создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2040,6 +2058,7 @@ MIGRATIONS = {
     97: migration_97,
     98: migration_98,
     99: migration_99,
+    100: migration_100,
 }
 
 
