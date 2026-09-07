@@ -27,3 +27,6 @@ class StartStates(StatesGroup):
     choosing_language = State()
 class GateSettings(StatesGroup):
     waiting_for_channel = State()
+
+class TrialPhoneVerification(StatesGroup):
+    waiting_for_contact = State()

@@ -1,0 +1,66 @@
+"""
+Общий реестр номеров телефонов, использованных для получения пробного
+периода — единая проверка и с сайта, и из бота, чтобы один и тот же
+человек не мог получить пробник дважды под разными аккаунтами
+(Telegram-аккаунт + отдельный, никак не связанный с ним OAuth-аккаунт
+на сайте).
+
+Номер телефона — единственный практически общий идентификатор между
+Telegram (передаётся через кнопку "Поделиться контактом", уже
+верифицирован самим Telegram) и обычным сайтом (верифицируется через
+звонок/SMS с кодом, см. bot/services/phone_verification.py).
+"""
+import re
+from typing import Optional
+
+
+def normalize_phone(raw_phone: str) -> str:
+    """Приводит номер к единому виду для сравнения: только цифры,
+    ведущая '8' заменяется на '7' (российский стандарт), без '+'.
+    '+7 (912) 345-67-89' и '89123456789' дают одинаковый результат."""
+    digits = re.sub(r"\D", "", raw_phone or "")
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    return digits
+
+
+def has_phone_used_trial(raw_phone: str) -> bool:
+    """Проверяет, использовался ли уже этот номер для пробного периода
+    (с любой стороны — сайт или бот)."""
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return False
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM trial_verified_phones WHERE phone_normalized = ?",
+            (phone,),
+        ).fetchone()
+    return row is not None
+
+
+def mark_phone_trial_used(
+    raw_phone: str,
+    telegram_id: Optional[int] = None,
+    site_account_id: Optional[int] = None,
+) -> bool:
+    """Отмечает номер как использованный для пробного периода.
+    Возвращает False, если номер уже был использован ДО этого вызова
+    (защита от гонки — двух почти одновременных попыток одним и тем же
+    номером с разных сторон)."""
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return False
+    from database.connection import get_db
+    with get_db() as conn:
+        try:
+            conn.execute(
+                "INSERT INTO trial_verified_phones (phone_normalized, telegram_id, site_account_id) "
+                "VALUES (?, ?, ?)",
+                (phone, telegram_id, site_account_id),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            # UNIQUE constraint — номер уже был отмечен кем-то другим
+            return False
