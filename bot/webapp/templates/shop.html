@@ -432,6 +432,24 @@
             return res.json();
         }
 
+        // В отличие от postAPI — НЕ выбрасывает исключение на статусы вроде
+        // 400/401/503, а просто возвращает распарсенное тело ответа. Это
+        // важно там, где бэкенд намеренно отвечает ошибочным статусом вместе
+        // с понятным текстом ошибки в JSON (например "номер уже использован") —
+        // с обычным postAPI этот текст терялся бы, улетая сразу в catch.
+        async function postAPISafe(endpoint, body) {
+            const res = await fetch(`/api/public/${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            try {
+                return await res.json();
+            } catch (e) {
+                return { error: 'unknown', message: `HTTP ${res.status}` };
+            }
+        }
+
         async function fetchAPI(endpoint) {
             const res = await fetch(`/api/public/${endpoint}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -508,17 +526,87 @@
         }
 
         async function onTurnstileSuccess(token) {
+            window._trialTurnstileToken = token;
+            showTrialPhoneStep();
+        }
+
+        function showTrialPhoneStep() {
             const box = document.getElementById('payContent');
-            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center">Активируем пробный период…</p>';
+            box.innerHTML = `
+                <h3 class="font-display text-base font-bold mb-2">📱 Подтверждение номера</h3>
+                <p class="text-xs text-mist mb-4">Это защита от повторного получения пробного периода — вводится один раз, займёт минуту.</p>
+                <input id="trialPhoneInput" type="tel" placeholder="+7 999 123-45-67" autocomplete="tel"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-3"
+                    style="outline:none;">
+                <button onclick="requestTrialPhoneVerification()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить номер</button>
+                <div id="trialPhoneError" class="text-xs text-alert mt-2 text-center"></div>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Отмена</button>
+            `;
+        }
+
+        async function requestTrialPhoneVerification() {
+            const phone = (document.getElementById('trialPhoneInput').value || '').trim();
+            const errBox = document.getElementById('trialPhoneError');
+            errBox.textContent = '';
+            if (!phone) {
+                errBox.textContent = 'Введите номер телефона.';
+                return;
+            }
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center">Готовим проверку номера…</p>';
             try {
-                const res = await postAPI('trial/create', { turnstile_token: token });
+                const res = await postAPISafe('trial/phone/request', { phone });
+                if (res.error) {
+                    showTrialPhoneStep();
+                    document.getElementById('trialPhoneError').textContent = res.message || 'Не удалось начать проверку номера.';
+                    return;
+                }
+                showTrialPhoneCallStep(res.allowed_phones_for_call);
+            } catch (e) {
+                showTrialPhoneStep();
+                document.getElementById('trialPhoneError').textContent = 'Не удалось начать проверку номера. Попробуйте позже.';
+            }
+        }
+
+        function showTrialPhoneCallStep(allowedPhones) {
+            const box = document.getElementById('payContent');
+            const numbersHtml = (allowedPhones || []).map(p => `<div class="font-mono text-base font-bold text-gold py-1">${escapeHtml(p)}</div>`).join('');
+            box.innerHTML = `
+                <h3 class="font-display text-base font-bold mb-2">📞 Позвоните на один из номеров</h3>
+                <p class="text-xs text-mist mb-3">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
+                <div class="card rounded-xl p-3 mb-4 text-center">${numbersHtml}</div>
+                <div id="trialPhoneWaiting" class="flex items-center justify-center gap-2 mb-3">
+                    <div class="spinner" style="width:16px;height:16px;"></div>
+                    <span class="text-xs text-mist">Ожидаем звонок…</span>
+                </div>
+                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Отмена</button>
+            `;
+            window._trialPhonePollInterval = setInterval(pollTrialPhoneVerification, 3000);
+            pollTrialPhoneVerification();
+        }
+
+        async function pollTrialPhoneVerification() {
+            try {
+                const res = await postAPISafe('trial/phone/check', {});
+                if (res.verified) {
+                    clearInterval(window._trialPhonePollInterval);
+                    await finalizeTrialCreation();
+                }
+            } catch (e) { /* попробуем на следующем цикле опроса */ }
+        }
+
+        async function finalizeTrialCreation() {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center">Номер подтверждён! Активируем пробный период…</p>';
+            try {
+                const res = await postAPISafe('trial/create', { turnstile_token: window._trialTurnstileToken });
                 if (res.error) {
                     box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось активировать пробный период.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
                     return;
                 }
                 showPaySuccess(res);
                 refreshAccountDashboard();
-            } catch(e) {
+            } catch (e) {
                 box.innerHTML = '<p class="text-sm text-alert py-4">Не удалось активировать пробный период. Попробуйте позже.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
             }
         }
@@ -530,6 +618,7 @@
         function closePay() {
             document.getElementById('payOverlay').classList.remove('active');
             if (_payPollTimer) { clearInterval(_payPollTimer); _payPollTimer = null; }
+            if (window._trialPhonePollInterval) { clearInterval(window._trialPhonePollInterval); window._trialPhonePollInterval = null; }
         }
 
         async function selectTariffAndPay(tariffId) {
