@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 100
+LATEST_VERSION = 101
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2031,6 +2031,25 @@ def migration_100(conn: sqlite3.Connection) -> None:
     logger.info("Migration v100 applied: таблица trial_verified_phones создана")
 
 
+def migration_101(conn: sqlite3.Connection) -> None:
+    """Migration v101: создаёт таблицу site_trial_phone_pending —
+    промежуточное состояние верификации номера телефона на сайте перед
+    получением пробного периода (через zvonok.com, "Звонок на
+    проверочный номер"). Отдельно от trial_verified_phones — та таблица
+    хранит УЖЕ использованные для пробника номера навсегда, а эта —
+    только текущий процесс подтверждения для конкретной сессии сайта."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS site_trial_phone_pending (
+            account_id INTEGER PRIMARY KEY,
+            phone_raw TEXT NOT NULL,
+            call_id TEXT,
+            verified_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v101 applied: таблица site_trial_phone_pending создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2059,6 +2078,7 @@ MIGRATIONS = {
     98: migration_98,
     99: migration_99,
     100: migration_100,
+    101: migration_101,
 }
 
 

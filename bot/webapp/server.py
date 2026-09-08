@@ -1345,6 +1345,74 @@ async def _verify_turnstile_token(token: str, remote_ip: str) -> bool:
         return False
 
 
+async def handle_public_trial_phone_request(request: web.Request) -> web.Response:
+    """POST /api/public/trial/phone/request — инициирует верификацию
+    номера телефона через zvonok.com ("Звонок на проверочный номер")
+    перед выдачей пробного периода на сайте. Body: {"phone": "+7..."}."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        body = {}
+    phone = (body.get("phone") or "").strip()
+    if not phone:
+        return web.json_response({"error": "phone_required", "message": "Укажите номер телефона."}, status=400)
+
+    from bot.services.trial_phone_registry import has_phone_used_trial
+    if has_phone_used_trial(phone):
+        return web.json_response(
+            {"error": "trial_already_used", "message": "Этот номер телефона уже использовался для пробного периода."},
+            status=400,
+        )
+
+    from bot.services.zvonok_verification import request_phone_confirmation, save_pending_verification
+    result = await request_phone_confirmation(phone)
+    if not result or not result.get("allowed_phones_for_call"):
+        return web.json_response(
+            {"error": "verification_unavailable", "message": "Проверка номера временно недоступна, попробуйте позже."},
+            status=503,
+        )
+
+    save_pending_verification(account_id, phone, result.get("call_id"))
+    return web.json_response({
+        "status": "ok",
+        "allowed_phones_for_call": result["allowed_phones_for_call"],
+    })
+
+
+async def handle_public_trial_phone_check(request: web.Request) -> web.Response:
+    """POST /api/public/trial/phone/check — проверяет, позвонил ли
+    клиент на один из служебных номеров (опрашивает zvonok.com)."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    from bot.services.zvonok_verification import (
+        check_phone_confirmation, mark_pending_verified, get_verified_phone_for_account,
+    )
+
+    already_verified = get_verified_phone_for_account(account_id)
+    if already_verified:
+        return web.json_response({"status": "ok", "verified": True})
+
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT phone_raw FROM site_trial_phone_pending WHERE account_id = ?",
+            (account_id,),
+        ).fetchone()
+    if not row:
+        return web.json_response({"error": "no_pending_verification"}, status=400)
+
+    confirmed = await check_phone_confirmation(row["phone_raw"])
+    if confirmed:
+        mark_pending_verified(account_id)
+    return web.json_response({"status": "ok", "verified": confirmed})
+
+
 async def handle_public_trial_create(request: web.Request) -> web.Response:
     """POST /api/public/trial/create — активирует бесплатный пробный период
     для текущего залогиненного аккаунта (по коду или OAuth). Без оплаты —
@@ -1405,6 +1473,27 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
     if _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id")):
         return web.json_response({"error": "trial_already_used", "message": "Вы уже использовали пробный период."}, status=400)
 
+    from bot.services.zvonok_verification import get_verified_phone_for_account
+    from bot.services.trial_phone_registry import has_phone_used_trial, mark_phone_trial_used
+
+    verified_phone = get_verified_phone_for_account(account_id)
+    if not verified_phone:
+        return web.json_response(
+            {"error": "phone_verification_required", "message": "Сначала подтвердите номер телефона."},
+            status=400,
+        )
+    if has_phone_used_trial(verified_phone):
+        return web.json_response(
+            {"error": "trial_already_used", "message": "Этот номер телефона уже использовался для пробного периода."},
+            status=400,
+        )
+    if not mark_phone_trial_used(verified_phone, site_account_id=account_id):
+        # Кто-то успел использовать этот номер за долю секунды до нас
+        return web.json_response(
+            {"error": "trial_already_used", "message": "Этот номер телефона уже использовался для пробного периода."},
+            status=400,
+        )
+
     order_id = _generate_public_order_id()
     try:
         create_anonymous_purchase(order_id, trial_tariff_id)
@@ -1428,6 +1517,8 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
         })
     except Exception as e:
         logger.error(f"Public trial creation error: {e}")
+        from bot.services.trial_phone_registry import unmark_phone_trial_used
+        unmark_phone_trial_used(verified_phone)
         return web.json_response({"error": "trial_creation_failed", "message": "Не удалось активировать пробный период. Попробуйте позже."}, status=502)
 
 
@@ -2344,6 +2435,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
     app.router.add_post("/api/public/pay/create", handle_public_pay_create)
+    app.router.add_post("/api/public/trial/phone/request", handle_public_trial_phone_request)
+    app.router.add_post("/api/public/trial/phone/check", handle_public_trial_phone_check)
     app.router.add_post("/api/public/trial/create", handle_public_trial_create)
     app.router.add_post("/api/public/pay/check", handle_public_pay_check)
     app.router.add_post("/api/public/account/lookup", handle_public_account_lookup)

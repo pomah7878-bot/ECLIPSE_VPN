@@ -19,6 +19,10 @@ __all__ = [
     'set_marketing_channel_id',
     'get_happ_provider_id',
     'set_happ_provider_id',
+    'get_zvonok_public_key',
+    'set_zvonok_public_key',
+    'get_zvonok_campaign_id',
+    'set_zvonok_campaign_id',
     'get_effective_brand_name',
     'set_brand_name',
     'get_effective_own_app_name',
@@ -517,6 +521,30 @@ def get_happ_provider_id() -> Optional[str]:
 def set_happ_provider_id(provider_id: str) -> None:
     """Задаёт Happ Provider ID."""
     set_setting('happ_provider_id', provider_id.strip())
+
+
+def get_zvonok_public_key() -> Optional[str]:
+    """API Public Key из личного кабинета zvonok.com — нужен для
+    верификации номера телефона на сайте перед выдачей пробного
+    периода (защита от повторного получения через сайт после бота).
+    Каждая white-label инсталляция регистрирует свой собственный
+    аккаунт zvonok.com — общий ключ использовать нельзя."""
+    value = get_setting('zvonok_public_key', '')
+    return value if value else None
+
+
+def set_zvonok_public_key(public_key: str) -> None:
+    set_setting('zvonok_public_key', public_key.strip())
+
+
+def get_zvonok_campaign_id() -> Optional[str]:
+    """ID кампании типа 'Звонок на проверочный номер' в zvonok.com."""
+    value = get_setting('zvonok_campaign_id', '')
+    return value if value else None
+
+
+def set_zvonok_campaign_id(campaign_id: str) -> None:
+    set_setting('zvonok_campaign_id', campaign_id.strip())
 
 
 def is_demo_payment_enabled() -> bool:

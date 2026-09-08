@@ -64,3 +64,17 @@ def mark_phone_trial_used(
         except Exception:
             # UNIQUE constraint — номер уже был отмечен кем-то другим
             return False
+
+
+def unmark_phone_trial_used(raw_phone: str) -> None:
+    """Откатывает пометку номера как использованного — вызывается, если
+    после успешной верификации телефона провижининг ключа всё же не
+    удался (например, сервер недоступен), чтобы клиент не потерял
+    возможность попробовать ещё раз тем же номером."""
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return
+    from database.connection import get_db
+    with get_db() as conn:
+        conn.execute("DELETE FROM trial_verified_phones WHERE phone_normalized = ?", (phone,))
+        conn.commit()

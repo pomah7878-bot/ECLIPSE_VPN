@@ -19,6 +19,8 @@ class AdminStates(StatesGroup):
     edit_webapp_url = State()            # Ввод домена сайта
     edit_panel_cleanup_days = State()    # Ввод задержки удаления неактивных ключей с панели
     edit_happ_provider_id = State()      # Ввод Happ Provider ID
+    edit_zvonok_public_key = State()     # Ввод Zvonok API Public Key
+    edit_zvonok_campaign_id = State()    # Ввод Zvonok Campaign ID
     edit_groq_key = State()              # Ввод ключа Groq (AI)
     edit_gemini_key = State()            # Ввод ключа Gemini (AI, резервный лейн)
     edit_brand_name = State()            # Ввод названия бренда (для текстов AI)
