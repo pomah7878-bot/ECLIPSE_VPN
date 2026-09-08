@@ -243,6 +243,15 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
         text=f"🆔 Happ Provider ID: {happ_provider_status}",
         callback_data='admin_edit_happ_provider_id',
     ))
+    from database.requests import get_zvonok_public_key, get_zvonok_campaign_id
+    builder.row(InlineKeyboardButton(
+        text=f"📞 Zvonok API Key: {'✅ задан' if get_zvonok_public_key() else 'не задан'}",
+        callback_data='admin_edit_zvonok_public_key',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📞 Zvonok Campaign ID: {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
+        callback_data='admin_edit_zvonok_campaign_id',
+    ))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))

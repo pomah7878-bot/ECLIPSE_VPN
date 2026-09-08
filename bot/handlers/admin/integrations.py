@@ -267,6 +267,99 @@ async def edit_happ_provider_id_save(message: Message, state: FSMContext):
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
+@router.callback_query(F.data == "admin_edit_zvonok_public_key")
+async def edit_zvonok_public_key_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_zvonok_public_key
+
+    await state.set_state(AdminStates.edit_zvonok_public_key)
+    current = get_zvonok_public_key()
+    current_text = current if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"🔑 <b>Zvonok API Public Key</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "Нужен для верификации номера телефона перед выдачей пробного периода "
+        "на сайте (защита от повторного получения через сайт после бота).\n\n"
+        "Получить: зарегистрируйся на <b>zvonok.com</b> → Настройки профиля → "
+        "«API Public Key» → «Сгенерировать».\n\n"
+        "Отправь ключ:",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_public_key)
+async def edit_zvonok_public_key_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value:
+        await safe_edit_or_send(message, "❌ Пустое значение недопустимо. Отправь ключ ещё раз.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    from database.requests import set_zvonok_public_key
+    set_zvonok_public_key(value)
+    await state.set_state(AdminStates.integrations_menu)
+
+    await message.answer(f"✅ Zvonok API Public Key сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
+@router.callback_query(F.data == "admin_edit_zvonok_campaign_id")
+async def edit_zvonok_campaign_id_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_zvonok_campaign_id
+
+    await state.set_state(AdminStates.edit_zvonok_campaign_id)
+    current = get_zvonok_campaign_id()
+    current_text = current if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"📞 <b>Zvonok Campaign ID</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID кампании типа «Звонок на проверочный номер» в личном кабинете "
+        "zvonok.com (раздел «📱 Подтверждение номера» → создать кампанию с "
+        "этим типом → ID виден в адресной строке страницы кампании).\n\n"
+        "Отправь ID кампании:",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_campaign_id)
+async def edit_zvonok_campaign_id_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value:
+        await safe_edit_or_send(message, "❌ Пустое значение недопустимо. Отправь ID ещё раз.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    from database.requests import set_zvonok_campaign_id
+    set_zvonok_campaign_id(value)
+    await state.set_state(AdminStates.integrations_menu)
+
+    await message.answer(f"✅ Zvonok Campaign ID сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
 
 @router.callback_query(F.data == "admin_toggle_start_import_buttons")
 async def toggle_start_import_buttons(callback: CallbackQuery, state: FSMContext):
