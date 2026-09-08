@@ -48,7 +48,9 @@ def is_provider_configured(provider: str) -> bool:
     cfg = OAUTH_PROVIDERS.get(provider)
     if not cfg:
         return False
-    from database.requests import get_effective_oauth_credentials
+    from database.requests import get_effective_oauth_credentials, is_site_auth_method_enabled
+    if not is_site_auth_method_enabled(provider):
+        return False
     client_id, client_secret = get_effective_oauth_credentials(provider)
     return bool(client_id) and bool(client_secret)
 

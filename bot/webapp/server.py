@@ -816,7 +816,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     канал (если настроен). Используется публичными страницами (например
     /welcome, /, /shop), чтобы не хардкодить эти данные в HTML — они
     берутся из настроек текущей инсталляции, как и везде в остальном боте."""
-    from database.requests import get_effective_brand_name, get_cabinet_theme_id, get_marketing_channel_id
+    from database.requests import get_effective_brand_name, get_cabinet_theme_id, get_marketing_channel_id, is_site_auth_method_enabled
 
     bot_username = await _resolve_bot_username_for_webapp()
 
@@ -828,6 +828,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "bot_username": bot_username,
         "cabinet_theme_id": get_cabinet_theme_id(),
         "news_channel_url": channel_url,
+        "code_login_enabled": is_site_auth_method_enabled('code'),
     })
     resp.headers['Cache-Control'] = 'no-store'
     return resp
@@ -1651,10 +1652,10 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
     if not code:
         return web.json_response({"ok": False, "message": "Введите код."}, status=400)
 
-    from database.requests import consume_site_login_code
+    from database.requests import consume_site_login_code, is_site_auth_method_enabled
     from database.db_accounts import _get_or_create_telegram_site_account
 
-    telegram_id = consume_site_login_code(code)
+    telegram_id = consume_site_login_code(code) if is_site_auth_method_enabled('code') else None
     if telegram_id:
         account = _get_or_create_telegram_site_account(telegram_id)
         session_value = _sign_session(account["id"])

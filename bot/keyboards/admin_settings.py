@@ -255,9 +255,35 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
-    builder.row(InlineKeyboardButton(text='🔵 Google OAuth', callback_data='admin_edit_oauth:google'))
-    builder.row(InlineKeyboardButton(text='🟡 Яндекс OAuth', callback_data='admin_edit_oauth:yandex'))
-    builder.row(InlineKeyboardButton(text='🔷 VK OAuth', callback_data='admin_edit_oauth:vk'))
+    from database.requests import is_site_auth_method_enabled
+    builder.row(
+        InlineKeyboardButton(text='🔵 Google OAuth', callback_data='admin_edit_oauth:google'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('google') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:google',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='🟡 Яндекс OAuth', callback_data='admin_edit_oauth:yandex'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('yandex') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:yandex',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='🔷 VK OAuth', callback_data='admin_edit_oauth:vk'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('vk') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:vk',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='🔑 Вход по коду из бота', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('code') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:code',
+        ),
+    )
     builder.row(back_button('admin_bot_settings'), home_button())
     return builder.as_markup()
 

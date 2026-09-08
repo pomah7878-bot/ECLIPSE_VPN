@@ -168,13 +168,15 @@
                     <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
                 </div>
             </div>
-            <h3 class="font-display text-sm font-bold mb-1">🔑 Уже покупали через Telegram-бота?</h3>
-            <p class="text-xs text-mist mb-4">Введите код доступа — так вы увидите именно СВОИ купленные ключи, а не создадите новый пустой аккаунт. Код был выдан сразу после покупки, либо получите его в боте («Мои ключи» → «Управлять на сайте»).</p>
-            <input id="accountCodeInput" type="text" placeholder="XXXX-XXXX" autocomplete="off"
-                class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink font-mono tracking-wider text-center mb-3 uppercase"
-                style="outline:none;" maxlength="9">
-            <button onclick="doAccountLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Войти</button>
-            <div id="accountLoginError" class="text-xs text-alert mt-2 text-center"></div>
+            <div id="codeLoginSection">
+                <h3 class="font-display text-sm font-bold mb-1">🔑 Уже покупали через Telegram-бота?</h3>
+                <p class="text-xs text-mist mb-4">Введите код доступа — так вы увидите именно СВОИ купленные ключи, а не создадите новый пустой аккаунт. Код был выдан сразу после покупки, либо получите его в боте («Мои ключи» → «Управлять на сайте»).</p>
+                <input id="accountCodeInput" type="text" placeholder="XXXX-XXXX" autocomplete="off"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink font-mono tracking-wider text-center mb-3 uppercase"
+                    style="outline:none;" maxlength="9">
+                <button onclick="doAccountLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Войти</button>
+                <div id="accountLoginError" class="text-xs text-alert mt-2 text-center"></div>
+            </div>
         </div>
 
         <div id="mainApp" class="hidden">
@@ -401,6 +403,10 @@
                         newsLink.href = site.news_channel_url;
                         newsLink.style.display = '';
                     }
+                }
+                if (site.code_login_enabled === false) {
+                    const codeSection = document.getElementById('codeLoginSection');
+                    if (codeSection) codeSection.style.display = 'none';
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
         })();

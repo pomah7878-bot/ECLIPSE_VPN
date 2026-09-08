@@ -23,6 +23,9 @@ __all__ = [
     'set_zvonok_public_key',
     'get_zvonok_campaign_id',
     'set_zvonok_campaign_id',
+    'SITE_AUTH_METHODS',
+    'is_site_auth_method_enabled',
+    'set_site_auth_method_enabled',
     'get_effective_brand_name',
     'set_brand_name',
     'get_effective_own_app_name',
@@ -545,6 +548,31 @@ def get_zvonok_campaign_id() -> Optional[str]:
 
 def set_zvonok_campaign_id(campaign_id: str) -> None:
     set_setting('zvonok_campaign_id', campaign_id.strip())
+
+
+SITE_AUTH_METHODS = {
+    'google': '🔵 Google OAuth',
+    'yandex': '🟡 Яндекс OAuth',
+    'vk': '🔷 VK OAuth',
+    'code': '🔑 Вход по коду из бота',
+}
+
+
+def is_site_auth_method_enabled(method: str) -> bool:
+    """Включён ли конкретный способ входа на сайте (независимо от того,
+    настроены ли для него учётные данные — это ОТДЕЛЬНЫЙ переключатель).
+    По умолчанию включены все — чтобы не менять поведение для тех, кто
+    уже настроил OAuth/пользуется входом по коду."""
+    if method not in SITE_AUTH_METHODS:
+        return False
+    value = get_setting(f'site_auth_{method}_enabled', '1')
+    return value != '0'
+
+
+def set_site_auth_method_enabled(method: str, enabled: bool) -> None:
+    if method not in SITE_AUTH_METHODS:
+        raise ValueError(f"Неизвестный способ входа: {method}")
+    set_setting(f'site_auth_{method}_enabled', '1' if enabled else '0')
 
 
 def is_demo_payment_enabled() -> bool:
