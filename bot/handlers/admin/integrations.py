@@ -796,6 +796,41 @@ async def edit_tavily_key_save(message: Message, state: FSMContext):
 # OAuth-провайдеры (Google / Яндекс / VK)
 # ============================================================
 
+@router.callback_query(F.data == "admin_noop")
+async def admin_noop_handler(callback: CallbackQuery):
+    """Кнопка-подпись без действия — просто гасит спиннер загрузки."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_toggle_auth_method:"))
+async def toggle_auth_method(callback: CallbackQuery):
+    """Включает/выключает конкретный способ входа на сайте (OAuth или
+    вход по коду из бота) — независимо от того, настроены ли для него
+    учётные данные."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import (
+        SITE_AUTH_METHODS, is_site_auth_method_enabled, set_site_auth_method_enabled,
+    )
+
+    method = callback.data.split(":", 1)[1]
+    if method not in SITE_AUTH_METHODS:
+        await callback.answer("Неизвестный способ входа", show_alert=True)
+        return
+
+    new_value = not is_site_auth_method_enabled(method)
+    set_site_auth_method_enabled(method, new_value)
+
+    label = SITE_AUTH_METHODS[method]
+    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: {label}")
+    await safe_edit_or_send(callback.message, "🌐 Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
 @router.callback_query(F.data.startswith("admin_edit_oauth:"))
 async def edit_oauth_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
