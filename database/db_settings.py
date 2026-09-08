@@ -555,6 +555,7 @@ SITE_AUTH_METHODS = {
     'yandex': '🟡 Яндекс OAuth',
     'vk': '🔷 VK OAuth',
     'code': '🔑 Вход по коду из бота',
+    'phone': '📱 Вход по номеру телефона',
 }
 
 

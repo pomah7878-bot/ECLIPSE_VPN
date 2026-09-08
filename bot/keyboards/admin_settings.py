@@ -284,6 +284,13 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
             callback_data='admin_toggle_auth_method:code',
         ),
     )
+    builder.row(
+        InlineKeyboardButton(text='📱 Вход по номеру телефона', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('phone') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:phone',
+        ),
+    )
     builder.row(back_button('admin_bot_settings'), home_button())
     return builder.as_markup()
 
