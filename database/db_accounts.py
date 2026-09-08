@@ -74,6 +74,27 @@ def _get_or_create_telegram_site_account(telegram_id: int) -> Dict[str, Any]:
         return dict(row)
 
 
+def get_or_create_site_account_by_phone(phone_normalized: str) -> Dict[str, Any]:
+    """Аккаунт по номеру телефона (provider='phone', provider_user_id=
+    нормализованный номер) — подтверждается звонком через zvonok.com
+    при каждом входе. Повторный вход тем же номером возвращает ТОТ ЖЕ
+    аккаунт (со всей историей покупок), а не создаёт новый."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM site_accounts WHERE provider = 'phone' AND provider_user_id = ?",
+            (phone_normalized,),
+        ).fetchone()
+        if row:
+            return dict(row)
+        cursor = conn.execute(
+            "INSERT INTO site_accounts (provider, provider_user_id) VALUES ('phone', ?)",
+            (phone_normalized,),
+        )
+        account_id = cursor.lastrowid
+        row = conn.execute("SELECT * FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
+        return dict(row)
+
+
 def link_oauth_to_site_account(account_id: int, telegram_id: int) -> bool:
     """Привязывает telegram_id к уже существующему (например, OAuth) аккаунту —
     используется, когда клиент подтверждает через бота, что этот аккаунт сайта его.

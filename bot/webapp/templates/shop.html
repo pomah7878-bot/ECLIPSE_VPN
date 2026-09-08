@@ -162,6 +162,12 @@
                 <button onclick="location.href='/auth/vk/start'" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2" data-provider="vk">
                     <span>🔷</span> Войти через VK
                 </button>
+                <div id="phoneLoginSection" class="hidden">
+                    <button onclick="showPhoneLoginStep()" id="phoneLoginToggleBtn" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2">
+                        <span>📱</span> Войти по номеру телефона
+                    </button>
+                    <div id="phoneLoginBody" class="hidden mt-2"></div>
+                </div>
                 <div class="flex items-center gap-3 my-3">
                     <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
                     <span class="text-[11px] text-mist-dim">или</span>
@@ -241,6 +247,9 @@
             "Войти": "Sign in",
             "Войти через": "Sign in with",
             "Войти через Яндекс": "Sign in with Yandex",
+            "Войти по номеру телефона": "Sign in with phone number",
+            "Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.": "Call FROM your own number to any of the numbers below — you can hang up immediately, it's free.",
+            "Ожидаем звонок…": "Waiting for the call…",
             "Все подключения": "All connections",
             "Вход по коду доступа": "Sign in with access code",
             "Выберите": "Choose",
@@ -353,7 +362,12 @@
         function translateShopHtml(html) {
             if (window._shopLanguage !== 'en') return html;
             let result = html;
-            for (const ru in SHOP_TRANSLATIONS) {
+            // Сортируем по убыванию длины — длинные, более специфичные фразы
+            // должны заменяться РАНЬШЕ коротких: иначе короткая фраза вроде
+            // "Войти" успевает "съесть" часть более длинной ("Войти по номеру
+            // телефона") до того, как до неё дойдёт очередь.
+            const sortedKeys = Object.keys(SHOP_TRANSLATIONS).sort((a, b) => b.length - a.length);
+            for (const ru of sortedKeys) {
                 result = result.replaceAll(ru, SHOP_TRANSLATIONS[ru]);
             }
             return result;
@@ -407,6 +421,11 @@
                 if (site.code_login_enabled === false) {
                     const codeSection = document.getElementById('codeLoginSection');
                     if (codeSection) codeSection.style.display = 'none';
+                }
+                if (site.phone_login_enabled === true) {
+                    const phoneSection = document.getElementById('phoneLoginSection');
+                    if (phoneSection) phoneSection.classList.remove('hidden');
+                    document.getElementById('oauthButtons').classList.remove('hidden');
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
         })();
@@ -810,6 +829,56 @@
                 return true;
             } catch(e) {
                 return false;
+            }
+        }
+
+        function showPhoneLoginStep() {
+            document.getElementById('phoneLoginToggleBtn').classList.add('hidden');
+            const body = document.getElementById('phoneLoginBody');
+            body.classList.remove('hidden');
+            body.innerHTML = `
+                <input id="phoneLoginInput" type="tel" placeholder="+7 999 123-45-67" autocomplete="tel"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2"
+                    style="outline:none;">
+                <button onclick="requestPhoneLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Продолжить</button>
+                <div id="phoneLoginError" class="text-xs text-alert mt-2 text-center"></div>
+            `;
+        }
+
+        async function requestPhoneLogin() {
+            const phone = (document.getElementById('phoneLoginInput').value || '').trim();
+            const errBox = document.getElementById('phoneLoginError');
+            errBox.textContent = '';
+            if (!phone) { errBox.textContent = 'Введите номер телефона.'; return; }
+
+            const body = document.getElementById('phoneLoginBody');
+            body.innerHTML = '<div class="flex justify-center py-6"><div class="spinner"></div></div>';
+            const res = await postAPISafe('auth/phone/request', { phone });
+            if (res.error) {
+                showPhoneLoginStep();
+                document.getElementById('phoneLoginError').textContent = res.message || 'Не удалось начать проверку номера.';
+                return;
+            }
+            window._loginPhone = phone;
+            const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
+            body.innerHTML = `
+                <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
+                <div class="card rounded-xl p-3 mb-3 text-center">${numbersHtml}</div>
+                <div class="flex items-center justify-center gap-2">
+                    <div class="spinner" style="width:16px;height:16px;"></div>
+                    <span class="text-xs text-mist">Ожидаем звонок…</span>
+                </div>
+            `;
+            window._phoneLoginPollInterval = setInterval(pollPhoneLoginVerification, 3000);
+            pollPhoneLoginVerification();
+        }
+
+        async function pollPhoneLoginVerification() {
+            const res = await postAPISafe('auth/phone/check', { phone: window._loginPhone });
+            if (res.verified) {
+                clearInterval(window._phoneLoginPollInterval);
+                const sessionRes = await fetchAPI('account/session');
+                revealApp(sessionRes);
             }
         }
 

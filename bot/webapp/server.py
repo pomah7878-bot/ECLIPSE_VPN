@@ -816,12 +816,21 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     канал (если настроен). Используется публичными страницами (например
     /welcome, /, /shop), чтобы не хардкодить эти данные в HTML — они
     берутся из настроек текущей инсталляции, как и везде в остальном боте."""
-    from database.requests import get_effective_brand_name, get_cabinet_theme_id, get_marketing_channel_id, is_site_auth_method_enabled
+    from database.requests import (
+        get_effective_brand_name, get_cabinet_theme_id, get_marketing_channel_id,
+        is_site_auth_method_enabled, get_zvonok_public_key, get_zvonok_campaign_id,
+    )
 
     bot_username = await _resolve_bot_username_for_webapp()
 
     channel_id = get_marketing_channel_id()
     channel_url = f"https://t.me/{channel_id.lstrip('@')}" if channel_id else None
+
+    phone_login_enabled = (
+        is_site_auth_method_enabled('phone')
+        and bool(get_zvonok_public_key())
+        and bool(get_zvonok_campaign_id())
+    )
 
     resp = web.json_response({
         "brand_name": get_effective_brand_name(),
@@ -829,6 +838,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "cabinet_theme_id": get_cabinet_theme_id(),
         "news_channel_url": channel_url,
         "code_login_enabled": is_site_auth_method_enabled('code'),
+        "phone_login_enabled": phone_login_enabled,
     })
     resp.headers['Cache-Control'] = 'no-store'
     return resp
@@ -1639,6 +1649,68 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
     return resp
 
 
+async def handle_public_auth_phone_request(request: web.Request) -> web.Response:
+    """POST /api/public/auth/phone/request — инициирует вход по номеру
+    телефона (отдельный, полноценный способ входа — НЕ путать с
+    /trial/phone/request, который лишь защита от повторного пробника
+    для уже залогиненного аккаунта). Сессия ещё не нужна — это САМ вход."""
+    from database.requests import is_site_auth_method_enabled
+
+    if not is_site_auth_method_enabled('phone'):
+        return web.json_response({"error": "method_disabled", "message": "Вход по телефону сейчас недоступен."}, status=400)
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        body = {}
+    phone = (body.get("phone") or "").strip()
+    if not phone:
+        return web.json_response({"error": "phone_required", "message": "Укажите номер телефона."}, status=400)
+
+    from bot.services.zvonok_verification import request_phone_confirmation
+    result = await request_phone_confirmation(phone)
+    if not result or not result.get("allowed_phones_for_call"):
+        return web.json_response(
+            {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
+            status=503,
+        )
+    return web.json_response({"status": "ok", "allowed_phones_for_call": result["allowed_phones_for_call"]})
+
+
+async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
+    """POST /api/public/auth/phone/check — проверяет подтверждение
+    номера (опрашивает zvonok.com напрямую по номеру — своего локального
+    состояния тут не нужно, в отличие от /trial/phone/check, где важно
+    привязать подтверждение к конкретной уже начатой сессии). При
+    успехе — находит/создаёт сайт-аккаунт по этому номеру и выдаёт сессию."""
+    from database.requests import is_site_auth_method_enabled
+
+    if not is_site_auth_method_enabled('phone'):
+        return web.json_response({"error": "method_disabled"}, status=400)
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        body = {}
+    phone = (body.get("phone") or "").strip()
+    if not phone:
+        return web.json_response({"error": "phone_required"}, status=400)
+
+    from bot.services.zvonok_verification import check_phone_confirmation
+    confirmed = await check_phone_confirmation(phone)
+    if not confirmed:
+        return web.json_response({"status": "ok", "verified": False})
+
+    from bot.services.trial_phone_registry import normalize_phone
+    from database.db_accounts import get_or_create_site_account_by_phone
+
+    account = get_or_create_site_account_by_phone(normalize_phone(phone))
+    session_value = _sign_session(account["id"])
+    resp = web.json_response({"status": "ok", "verified": True, "account_type": "phone"})
+    resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
+    return resp
+
+
 async def handle_public_account_session_login(request: web.Request) -> web.Response:
     """POST /api/public/account/session-login — вход по коду (из бота ИЛИ
     коду покупки на сайте), устанавливает сессионную cookie для дальнейших
@@ -2446,6 +2518,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/oauth/providers", handle_oauth_providers)
     app.router.add_get("/auth/{provider}/start", handle_oauth_start)
     app.router.add_get("/auth/{provider}/callback", handle_oauth_callback)
+    app.router.add_post("/api/public/auth/phone/request", handle_public_auth_phone_request)
+    app.router.add_post("/api/public/auth/phone/check", handle_public_auth_phone_check)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
