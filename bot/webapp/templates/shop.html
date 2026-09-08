@@ -860,6 +860,7 @@
                 return;
             }
             window._loginPhone = phone;
+            window._loginCallId = res.call_id;
             const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
             body.innerHTML = `
                 <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
@@ -874,7 +875,7 @@
         }
 
         async function pollPhoneLoginVerification() {
-            const res = await postAPISafe('auth/phone/check', { phone: window._loginPhone });
+            const res = await postAPISafe('auth/phone/check', { phone: window._loginPhone, call_id: window._loginCallId });
             if (res.verified) {
                 clearInterval(window._phoneLoginPollInterval);
                 const sessionRes = await fetchAPI('account/session');

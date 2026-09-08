@@ -1412,13 +1412,13 @@ async def handle_public_trial_phone_check(request: web.Request) -> web.Response:
     from database.connection import get_db
     with get_db() as conn:
         row = conn.execute(
-            "SELECT phone_raw FROM site_trial_phone_pending WHERE account_id = ?",
+            "SELECT phone_raw, call_id FROM site_trial_phone_pending WHERE account_id = ?",
             (account_id,),
         ).fetchone()
     if not row:
         return web.json_response({"error": "no_pending_verification"}, status=400)
 
-    confirmed = await check_phone_confirmation(row["phone_raw"])
+    confirmed = await check_phone_confirmation(row["call_id"])
     if confirmed:
         mark_pending_verified(account_id)
     return web.json_response({"status": "ok", "verified": confirmed})
@@ -1674,7 +1674,11 @@ async def handle_public_auth_phone_request(request: web.Request) -> web.Response
             {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
             status=503,
         )
-    return web.json_response({"status": "ok", "allowed_phones_for_call": result["allowed_phones_for_call"]})
+    return web.json_response({
+        "status": "ok",
+        "allowed_phones_for_call": result["allowed_phones_for_call"],
+        "call_id": result.get("call_id"),
+    })
 
 
 async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
@@ -1693,20 +1697,34 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
     except json.JSONDecodeError:
         body = {}
     phone = (body.get("phone") or "").strip()
-    if not phone:
+    call_id = body.get("call_id")
+    if not phone or not call_id:
         return web.json_response({"error": "phone_required"}, status=400)
 
     from bot.services.zvonok_verification import check_phone_confirmation
-    confirmed = await check_phone_confirmation(phone)
+    confirmed = await check_phone_confirmation(call_id)
     if not confirmed:
         return web.json_response({"status": "ok", "verified": False})
 
-    from bot.services.trial_phone_registry import normalize_phone
-    from database.db_accounts import get_or_create_site_account_by_phone
+    from bot.services.trial_phone_registry import normalize_phone, get_telegram_id_for_verified_phone
 
-    account = get_or_create_site_account_by_phone(normalize_phone(phone))
+    normalized = normalize_phone(phone)
+    existing_telegram_id = get_telegram_id_for_verified_phone(normalized)
+    if existing_telegram_id:
+        # Этот номер уже подтверждался через бота (например, при получении
+        # пробного периода) — узнаём в нём того же человека и входим в его
+        # СУЩЕСТВУЮЩИЙ Telegram-аккаунт со всей историей, а не заводим
+        # отдельный пустой аккаунт с provider='phone'.
+        from database.db_accounts import _get_or_create_telegram_site_account
+        account = _get_or_create_telegram_site_account(existing_telegram_id)
+        account_type = "telegram"
+    else:
+        from database.db_accounts import get_or_create_site_account_by_phone
+        account = get_or_create_site_account_by_phone(normalized)
+        account_type = "phone"
+
     session_value = _sign_session(account["id"])
-    resp = web.json_response({"status": "ok", "verified": True, "account_type": "phone"})
+    resp = web.json_response({"status": "ok", "verified": True, "account_type": account_type})
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
     return resp
 

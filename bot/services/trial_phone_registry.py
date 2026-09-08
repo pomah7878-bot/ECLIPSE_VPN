@@ -78,3 +78,21 @@ def unmark_phone_trial_used(raw_phone: str) -> None:
     with get_db() as conn:
         conn.execute("DELETE FROM trial_verified_phones WHERE phone_normalized = ?", (phone,))
         conn.commit()
+
+
+def get_telegram_id_for_verified_phone(raw_phone: str) -> Optional[int]:
+    """Если этот номер телефона уже был подтверждён РАНЕЕ через бота
+    (клиент делился контактом при получении пробного периода) — вход по
+    телефону на сайте должен узнать в нём того же человека и войти в
+    его существующий Telegram-аккаунт (со всей историей покупок), а не
+    создавать отдельный, пустой аккаунт с provider='phone'."""
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return None
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT telegram_id FROM trial_verified_phones WHERE phone_normalized = ? AND telegram_id IS NOT NULL",
+            (phone,),
+        ).fetchone()
+    return int(row["telegram_id"]) if row else None

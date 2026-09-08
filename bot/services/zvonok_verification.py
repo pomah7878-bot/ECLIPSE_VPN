@@ -56,35 +56,38 @@ async def request_phone_confirmation(phone: str) -> Optional[Dict[str, Any]]:
     }
 
 
-async def check_phone_confirmation(phone: str) -> bool:
-    """Проверяет, подтвердил ли клиент номер (позвонил на один из
-    служебных номеров). True — подтверждено (status == 'pincode_ok')."""
-    from database.requests import get_zvonok_public_key, get_zvonok_campaign_id
+async def check_phone_confirmation(call_id) -> bool:
+    """Проверяет, подтверждена ли КОНКРЕТНАЯ попытка звонка (по call_id,
+    полученному от request_phone_confirmation) — а не любая попытка за
+    всю историю номера. Критично: если проверять просто по номеру
+    телефона, старый успешный звонок из прошлого (например, тестовый)
+    навсегда "разблокирует" этот номер для любых будущих попыток входа
+    без реального нового звонка. True — подтверждено (status ==
+    'pincode_ok')."""
+    from database.requests import get_zvonok_public_key
 
     public_key = get_zvonok_public_key()
-    campaign_id = get_zvonok_campaign_id()
-    if not public_key or not campaign_id:
+    if not public_key or not call_id:
         return False
 
     import aiohttp
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                BASE_URL + "phones/calls_by_phone/",
-                params={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
+                BASE_URL + "phones/call_by_id/",
+                params={"public_key": public_key, "call_id": str(call_id)},
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/calls_by_phone/: {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/call_by_id/: {e}")
         return False
 
-    if not isinstance(result, list) or not result:
-        return False
-
-    # Берём самую свежую попытку (сортировка по updated не гарантирована API,
-    # поэтому проверяем — достаточно ли ХОТЯ БЫ ОДНОЙ успешной записи)
-    return any(item.get("status") == SUCCESS_STATUS for item in result)
+    if isinstance(result, list):
+        return any(item.get("status") == SUCCESS_STATUS for item in result)
+    if isinstance(result, dict):
+        return result.get("status") == SUCCESS_STATUS
+    return False
 
 
 def save_pending_verification(account_id: int, phone: str, call_id) -> None:
