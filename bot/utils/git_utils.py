@@ -471,12 +471,16 @@ def restart_bot(notify_admin_id: int | None = None) -> None:
 
     Uses os.execv to replace the current process with a new one.
 
-    Also restarts the separate eclipse-ai systemd unit (AI-support
-    microservice), if present — it's a different process from the bot
-    and won't pick up code/dependency changes on its own. The bot runs
-    as root (see eclipse-vpn.service), so it has permission to call
-    systemctl directly. Best-effort: a failure here must not block the
-    bot's own restart.
+    Also restarts the separate eclipse-ai and eclipse-webapp systemd
+    units, if present — they're different processes from the bot and
+    won't pick up code/dependency changes on their own. eclipse-webapp
+    specifically serves the public website/WebApp independently from
+    the bot (by design — so bot restarts don't cause website downtime),
+    which means every site-related fix silently fails to go live unless
+    this unit is ALSO restarted. The bot runs as root (see
+    eclipse-vpn.service), so it has permission to call systemctl
+    directly. Best-effort: a failure here must not block the bot's own
+    restart.
 
     Args:
         notify_admin_id: если передан, сохраняется в настройках (переживает
@@ -501,6 +505,16 @@ def restart_bot(notify_admin_id: int | None = None) -> None:
             logger.info("🔄 eclipse-ai перезапущен вместе с ботом")
     except Exception as e:
         logger.warning(f"Не удалось перезапустить eclipse-ai (бот всё равно перезапустится): {e}")
+
+    try:
+        if os.path.exists('/etc/systemd/system/eclipse-webapp.service'):
+            subprocess.run(
+                ['systemctl', 'restart', 'eclipse-webapp'],
+                capture_output=True, text=True, timeout=30,
+            )
+            logger.info("🔄 eclipse-webapp (сайт/WebApp) перезапущен вместе с ботом")
+    except Exception as e:
+        logger.warning(f"Не удалось перезапустить eclipse-webapp (бот всё равно перезапустится): {e}")
 
     logger.info("🔄 Перезапуск бота...")
     
