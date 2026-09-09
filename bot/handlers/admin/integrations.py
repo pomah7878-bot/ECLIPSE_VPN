@@ -244,14 +244,14 @@ async def edit_happ_provider_id_start(callback: CallbackQuery, state: FSMContext
     await callback.answer()
 
 
-@router.message(AdminStates.edit_happ_provider_id)
+@router.message(AdminStates.edit_happ_provider_id, F.text, ~F.text.startswith('/'))
 async def edit_happ_provider_id_save(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
 
     value = get_message_text_for_storage(message, "plain").strip()
-    if not value:
-        await safe_edit_or_send(message, "❌ Пустое значение недопустимо. Отправь свой Provider ID ещё раз.")
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение (например, ты случайно отправил /start). Отправь именно свой Provider ID ещё раз.")
         return
 
     try:
@@ -291,14 +291,14 @@ async def edit_zvonok_public_key_start(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 
-@router.message(AdminStates.edit_zvonok_public_key)
+@router.message(AdminStates.edit_zvonok_public_key, F.text, ~F.text.startswith('/'))
 async def edit_zvonok_public_key_save(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
 
     value = get_message_text_for_storage(message, "plain").strip()
-    if not value:
-        await safe_edit_or_send(message, "❌ Пустое значение недопустимо. Отправь ключ ещё раз.")
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение (например, ты случайно отправил /start). Отправь именно ключ ещё раз.")
         return
 
     try:
@@ -337,14 +337,14 @@ async def edit_zvonok_campaign_id_start(callback: CallbackQuery, state: FSMConte
     await callback.answer()
 
 
-@router.message(AdminStates.edit_zvonok_campaign_id)
+@router.message(AdminStates.edit_zvonok_campaign_id, F.text, ~F.text.startswith('/'))
 async def edit_zvonok_campaign_id_save(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
 
     value = get_message_text_for_storage(message, "plain").strip()
-    if not value:
-        await safe_edit_or_send(message, "❌ Пустое значение недопустимо. Отправь ID ещё раз.")
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение (например, ты случайно отправил /start). Отправь именно ID кампании ещё раз.")
         return
 
     try:
