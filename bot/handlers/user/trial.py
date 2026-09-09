@@ -1,13 +1,11 @@
 import logging
 from aiogram import Router, F
 from aiogram.types import (
-    CallbackQuery, InlineKeyboardButton, Message, Contact,
-    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
+    CallbackQuery, InlineKeyboardButton, Message,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from bot.utils.text import safe_edit_or_send
-from bot.states.user_states import TrialPhoneVerification
 
 logger = logging.getLogger(__name__)
 
@@ -209,124 +207,10 @@ async def _activate_trial(
     )
 
 
-def _phone_verification_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text='📱 Поделиться номером телефона', request_contact=True)],
-            [KeyboardButton(text='❌ Отмена')],
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-    )
-
-
-async def _request_trial_phone_verification(
-    message_to_edit: Message,
-    state: FSMContext,
-    *,
-    tariff_id: int,
-    group_id=None,
-):
-    """Запрашивает у пользователя подтверждение номера телефона перед
-    выдачей пробного периода — единственный практически надёжный способ
-    не дать получить пробник дважды (в боте и на сайте) под разными
-    аккаунтами. Номер передаётся через встроенный механизм Telegram
-    (кнопка "Поделиться контактом"), уже верифицированный самим Telegram
-    — никаких SMS с нашей стороны не требуется."""
-    await state.update_data(trial_tariff_id=tariff_id, trial_group_id=group_id)
-    await state.set_state(TrialPhoneVerification.waiting_for_contact)
-    try:
-        await message_to_edit.delete()
-    except Exception:
-        pass
-    await message_to_edit.answer(
-        "📱 <b>Подтверждение номера телефона</b>\n\n"
-        "Чтобы получить пробный период, поделись своим номером телефона — "
-        "это защита от повторного получения одним и тем же человеком "
-        "(в том числе через сайт). Номер передаётся напрямую через Telegram, "
-        "мы не увидим ничего лишнего.\n\n"
-        "Нажми кнопку ниже:",
-        reply_markup=_phone_verification_kb(),
-    )
-
-
-@router.message(TrialPhoneVerification.waiting_for_contact, F.contact.as_('contact'))
-async def handle_trial_phone_contact(message: Message, state: FSMContext, contact: Contact):
-    if contact.user_id != message.from_user.id:
-        await message.answer(
-            "❌ Это не твой собственный номер телефона. Поделись именно своим контактом.",
-            reply_markup=_phone_verification_kb(),
-        )
-        return
-
-    from bot.services.trial_phone_registry import has_phone_used_trial, mark_phone_trial_used
-
-    if has_phone_used_trial(contact.phone_number):
-        await state.clear()
-        await message.answer(
-            "ℹ️ Этот номер телефона уже использовался для получения пробного периода "
-            "(в боте или на сайте) — повторно получить его нельзя.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
-
-    data = await state.get_data()
-    tariff_id = data.get('trial_tariff_id')
-    group_id = data.get('trial_group_id')
-    if not tariff_id:
-        await state.clear()
-        await message.answer("❌ Сессия устарела, попробуй ещё раз через меню.", reply_markup=ReplyKeyboardRemove())
-        return
-
-    marked = mark_phone_trial_used(contact.phone_number, telegram_id=message.from_user.id)
-    if not marked:
-        # Кто-то успел использовать этот номер за долю секунды до нас
-        await state.clear()
-        await message.answer(
-            "ℹ️ Этот номер телефона уже использовался для получения пробного периода.",
-            reply_markup=ReplyKeyboardRemove(),
-        )
-        return
-
-    await message.answer("✅ Номер подтверждён, активирую пробный период...", reply_markup=ReplyKeyboardRemove())
-
-    if group_id:
-        from database.requests import mark_group_trial_used
-        mark_used_callback = lambda uid: mark_group_trial_used(uid, group_id)
-    else:
-        from database.requests import mark_trial_used
-        mark_used_callback = mark_trial_used
-
-    await _activate_trial(
-        bot=message.bot,
-        from_user=message.from_user,
-        state=state,
-        tariff_id=tariff_id,
-        mark_used_callback=mark_used_callback,
-        reply_target=message,
-    )
-
-
-@router.message(TrialPhoneVerification.waiting_for_contact)
-async def handle_trial_phone_other_message(message: Message, state: FSMContext):
-    """Любое другое сообщение в состоянии ожидания контакта — отмена
-    или напоминание нажать кнопку."""
-    if (message.text or '').strip() == '❌ Отмена':
-        await state.clear()
-        await message.answer("Отменено.", reply_markup=ReplyKeyboardRemove())
-        return
-    await message.answer(
-        "Пожалуйста, воспользуйся кнопкой ниже, чтобы поделиться номером телефона, "
-        "либо нажми «❌ Отмена».",
-        reply_markup=_phone_verification_kb(),
-    )
-
-
 @router.callback_query(F.data == 'trial_activate')
 async def activate_trial_subscription(callback: CallbackQuery, state: FSMContext):
-    """Запускает верификацию телефона перед активацией пробника в режиме
-    'account' (один пробник на весь аккаунт)."""
-    from database.requests import is_trial_enabled, get_trial_tariff_id, has_used_trial
+    """Активирует пробник в режиме 'account' (один пробник на весь аккаунт)."""
+    from database.requests import is_trial_enabled, get_trial_tariff_id, has_used_trial, mark_trial_used
 
     user_id = callback.from_user.id
 
@@ -341,17 +225,24 @@ async def activate_trial_subscription(callback: CallbackQuery, state: FSMContext
         await callback.answer('ℹ️ Вы уже использовали пробный период', show_alert=True)
         return
 
-    await callback.answer()
-    await _request_trial_phone_verification(callback.message, state, tariff_id=tariff_id)
+    await _activate_trial(
+        bot=callback.bot,
+        from_user=callback.from_user,
+        state=state,
+        tariff_id=tariff_id,
+        mark_used_callback=mark_trial_used,
+        reply_target=callback.message,
+        answer_fn=callback.answer,
+        delete_message=callback.message,
+    )
 
 
 @router.callback_query(F.data.startswith('trial_activate_group:'))
 async def activate_trial_subscription_group(callback: CallbackQuery, state: FSMContext):
-    """Запускает верификацию телефона перед активацией пробника
-    конкретной группы в режиме 'per_group'."""
+    """Активирует пробник конкретной группы в режиме 'per_group'."""
     from database.requests import (
         is_trial_enabled, get_group_by_id, get_user_internal_id,
-        get_eligible_trial_group_ids,
+        get_eligible_trial_group_ids, mark_group_trial_used,
     )
 
     if not is_trial_enabled():
@@ -370,7 +261,13 @@ async def activate_trial_subscription_group(callback: CallbackQuery, state: FSMC
         await callback.answer('ℹ️ Пробник для этой группы сейчас недоступен', show_alert=True)
         return
 
-    await callback.answer()
-    await _request_trial_phone_verification(
-        callback.message, state, tariff_id=group['trial_tariff_id'], group_id=group_id,
+    await _activate_trial(
+        bot=callback.bot,
+        from_user=callback.from_user,
+        state=state,
+        tariff_id=group['trial_tariff_id'],
+        mark_used_callback=lambda uid: mark_group_trial_used(uid, group_id),
+        reply_target=callback.message,
+        answer_fn=callback.answer,
+        delete_message=callback.message,
     )
