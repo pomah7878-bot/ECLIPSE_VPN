@@ -798,11 +798,21 @@ def _serve_html_with_brand(filepath: str, title_format: str, header_format: str)
 async def handle_shop_page(request: web.Request) -> web.Response:
     """GET /shop — публичная страница покупки, без Telegram."""
     shop_path = os.path.join(_TEMPLATES_DIR, "shop.html")
-    return _serve_html_with_brand(
+    resp = _serve_html_with_brand(
         shop_path,
         title_format="💎 {brand} — премиальный VPN",
         header_format="{brand}",
     )
+    ref_code = request.query.get("ref")
+    if ref_code and not request.cookies.get("site_ref_code"):
+        # Сохраняем НАВСЕГДА (пока не истечёт) на первый заход по такой
+        # ссылке — не перезаписываем, если человек уже пришёл по ЧУЖОЙ
+        # реферальной ссылке ранее (первый код должен быть финальным).
+        resp.set_cookie(
+            "site_ref_code", ref_code.strip(),
+            max_age=60 * 60 * 24 * 30, httponly=True, secure=True, samesite="Lax",
+        )
+    return resp
 
 
 async def handle_welcome_page(request: web.Request) -> web.Response:
@@ -1554,6 +1564,7 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         account = get_or_create_site_account(
             provider, user_info["provider_user_id"],
             email=user_info.get("email"), display_name=user_info.get("display_name"),
+            referred_by_code=request.cookies.get("site_ref_code"),
         )
         account_id = account["id"]
 
@@ -1647,11 +1658,11 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
         # СУЩЕСТВУЮЩИЙ Telegram-аккаунт со всей историей, а не заводим
         # отдельный пустой аккаунт с provider='phone'.
         from database.db_accounts import _get_or_create_telegram_site_account
-        account = _get_or_create_telegram_site_account(existing_telegram_id)
+        account = _get_or_create_telegram_site_account(existing_telegram_id, referred_by_code=request.cookies.get("site_ref_code"))
         account_type = "telegram"
     else:
         from database.db_accounts import get_or_create_site_account_by_phone
-        account = get_or_create_site_account_by_phone(normalized)
+        account = get_or_create_site_account_by_phone(normalized, referred_by_code=request.cookies.get("site_ref_code"))
         account_type = "phone"
 
     session_value = _sign_session(account["id"])
@@ -1678,7 +1689,7 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
 
     telegram_id = consume_site_login_code(code) if is_site_auth_method_enabled('code') else None
     if telegram_id:
-        account = _get_or_create_telegram_site_account(telegram_id)
+        account = _get_or_create_telegram_site_account(telegram_id, referred_by_code=request.cookies.get("site_ref_code"))
         session_value = _sign_session(account["id"])
         resp = web.json_response({"ok": True, "account_type": "telegram"})
         resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")

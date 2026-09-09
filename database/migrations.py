@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 101
+LATEST_VERSION = 102
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2050,6 +2050,22 @@ def migration_101(conn: sqlite3.Connection) -> None:
     logger.info("Migration v101 applied: таблица site_trial_phone_pending создана")
 
 
+def migration_102(conn: sqlite3.Connection) -> None:
+    """Migration v102: добавляет поле referred_by_code в site_accounts —
+    реферальный код (тот же, что и в боте, users.referral_code), под
+    которым сайт-аккаунт был создан по ссылке вида /shop?ref=КОД.
+    Хранится НАВСЕГДА на самом аккаунте, независимо от способа входа
+    (OAuth/телефон/код) — и продолжает работать, даже если аккаунт
+    позже привяжется к Telegram (site_accounts.telegram_id) — при
+    оплате реальных покупок с сайта реферал по этому коду будет
+    корректно вознаграждён, так же как и за приглашённых через бота."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(site_accounts)").fetchall()}
+    if "referred_by_code" not in existing_cols:
+        conn.execute("ALTER TABLE site_accounts ADD COLUMN referred_by_code TEXT DEFAULT NULL")
+        logger.info("Migration v102: добавлена колонка site_accounts.referred_by_code")
+    logger.info("Migration v102 applied: site_accounts.referred_by_code готово")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2079,6 +2095,7 @@ MIGRATIONS = {
     99: migration_99,
     100: migration_100,
     101: migration_101,
+    102: migration_102,
 }
 
 

@@ -17,6 +17,7 @@ __all__ = [
     'create_site_login_code',
     'consume_site_login_code',
     'link_purchase_to_account',
+    'get_site_referrer_code_for_order',
     'get_latest_purchase_for_account',
     'create_oauth_exchange_code',
     'consume_oauth_exchange_code',
@@ -28,6 +29,7 @@ def get_or_create_site_account(
     provider_user_id: str,
     email: Optional[str] = None,
     display_name: Optional[str] = None,
+    referred_by_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     with get_db() as conn:
         row = conn.execute(
@@ -37,8 +39,8 @@ def get_or_create_site_account(
         if row:
             return dict(row)
         cursor = conn.execute(
-            "INSERT INTO site_accounts (provider, provider_user_id, email, display_name) VALUES (?, ?, ?, ?)",
-            (provider, provider_user_id, email, display_name),
+            "INSERT INTO site_accounts (provider, provider_user_id, email, display_name, referred_by_code) VALUES (?, ?, ?, ?, ?)",
+            (provider, provider_user_id, email, display_name, referred_by_code),
         )
         account_id = cursor.lastrowid
         row = conn.execute("SELECT * FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
@@ -57,7 +59,7 @@ def get_site_account_by_telegram_id(telegram_id: int) -> Optional[Dict[str, Any]
         return dict(row) if row else None
 
 
-def _get_or_create_telegram_site_account(telegram_id: int) -> Dict[str, Any]:
+def _get_or_create_telegram_site_account(telegram_id: int, referred_by_code: Optional[str] = None) -> Dict[str, Any]:
     """Аккаунт-«мост» для существующего клиента бота — использует
     telegram_id как псевдо-provider_user_id (provider='telegram'),
     сохраняя ту же уникальность, что и для OAuth-провайдеров."""
@@ -66,15 +68,15 @@ def _get_or_create_telegram_site_account(telegram_id: int) -> Dict[str, Any]:
         return existing
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO site_accounts (provider, provider_user_id, telegram_id) VALUES ('telegram', ?, ?)",
-            (str(telegram_id), telegram_id),
+            "INSERT INTO site_accounts (provider, provider_user_id, telegram_id, referred_by_code) VALUES ('telegram', ?, ?, ?)",
+            (str(telegram_id), telegram_id, referred_by_code),
         )
         account_id = cursor.lastrowid
         row = conn.execute("SELECT * FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
         return dict(row)
 
 
-def get_or_create_site_account_by_phone(phone_normalized: str) -> Dict[str, Any]:
+def get_or_create_site_account_by_phone(phone_normalized: str, referred_by_code: Optional[str] = None) -> Dict[str, Any]:
     """Аккаунт по номеру телефона (provider='phone', provider_user_id=
     нормализованный номер) — подтверждается звонком через zvonok.com
     при каждом входе. Повторный вход тем же номером возвращает ТОТ ЖЕ
@@ -87,8 +89,8 @@ def get_or_create_site_account_by_phone(phone_normalized: str) -> Dict[str, Any]
         if row:
             return dict(row)
         cursor = conn.execute(
-            "INSERT INTO site_accounts (provider, provider_user_id) VALUES ('phone', ?)",
-            (phone_normalized,),
+            "INSERT INTO site_accounts (provider, provider_user_id, referred_by_code) VALUES ('phone', ?, ?)",
+            (phone_normalized, referred_by_code),
         )
         account_id = cursor.lastrowid
         row = conn.execute("SELECT * FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
@@ -198,6 +200,25 @@ def link_purchase_to_account(order_id: str, site_account_id: int) -> bool:
             (site_account_id, order_id),
         )
         return cursor.rowcount > 0
+
+
+def get_site_referrer_code_for_order(order_id: str) -> Optional[str]:
+    """Реферальный код, под которым был создан сайт-аккаунт, оплативший
+    этот заказ (через anonymous_purchases.site_account_id) — используется
+    для начисления реферального вознаграждения за оплаченные (не
+    пробные) покупки с сайта, где у покупателя может вообще не быть
+    Telegram."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT sa.referred_by_code
+            FROM anonymous_purchases ap
+            JOIN site_accounts sa ON sa.id = ap.site_account_id
+            WHERE ap.order_id = ?
+            """,
+            (order_id,),
+        ).fetchone()
+    return row["referred_by_code"] if row and row["referred_by_code"] else None
 
 
 def get_latest_purchase_for_account(site_account_id: int) -> Optional[Dict[str, Any]]:

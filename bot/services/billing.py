@@ -1091,6 +1091,112 @@ async def process_referral_reward(
     return events
 
 
+async def process_site_referral_reward(
+    referrer_id: int,
+    period_days: int,
+    amount_raw: int,
+    payment_type: str,
+    bot: Optional[Any] = None,
+    order: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Начисляет реферальное вознаграждение за покупку на САЙТЕ —
+    покупатель мог никогда не открывать Telegram (site_accounts без
+    telegram_id), поэтому в отличие от process_referral_reward здесь
+    НЕТ payer_id (внутреннего users.id) — реферер известен напрямую
+    (найден по site_accounts.referred_by_code, сохранённому при первом
+    заходе по ссылке /shop?ref=КОД).
+
+    Только уровень 1 — многоуровневая цепочка (уровни 2-3) не
+    применяется, так как у сайтового покупателя нет собственного
+    users.id, через который он мог бы стать чьим-то ещё рефералом."""
+    if payment_type in ('balance', 'trial', 'promo_free') or amount_raw <= 0:
+        return None
+    if not is_referral_enabled():
+        return None
+
+    reward_type = get_referral_reward_type()
+    active_levels = dict(get_active_referral_levels())
+    percent = active_levels.get(1)
+    if percent is None:
+        return None
+
+    usd_rub_rate = await get_usd_rub_rate()
+    amount_rub_cents = convert_to_rub_cents(amount_raw, payment_type, usd_rub_rate)
+    coefficient = get_user_referral_coefficient(referrer_id)
+
+    if reward_type == 'balance':
+        base_reward = amount_rub_cents * (percent / 100)
+        final_reward = int(round(base_reward * coefficient) / 100) * 100
+        reward_days = 0
+    else:
+        base_days = period_days * (percent / 100)
+        reward_days = math.ceil(base_days * coefficient)
+        final_reward = 0
+
+    try:
+        from bot.utils.policy_registry import apply_referral_reward_policies
+        reward_decision = apply_referral_reward_policies(
+            {'reward_cents': final_reward, 'reward_days': reward_days},
+            {
+                'payer_id': None, 'referrer_id': referrer_id, 'level': 1,
+                'reward_type': reward_type, 'period_days': period_days,
+                'amount_raw': amount_raw, 'amount_rub_cents': amount_rub_cents,
+                'payment_type': payment_type, 'percent': percent,
+                'coefficient': coefficient, 'order': dict(order or {}),
+                'source': 'site',
+            },
+        )
+        final_reward = int(reward_decision.get('reward_cents') or 0)
+        reward_days = int(reward_decision.get('reward_days') or 0)
+        reward_policy = reward_decision.get('reward_policy')
+    except Exception as policy_err:
+        logger.warning(f'Ошибка referral reward policy (сайт) для referrer {referrer_id}: {policy_err}')
+        reward_policy = None
+
+    if final_reward > 0:
+        from bot.services.balance import credit_user_balance
+        balance_result = await credit_user_balance(
+            referrer_id, final_reward,
+            source='referral_reward', reason='Реферальное вознаграждение (покупка на сайте), уровень 1',
+            reference_type='payment_order', reference_id=str((order or {}).get('order_id') or ''),
+            metadata={'level': 1, 'payment_type': payment_type, 'reward_policy': reward_policy, 'source': 'site'},
+        )
+        if not balance_result.get('ok'):
+            final_reward = 0
+
+    if reward_days > 0:
+        from bot.services.rewards import grant_days_to_first_active_key
+        days_result = await grant_days_to_first_active_key(
+            referrer_id, reward_days,
+            source='referral_reward', reason='Реферальное вознаграждение (покупка на сайте), уровень 1',
+            reference_type='payment_order', reference_id=str((order or {}).get('order_id') or ''),
+            metadata={'level': 1, 'payment_type': payment_type, 'reward_policy': reward_policy, 'source': 'site'},
+        )
+        if not days_result.get('ok'):
+            reward_days = 0
+
+    if final_reward <= 0 and reward_days <= 0:
+        return None
+
+    event = {
+        'referrer_id': referrer_id, 'level': 1,
+        'reward_type': 'balance' if final_reward > 0 else 'days',
+        'reward_cents': final_reward, 'reward_days': reward_days,
+        'reward_policy': reward_policy, 'period_days': period_days,
+        'amount_raw': amount_raw, 'amount_rub_cents': amount_rub_cents,
+        'payment_type': payment_type,
+    }
+
+    if bot is not None and order is not None:
+        try:
+            from bot.services.notifications import notify_referrers_purchase
+            await notify_referrers_purchase(bot, order, [event])
+        except Exception as notify_err:
+            logger.warning(f'Ошибка уведомления рефовода о сайтовой покупке: {notify_err}')
+
+    return event
+
+
 def calculate_balance_discount(user_id: int, tariff_price_cents: int) -> tuple[int, int]:
     """
     Calculate discount from balance. NO write-off!
@@ -1203,6 +1309,19 @@ async def _run_payment_post_actions(
         bot=bot,
         order=order,
     )
+
+    try:
+        from database.requests import get_site_referrer_code_for_order, get_user_by_referral_code
+        site_ref_code = get_site_referrer_code_for_order(str(order.get('order_id') or ''))
+        if site_ref_code:
+            referrer = get_user_by_referral_code(site_ref_code)
+            if referrer:
+                await process_site_referral_reward(
+                    referrer['id'], days, referral_amount, payment_type,
+                    bot=bot, order=order,
+                )
+    except Exception as site_ref_err:
+        logger.warning(f"Ошибка начисления сайтового реферального вознаграждения для order={order.get('order_id')}: {site_ref_err}")
 
     try:
         from bot.services.notifications import notify_admins_payment
