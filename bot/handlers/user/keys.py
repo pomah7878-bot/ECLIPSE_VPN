@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramForbiddenError
 from config import ADMIN_IDS
 from database.requests import get_or_create_user, is_user_banned, get_all_servers, get_setting, is_referral_enabled, get_user_by_referral_code, set_user_referrer
-from bot.states.user_states import RenameKey, ReplaceKey
+from bot.states.user_states import RenameKey, ReplaceKey, PhoneLinking
 from bot.utils.text import escape_html
 from bot.utils.key_status_page import render_key_status_page
 from bot.utils.user_pages import render_access_blocked_page
@@ -115,7 +115,7 @@ async def my_keys_handler(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == 'site_login_code')
-async def site_login_code_handler(callback: CallbackQuery):
+async def site_login_code_handler(callback: CallbackQuery, state: FSMContext):
     """Генерирует одноразовый код для входа в личный кабинет на сайте
     (WEBAPP_URL/shop) — там видны все ключи, трафик, продление."""
     from database.requests import create_site_login_code, get_effective_webapp_url
@@ -138,7 +138,69 @@ async def site_login_code_handler(callback: CallbackQuery):
         f"⏳ Код действует 10 минут и одноразовый.",
         parse_mode='HTML',
     )
+
+    from bot.services.trial_phone_registry import has_telegram_id_linked_phone
+    if not has_telegram_id_linked_phone(callback.from_user.id):
+        from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+        from bot.states.user_states import PhoneLinking
+
+        await state.set_state(PhoneLinking.waiting_for_contact)
+        await callback.message.answer(
+            "📱 <b>Хочешь входить на сайт по номеру телефона — без кода?</b>\n\n"
+            "Один раз поделись контактом — и в следующий раз для входа на сайт "
+            "достаточно будет ввести номер и подтвердить его звонком (звонишь "
+            "<b>ты нам</b> на бесплатный служебный номер, не мы тебе — рекламных "
+            "звонков или SMS не будет, номер используется только для входа).\n\n"
+            "Можно пропустить и продолжать пользоваться кодом, как обычно.",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text='📱 Поделиться номером телефона', request_contact=True)],
+                    [KeyboardButton(text='Не сейчас')],
+                ],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            ),
+        )
     await callback.answer()
+
+
+@router.message(PhoneLinking.waiting_for_contact, F.contact.as_('contact'))
+async def handle_phone_linking_contact(message: Message, state: FSMContext, contact):
+    """Принимает контакт для отдельной привязки телефона (не связанной
+    с получением пробного периода) — предлагается после генерации кода
+    входа на сайт. Используется тот же общий реестр, что и для пробника
+    (trial_verified_phones), поэтому вход по телефону на сайте сразу
+    узнает этого пользователя."""
+    from aiogram.types import ReplyKeyboardRemove
+
+    if contact.user_id != message.from_user.id:
+        await message.answer("❌ Это не твой собственный номер телефона. Поделись именно своим контактом.")
+        return
+
+    from bot.services.trial_phone_registry import mark_phone_trial_used, has_phone_used_trial
+
+    if has_phone_used_trial(contact.phone_number):
+        await state.clear()
+        await message.answer(
+            "ℹ️ Этот номер телефона уже привязан к другому аккаунту — обратись в поддержку, если это ошибка.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    mark_phone_trial_used(contact.phone_number, telegram_id=message.from_user.id)
+    await state.clear()
+    await message.answer(
+        "✅ Номер привязан! Теперь для входа на сайт можно использовать номер телефона "
+        "вместо кода из бота — на странице входа выбери «Войти по номеру телефона».",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+@router.message(PhoneLinking.waiting_for_contact, F.text == 'Не сейчас')
+async def handle_phone_linking_skip(message: Message, state: FSMContext):
+    from aiogram.types import ReplyKeyboardRemove
+    await state.clear()
+    await message.answer("Хорошо, можно привязать номер позже — просто ещё раз нажми «Код для входа на сайт».", reply_markup=ReplyKeyboardRemove())
 
 async def show_key_details(telegram_id: int, key_id: int, message, is_callback: bool = True, prepend_text: str=''):
     """General logic for displaying key details."""

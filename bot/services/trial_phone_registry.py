@@ -96,3 +96,17 @@ def get_telegram_id_for_verified_phone(raw_phone: str) -> Optional[int]:
             (phone,),
         ).fetchone()
     return int(row["telegram_id"]) if row else None
+
+
+def has_telegram_id_linked_phone(telegram_id: int) -> bool:
+    """Проверяет, привязан ли уже к этому Telegram-аккаунту какой-либо
+    номер телефона (через пробник в боте или отдельную привязку).
+    Используется, чтобы не предлагать привязку повторно тем, у кого
+    она уже есть."""
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM trial_verified_phones WHERE telegram_id = ?",
+            (telegram_id,),
+        ).fetchone()
+    return row is not None
