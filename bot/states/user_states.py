@@ -30,3 +30,6 @@ class GateSettings(StatesGroup):
 
 class TrialPhoneVerification(StatesGroup):
     waiting_for_contact = State()
+
+class PhoneLinking(StatesGroup):
+    waiting_for_contact = State()
