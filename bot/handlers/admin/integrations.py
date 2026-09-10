@@ -124,6 +124,23 @@ async def show_integrations_apikeys_menu(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin_integrations_happ")
+async def show_integrations_happ_menu(callback: CallbackQuery):
+    """Подменю «Happ / INCY»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_happ_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "📱 <b>Happ / INCY</b>\n\n"
+        "Provider ID открывает доступ к расширенным параметрам приложения "
+        "(в т.ч. автовыбор сервера и уведомления об истечении подписки).",
+        reply_markup=integrations_happ_menu_kb(),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin_integrations_limits")
 async def show_integrations_limits_menu(callback: CallbackQuery):
     """Подменю «Ограничения устройств»."""
@@ -894,8 +911,8 @@ async def toggle_happ_autoconnect(callback: CallbackQuery):
         warning = " ⚠️ Задай ещё Happ Provider ID выше — без него это официально не гарантированно работает."
     await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: автовыбор быстрого сервера.{warning}", show_alert=bool(warning))
 
-    from bot.keyboards.admin_settings import integrations_apikeys_menu_kb
-    await safe_edit_or_send(callback.message, "🔑 <b>Внешние ключи и API</b>", reply_markup=integrations_apikeys_menu_kb())
+    from bot.keyboards.admin_settings import integrations_happ_menu_kb
+    await safe_edit_or_send(callback.message, "📱 <b>Happ / INCY</b>", reply_markup=integrations_happ_menu_kb())
 
 
 @router.callback_query(F.data.startswith("admin_edit_oauth:"))

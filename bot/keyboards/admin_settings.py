@@ -208,6 +208,7 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🌐 Сайт и витрина', callback_data='admin_integrations_site'))
     builder.row(InlineKeyboardButton(text='🔐 Способы входа на сайт', callback_data='admin_integrations_auth'))
     builder.row(InlineKeyboardButton(text='📞 Верификация телефона (Zvonok)', callback_data='admin_integrations_zvonok'))
+    builder.row(InlineKeyboardButton(text='📱 Happ / INCY', callback_data='admin_integrations_happ'))
     builder.row(InlineKeyboardButton(text='🔑 Внешние ключи и API', callback_data='admin_integrations_apikeys'))
     builder.row(InlineKeyboardButton(text='⚙️ Ограничения устройств', callback_data='admin_integrations_limits'))
     builder.row(back_button('admin_bot_settings'), home_button())
@@ -304,8 +305,9 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Внешние ключи и API» — Happ, AI-провайдеры, веб-поиск."""
+def integrations_happ_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Happ / INCY» — Provider ID и связанные с ним настройки
+    поведения приложения."""
     from database.requests import get_happ_provider_id, is_happ_autoconnect_enabled
     builder = InlineKeyboardBuilder()
     happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
@@ -314,12 +316,19 @@ def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
         callback_data='admin_edit_happ_provider_id',
     ))
     builder.row(
-        InlineKeyboardButton(text='⚡ Автовыбор быстрого сервера (Happ/INCY)', callback_data='admin_noop'),
+        InlineKeyboardButton(text='⚡ Автовыбор быстрого сервера', callback_data='admin_noop'),
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_autoconnect_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_autoconnect',
         ),
     )
+    builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Внешние ключи и API» — AI-провайдеры, веб-поиск."""
+    builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
