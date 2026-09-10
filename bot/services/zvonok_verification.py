@@ -63,7 +63,17 @@ async def check_phone_confirmation(call_id) -> bool:
     телефона, старый успешный звонок из прошлого (например, тестовый)
     навсегда "разблокирует" этот номер для любых будущих попыток входа
     без реального нового звонка. True — подтверждено (status ==
-    'pincode_ok')."""
+    'pincode_ok').
+
+    Сначала проверяет ЛОКАЛЬНЫЙ кэш — туда мгновенно попадает результат
+    через постбек (вебхук) от zvonok.com, если он настроен (см.
+    save_postback_status / handle_zvonok_postback), что даёт ответ без
+    похода к их API вообще. Если в кэше пусто (постбек не настроен или
+    ещё не дошёl) — опрашивает API как раньше, это резервный вариант."""
+    cached = get_cached_postback_status(call_id)
+    if cached is not None:
+        return cached
+
     from database.requests import get_zvonok_public_key
 
     public_key = get_zvonok_public_key()
@@ -130,3 +140,35 @@ def get_verified_phone_for_account(account_id: int, max_age_minutes: int = 30) -
             (account_id, f"-{max_age_minutes}"),
         ).fetchone()
     return row["phone_raw"] if row else None
+
+
+def get_cached_postback_status(call_id) -> Optional[bool]:
+    """Возвращает результат ИЗ ЛОКАЛЬНОГО КЭША (заполняется постбеком от
+    zvonok.com, см. save_postback_status) для конкретного call_id.
+    None — в кэше ничего нет (постбек не настроен или ещё не пришёл),
+    тогда вызывающая сторона идёт опрашивать API как раньше."""
+    if not call_id:
+        return None
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT confirmed FROM zvonok_postback_status WHERE call_id = ?",
+            (str(call_id),),
+        ).fetchone()
+    return bool(row["confirmed"]) if row else None
+
+
+def save_postback_status(call_id: str, confirmed: bool) -> None:
+    """Сохраняет результат, пришедший через постбек (вебхук) от
+    zvonok.com — вызывается из handle_zvonok_postback в webapp/server.py.
+    INSERT OR REPLACE — если по этому call_id уже что-то было (например,
+    сначала пришёл постбек 'нет ответа', а клиент потом всё же дозвонился
+    и пришёл повторный успешный постбек), последний пришедший побеждает."""
+    from database.connection import get_db
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO zvonok_postback_status (call_id, confirmed, received_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (str(call_id), 1 if confirmed else 0),
+        )
+        conn.commit()
