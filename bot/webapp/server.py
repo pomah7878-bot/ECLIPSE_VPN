@@ -1007,6 +1007,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if provider_id:
         headers["providerid"] = provider_id
 
+    from database.requests import is_happ_autoconnect_enabled
+    if provider_id and is_happ_autoconnect_enabled():
+        # "Advanced parameter" — официально работает только при заданном
+        # Provider ID (см. happ.su/main/dev-docs/app-management). Клиент
+        # (Happ/INCY) сам измеряет отклик каждого сервера в подписке и
+        # подключается к самому быстрому при запуске приложения.
+        headers["subscription-autoconnect"] = "1"
+        headers["subscription-autoconnect-type"] = "lowestdelay"
+
     if "subscription-userinfo" not in headers:
         expire_epoch = 0
         try:
