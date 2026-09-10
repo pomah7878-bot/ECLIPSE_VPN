@@ -326,6 +326,38 @@ def _parse_timestamp(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+async def run_anonymous_payment_auto_check_scheduler(bot: Any = None) -> None:
+    """Раз в минуту проверяет сайтовые (анонимные) заказы, оставшиеся
+    'pending' спустя 90 секунд после создания — подстраховка на случай,
+    если клиент закрыл вкладку/ушёл со страницы ДО того, как быстрая
+    проверка на самой странице сайта успела подтвердить оплату (у неё
+    всего несколько попыток за секунды сразу после создания заказа).
+    Без этой подстраховки такой заказ навсегда остаётся 'pending', даже
+    если деньги реально пришли в ЮKassу — что и произошло на практике."""
+    logger.info("Scheduler автопроверки анонимных (сайтовых) платежей запущен")
+    from database.requests import get_abandoned_anonymous_purchases
+    from bot.services.anonymous_purchase import check_and_complete_anonymous_payment
+
+    while True:
+        try:
+            await asyncio.sleep(60)
+            abandoned = get_abandoned_anonymous_purchases()
+            if abandoned:
+                logger.info(f"Автопроверка сайтовых платежей: найдено {len(abandoned)} заброшенных заказов")
+            for purchase in abandoned:
+                try:
+                    result = await check_and_complete_anonymous_payment(purchase["order_id"])
+                    if result["status"] == "paid":
+                        logger.info(f"Автопроверка сайтовых платежей: заказ {purchase['order_id']} успешно завершён (клиент не дождался на странице)")
+                except Exception as item_error:
+                    logger.error(f"Автопроверка сайтового платежа {purchase.get('order_id')}: {item_error}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.error(f"Ошибка scheduler автопроверки сайтовых платежей: {error}", exc_info=True)
+
+
+
 async def run_payment_auto_check_scheduler(bot: Any) -> None:
     """Runs the bounded payment polling queue once per minute."""
     logger.info("Scheduler автопроверки API-платежей запущен")

@@ -1210,6 +1210,8 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
             await pay_bot.session.close()
 
         save_anonymous_purchase_payment_id(order_id, yk_result["yookassa_payment_id"])
+        from database.requests import schedule_payment_auto_check
+        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=20)
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"
@@ -1239,63 +1241,11 @@ async def handle_public_pay_check(request: web.Request) -> web.Response:
     if not order_id:
         return web.json_response({"error": "order_id_required"}, status=400)
 
-    from database.db_payments import (
-        get_anonymous_purchase_by_order_id, mark_anonymous_purchase_paid,
-        save_anonymous_purchase_provisioning,
-    )
-    from bot.services.billing import check_yookassa_payment_status
-
-    purchase = get_anonymous_purchase_by_order_id(order_id)
-    if not purchase:
+    from bot.services.anonymous_purchase import check_and_complete_anonymous_payment
+    result = await check_and_complete_anonymous_payment(order_id)
+    if result["status"] == "not_found":
         return web.json_response({"error": "order_not_found"}, status=404)
-
-    if purchase["status"] in ("paid", "claimed"):
-        return web.json_response({
-            "status": "paid",
-            "claim_code": purchase["claim_code"],
-            "sub_url": purchase.get("sub_url"),
-        })
-
-    payment_id = purchase.get("yookassa_payment_id")
-    if not payment_id:
-        return web.json_response({"status": "pending", "message": "Платёж ещё создаётся, попробуйте через пару секунд."})
-
-    try:
-        yk_status = await check_yookassa_payment_status(payment_id)
-    except Exception as e:
-        logger.error(f"Public YooKassa status check error: {e}")
-        return web.json_response({"status": "pending", "message": "Не удалось проверить статус, попробуйте ещё раз."})
-
-    if yk_status != "succeeded":
-        status_map = {"pending": "pending", "waiting_for_capture": "pending", "canceled": "failed"}
-        return web.json_response({"status": status_map.get(yk_status, "pending")})
-
-    if not mark_anonymous_purchase_paid(order_id, payment_id):
-        # Уже мог обработаться параллельным запросом (двойной опрос) — перечитываем
-        purchase = get_anonymous_purchase_by_order_id(order_id)
-        if purchase and purchase["status"] in ("paid", "claimed"):
-            return web.json_response({
-                "status": "paid", "claim_code": purchase["claim_code"], "sub_url": purchase.get("sub_url"),
-            })
-        return web.json_response({"status": "pending", "message": "Обрабатываем платёж, попробуйте через несколько секунд."})
-
-    sub_url = None
-    try:
-        from bot.services.anonymous_purchase import provision_anonymous_vpn_key
-        result = await provision_anonymous_vpn_key(purchase["tariff_id"], order_id)
-        save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
-        sub_url = result["sub_url"]
-    except Exception as e:
-        logger.error(f"Public provisioning error for order {order_id}: {e}")
-        # Оплата прошла успешно, но с выдачей ключа проблема — код привязки
-        # у клиента всё равно есть, ключ можно довыдать вручную по order_id.
-
-    purchase = get_anonymous_purchase_by_order_id(order_id)
-    return web.json_response({
-        "status": "paid",
-        "claim_code": purchase["claim_code"],
-        "sub_url": sub_url,
-    })
+    return web.json_response(result)
 
 
 # ============================================================================
@@ -1973,6 +1923,8 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
             await pay_bot.session.close()
 
         save_anonymous_purchase_payment_id(order_id, yk_result["yookassa_payment_id"])
+        from database.requests import schedule_payment_auto_check
+        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=20)
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"
@@ -2107,6 +2059,8 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
             await pay_bot.session.close()
 
         save_anonymous_purchase_payment_id(order_id, yk_result["yookassa_payment_id"])
+        from database.requests import schedule_payment_auto_check
+        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=20)
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"

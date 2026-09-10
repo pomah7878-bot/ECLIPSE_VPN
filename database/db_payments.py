@@ -40,6 +40,7 @@ __all__ = [
     'save_anonymous_purchase_provisioning',
     'reassign_vpn_key_owner',
     'get_anonymous_purchase_by_order_id',
+    'get_abandoned_anonymous_purchases',
     'get_anonymous_purchase_by_claim_code',
     'mark_anonymous_purchase_claimed',
     'save_wata_link_id',
@@ -1110,6 +1111,28 @@ def get_anonymous_purchase_by_order_id(order_id: str) -> Optional[Dict[str, Any]
             "SELECT * FROM anonymous_purchases WHERE order_id = ?", (order_id,)
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_abandoned_anonymous_purchases(min_age_seconds: int = 90, max_age_seconds: int = 7200, limit: int = 20) -> list:
+    """Сайтовые заказы, которые остались 'pending' спустя какое-то время
+    после создания — клиент мог закрыть вкладку браузера ДО того, как
+    быстрая проверка на самой странице успела подтвердить оплату (у
+    неё всего несколько попыток за секунды). Подстраховка на случай
+    именно такой ситуации — фоновая пересверка раз в минуту-две."""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM anonymous_purchases
+            WHERE status = 'pending'
+              AND yookassa_payment_id IS NOT NULL
+              AND created_at <= datetime('now', ? || ' seconds')
+              AND created_at >= datetime('now', ? || ' seconds')
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (f"-{min_age_seconds}", f"-{max_age_seconds}", limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 def get_anonymous_purchase_by_claim_code(claim_code: str) -> Optional[Dict[str, Any]]:
