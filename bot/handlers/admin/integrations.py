@@ -915,6 +915,56 @@ async def toggle_happ_autoconnect(callback: CallbackQuery):
     await safe_edit_or_send(callback.message, "📱 <b>Happ / INCY</b>", reply_markup=integrations_happ_menu_kb())
 
 
+async def _toggle_happ_setting(callback: CallbackQuery, getter, setter, label: str):
+    """Общая логика для простых Happ-переключателей 'Advanced parameter' —
+    все требуют Provider ID, все возвращают в то же подменю."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_happ_provider_id
+    new_value = not getter()
+    setter(new_value)
+
+    warning = ""
+    if new_value and not get_happ_provider_id():
+        warning = " ⚠️ Задай ещё Happ Provider ID выше — без него это официально не гарантированно работает."
+    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: {label}.{warning}", show_alert=bool(warning))
+
+    from bot.keyboards.admin_settings import integrations_happ_menu_kb
+    await safe_edit_or_send(callback.message, "📱 <b>Happ / INCY</b>", reply_markup=integrations_happ_menu_kb())
+
+
+@router.callback_query(F.data == "admin_toggle_happ_sort_ping")
+async def toggle_happ_sort_ping(callback: CallbackQuery):
+    """Автосортировка серверов по пингу (subscriptions-sort-type=ping)."""
+    from database.requests import is_happ_sort_by_ping_enabled, set_happ_sort_by_ping_enabled
+    await _toggle_happ_setting(callback, is_happ_sort_by_ping_enabled, set_happ_sort_by_ping_enabled, "автосортировка по пингу")
+
+
+@router.callback_query(F.data == "admin_toggle_happ_notify_expire")
+async def toggle_happ_notify_expire(callback: CallbackQuery):
+    """Родные push-уведомления Happ/INCY об истечении подписки
+    (notification-subs-expire)."""
+    from database.requests import is_happ_notification_expire_enabled, set_happ_notification_expire_enabled
+    await _toggle_happ_setting(callback, is_happ_notification_expire_enabled, set_happ_notification_expire_enabled, "родные уведомления об истечении")
+
+
+@router.callback_query(F.data == "admin_toggle_happ_auto_update")
+async def toggle_happ_auto_update(callback: CallbackQuery):
+    """Глобальное автообновление всех подписок (subscription-auto-update-enable)."""
+    from database.requests import is_happ_auto_update_enabled, set_happ_auto_update_enabled
+    await _toggle_happ_setting(callback, is_happ_auto_update_enabled, set_happ_auto_update_enabled, "глобальное автообновление подписок")
+
+
+@router.callback_query(F.data == "admin_toggle_happ_hide_settings")
+async def toggle_happ_hide_settings(callback: CallbackQuery):
+    """Скрыть настройки серверов от клиента (hide-settings) — не сможет
+    просматривать/копировать/передавать конфиги."""
+    from database.requests import is_happ_hide_settings_enabled, set_happ_hide_settings_enabled
+    await _toggle_happ_setting(callback, is_happ_hide_settings_enabled, set_happ_hide_settings_enabled, "скрытие настроек серверов")
+
+
 @router.callback_query(F.data.startswith("admin_edit_oauth:"))
 async def edit_oauth_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):

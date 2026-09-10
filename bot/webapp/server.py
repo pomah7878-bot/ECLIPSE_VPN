@@ -1016,6 +1016,20 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         headers["subscription-autoconnect"] = "1"
         headers["subscription-autoconnect-type"] = "lowestdelay"
 
+    if provider_id:
+        from database.requests import (
+            is_happ_hide_settings_enabled, is_happ_notification_expire_enabled,
+            is_happ_sort_by_ping_enabled, is_happ_auto_update_enabled,
+        )
+        if is_happ_hide_settings_enabled():
+            headers["hide-settings"] = "1"
+        if is_happ_notification_expire_enabled():
+            headers["notification-subs-expire"] = "1"
+        if is_happ_sort_by_ping_enabled():
+            headers["subscriptions-sort-type"] = "ping"
+        if is_happ_auto_update_enabled():
+            headers["subscription-auto-update-enable"] = "1"
+
     if "subscription-userinfo" not in headers:
         expire_epoch = 0
         try:
