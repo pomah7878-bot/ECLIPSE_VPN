@@ -320,35 +320,35 @@ def integrations_happ_menu_kb() -> InlineKeyboardMarkup:
         callback_data='admin_edit_happ_provider_id',
     ))
     builder.row(
-        InlineKeyboardButton(text='⚡ Автовыбор быстрого сервера', callback_data='admin_noop'),
+        InlineKeyboardButton(text='⚡ Автовыбор быстрого сервера', callback_data='admin_happ_info:autoconnect'),
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_autoconnect_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_autoconnect',
         ),
     )
     builder.row(
-        InlineKeyboardButton(text='📊 Автосортировка по пингу', callback_data='admin_noop'),
+        InlineKeyboardButton(text='📊 Автосортировка по пингу', callback_data='admin_happ_info:sort_ping'),
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_sort_by_ping_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_sort_ping',
         ),
     )
     builder.row(
-        InlineKeyboardButton(text='🔔 Родные уведомления об истечении', callback_data='admin_noop'),
+        InlineKeyboardButton(text='🔔 Родные уведомления об истечении', callback_data='admin_happ_info:notify_expire'),
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_notification_expire_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_notify_expire',
         ),
     )
     builder.row(
-        InlineKeyboardButton(text='🔄 Глобальное автообновление подписок', callback_data='admin_noop'),
+        InlineKeyboardButton(text='🔄 Глобальное автообновление подписок', callback_data='admin_happ_info:auto_update'),
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_auto_update_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_auto_update',
         ),
     )
     builder.row(
-        InlineKeyboardButton(text='🔒 Скрыть настройки серверов', callback_data='admin_noop'),
+        InlineKeyboardButton(text='🔒 Скрыть настройки серверов', callback_data='admin_happ_info:hide_settings'),
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_hide_settings_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_hide_settings',
