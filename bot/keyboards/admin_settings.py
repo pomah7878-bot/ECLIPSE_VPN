@@ -301,6 +301,7 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
         text=f"📞 Zvonok Campaign ID: {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
         callback_data='admin_edit_zvonok_campaign_id',
     ))
+    builder.row(InlineKeyboardButton(text='📡 Постбек (мгновенное подтверждение)', callback_data='admin_zvonok_postback_info'))
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
 

@@ -113,6 +113,52 @@ async def show_integrations_zvonok_menu(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin_zvonok_postback_info")
+async def show_zvonok_postback_info(callback: CallbackQuery):
+    """Показывает готовые к вставке ссылки постбека с РЕАЛЬНЫМ доменом
+    этой инсталляции — админу остаётся только скопировать (тап по коду
+    в Telegram копирует его целиком) и вставить в личном кабинете
+    zvonok.com."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_effective_webapp_url
+    webapp_url = (get_effective_webapp_url() or "").rstrip("/")
+
+    if not webapp_url:
+        text = (
+            "📡 <b>Постбек (мгновенное подтверждение)</b>\n\n"
+            "⚠️ Сначала задай домен сайта (Интеграции → 🌐 Сайт и витрина → "
+            "Домен сайта) — без него нельзя построить рабочие ссылки."
+        )
+    else:
+        success_url = f"{webapp_url}/api/public/zvonok/postback?call_id={{ct_call_id}}&amp;result=ok"
+        no_answer_url = f"{webapp_url}/api/public/zvonok/postback?call_id={{ct_call_id}}&amp;result=no_answer"
+        text = (
+            "📡 <b>Постбек (мгновенное подтверждение)</b>\n\n"
+            "Без постбека подтверждение звонка приходит с задержкой (мы "
+            "сами периодически спрашиваем у Zvonok — успел ли клиент "
+            "позвонить). С постбеком Zvonok сам мгновенно сообщает нам "
+            "результат сразу после звонка — клиент почти не ждёт.\n\n"
+            "<b>Как включить:</b> личный кабинет zvonok.com → "
+            "«Подтверждение номера» → выбери свою кампанию → «Постбеки» "
+            "→ вставь ссылки ниже в соответствующие поля (тапни, чтобы "
+            "скопировать):\n\n"
+            "<b>Успешный дозвон:</b>\n"
+            f"<code>{success_url}</code>\n\n"
+            "<b>Нет ответа на звонок:</b>\n"
+            f"<code>{no_answer_url}</code>\n\n"
+            "Метод запроса — GET (уже стоит по умолчанию у Zvonok). "
+            "Если не настроить постбек — всё продолжит работать как "
+            "раньше, просто чуть медленнее (через периодический опрос)."
+        )
+
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
+    await safe_edit_or_send(callback.message, text, reply_markup=integrations_zvonok_menu_kb())
+    await callback.answer()
+
+
 @router.callback_query(F.data == "admin_integrations_apikeys")
 async def show_integrations_apikeys_menu(callback: CallbackQuery):
     """Подменю «Внешние ключи и API»."""
