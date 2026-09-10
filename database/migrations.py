@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 102
+LATEST_VERSION = 103
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2066,6 +2066,21 @@ def migration_102(conn: sqlite3.Connection) -> None:
     logger.info("Migration v102 applied: site_accounts.referred_by_code готово")
 
 
+def migration_103(conn: sqlite3.Connection) -> None:
+    """Migration v103: добавляет site_accounts.placeholder_user_id —
+    позволяет чисто сайтовым пользователям (без Telegram) иметь
+    СТАБИЛЬНУЮ внутреннюю личность (для накопления покупок/реферальных
+    начислений на ОДНОМ и том же users.id, а не на новом одноразовом
+    при каждой покупке, как было раньше). Собственный реферальный код
+    для такой личности — это обычный users.referral_code (через
+    ensure_user_referral_code), отдельное поле не нужно."""
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(site_accounts)").fetchall()}
+    if "placeholder_user_id" not in existing_cols:
+        conn.execute("ALTER TABLE site_accounts ADD COLUMN placeholder_user_id INTEGER DEFAULT NULL")
+        logger.info("Migration v103: добавлена колонка site_accounts.placeholder_user_id")
+    logger.info("Migration v103 applied: стабильная личность для сайтовых аккаунтов готова")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2096,6 +2111,7 @@ MIGRATIONS = {
     100: migration_100,
     101: migration_101,
     102: migration_102,
+    103: migration_103,
 }
 
 

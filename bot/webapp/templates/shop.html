@@ -203,6 +203,7 @@
 
         <div id="accountTab" class="hidden">
             <div id="accountDataBox"></div>
+            <div id="referralBox" class="hidden"></div>
         </div>
         </div>
 
@@ -723,9 +724,39 @@
             document.getElementById('mainApp').classList.remove('hidden');
             loadTariffs();
             renderAccountData(session);
+            loadAndRenderReferralBlock();
             if (window.location.hash === '#account') {
                 switchTab('account');
             }
+        }
+
+        async function loadAndRenderReferralBlock() {
+            const box = document.getElementById('referralBox');
+            try {
+                const res = await fetchAPI('account/referral');
+                if (!res.enabled || !res.referral_code) {
+                    box.classList.add('hidden');
+                    return;
+                }
+                box.classList.remove('hidden');
+                box.innerHTML = `
+                    <div class="card rounded-2xl p-4 mb-4">
+                        <h3 class="font-display text-sm font-bold mb-1">🎁 Пригласи друзей</h3>
+                        <p class="text-xs text-mist mb-3">Поделись своей ссылкой — за покупки приглашённых начисляется вознаграждение.</p>
+                        <div class="bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 mb-2 text-center">
+                            <code id="referralLinkText" class="text-[11px] break-all font-mono">${escapeHtml(res.referral_link)}</code>
+                        </div>
+                        <button onclick="copyReferralLink()" class="w-full py-2.5 btn-secondary rounded-xl font-semibold text-xs transition">📋 Скопировать ссылку</button>
+                    </div>
+                `;
+            } catch (e) {
+                box.classList.add('hidden');
+            }
+        }
+
+        function copyReferralLink() {
+            const text = document.getElementById('referralLinkText').textContent;
+            navigator.clipboard.writeText(text).catch(() => {});
         }
 
         async function checkExistingSession() {
