@@ -303,12 +303,27 @@ def pull_updates() -> Tuple[bool, str]:
         if not stash_success:
             return False, f"❌ Не удалось сохранить локальные изменения перед обновлением:\n{stash_output}"
 
-    # Запоминаем коммит ДО pull — если новый код не пройдёт проверку импорта,
-    # откатимся именно сюда, а не оставим бота с рабочим процессом на старом
-    # коде и сломанным кодом на диске, ожидающим следующего перезапуска.
+    # Запоминаем коммит ДО обновления — если новый код не пройдёт проверку
+    # импорта, откатимся именно сюда, а не оставим бота с рабочим процессом
+    # на старом коде и сломанным кодом на диске, ожидающим следующего
+    # перезапуска.
     pre_pull_commit = get_current_commit()
 
-    success, output = run_git_command(['pull', 'origin'], timeout=120)
+    # Вместо обычного `git pull` — `fetch` + `reset --hard` до актуального
+    # состояния origin. Обычный pull требует чистой fast-forward истории и
+    # падает с "divergent branches", если локальная история сервера хоть
+    # немного разошлась с origin (например, из-за иной последовательности
+    # коммитов при разных путях обновления) — а по задумке эта кнопка
+    # должна ВСЕГДА успешно подтягивать официальную версию, локальные
+    # незакоммиченные изменения уже отложены через stash чуть выше.
+    current_branch = get_current_branch() or "main"
+    fetch_success, fetch_output = run_git_command(['fetch', 'origin'], timeout=60)
+    if not fetch_success:
+        if has_local_changes:
+            run_git_command(['stash', 'pop'], timeout=30)
+        return False, f"❌ Ошибка обновления (fetch):\n{fetch_output}"
+
+    success, output = run_git_command(['reset', '--hard', f'origin/{current_branch}'], timeout=60)
 
     if not success:
         if has_local_changes:
