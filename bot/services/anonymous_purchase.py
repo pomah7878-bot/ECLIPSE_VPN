@@ -224,3 +224,66 @@ async def claim_anonymous_purchase(claim_code: str, telegram_id: int, username: 
             logger.warning(f"Не удалось связать site_account {site_account_id} с telegram_id {telegram_id}: {e}")
 
     return {"ok": True, "message": "Готово! Ключ теперь в разделе «Мои ключи».", "key_id": key_id}
+
+
+async def check_and_complete_anonymous_payment(order_id: str) -> dict:
+    """Проверяет статус анонимного (сайтового) платежа в YooKassa и, если
+    оплата прошла, провижинит рабочий VPN-ключ — идемпотентно (повторный
+    вызов для уже оплаченного заказа просто возвращает текущее
+    состояние, не создавая ключ повторно).
+
+    Общая логика для двух вызывающих сторон:
+    1. Обычная (быстрая) проверка сразу после оплаты — пока клиент
+       смотрит на страницу и ждёт подтверждения (handle_public_pay_check)
+    2. Фоновая автопроверка (run_anonymous_payment_auto_check_scheduler) —
+       подстраховка на случай, если клиент закрыл вкладку/ушёл со
+       страницы ДО того, как быстрая проверка успела подтвердить оплату
+
+    Returns: {"status": "paid"|"pending"|"failed"|"not_found", "claim_code": ..., "sub_url": ...}
+    """
+    from database.db_payments import (
+        get_anonymous_purchase_by_order_id, mark_anonymous_purchase_paid,
+        save_anonymous_purchase_provisioning,
+    )
+    from bot.services.billing import check_yookassa_payment_status
+
+    purchase = get_anonymous_purchase_by_order_id(order_id)
+    if not purchase:
+        return {"status": "not_found"}
+
+    if purchase["status"] in ("paid", "claimed"):
+        return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": purchase.get("sub_url")}
+
+    payment_id = purchase.get("yookassa_payment_id")
+    if not payment_id:
+        return {"status": "pending"}
+
+    try:
+        yk_status = await check_yookassa_payment_status(payment_id)
+    except Exception as e:
+        logger.error(f"Автопроверка анонимного платежа {order_id}: ошибка запроса статуса: {e}")
+        return {"status": "pending"}
+
+    if yk_status != "succeeded":
+        status_map = {"pending": "pending", "waiting_for_capture": "pending", "canceled": "failed"}
+        return {"status": status_map.get(yk_status, "pending")}
+
+    if not mark_anonymous_purchase_paid(order_id, payment_id):
+        # Уже мог обработаться параллельным запросом (двойной опрос) — перечитываем
+        purchase = get_anonymous_purchase_by_order_id(order_id)
+        if purchase and purchase["status"] in ("paid", "claimed"):
+            return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": purchase.get("sub_url")}
+        return {"status": "pending"}
+
+    sub_url = None
+    try:
+        result = await provision_anonymous_vpn_key(purchase["tariff_id"], order_id)
+        save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
+        sub_url = result["sub_url"]
+    except Exception as e:
+        logger.error(f"Автопроверка анонимного платежа {order_id}: ошибка провижининга ключа: {e}")
+        # Оплата прошла успешно, но с выдачей ключа проблема — код привязки
+        # у клиента всё равно есть, ключ можно довыдать вручную по order_id.
+
+    purchase = get_anonymous_purchase_by_order_id(order_id)
+    return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
