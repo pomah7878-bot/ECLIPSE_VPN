@@ -202,8 +202,21 @@ def referral_back_kb() -> InlineKeyboardMarkup:
 
 
 def integrations_menu_kb() -> InlineKeyboardMarkup:
-    """Меню раздела «Интеграции» — домен сайта, AI, вход через соцсети."""
-    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_device_limit_type, DEVICE_LIMIT_TYPES
+    """Меню раздела «Интеграции» — теперь разбито на категории, чтобы не
+    показывать один длинный список из 20+ кнопок."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text='🌐 Сайт и витрина', callback_data='admin_integrations_site'))
+    builder.row(InlineKeyboardButton(text='🔐 Способы входа на сайт', callback_data='admin_integrations_auth'))
+    builder.row(InlineKeyboardButton(text='📞 Верификация телефона (Zvonok)', callback_data='admin_integrations_zvonok'))
+    builder.row(InlineKeyboardButton(text='🔑 Внешние ключи и API', callback_data='admin_integrations_apikeys'))
+    builder.row(InlineKeyboardButton(text='⚙️ Ограничения устройств', callback_data='admin_integrations_limits'))
+    builder.row(back_button('admin_bot_settings'), home_button())
+    return builder.as_markup()
+
+
+def integrations_site_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Сайт и витрина» — домен, бренд, приложение, витрина."""
+    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
@@ -228,34 +241,14 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
         text=f"🎭 Тема личного кабинета: {CABINET_THEMES[get_cabinet_theme_id()]['label']}",
         callback_data='admin_cabinet_theme_menu',
     ))
-    builder.row(InlineKeyboardButton(
-        text=f"📱 Ограничение устройств: {DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']}",
-        callback_data='admin_device_limit_type_menu',
-    ))
-    from bot.services.panel_only_cleanup import get_panel_cleanup_delay_days
-    builder.row(InlineKeyboardButton(
-        text=f"🧹 Удаление с панели через: {get_panel_cleanup_delay_days()} дн.",
-        callback_data='admin_edit_panel_cleanup_days',
-    ))
-    from database.requests import get_happ_provider_id
-    happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
-    builder.row(InlineKeyboardButton(
-        text=f"🆔 Happ Provider ID: {happ_provider_status}",
-        callback_data='admin_edit_happ_provider_id',
-    ))
-    from database.requests import get_zvonok_public_key, get_zvonok_campaign_id
-    builder.row(InlineKeyboardButton(
-        text=f"📞 Zvonok API Key: {'✅ задан' if get_zvonok_public_key() else 'не задан'}",
-        callback_data='admin_edit_zvonok_public_key',
-    ))
-    builder.row(InlineKeyboardButton(
-        text=f"📞 Zvonok Campaign ID: {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
-        callback_data='admin_edit_zvonok_campaign_id',
-    ))
-    builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
-    builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
-    builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
+    builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Способы входа на сайт» — все 5 способов с переключателями."""
     from database.requests import is_site_auth_method_enabled
+    builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text='🔵 Google OAuth', callback_data='admin_edit_oauth:google'),
         InlineKeyboardButton(
@@ -291,7 +284,56 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
             callback_data='admin_toggle_auth_method:phone',
         ),
     )
-    builder.row(back_button('admin_bot_settings'), home_button())
+    builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Верификация телефона (Zvonok)» — API Key и Campaign ID."""
+    from database.requests import get_zvonok_public_key, get_zvonok_campaign_id
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"📞 Zvonok API Key: {'✅ задан' if get_zvonok_public_key() else 'не задан'}",
+        callback_data='admin_edit_zvonok_public_key',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📞 Zvonok Campaign ID: {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
+        callback_data='admin_edit_zvonok_campaign_id',
+    ))
+    builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Внешние ключи и API» — Happ, AI-провайдеры, веб-поиск."""
+    from database.requests import get_happ_provider_id
+    builder = InlineKeyboardBuilder()
+    happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
+    builder.row(InlineKeyboardButton(
+        text=f"🆔 Happ Provider ID: {happ_provider_status}",
+        callback_data='admin_edit_happ_provider_id',
+    ))
+    builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
+    builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
+    builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
+    builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_limits_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Ограничения устройств» — HWID/IP, удаление с панели."""
+    from database.requests import get_device_limit_type, DEVICE_LIMIT_TYPES
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"📱 Ограничение устройств: {DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']}",
+        callback_data='admin_device_limit_type_menu',
+    ))
+    from bot.services.panel_only_cleanup import get_panel_cleanup_delay_days
+    builder.row(InlineKeyboardButton(
+        text=f"🧹 Удаление с панели через: {get_panel_cleanup_delay_days()} дн.",
+        callback_data='admin_edit_panel_cleanup_days',
+    ))
+    builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
 
 

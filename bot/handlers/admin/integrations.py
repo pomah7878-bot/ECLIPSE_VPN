@@ -47,48 +47,91 @@ def _mask_secret(value: str) -> str:
 
 @router.callback_query(F.data == "admin_integrations")
 async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
-    """Показывает статус всех интеграций."""
+    """Показывает категории интеграций (детали — внутри каждой)."""
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
     await state.set_state(AdminStates.integrations_menu)
 
-    webapp_url = get_effective_webapp_url()
-    brand_name = get_effective_brand_name()
-    own_app_name = get_effective_own_app_name()
-    groq_key = get_effective_groq_api_key()
-    gemini_key = get_effective_gemini_api_key()
-    tavily_key = get_effective_tavily_api_key()
-    import_buttons_enabled = is_start_import_buttons_enabled()
-    balance_button_enabled = is_start_balance_button_enabled()
-    welcome_enabled = is_welcome_page_enabled()
-
-    lines = [
-        "🌐 <b>Интеграции</b>\n",
-        f"🌐 Домен сайта: <code>{webapp_url or 'не задан'}</code>",
-        f"🏷 Название бренда (для AI): <code>{brand_name}</code>",
-        f"📱 Своё приложение: <code>{own_app_name or 'не рекомендуется (только Happ/INCY)'}</code>",
-        f"📥 Кнопки импорта на главной: {'🟢 включены' if import_buttons_enabled else '⚪ выключены'}",
-        f"💰 Кнопка пополнения баланса: {'🟢 включена' if balance_button_enabled else '⚪ выключена'}",
-        f"🛬 Витрина для новых (/welcome): {'🟢 включена' if welcome_enabled else '⚪ выключена (404)'}",
-        f"🤖 Ключ AI (Groq): <code>{_mask_secret(groq_key)}</code>",
-        f"✨ Ключ AI (Gemini): <code>{_mask_secret(gemini_key)}</code>",
-        f"🔍 Ключ веб-поиска (Tavily): <code>{_mask_secret(tavily_key)}</code>",
-        "",
-    ]
-    for provider, name in _PROVIDER_NAMES.items():
-        client_id, client_secret = get_effective_oauth_credentials(provider)
-        status = "🟢 настроен" if (client_id and client_secret) else "⚪ не настроен"
-        lines.append(f"{name} OAuth: {status}")
-
-    lines.append(
-        "\nИзменения домена/AI применяются сразу. Для OAuth и AI-ключа "
+    await safe_edit_or_send(
+        callback.message,
+        "🌐 <b>Интеграции</b>\n\n"
+        "Выбери раздел — статус каждой настройки виден прямо на кнопке "
+        "внутри соответствующего раздела.\n\n"
+        "Изменения домена/AI применяются сразу. Для OAuth и AI-ключа "
         "может понадобиться перезапуск соответствующего сервиса — "
-        "спросите поддержку, если что-то не заработает сразу."
+        "спросите поддержку, если что-то не заработает сразу.",
+        reply_markup=integrations_menu_kb(),
     )
+    await callback.answer()
 
-    await safe_edit_or_send(callback.message, "\n".join(lines), reply_markup=integrations_menu_kb())
+
+@router.callback_query(F.data == "admin_integrations_site")
+async def show_integrations_site_menu(callback: CallbackQuery):
+    """Подменю «Сайт и витрина»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_site_menu_kb
+    await safe_edit_or_send(callback.message, "🌐 <b>Сайт и витрина</b>", reply_markup=integrations_site_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_integrations_auth")
+async def show_integrations_auth_menu(callback: CallbackQuery):
+    """Подменю «Способы входа на сайт»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_auth_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "🔐 <b>Способы входа на сайт</b>\n\n"
+        "Переключатель работает независимо от того, настроены ли учётные "
+        "данные — можно временно скрыть способ, не удаляя сами ключи.",
+        reply_markup=integrations_auth_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_integrations_zvonok")
+async def show_integrations_zvonok_menu(callback: CallbackQuery):
+    """Подменю «Верификация телефона (Zvonok)»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "📞 <b>Верификация телефона (Zvonok)</b>\n\n"
+        "Нужна для входа по номеру телефона на сайте — регистрация на "
+        "zvonok.com, раздел «Подтверждение номера» → «Звонок на "
+        "проверочный номер».",
+        reply_markup=integrations_zvonok_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_integrations_apikeys")
+async def show_integrations_apikeys_menu(callback: CallbackQuery):
+    """Подменю «Внешние ключи и API»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_apikeys_menu_kb
+    await safe_edit_or_send(callback.message, "🔑 <b>Внешние ключи и API</b>", reply_markup=integrations_apikeys_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_integrations_limits")
+async def show_integrations_limits_menu(callback: CallbackQuery):
+    """Подменю «Ограничения устройств»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_limits_menu_kb
+    await safe_edit_or_send(callback.message, "⚙️ <b>Ограничения устройств</b>", reply_markup=integrations_limits_menu_kb())
     await callback.answer()
 
 
@@ -423,7 +466,7 @@ async def show_welcome_template_menu(callback: CallbackQuery, state: FSMContext)
     for tid, info in WELCOME_TEMPLATES.items():
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_welcome_template:{tid}"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_site"))
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
@@ -465,7 +508,7 @@ async def show_cabinet_theme_menu(callback: CallbackQuery, state: FSMContext):
     for tid, info in CABINET_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_cabinet_theme:{tid}"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_site"))
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
@@ -509,7 +552,7 @@ async def show_device_limit_type_menu(callback: CallbackQuery, state: FSMContext
     for tid, info in DEVICE_LIMIT_TYPES.items():
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_device_limit_type:{tid}"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_limits"))
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
