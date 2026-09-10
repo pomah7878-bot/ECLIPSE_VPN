@@ -1404,7 +1404,7 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
         link_purchase_to_account(order_id, account_id)
 
         from bot.services.anonymous_purchase import provision_anonymous_vpn_key
-        result = await provision_anonymous_vpn_key(trial_tariff_id, order_id)
+        result = await provision_anonymous_vpn_key(trial_tariff_id, order_id, site_account_id=account_id)
         save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
         mark_anonymous_purchase_paid(order_id, "trial")  # без реального платежа, просто маркер завершения
 
@@ -1722,6 +1722,46 @@ async def handle_public_account_link_code(request: web.Request) -> web.Response:
         return web.json_response({"ok": False, "message": "Не удалось привязать аккаунт. Обратитесь в поддержку."})
 
     return web.json_response({"ok": True})
+
+
+async def handle_public_account_referral(request: web.Request) -> web.Response:
+    """GET /api/public/account/referral — собственная реферальная
+    ссылка сайт-аккаунта. Работает и для чисто сайтовых пользователей
+    (без Telegram) — код привязан к их стабильной служебной личности
+    (site_accounts.placeholder_user_id), той же, что используется для
+    провижининга их ключей, поэтому баланс/дни от рефералов и покупки
+    накапливаются на одной и той же внутренней личности."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": True, "logged_in": False})
+
+    from database.requests import get_site_account_by_id, get_effective_webapp_url, is_referral_enabled
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"error": "account_not_found"}, status=404)
+
+    if not is_referral_enabled():
+        return web.json_response({"ok": True, "enabled": False})
+
+    if account.get("telegram_id"):
+        from database.requests import get_user_internal_id
+        internal_user_id = get_user_internal_id(account["telegram_id"])
+    else:
+        from database.db_accounts import get_or_create_placeholder_user_for_site_account
+        internal_user_id = get_or_create_placeholder_user_for_site_account(account_id)
+
+    from database.requests import ensure_user_referral_code, get_user_balance
+    referral_code = ensure_user_referral_code(internal_user_id)
+    webapp_url = get_effective_webapp_url()
+    referral_link = f"{webapp_url}/shop?ref={referral_code}" if webapp_url else ""
+
+    return web.json_response({
+        "ok": True,
+        "enabled": True,
+        "referral_code": referral_code,
+        "referral_link": referral_link,
+        "balance_cents": get_user_balance(internal_user_id),
+    })
 
 
 async def handle_public_account_session(request: web.Request) -> web.Response:
@@ -2435,6 +2475,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
+    app.router.add_get("/api/public/account/referral", handle_public_account_referral)
     app.router.add_get("/api/public/account/session", handle_public_account_session)
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)

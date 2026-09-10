@@ -10,17 +10,23 @@ import uuid as uuid_module
 logger = logging.getLogger(__name__)
 
 
-async def provision_anonymous_vpn_key(tariff_id: int, order_id: str) -> dict:
+async def provision_anonymous_vpn_key(tariff_id: int, order_id: str, site_account_id: int = None) -> dict:
     """
     Создаёт полностью рабочий VPN-ключ для анонимной покупки — сразу,
     без ожидания захода в Telegram-бота.
 
-    Использует служебного "владельца"-заполнителя с заведомо невозможным
-    для реального Telegram отрицательным ID (чтобы не путать с настоящими
-    аккаунтами). При claim'е (см. claim_anonymous_purchase) ключ
-    перепривязывается к реальному аккаунту клиента в нашей базе — сама
-    панель 3x-ui не обновляется (это не влияет на работу бота, только
-    на отображение владельца в самой панели для админа).
+    Если передан site_account_id — использует СТАБИЛЬНУЮ, постоянную
+    служебную личность этого сайт-аккаунта (одну и ту же для ВСЕХ его
+    покупок), что позволяет накапливать реферальные начисления и иметь
+    собственный реферальный код. Если не передан (например, для
+    заказов без явного логина на сайте) — как и раньше, создаётся
+    ОДНОРАЗОВАЯ служебная личность с заведомо невозможным для
+    реального Telegram отрицательным ID.
+
+    При claim'е (см. claim_anonymous_purchase) ключ перепривязывается
+    к реальному аккаунту клиента в нашей базе — сама панель 3x-ui не
+    обновляется (это не влияет на работу бота, только на отображение
+    владельца в самой панели для админа).
 
     Returns:
         dict с ключами: key_id, sub_url (может быть None), placeholder_user_id
@@ -45,12 +51,20 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str) -> dict:
     server = servers[0]
     server_id = server["id"]
 
-    # Заведомо невозможный для реального Telegram ID — отрицательный,
-    # на основе текущего времени в миллисекундах (гарантированно уникален)
-    placeholder_tg_id = -int(time.time() * 1000)
-    placeholder_username = f"anon_{order_id}"
-    owner, _ = get_or_create_user(placeholder_tg_id, username=placeholder_username)
-    owner_user_id = owner["id"]
+    if site_account_id:
+        from database.db_accounts import get_or_create_placeholder_user_for_site_account
+        from database.requests import get_user_by_id
+        owner_user_id = get_or_create_placeholder_user_for_site_account(site_account_id)
+        owner_row = get_user_by_id(owner_user_id)
+        placeholder_tg_id = owner_row["telegram_id"]
+        placeholder_username = owner_row["username"]
+    else:
+        # Заведомо невозможный для реального Telegram ID — отрицательный,
+        # на основе текущего времени в миллисекундах (гарантированно уникален)
+        placeholder_tg_id = -int(time.time() * 1000)
+        placeholder_username = f"anon_{order_id}"
+        owner, _ = get_or_create_user(placeholder_tg_id, username=placeholder_username)
+        owner_user_id = owner["id"]
 
     days = tariff.get("duration_days") or 30
     traffic_limit_bytes = (tariff.get("traffic_limit_gb", 0) or 0) * 1024 ** 3
@@ -277,7 +291,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
 
     sub_url = None
     try:
-        result = await provision_anonymous_vpn_key(purchase["tariff_id"], order_id)
+        result = await provision_anonymous_vpn_key(purchase["tariff_id"], order_id, site_account_id=purchase.get("site_account_id"))
         save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
         sub_url = result["sub_url"]
     except Exception as e:

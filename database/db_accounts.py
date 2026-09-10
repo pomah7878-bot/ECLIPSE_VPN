@@ -21,6 +21,7 @@ __all__ = [
     'get_latest_purchase_for_account',
     'create_oauth_exchange_code',
     'consume_oauth_exchange_code',
+    'get_or_create_placeholder_user_for_site_account',
 ]
 
 
@@ -272,4 +273,34 @@ def consume_oauth_exchange_code(code: str) -> Optional[int]:
             return None
         conn.execute("UPDATE oauth_exchange_codes SET used = 1 WHERE code = ?", (code.strip().upper(),))
         return row["account_id"]
+
+
+def get_or_create_placeholder_user_for_site_account(account_id: int) -> int:
+    """Возвращает СТАБИЛЬНЫЙ внутренний users.id для этого сайт-аккаунта
+    (без Telegram) — создаётся один раз и переиспользуется для ВСЕХ
+    его покупок и реферальных начислений, в отличие от старого
+    поведения, где каждая покупка получала одноразовую служебную
+    личность. Благодаря этому у чисто сайтового пользователя может
+    быть СВОЙ реферальный код (через ensure_user_referral_code) и
+    накопленный баланс/дни от рефералов, привязанные к его же ключам."""
+    import time
+    from database.requests import get_or_create_user
+
+    with get_db() as conn:
+        row = conn.execute("SELECT placeholder_user_id FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
+        if row and row["placeholder_user_id"]:
+            return row["placeholder_user_id"]
+
+    placeholder_tg_id = -int(time.time() * 1000) - account_id
+    placeholder_username = f"site_{account_id}"
+    owner, _ = get_or_create_user(placeholder_tg_id, username=placeholder_username)
+    placeholder_user_id = owner["id"]
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE site_accounts SET placeholder_user_id = ? WHERE id = ?",
+            (placeholder_user_id, account_id),
+        )
+        conn.commit()
+    return placeholder_user_id
 
