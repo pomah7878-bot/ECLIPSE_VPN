@@ -1564,6 +1564,31 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
     return resp
 
 
+async def handle_zvonok_postback(request: web.Request) -> web.Response:
+    """GET /api/public/zvonok/postback — постбек (вебхук) от zvonok.com,
+    приходит МГНОВЕННО при завершении звонка (успех или неответ), в
+    отличие от периодического опроса их API. Настраивается на стороне
+    zvonok.com отдельно для каждого из двух событий (см. дев-панель →
+    Подтверждение номера → Постбеки):
+
+    Успешный дозвон:
+      https://ТВОЙ-ДОМЕН/api/public/zvonok/postback?call_id={{ct_call_id}}&result=ok
+    Нет ответа на звонок:
+      https://ТВОЙ-ДОМЕН/api/public/zvonok/postback?call_id={{ct_call_id}}&result=no_answer
+
+    Не критичен для работы верификации — опрос API остаётся резервным
+    вариантом, если постбек не настроен или не дошёл (см.
+    check_phone_confirmation)."""
+    call_id = request.query.get("call_id", "").strip()
+    result = request.query.get("result", "").strip()
+    if not call_id or result not in ("ok", "no_answer"):
+        return web.Response(text="bad_request", status=400)
+
+    from bot.services.zvonok_verification import save_postback_status
+    save_postback_status(call_id, confirmed=(result == "ok"))
+    return web.Response(text="ok")
+
+
 async def handle_public_auth_phone_request(request: web.Request) -> web.Response:
     """POST /api/public/auth/phone/request — инициирует вход по номеру
     телефона (отдельный, полноценный способ входа — НЕ путать с
@@ -2493,6 +2518,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/oauth/providers", handle_oauth_providers)
     app.router.add_get("/auth/{provider}/start", handle_oauth_start)
     app.router.add_get("/auth/{provider}/callback", handle_oauth_callback)
+    app.router.add_get("/api/public/zvonok/postback", handle_zvonok_postback)
     app.router.add_post("/api/public/auth/phone/request", handle_public_auth_phone_request)
     app.router.add_post("/api/public/auth/phone/check", handle_public_auth_phone_check)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)

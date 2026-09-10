@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 103
+LATEST_VERSION = 104
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2081,6 +2081,22 @@ def migration_103(conn: sqlite3.Connection) -> None:
     logger.info("Migration v103 applied: стабильная личность для сайтовых аккаунтов готова")
 
 
+def migration_104(conn: sqlite3.Connection) -> None:
+    """Migration v104: создаёт таблицу zvonok_postback_status — локальный
+    кэш результатов звонка, приходящих МГНОВЕННО через постбек (вебхук)
+    от zvonok.com, а не только через периодический опрос их API.
+    Опрос остаётся как резервный вариант на случай, если постбек не
+    дошёл (сетевые проблемы на стороне zvonok.com и т.п.)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS zvonok_postback_status (
+            call_id TEXT PRIMARY KEY,
+            confirmed INTEGER NOT NULL,
+            received_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v104 applied: таблица zvonok_postback_status создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2112,6 +2128,7 @@ MIGRATIONS = {
     101: migration_101,
     102: migration_102,
     103: migration_103,
+    104: migration_104,
 }
 
 
