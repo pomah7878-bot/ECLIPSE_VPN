@@ -874,6 +874,30 @@ async def toggle_auth_method(callback: CallbackQuery):
     await safe_edit_or_send(callback.message, "🌐 Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
+@router.callback_query(F.data == "admin_toggle_happ_autoconnect")
+async def toggle_happ_autoconnect(callback: CallbackQuery):
+    """Включает/выключает автоподключение к самому быстрому серверу в
+    Happ/INCY (subscription-autoconnect-type=lowestdelay) — приложение
+    само измеряет отклик каждого сервера и подключается к лучшему при
+    запуске. Требует настроенный Happ Provider ID."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_happ_provider_id, is_happ_autoconnect_enabled, set_happ_autoconnect_enabled
+
+    new_value = not is_happ_autoconnect_enabled()
+    set_happ_autoconnect_enabled(new_value)
+
+    warning = ""
+    if new_value and not get_happ_provider_id():
+        warning = " ⚠️ Задай ещё Happ Provider ID выше — без него это официально не гарантированно работает."
+    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: автовыбор быстрого сервера.{warning}", show_alert=bool(warning))
+
+    from bot.keyboards.admin_settings import integrations_apikeys_menu_kb
+    await safe_edit_or_send(callback.message, "🔑 <b>Внешние ключи и API</b>", reply_markup=integrations_apikeys_menu_kb())
+
+
 @router.callback_query(F.data.startswith("admin_edit_oauth:"))
 async def edit_oauth_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):

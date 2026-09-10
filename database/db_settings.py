@@ -19,6 +19,8 @@ __all__ = [
     'set_marketing_channel_id',
     'get_happ_provider_id',
     'set_happ_provider_id',
+    'is_happ_autoconnect_enabled',
+    'set_happ_autoconnect_enabled',
     'get_zvonok_public_key',
     'set_zvonok_public_key',
     'get_zvonok_campaign_id',
@@ -524,6 +526,20 @@ def get_happ_provider_id() -> Optional[str]:
 def set_happ_provider_id(provider_id: str) -> None:
     """Задаёт Happ Provider ID."""
     set_setting('happ_provider_id', provider_id.strip())
+
+
+def is_happ_autoconnect_enabled() -> bool:
+    """Автоподключение к самому быстрому серверу при запуске Happ/INCY
+    (subscription-autoconnect + subscription-autoconnect-type=lowestdelay,
+    см. happ.su/main/dev-docs/app-management) — 'Advanced parameter',
+    требует настроенный Happ Provider ID, иначе официально не
+    гарантируется к работе. Выключено по умолчанию — некоторым клиентам
+    удобнее выбирать сервер вручную."""
+    return get_setting('happ_autoconnect_enabled', '0') == '1'
+
+
+def set_happ_autoconnect_enabled(enabled: bool) -> None:
+    set_setting('happ_autoconnect_enabled', '1' if enabled else '0')
 
 
 def get_zvonok_public_key() -> Optional[str]:

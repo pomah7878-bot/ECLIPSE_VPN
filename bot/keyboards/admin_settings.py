@@ -306,13 +306,20 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
 
 def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
     """Подменю «Внешние ключи и API» — Happ, AI-провайдеры, веб-поиск."""
-    from database.requests import get_happ_provider_id
+    from database.requests import get_happ_provider_id, is_happ_autoconnect_enabled
     builder = InlineKeyboardBuilder()
     happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
     builder.row(InlineKeyboardButton(
         text=f"🆔 Happ Provider ID: {happ_provider_status}",
         callback_data='admin_edit_happ_provider_id',
     ))
+    builder.row(
+        InlineKeyboardButton(text='⚡ Автовыбор быстрого сервера (Happ/INCY)', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_happ_autoconnect_enabled() else '❌ Выкл',
+            callback_data='admin_toggle_happ_autoconnect',
+        ),
+    )
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
