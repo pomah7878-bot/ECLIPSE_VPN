@@ -308,7 +308,11 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
 def integrations_happ_menu_kb() -> InlineKeyboardMarkup:
     """Подменю «Happ / INCY» — Provider ID и связанные с ним настройки
     поведения приложения."""
-    from database.requests import get_happ_provider_id, is_happ_autoconnect_enabled
+    from database.requests import (
+        get_happ_provider_id, is_happ_autoconnect_enabled,
+        is_happ_hide_settings_enabled, is_happ_notification_expire_enabled,
+        is_happ_sort_by_ping_enabled, is_happ_auto_update_enabled,
+    )
     builder = InlineKeyboardBuilder()
     happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
     builder.row(InlineKeyboardButton(
@@ -320,6 +324,34 @@ def integrations_happ_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text='✅ Вкл' if is_happ_autoconnect_enabled() else '❌ Выкл',
             callback_data='admin_toggle_happ_autoconnect',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='📊 Автосортировка по пингу', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_happ_sort_by_ping_enabled() else '❌ Выкл',
+            callback_data='admin_toggle_happ_sort_ping',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='🔔 Родные уведомления об истечении', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_happ_notification_expire_enabled() else '❌ Выкл',
+            callback_data='admin_toggle_happ_notify_expire',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='🔄 Глобальное автообновление подписок', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_happ_auto_update_enabled() else '❌ Выкл',
+            callback_data='admin_toggle_happ_auto_update',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='🔒 Скрыть настройки серверов', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_happ_hide_settings_enabled() else '❌ Выкл',
+            callback_data='admin_toggle_happ_hide_settings',
         ),
     )
     builder.row(back_button('admin_integrations'), home_button())
