@@ -292,16 +292,32 @@ def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
 
 
 def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Верификация телефона (Zvonok)» — API Key и Campaign ID."""
-    from database.requests import get_zvonok_public_key, get_zvonok_campaign_id
+    """Подменю «Верификация телефона (Zvonok)» — API Key, оба Campaign ID
+    (для двух разных способов) и переключатель, какой способ активен."""
+    from database.requests import (
+        get_zvonok_public_key, get_zvonok_campaign_id, get_zvonok_pincode_campaign_id,
+        get_zvonok_verification_method,
+    )
+    method = get_zvonok_verification_method()
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text=f"📞 Zvonok API Key: {'✅ задан' if get_zvonok_public_key() else 'не задан'}",
         callback_data='admin_edit_zvonok_public_key',
     ))
+    builder.row(
+        InlineKeyboardButton(text='📱 Способ верификации', callback_data='admin_zvonok_method_info'),
+        InlineKeyboardButton(
+            text='☎️ Клиент звонит нам' if method == 'flash_call' else '📟 Мы звоним + код',
+            callback_data='admin_toggle_zvonok_method',
+        ),
+    )
     builder.row(InlineKeyboardButton(
-        text=f"📞 Zvonok Campaign ID: {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
+        text=f"📞 Campaign ID (клиент звонит нам): {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
         callback_data='admin_edit_zvonok_campaign_id',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📟 Campaign ID (мы звоним + код): {'✅ задан' if get_zvonok_pincode_campaign_id() else 'не задан'}",
+        callback_data='admin_edit_zvonok_pincode_campaign_id',
     ))
     builder.row(InlineKeyboardButton(text='📡 Постбек (мгновенное подтверждение)', callback_data='admin_zvonok_postback_info'))
     builder.row(back_button('admin_integrations'), home_button())

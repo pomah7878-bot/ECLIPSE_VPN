@@ -1661,6 +1661,26 @@ async def handle_public_auth_phone_request(request: web.Request) -> web.Response
     if not phone:
         return web.json_response({"error": "phone_required", "message": "Укажите номер телефона."}, status=400)
 
+    from database.requests import get_zvonok_verification_method
+
+    method = get_zvonok_verification_method()
+    if method == "pincode":
+        # Мы сами звоним клиенту — код нужно показать ему НА САЙТЕ
+        # заранее, он вводит его с клавиатуры телефона во время звонка.
+        from bot.services.zvonok_verification import request_phone_confirmation_pincode
+        result = await request_phone_confirmation_pincode(phone)
+        if not result or not result.get("pincode"):
+            return web.json_response(
+                {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
+                status=503,
+            )
+        return web.json_response({
+            "status": "ok",
+            "method": "pincode",
+            "pincode": result["pincode"],
+            "call_id": result.get("call_id"),
+        })
+
     from bot.services.zvonok_verification import request_phone_confirmation
     result = await request_phone_confirmation(phone)
     if not result or not result.get("allowed_phones_for_call"):
@@ -1670,6 +1690,7 @@ async def handle_public_auth_phone_request(request: web.Request) -> web.Response
         )
     return web.json_response({
         "status": "ok",
+        "method": "flash_call",
         "allowed_phones_for_call": result["allowed_phones_for_call"],
         "call_id": result.get("call_id"),
     })

@@ -32,6 +32,10 @@ __all__ = [
     'set_zvonok_public_key',
     'get_zvonok_campaign_id',
     'set_zvonok_campaign_id',
+    'get_zvonok_pincode_campaign_id',
+    'set_zvonok_pincode_campaign_id',
+    'get_zvonok_verification_method',
+    'set_zvonok_verification_method',
     'SITE_AUTH_METHODS',
     'is_site_auth_method_enabled',
     'set_site_auth_method_enabled',
@@ -624,6 +628,38 @@ def get_zvonok_campaign_id() -> Optional[str]:
 
 def set_zvonok_campaign_id(campaign_id: str) -> None:
     set_setting('zvonok_campaign_id', campaign_id.strip())
+
+
+def get_zvonok_pincode_campaign_id() -> Optional[str]:
+    """ID ОТДЕЛЬНОЙ кампании типа 'Ввод кода при звонке' (пин-код) в
+    zvonok.com — НЕ тот же campaign_id, что для 'Звонок на проверочный
+    номер' (у каждого типа кампании свой собственный ID, оба
+    создаются отдельно в личном кабинете zvonok.com)."""
+    value = get_setting('zvonok_pincode_campaign_id', '')
+    return value if value else None
+
+
+def set_zvonok_pincode_campaign_id(campaign_id: str) -> None:
+    set_setting('zvonok_pincode_campaign_id', campaign_id.strip())
+
+
+def get_zvonok_verification_method() -> str:
+    """Какой способ верификации звонком использовать при входе по
+    телефону на сайте:
+      'flash_call' — клиент сам звонит на один из наших служебных
+                     номеров (текущий способ, по умолчанию)
+      'pincode'    — мы сами звоним клиенту, показываем код на сайте
+                     заранее, клиент вводит его с клавиатуры телефона
+                     во время звонка (нужна отдельная кампания-пин-код)
+    """
+    value = get_setting('zvonok_verification_method', 'flash_call')
+    return value if value in ('flash_call', 'pincode') else 'flash_call'
+
+
+def set_zvonok_verification_method(method: str) -> None:
+    if method not in ('flash_call', 'pincode'):
+        raise ValueError(f"Неизвестный способ верификации: {method}")
+    set_setting('zvonok_verification_method', method)
 
 
 SITE_AUTH_METHODS = {
