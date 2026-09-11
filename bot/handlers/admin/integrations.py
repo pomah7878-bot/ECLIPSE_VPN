@@ -388,6 +388,73 @@ async def edit_panel_cleanup_days_save(message: Message, state: FSMContext):
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
+@router.callback_query(F.data == "admin_edit_logo")
+async def edit_logo_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.edit_logo)
+    await safe_edit_or_send(
+        callback.message,
+        "🖼 <b>Логотип</b>\n\n"
+        "Пришли одним сообщением фото (не файлом-документом) — оно "
+        "сразу заменит:\n"
+        "• логотип на сайте (страница /shop)\n"
+        "• картинку в приветственном сообщении бота (/start)\n\n"
+        "Рекомендуется квадратное изображение, например 512×512.",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_logo, F.photo)
+async def edit_logo_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    photo = message.photo[-1]  # самое большое доступное разрешение
+    file = await message.bot.get_file(photo.file_id)
+    if file.file_size and file.file_size > 8 * 1024 * 1024:
+        await safe_edit_or_send(message, "❌ Файл слишком большой (максимум 8 МБ). Пришли изображение поменьше.")
+        return
+
+    try:
+        import os
+        file_io = await message.bot.download_file(file.file_path)
+        static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "webapp", "static")
+        logo_path = os.path.join(static_dir, "logo.png")
+        os.makedirs(static_dir, exist_ok=True)
+        with open(logo_path, "wb") as f:
+            f.write(file_io.read())
+    except Exception as e:
+        logger.error(f"Не удалось сохранить загруженный логотип: {e}")
+        await safe_edit_or_send(message, "❌ Не удалось сохранить файл логотипа на сервере. Попробуй ещё раз.")
+        return
+
+    from database.db_pages import update_page_custom
+    update_page_custom('main', image=photo.file_id, media_type='photo')
+
+    from bot.keyboards.admin_settings import integrations_site_menu_kb
+    await state.clear()
+    await safe_edit_or_send(
+        message,
+        "✅ Логотип обновлён — и на сайте, и в приветственном сообщении бота.\n\n"
+        "Нажми /start, чтобы сразу увидеть новую картинку в боте.",
+        reply_markup=integrations_site_menu_kb(),
+    )
+
+
+@router.message(AdminStates.edit_logo)
+async def edit_logo_wrong_type(message: Message):
+    """Пользователь прислал не фото (текст, документ и т.п.)."""
+    if not is_admin(message.from_user.id):
+        return
+    if (message.text or '').strip() == '❌ Отмена':
+        return  # обработается отдельным хендлером отмены, если он есть
+    await safe_edit_or_send(message, "Пришли именно фото (не документом) — или нажми «Отмена» ниже, чтобы выйти без изменений.")
+
+
 @router.callback_query(F.data == "admin_edit_happ_provider_id")
 async def edit_happ_provider_id_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
