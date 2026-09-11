@@ -23,6 +23,11 @@ __all__ = [
     'set_client_toggle_enabled',
     'CLIENT_APPS',
     'CLIENT_TOGGLE_LABELS',
+    'HAPP_TOGGLE_LABELS',
+    'INCY_TOGGLE_LABELS',
+    'CLIENT_TOGGLE_LABELS_BY_APP',
+    'get_incy_update_interval_hours',
+    'set_incy_update_interval_hours',
     'get_zvonok_public_key',
     'set_zvonok_public_key',
     'get_zvonok_campaign_id',
@@ -532,13 +537,33 @@ def set_happ_provider_id(provider_id: str) -> None:
 
 CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}
 
-CLIENT_TOGGLE_LABELS = {
+# У Happ и INCY общий движок, но РАЗНЫЕ реальные "Advanced parameter"
+# заголовки (проверено по официальной документации обоих: happ.su/main/
+# dev-docs/app-management и docs.incy.cc/app-management) — некоторые
+# функции есть у одного и нет у другого, а некоторые называются по-разному
+# и работают не идентично (например, hide-settings у Happ блокирует
+# просмотр/редактирование конфигов серверов, а hide-url у INCY —
+# только копирование самой ссылки подписки, конфиги внутри остаются
+# видимыми). Поэтому у каждого приложения — СВОЙ список переключателей,
+# а не общий на оба.
+HAPP_TOGGLE_LABELS = {
     'autoconnect': 'Автовыбор быстрого сервера',
     'sort_ping': 'Автосортировка по пингу',
     'notify_expire': 'Родные уведомления об истечении',
     'auto_update': 'Глобальное автообновление подписок',
     'hide_settings': 'Скрыть настройки серверов',
 }
+
+INCY_TOGGLE_LABELS = {
+    'sort_ping': 'Автосортировка по пингу',
+    'hide_url': 'Скрыть ссылку подписки',
+}
+
+CLIENT_TOGGLE_LABELS_BY_APP = {'happ': HAPP_TOGGLE_LABELS, 'incy': INCY_TOGGLE_LABELS}
+
+# Оставлено для обратной совместимости кода, который ещё не различает
+# приложения (используется только для валидации ключа toggle в целом).
+CLIENT_TOGGLE_LABELS = {**HAPP_TOGGLE_LABELS, **INCY_TOGGLE_LABELS}
 
 
 def is_client_toggle_enabled(app: str, toggle: str) -> bool:
@@ -557,6 +582,24 @@ def is_client_toggle_enabled(app: str, toggle: str) -> bool:
 
 def set_client_toggle_enabled(app: str, toggle: str, enabled: bool) -> None:
     set_setting(f'{app}_{toggle}_enabled', '1' if enabled else '0')
+
+
+def get_incy_update_interval_hours() -> Optional[int]:
+    """Интервал автообновления подписки в INCY, в часах
+    (profile-update-interval) — в отличие от Happ, у INCY это ЧИСЛО, а
+    не простой переключатель вкл/выкл. None — заголовок не отправляется
+    вообще (приложение использует своё собственное поведение по
+    умолчанию)."""
+    value = get_setting('incy_update_interval_hours', '')
+    try:
+        return int(value) if value else None
+    except ValueError:
+        return None
+
+
+def set_incy_update_interval_hours(hours: Optional[int]) -> None:
+    """None или 0 — не отправлять заголовок (сброс к поведению по умолчанию)."""
+    set_setting('incy_update_interval_hours', str(hours) if hours else '')
 
 
 def get_zvonok_public_key() -> Optional[str]:

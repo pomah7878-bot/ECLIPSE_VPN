@@ -309,28 +309,44 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
 
 
 def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
-    """Подменю настроек конкретного приложения (Happ или INCY) — общий
-    Provider ID (регистрация на happ-proxy.com не зависит от
-    приложения-клиента), но КАЖДЫЙ переключатель — отдельно для этого
-    приложения (см. is_client_toggle_enabled — обнаружено на практике,
-    что Happ и INCY по-разному трактуют одни и те же заголовки)."""
-    from database.requests import get_happ_provider_id, is_client_toggle_enabled, CLIENT_APPS, CLIENT_TOGGLE_LABELS
+    """Подменю настроек конкретного приложения (Happ или INCY) — у
+    каждого приложения СВОЙ реальный набор параметров (см.
+    CLIENT_TOGGLE_LABELS_BY_APP — по официальной документации обоих,
+    у них разные заголовки и разное поведение, несмотря на общий
+    движок). Provider ID (happ-proxy.com) актуален ТОЛЬКО для Happ — у
+    INCY отдельная система (web.incy-panel.com), не интегрированная."""
+    from database.requests import (
+        get_happ_provider_id, is_client_toggle_enabled, CLIENT_APPS,
+        CLIENT_TOGGLE_LABELS_BY_APP, get_incy_update_interval_hours,
+    )
     app_label = CLIENT_APPS[app]
     builder = InlineKeyboardBuilder()
-    happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
-    builder.row(InlineKeyboardButton(
-        text=f"🆔 Provider ID (общий для Happ/INCY): {happ_provider_status}",
-        callback_data='admin_edit_happ_provider_id',
-    ))
-    _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒'}
-    for toggle, label in CLIENT_TOGGLE_LABELS.items():
+
+    if app == 'happ':
+        happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
+        builder.row(InlineKeyboardButton(
+            text=f"🆔 Happ Provider ID: {happ_provider_status}",
+            callback_data='admin_edit_happ_provider_id',
+        ))
+
+    _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒', 'hide_url': '🔗'}
+    for toggle, label in CLIENT_TOGGLE_LABELS_BY_APP[app].items():
         builder.row(
-            InlineKeyboardButton(text=f"{_icons[toggle]} {label}", callback_data=f'admin_happ_info:{toggle}'),
+            InlineKeyboardButton(text=f"{_icons[toggle]} {label}", callback_data=f'admin_happ_info:{app}:{toggle}'),
             InlineKeyboardButton(
                 text='✅ Вкл' if is_client_toggle_enabled(app, toggle) else '❌ Выкл',
                 callback_data=f'admin_toggle_client_setting:{app}:{toggle}',
             ),
         )
+
+    if app == 'incy':
+        interval = get_incy_update_interval_hours()
+        interval_status = f"{interval} ч." if interval else "не задан (по умолчанию у приложения)"
+        builder.row(InlineKeyboardButton(
+            text=f"⏱ Интервал автообновления: {interval_status}",
+            callback_data='admin_edit_incy_update_interval',
+        ))
+
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
 

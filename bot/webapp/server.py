@@ -1021,23 +1021,44 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     else:
         detected_app = None
 
-    if provider_id and detected_app:
+    if provider_id and detected_app == "happ":
         from database.requests import is_client_toggle_enabled
-        if is_client_toggle_enabled(detected_app, "autoconnect"):
+        if is_client_toggle_enabled("happ", "autoconnect"):
             # "Advanced parameter" — официально работает только при заданном
             # Provider ID (см. happ.su/main/dev-docs/app-management). Клиент
             # сам измеряет отклик каждого сервера в подписке и подключается
             # к самому быстрому при запуске приложения.
             headers["subscription-autoconnect"] = "1"
             headers["subscription-autoconnect-type"] = "lowestdelay"
-        if is_client_toggle_enabled(detected_app, "hide_settings"):
+        if is_client_toggle_enabled("happ", "hide_settings"):
             headers["hide-settings"] = "1"
-        if is_client_toggle_enabled(detected_app, "notify_expire"):
+        if is_client_toggle_enabled("happ", "notify_expire"):
             headers["notification-subs-expire"] = "1"
-        if is_client_toggle_enabled(detected_app, "sort_ping"):
+        if is_client_toggle_enabled("happ", "sort_ping"):
             headers["subscriptions-sort-type"] = "ping"
-        if is_client_toggle_enabled(detected_app, "auto_update"):
+        if is_client_toggle_enabled("happ", "auto_update"):
             headers["subscription-auto-update-enable"] = "1"
+
+    elif detected_app == "incy":
+        # У INCY СВОИ имена заголовков и своя семантика — не переиспользуем
+        # Happ'овские (проверено по официальной документации INCY:
+        # docs.incy.cc/app-management). В частности: sort-order (не
+        # subscriptions-sort-type), hide-url (прячет только САМУ ссылку
+        # подписки — конфиги серверов внутри остаются видимыми, в
+        # отличие от Happ'овского hide-settings), и
+        # profile-update-interval — ЧИСЛО часов, а не переключатель
+        # вкл/выкл. Автовыбора быстрого сервера и родных уведомлений об
+        # истечении через обычные заголовки у INCY нет вообще — это
+        # либо часть их отдельного Premium API (нужен свой аккаунт на
+        # web.incy-panel.com), либо не поддерживается совсем.
+        from database.requests import is_client_toggle_enabled, get_incy_update_interval_hours
+        if is_client_toggle_enabled("incy", "sort_ping"):
+            headers["sort-order"] = "ping"
+        if is_client_toggle_enabled("incy", "hide_url"):
+            headers["hide-url"] = "1"
+        update_interval = get_incy_update_interval_hours()
+        if update_interval:
+            headers["profile-update-interval"] = str(update_interval)
 
     if "subscription-userinfo" not in headers:
         expire_epoch = 0
