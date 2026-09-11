@@ -755,10 +755,18 @@ async def show_device_limit_type_menu(callback: CallbackQuery, state: FSMContext
     from database.requests import DEVICE_LIMIT_TYPES, get_device_limit_type
 
     current_id = get_device_limit_type()
-    lines = ["📱 <b>Ограничение устройств на ключ</b>\n", "Общая настройка для всех тарифов и ключей:\n"]
+    lines = [
+        "📱 <b>Ограничение устройств на ключ</b>\n",
+        "Общая настройка для всех тарифов и ключей — выбирает СПОСОБ подсчёта устройств:\n",
+    ]
     for tid, info in DEVICE_LIMIT_TYPES.items():
         mark = "✅ " if tid == current_id else ""
         lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
+    lines.append(
+        "\n💡 Само ЧИСЛО разрешённых устройств настраивается не здесь, а "
+        "отдельно у каждого тарифа: ⚙️ Настройки → 💳 Тарифы → выбери тариф "
+        "→ пункт «Устройств»."
+    )
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     builder = InlineKeyboardBuilder()
