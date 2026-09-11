@@ -970,6 +970,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 raw_url, timeout=_aiohttp.ClientTimeout(total=10), headers=forward_headers
             ) as upstream:
                 body = await upstream.read()
+                upstream_status = upstream.status
                 # Копируем ВСЕ заголовки от панели как есть, кроме тех, что
                 # должен считать сам сервер при формировании ответа
                 # (Content-Length и т.п.). Раньше здесь копировались
@@ -985,6 +986,22 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     except Exception as e:
         logger.warning(f"handle_happ_subscription: не удалось получить подписку у панели ({sub_id[:8]}...): {e}")
         return web.Response(status=502, text="Upstream subscription unavailable")
+
+    if upstream_status != 200:
+        # Панель НЕ подтвердила успех (например, 404 — клиент удалён с
+        # панели/рассинхронизация, а в нашей БД ключ всё ещё числится
+        # активным). Раньше здесь ОТСУТСТВОВАЛА эта проверка — клиент
+        # получал 200 OK с чем бы панель ни ответила, включая пустое
+        # тело при 404. Найдено на практике (сервер Артёма) и починено
+        # вчера — но при более поздних правках сегодня (разведение
+        # настроек Happ/INCY) эта проверка была случайно утеряна при
+        # переписывании соседнего блока. Восстановлено.
+        logger.warning(
+            f"handle_happ_subscription: панель вернула {upstream_status} для "
+            f"sub_id={sub_id[:8]}... (client_uuid={key.get('client_uuid')}) — "
+            f"ключ есть в БД, но панель его не находит. Похоже на рассинхронизацию."
+        )
+        return web.Response(status=502, text="Subscription temporarily unavailable — please try again shortly")
 
     from database.requests import get_effective_brand_name, get_effective_webapp_url
     if "Content-Type" not in headers:
