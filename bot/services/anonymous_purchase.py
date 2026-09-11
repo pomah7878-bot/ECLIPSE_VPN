@@ -303,13 +303,10 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
 
     # Реферальное начисление и уведомление админам — раньше НИ ОДНО из
     # этих двух действий не происходило для реальных покупок с сайта:
-    # billing._run_payment_post_actions (где живёт эта логика) вызывается
-    # только из потока оплаты БОТА, а сайтовый поток идёт через ЭТУ
-    # функцию отдельно и никогда её не вызывал. Обнаружено на практике
-    # (Артём — "не приходят уведомления в бот при покупке с сайта").
-    # Реферальная система была протестирована раньше только вызовом
-    # самой функции начисления напрямую — реального прохождения через
-    # эту функцию до сих пор не было ни разу.
+    # billing._run_payment_post_actions (где живёт эта логика для бота)
+    # вызывается только из потока оплаты БОТА, а сайтовый поток идёт
+    # через ЭТУ функцию отдельно и никогда её не вызывал. Обнаружено на
+    # практике (Артём — "не приходят уведомления в бот при покупке с сайта").
     from database.requests import get_tariff_by_id
     tariff = get_tariff_by_id(purchase["tariff_id"])
     days = (tariff.get("duration_days") if tariff else None) or 30
@@ -334,7 +331,6 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
         from bot.utils.runtime_state import get_bot_instance
 
         buyer_label = f"🌐 сайт ({purchase.get('site_account_id')})"
-        site_account = None
         if purchase.get("site_account_id"):
             from database.requests import get_site_account_by_id
             site_account = get_site_account_by_id(purchase["site_account_id"])
@@ -358,7 +354,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
         if bot_instance:
             await notify_admins_payment(bot_instance, notify_order)
     except Exception as notify_err:
-        logger.warning(f"Ошибка уведомления админов о сайтовой покупке {order_id}: {notify_err}")
+        logger.warning(f"Ошибка отправки уведомления админам о сайтовой покупке order={order_id}: {notify_err}")
 
     purchase = get_anonymous_purchase_by_order_id(order_id)
     return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
