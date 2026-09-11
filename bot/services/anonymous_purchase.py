@@ -290,14 +290,75 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
         return {"status": "pending"}
 
     sub_url = None
+    provisioned_key_id = None
     try:
         result = await provision_anonymous_vpn_key(purchase["tariff_id"], order_id, site_account_id=purchase.get("site_account_id"))
         save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
         sub_url = result["sub_url"]
+        provisioned_key_id = result["key_id"]
     except Exception as e:
         logger.error(f"Автопроверка анонимного платежа {order_id}: ошибка провижининга ключа: {e}")
         # Оплата прошла успешно, но с выдачей ключа проблема — код привязки
         # у клиента всё равно есть, ключ можно довыдать вручную по order_id.
+
+    # Реферальное начисление и уведомление админам — раньше НИ ОДНО из
+    # этих двух действий не происходило для реальных покупок с сайта:
+    # billing._run_payment_post_actions (где живёт эта логика) вызывается
+    # только из потока оплаты БОТА, а сайтовый поток идёт через ЭТУ
+    # функцию отдельно и никогда её не вызывал. Обнаружено на практике
+    # (Артём — "не приходят уведомления в бот при покупке с сайта").
+    # Реферальная система была протестирована раньше только вызовом
+    # самой функции начисления напрямую — реального прохождения через
+    # эту функцию до сих пор не было ни разу.
+    from database.requests import get_tariff_by_id
+    tariff = get_tariff_by_id(purchase["tariff_id"])
+    days = (tariff.get("duration_days") if tariff else None) or 30
+    amount_cents = (tariff.get("price_cents") if tariff else None) or 0
+
+    try:
+        from database.requests import get_site_referrer_code_for_order, get_user_by_referral_code
+        from bot.services.billing import process_site_referral_reward
+
+        site_ref_code = get_site_referrer_code_for_order(order_id)
+        if site_ref_code:
+            referrer = get_user_by_referral_code(site_ref_code)
+            if referrer:
+                await process_site_referral_reward(
+                    referrer["id"], days, amount_cents, "yookassa_qr", bot=None, order={"order_id": order_id},
+                )
+    except Exception as site_ref_err:
+        logger.warning(f"Ошибка начисления сайтового реферального вознаграждения для order={order_id}: {site_ref_err}")
+
+    try:
+        from bot.services.notifications import notify_admins_payment
+        from bot.utils.runtime_state import get_bot_instance
+
+        buyer_label = f"🌐 сайт ({purchase.get('site_account_id')})"
+        site_account = None
+        if purchase.get("site_account_id"):
+            from database.requests import get_site_account_by_id
+            site_account = get_site_account_by_id(purchase["site_account_id"])
+            if site_account and site_account.get("email"):
+                buyer_label = f"🌐 {site_account['email']}"
+            elif site_account and site_account.get("provider"):
+                buyer_label = f"🌐 сайт ({site_account['provider']})"
+
+        notify_order = {
+            "order_id": order_id,
+            "user_id": None,
+            "_site_buyer_label": buyer_label,
+            "tariff_id": purchase["tariff_id"],
+            "tariff_name": tariff.get("name") if tariff else "—",
+            "vpn_key_id": provisioned_key_id,
+            "payment_type": "yookassa_qr",
+            "final_amount_cents": amount_cents,
+            "price_rub": (tariff.get("price_rub") if tariff else None) or 0,
+        }
+        bot_instance = get_bot_instance()
+        if bot_instance:
+            await notify_admins_payment(bot_instance, notify_order)
+    except Exception as notify_err:
+        logger.warning(f"Ошибка уведомления админов о сайтовой покупке {order_id}: {notify_err}")
 
     purchase = get_anonymous_purchase_by_order_id(order_id)
     return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
