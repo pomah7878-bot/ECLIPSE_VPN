@@ -172,17 +172,38 @@ async def show_integrations_apikeys_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_integrations_happ")
 async def show_integrations_happ_menu(callback: CallbackQuery):
-    """Подменю «Happ / INCY»."""
+    """Подменю «Happ»."""
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    from bot.keyboards.admin_settings import integrations_happ_menu_kb
+    from bot.keyboards.admin_settings import integrations_client_app_menu_kb
     await safe_edit_or_send(
         callback.message,
-        "📱 <b>Happ / INCY</b>\n\n"
+        "📱 <b>Happ</b>\n\n"
         "Provider ID открывает доступ к расширенным параметрам приложения "
-        "(в т.ч. автовыбор сервера и уведомления об истечении подписки).",
-        reply_markup=integrations_happ_menu_kb(),
+        "(в т.ч. автовыбор сервера и уведомления об истечении подписки). "
+        "Общий с INCY, но переключатели ниже — только для Happ (INCY "
+        "настраивается отдельно, у него свой раздел).",
+        reply_markup=integrations_client_app_menu_kb('happ'),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_integrations_incy")
+async def show_integrations_incy_menu(callback: CallbackQuery):
+    """Подменю «INCY»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_client_app_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "⚡ <b>INCY</b>\n\n"
+        "Provider ID открывает доступ к расширенным параметрам приложения "
+        "(в т.ч. автовыбор сервера и уведомления об истечении подписки). "
+        "Общий с Happ, но переключатели ниже — только для INCY (Happ "
+        "настраивается отдельно, у него свой раздел).",
+        reply_markup=integrations_client_app_menu_kb('incy'),
     )
     await callback.answer()
 
@@ -980,78 +1001,38 @@ async def toggle_auth_method(callback: CallbackQuery):
     await safe_edit_or_send(callback.message, "🌐 Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
-@router.callback_query(F.data == "admin_toggle_happ_autoconnect")
-async def toggle_happ_autoconnect(callback: CallbackQuery):
-    """Включает/выключает автоподключение к самому быстрому серверу в
-    Happ/INCY (subscription-autoconnect-type=lowestdelay) — приложение
-    само измеряет отклик каждого сервера и подключается к лучшему при
-    запуске. Требует настроенный Happ Provider ID."""
+@router.callback_query(F.data.startswith("admin_toggle_client_setting:"))
+async def toggle_client_setting(callback: CallbackQuery):
+    """Включает/выключает конкретную настройку для КОНКРЕТНОГО
+    приложения (Happ или INCY по отдельности) — обнаружено на практике,
+    что эти два приложения по-разному трактуют одни и те же 'Advanced
+    parameter' заголовки, поэтому настраиваются раздельно."""
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    from database.requests import get_happ_provider_id, is_happ_autoconnect_enabled, set_happ_autoconnect_enabled
+    from database.requests import (
+        get_happ_provider_id, is_client_toggle_enabled, set_client_toggle_enabled,
+        CLIENT_APPS, CLIENT_TOGGLE_LABELS,
+    )
 
-    new_value = not is_happ_autoconnect_enabled()
-    set_happ_autoconnect_enabled(new_value)
-
-    warning = ""
-    if new_value and not get_happ_provider_id():
-        warning = " ⚠️ Задай ещё Happ Provider ID выше — без него это официально не гарантированно работает."
-    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: автовыбор быстрого сервера.{warning}", show_alert=bool(warning))
-
-    from bot.keyboards.admin_settings import integrations_happ_menu_kb
-    await safe_edit_or_send(callback.message, "📱 <b>Happ / INCY</b>", reply_markup=integrations_happ_menu_kb())
-
-
-async def _toggle_happ_setting(callback: CallbackQuery, getter, setter, label: str):
-    """Общая логика для простых Happ-переключателей 'Advanced parameter' —
-    все требуют Provider ID, все возвращают в то же подменю."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    _, app, toggle = callback.data.split(":", 2)
+    if app not in CLIENT_APPS or toggle not in CLIENT_TOGGLE_LABELS:
+        await callback.answer("Неизвестная настройка", show_alert=True)
         return
 
-    from database.requests import get_happ_provider_id
-    new_value = not getter()
-    setter(new_value)
+    new_value = not is_client_toggle_enabled(app, toggle)
+    set_client_toggle_enabled(app, toggle, new_value)
 
     warning = ""
     if new_value and not get_happ_provider_id():
-        warning = " ⚠️ Задай ещё Happ Provider ID выше — без него это официально не гарантированно работает."
-    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: {label}.{warning}", show_alert=bool(warning))
+        warning = " ⚠️ Задай ещё Provider ID выше — без него это официально не гарантированно работает."
+    label = CLIENT_TOGGLE_LABELS[toggle]
+    app_label = CLIENT_APPS[app]
+    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'} для {app_label}: {label}.{warning}", show_alert=bool(warning))
 
-    from bot.keyboards.admin_settings import integrations_happ_menu_kb
-    await safe_edit_or_send(callback.message, "📱 <b>Happ / INCY</b>", reply_markup=integrations_happ_menu_kb())
-
-
-@router.callback_query(F.data == "admin_toggle_happ_sort_ping")
-async def toggle_happ_sort_ping(callback: CallbackQuery):
-    """Автосортировка серверов по пингу (subscriptions-sort-type=ping)."""
-    from database.requests import is_happ_sort_by_ping_enabled, set_happ_sort_by_ping_enabled
-    await _toggle_happ_setting(callback, is_happ_sort_by_ping_enabled, set_happ_sort_by_ping_enabled, "автосортировка по пингу")
-
-
-@router.callback_query(F.data == "admin_toggle_happ_notify_expire")
-async def toggle_happ_notify_expire(callback: CallbackQuery):
-    """Родные push-уведомления Happ/INCY об истечении подписки
-    (notification-subs-expire)."""
-    from database.requests import is_happ_notification_expire_enabled, set_happ_notification_expire_enabled
-    await _toggle_happ_setting(callback, is_happ_notification_expire_enabled, set_happ_notification_expire_enabled, "родные уведомления об истечении")
-
-
-@router.callback_query(F.data == "admin_toggle_happ_auto_update")
-async def toggle_happ_auto_update(callback: CallbackQuery):
-    """Глобальное автообновление всех подписок (subscription-auto-update-enable)."""
-    from database.requests import is_happ_auto_update_enabled, set_happ_auto_update_enabled
-    await _toggle_happ_setting(callback, is_happ_auto_update_enabled, set_happ_auto_update_enabled, "глобальное автообновление подписок")
-
-
-@router.callback_query(F.data == "admin_toggle_happ_hide_settings")
-async def toggle_happ_hide_settings(callback: CallbackQuery):
-    """Скрыть настройки серверов от клиента (hide-settings) — не сможет
-    просматривать/копировать/передавать конфиги."""
-    from database.requests import is_happ_hide_settings_enabled, set_happ_hide_settings_enabled
-    await _toggle_happ_setting(callback, is_happ_hide_settings_enabled, set_happ_hide_settings_enabled, "скрытие настроек серверов")
+    from bot.keyboards.admin_settings import integrations_client_app_menu_kb
+    await safe_edit_or_send(callback.message, f"{'📱' if app == 'happ' else '⚡'} <b>{app_label}</b>", reply_markup=integrations_client_app_menu_kb(app))
 
 
 @router.callback_query(F.data.startswith("admin_edit_oauth:"))

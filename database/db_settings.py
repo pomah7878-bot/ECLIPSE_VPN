@@ -19,16 +19,10 @@ __all__ = [
     'set_marketing_channel_id',
     'get_happ_provider_id',
     'set_happ_provider_id',
-    'is_happ_autoconnect_enabled',
-    'set_happ_autoconnect_enabled',
-    'is_happ_hide_settings_enabled',
-    'set_happ_hide_settings_enabled',
-    'is_happ_notification_expire_enabled',
-    'set_happ_notification_expire_enabled',
-    'is_happ_sort_by_ping_enabled',
-    'set_happ_sort_by_ping_enabled',
-    'is_happ_auto_update_enabled',
-    'set_happ_auto_update_enabled',
+    'is_client_toggle_enabled',
+    'set_client_toggle_enabled',
+    'CLIENT_APPS',
+    'CLIENT_TOGGLE_LABELS',
     'get_zvonok_public_key',
     'set_zvonok_public_key',
     'get_zvonok_campaign_id',
@@ -536,68 +530,33 @@ def set_happ_provider_id(provider_id: str) -> None:
     set_setting('happ_provider_id', provider_id.strip())
 
 
-def is_happ_autoconnect_enabled() -> bool:
-    """Автоподключение к самому быстрому серверу при запуске Happ/INCY
-    (subscription-autoconnect + subscription-autoconnect-type=lowestdelay,
-    см. happ.su/main/dev-docs/app-management) — 'Advanced parameter',
-    требует настроенный Happ Provider ID, иначе официально не
-    гарантируется к работе. Выключено по умолчанию — некоторым клиентам
-    удобнее выбирать сервер вручную."""
-    return get_setting('happ_autoconnect_enabled', '0') == '1'
+CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}
+
+CLIENT_TOGGLE_LABELS = {
+    'autoconnect': 'Автовыбор быстрого сервера',
+    'sort_ping': 'Автосортировка по пингу',
+    'notify_expire': 'Родные уведомления об истечении',
+    'auto_update': 'Глобальное автообновление подписок',
+    'hide_settings': 'Скрыть настройки серверов',
+}
 
 
-def set_happ_autoconnect_enabled(enabled: bool) -> None:
-    set_setting('happ_autoconnect_enabled', '1' if enabled else '0')
+def is_client_toggle_enabled(app: str, toggle: str) -> bool:
+    """Раздельные настройки для Happ и INCY — несмотря на общий движок,
+    эти два приложения по-разному трактуют одни и те же 'Advanced
+    parameter' заголовки (обнаружено на практике: включённая настройка,
+    нужная для нормальной работы Happ, ломала импорт в INCY, и
+    наоборот) — поэтому каждый переключатель настраивается отдельно
+    для каждого приложения, а не один общий на оба сразу.
+
+    app: 'happ' или 'incy'. toggle: 'autoconnect' | 'sort_ping' |
+    'notify_expire' | 'auto_update' | 'hide_settings'. Все выключены
+    по умолчанию."""
+    return get_setting(f'{app}_{toggle}_enabled', '0') == '1'
 
 
-def is_happ_hide_settings_enabled() -> bool:
-    """Скрывает настройки серверов в подписке Happ/INCY (hide-settings) —
-    клиент не сможет просматривать, редактировать или передать конфиги
-    серверов другим людям. 'Advanced parameter', требует Provider ID.
-    Выключено по умолчанию."""
-    return get_setting('happ_hide_settings_enabled', '0') == '1'
-
-
-def set_happ_hide_settings_enabled(enabled: bool) -> None:
-    set_setting('happ_hide_settings_enabled', '1' if enabled else '0')
-
-
-def is_happ_notification_expire_enabled() -> bool:
-    """Родные push-уведомления Happ/INCY об истечении подписки
-    (notification-subs-expire) — за 3 дня до окончания приложение само
-    присылает системное уведомление раз в день. Дополняет (не заменяет)
-    наш собственный sub-expire баннер внутри приложения. 'Advanced
-    parameter', требует Provider ID. Выключено по умолчанию."""
-    return get_setting('happ_notification_expire_enabled', '0') == '1'
-
-
-def set_happ_notification_expire_enabled(enabled: bool) -> None:
-    set_setting('happ_notification_expire_enabled', '1' if enabled else '0')
-
-
-def is_happ_sort_by_ping_enabled() -> bool:
-    """Автосортировка серверов по пингу в списке подписки Happ/INCY
-    (subscriptions-sort-type=ping) — сервера с меньшей задержкой
-    показываются выше, недоступные — в конце. 'Advanced parameter',
-    требует Provider ID. Выключено по умолчанию (порядок как передан
-    с бэкенда)."""
-    return get_setting('happ_sort_by_ping_enabled', '0') == '1'
-
-
-def set_happ_sort_by_ping_enabled(enabled: bool) -> None:
-    set_setting('happ_sort_by_ping_enabled', '1' if enabled else '0')
-
-
-def is_happ_auto_update_enabled() -> bool:
-    """Глобальное автообновление ВСЕХ подписок в приложении Happ/INCY
-    (subscription-auto-update-enable) — применяется сразу ко всем
-    подпискам пользователя, не только к нашей. 'Advanced parameter',
-    требует Provider ID. Выключено по умолчанию."""
-    return get_setting('happ_auto_update_enabled', '0') == '1'
-
-
-def set_happ_auto_update_enabled(enabled: bool) -> None:
-    set_setting('happ_auto_update_enabled', '1' if enabled else '0')
+def set_client_toggle_enabled(app: str, toggle: str, enabled: bool) -> None:
+    set_setting(f'{app}_{toggle}_enabled', '1' if enabled else '0')
 
 
 def get_zvonok_public_key() -> Optional[str]:
