@@ -208,46 +208,65 @@ async def show_integrations_incy_menu(callback: CallbackQuery):
     await callback.answer()
 
 
-_HAPP_SETTING_INFO = {
-    'autoconnect': (
-        "⚡ Автовыбор быстрого сервера\n\n"
-        "Приложение само измеряет отклик (пинг) каждого сервера в подписке "
-        "и подключается к самому быстрому при запуске — не нужно выбирать "
-        "сервер вручную."
-    ),
-    'sort_ping': (
-        "📊 Автосортировка по пингу\n\n"
-        "Сервера в списке подписки показываются в порядке от самого "
-        "быстрого к самому медленному (недоступные — в конце), вместо "
-        "порядка, в котором они пришли с панели."
-    ),
-    'notify_expire': (
-        "🔔 Родные уведомления об истечении\n\n"
-        "Само приложение (не бот) присылает системное push-уведомление "
-        "за 3 дня до окончания подписки — по одному в день. Дополняет "
-        "наш собственный баннер внутри приложения, не заменяет его."
-    ),
-    'auto_update': (
-        "🔄 Глобальное автообновление подписок\n\n"
-        "Приложение само обновляет ВСЕ подписки при запуске — не только "
-        "нашу, а любые другие, добавленные в это же приложение."
-    ),
-    'hide_settings': (
-        "🔒 Скрыть настройки серверов\n\n"
-        "Клиент не сможет просматривать, редактировать или передать "
-        "другим людям конфигурации серверов внутри приложения — полезно, "
-        "если важно, чтобы подписку не могли легко скопировать/перепродать."
-    ),
+_CLIENT_SETTING_INFO = {
+    'happ': {
+        'autoconnect': (
+            "⚡ Автовыбор быстрого сервера\n\n"
+            "Приложение само измеряет отклик (пинг) каждого сервера в подписке "
+            "и подключается к самому быстрому при запуске — не нужно выбирать "
+            "сервер вручную."
+        ),
+        'sort_ping': (
+            "📊 Автосортировка по пингу\n\n"
+            "Сервера в списке подписки показываются в порядке от самого "
+            "быстрого к самому медленному (недоступные — в конце), вместо "
+            "порядка, в котором они пришли с панели."
+        ),
+        'notify_expire': (
+            "🔔 Родные уведомления об истечении\n\n"
+            "Само приложение (не бот) присылает системное push-уведомление "
+            "за 3 дня до окончания подписки — по одному в день. Дополняет "
+            "наш собственный баннер внутри приложения, не заменяет его."
+        ),
+        'auto_update': (
+            "🔄 Глобальное автообновление подписок\n\n"
+            "Приложение само обновляет ВСЕ подписки при запуске — не только "
+            "нашу, а любые другие, добавленные в это же приложение."
+        ),
+        'hide_settings': (
+            "🔒 Скрыть настройки серверов\n\n"
+            "Клиент не сможет просматривать, редактировать или передать "
+            "другим людям конфигурации серверов внутри приложения — полезно, "
+            "если важно, чтобы подписку не могли легко скопировать/перепродать."
+        ),
+    },
+    'incy': {
+        'sort_ping': (
+            "📊 Автосортировка по пингу\n\n"
+            "Сервера в списке подписки показываются в порядке от самого "
+            "быстрого к самому медленному, вместо порядка, в котором они "
+            "пришли с панели."
+        ),
+        'hide_url': (
+            "🔗 Скрыть ссылку подписки\n\n"
+            "Клиент не сможет скопировать, поделиться или увидеть в QR-коде "
+            "саму ссылку на подписку. ВАЖНО: это НЕ то же самое, что "
+            "«скрыть настройки серверов» у Happ — сами конфиги серверов "
+            "внутри приложения при этом остаются видимыми и редактируемыми, "
+            "скрывается только исходная ссылка."
+        ),
+    },
 }
 
 
 @router.callback_query(F.data.startswith("admin_happ_info:"))
 async def show_happ_setting_info(callback: CallbackQuery):
-    """Показывает всплывающее пояснение при тапе на название Happ-настройки
+    """Показывает всплывающее пояснение при тапе на название настройки
     — в Telegram нет наведения мышкой, поэтому это ближайший аналог
-    подсказки."""
-    key = callback.data.split(":", 1)[1]
-    text = _HAPP_SETTING_INFO.get(key, "Пояснение недоступно.")
+    подсказки. Пояснения РАЗНЫЕ для Happ и INCY, т.к. у них не всегда
+    одинаковое реальное поведение."""
+    _, app, key = callback.data.split(":", 2)
+    text = _CLIENT_SETTING_INFO.get(app, {}).get(key, "Пояснение недоступно.")
     await callback.answer(text, show_alert=True)
 
 
@@ -1080,11 +1099,11 @@ async def toggle_client_setting(callback: CallbackQuery):
 
     from database.requests import (
         get_happ_provider_id, is_client_toggle_enabled, set_client_toggle_enabled,
-        CLIENT_APPS, CLIENT_TOGGLE_LABELS,
+        CLIENT_APPS, CLIENT_TOGGLE_LABELS_BY_APP,
     )
 
     _, app, toggle = callback.data.split(":", 2)
-    if app not in CLIENT_APPS or toggle not in CLIENT_TOGGLE_LABELS:
+    if app not in CLIENT_APPS or toggle not in CLIENT_TOGGLE_LABELS_BY_APP.get(app, {}):
         await callback.answer("Неизвестная настройка", show_alert=True)
         return
 
@@ -1092,14 +1111,62 @@ async def toggle_client_setting(callback: CallbackQuery):
     set_client_toggle_enabled(app, toggle, new_value)
 
     warning = ""
-    if new_value and not get_happ_provider_id():
+    if app == "happ" and new_value and not get_happ_provider_id():
         warning = " ⚠️ Задай ещё Provider ID выше — без него это официально не гарантированно работает."
-    label = CLIENT_TOGGLE_LABELS[toggle]
+    label = CLIENT_TOGGLE_LABELS_BY_APP[app][toggle]
     app_label = CLIENT_APPS[app]
     await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'} для {app_label}: {label}.{warning}", show_alert=bool(warning))
 
     from bot.keyboards.admin_settings import integrations_client_app_menu_kb
     await safe_edit_or_send(callback.message, f"{'📱' if app == 'happ' else '⚡'} <b>{app_label}</b>", reply_markup=integrations_client_app_menu_kb(app))
+
+
+@router.callback_query(F.data == "admin_edit_incy_update_interval")
+async def edit_incy_update_interval_start(callback: CallbackQuery, state: FSMContext):
+    """Запрашивает интервал автообновления подписки в INCY — в отличие
+    от Happ, это ЧИСЛО часов (profile-update-interval), а не простой
+    переключатель."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_incy_update_interval_hours
+    await state.set_state(AdminStates.edit_incy_update_interval)
+    current = get_incy_update_interval_hours()
+    current_text = f"{current} ч." if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"⏱ <b>Интервал автообновления подписки в INCY</b>\n\nТекущее значение: {current_text}\n\n"
+        "Пришли число — сколько часов между автоматическими обновлениями подписки в приложении "
+        "(целое число, кратное 1 часу). Пришли <code>0</code>, чтобы сбросить и не отправлять "
+        "этот параметр вообще (тогда приложение использует своё поведение по умолчанию).",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_incy'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_incy_update_interval, F.text)
+async def edit_incy_update_interval_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    text = (message.text or '').strip()
+    if not text.isdigit():
+        await safe_edit_or_send(message, "❌ Пришли целое число (часы), например <code>6</code>, или <code>0</code> для сброса.")
+        return
+
+    hours = int(text)
+    from database.requests import set_incy_update_interval_hours
+    set_incy_update_interval_hours(hours if hours > 0 else None)
+
+    await state.clear()
+    from bot.keyboards.admin_settings import integrations_client_app_menu_kb
+    status = f"{hours} ч." if hours > 0 else "сброшен (используется поведение приложения по умолчанию)"
+    await safe_edit_or_send(
+        message,
+        f"✅ Интервал автообновления INCY: {status}",
+        reply_markup=integrations_client_app_menu_kb('incy'),
+    )
 
 
 @router.callback_query(F.data.startswith("admin_edit_oauth:"))

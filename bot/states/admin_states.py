@@ -20,6 +20,7 @@ class AdminStates(StatesGroup):
     edit_panel_cleanup_days = State()    # Ввод задержки удаления неактивных ключей с панели
     edit_happ_provider_id = State()      # Ввод Happ Provider ID
     edit_logo = State()                  # Загрузка логотипа (фото)
+    edit_incy_update_interval = State()  # Ввод интервала автообновления INCY (часы)
     edit_zvonok_public_key = State()     # Ввод Zvonok API Public Key
     edit_zvonok_campaign_id = State()    # Ввод Zvonok Campaign ID
     edit_groq_key = State()              # Ввод ключа Groq (AI)
