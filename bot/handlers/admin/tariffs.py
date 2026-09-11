@@ -287,8 +287,14 @@ def get_add_step_text(step: int, data: dict) -> str:
 
     if param['key'] == 'max_ips':
         from database.requests import get_device_limit_type, DEVICE_LIMIT_TYPES
-        mode_label = DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']
+        current_mode = get_device_limit_type()
+        mode_label = DEVICE_LIMIT_TYPES[current_mode]['label']
         lines.append(f"\n📡 Сейчас действует режим: <b>{mode_label}</b> (меняется в Интеграциях)")
+        if current_mode == 'hwid':
+            lines.append(
+                "⚠️ В этом режиме Happ и INCY на одном и том же телефоне "
+                "считаются РАЗНЫМИ устройствами — учитывай это при выборе числа."
+            )
 
     # If there is additional help
     if param.get('help'):
@@ -591,8 +597,14 @@ def get_edit_tariff_text(tariff: dict, current_param: int) -> str:
 
     if param['key'] == 'max_ips':
         from database.requests import get_device_limit_type, DEVICE_LIMIT_TYPES
-        mode_label = DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']
+        current_mode = get_device_limit_type()
+        mode_label = DEVICE_LIMIT_TYPES[current_mode]['label']
         lines.append(f"\n📡 Сейчас действует режим: <b>{mode_label}</b> (меняется в Интеграциях)")
+        if current_mode == 'hwid':
+            lines.append(
+                "⚠️ В этом режиме Happ и INCY на одном и том же телефоне "
+                "считаются РАЗНЫМИ устройствами — учитывай это при выборе числа."
+            )
 
     if param.get('help'):
         lines.append(f"\n{param['help']}")
