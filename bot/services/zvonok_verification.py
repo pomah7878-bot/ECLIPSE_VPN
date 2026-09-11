@@ -56,6 +56,48 @@ async def request_phone_confirmation(phone: str) -> Optional[Dict[str, Any]]:
     }
 
 
+async def request_phone_confirmation_pincode(phone: str) -> Optional[Dict[str, Any]]:
+    """Инициирует ЗВОНОК КЛИЕНТУ (не клиент звонит нам) с вводом кода —
+    альтернативный способ верификации (кампания 'Ввод кода при звонке'
+    на zvonok.com, отдельный campaign_id от 'Звонок на проверочный
+    номер'). Код можно не указывать — Zvonok сгенерирует сам и вернёт
+    его в ответе (data.pincode), мы должны ПОКАЗАТЬ этот код клиенту
+    на сайте ДО или сразу после инициации звонка — клиент вводит его с
+    клавиатуры телефона, приняв входящий вызов.
+
+    Возвращает {call_id, pincode} либо None при ошибке."""
+    from database.requests import get_zvonok_public_key, get_zvonok_pincode_campaign_id
+
+    public_key = get_zvonok_public_key()
+    campaign_id = get_zvonok_pincode_campaign_id()
+    if not public_key or not campaign_id:
+        logger.warning("Zvonok: не настроен public_key или campaign_id (пин-код) — верификация звонком с кодом недоступна")
+        return None
+
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                BASE_URL + "phones/confirm/",
+                data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                result = await resp.json()
+    except Exception as e:
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (пин-код): {e}")
+        return None
+
+    if result.get("status") != "ok":
+        logger.warning(f"Zvonok: phones/confirm/ (пин-код) вернул ошибку: {result}")
+        return None
+
+    data = result.get("data") or {}
+    return {
+        "call_id": data.get("call_id"),
+        "pincode": data.get("pincode"),
+    }
+
+
 async def check_phone_confirmation(call_id) -> bool:
     """Проверяет, подтверждена ли КОНКРЕТНАЯ попытка звонка (по call_id,
     полученному от request_phone_confirmation) — а не любая попытка за

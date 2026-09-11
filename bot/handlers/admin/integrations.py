@@ -613,7 +613,99 @@ async def edit_zvonok_campaign_id_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
 
     await message.answer(f"✅ Zvonok Campaign ID сохранён: <code>{value}</code>", parse_mode="HTML")
-    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
+@router.callback_query(F.data == "admin_edit_zvonok_pincode_campaign_id")
+async def edit_zvonok_pincode_campaign_id_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_zvonok_pincode_campaign_id
+
+    await state.set_state(AdminStates.edit_zvonok_pincode_campaign_id)
+    current = get_zvonok_pincode_campaign_id()
+    current_text = current if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"📟 <b>Campaign ID (мы звоним + код)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID ОТДЕЛЬНОЙ кампании типа «Ввод кода при звонке» (пин-код) в личном кабинете "
+        "zvonok.com — это ДРУГОЙ тип кампании, не тот же, что «Звонок на проверочный номер». "
+        "Создай отдельную кампанию этого типа, ID виден в адресной строке страницы кампании.\n\n"
+        "Отправь ID кампании:",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_pincode_campaign_id, F.text, ~F.text.startswith('/'))
+async def edit_zvonok_pincode_campaign_id_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение. Отправь именно ID кампании ещё раз.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    from database.requests import set_zvonok_pincode_campaign_id
+    set_zvonok_pincode_campaign_id(value)
+    await state.set_state(AdminStates.integrations_menu)
+
+    await message.answer(f"✅ Campaign ID (пин-код) сохранён: <code>{value}</code>", parse_mode="HTML")
+
+
+_ZVONOK_METHOD_INFO = (
+    "📱 <b>Способ верификации звонком</b>\n\n"
+    "☎️ <b>Клиент звонит нам</b> — клиент сам звонит на один из наших "
+    "служебных номеров, мы узнаём его по номеру звонящего. Бесплатно для "
+    "клиента, не требует ничего вводить.\n\n"
+    "📟 <b>Мы звоним + код</b> — мы сами звоним клиенту, показываем код "
+    "заранее на сайте, клиент вводит его с клавиатуры телефона во время "
+    "звонка. Нужна ОТДЕЛЬНАЯ кампания типа «Ввод кода при звонке» (свой "
+    "Campaign ID, создаётся отдельно от первого способа)."
+)
+
+
+@router.callback_query(F.data == "admin_zvonok_method_info")
+async def show_zvonok_method_info(callback: CallbackQuery):
+    await callback.answer(_ZVONOK_METHOD_INFO, show_alert=True)
+
+
+@router.callback_query(F.data == "admin_toggle_zvonok_method")
+async def toggle_zvonok_method(callback: CallbackQuery):
+    """Переключает способ верификации звонком между 'клиент звонит нам'
+    и 'мы звоним + код' — предупреждает, если для нового способа не
+    задан свой Campaign ID."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import (
+        get_zvonok_verification_method, set_zvonok_verification_method,
+        get_zvonok_campaign_id, get_zvonok_pincode_campaign_id,
+    )
+
+    current = get_zvonok_verification_method()
+    new_method = "pincode" if current == "flash_call" else "flash_call"
+    set_zvonok_verification_method(new_method)
+
+    warning = ""
+    if new_method == "pincode" and not get_zvonok_pincode_campaign_id():
+        warning = " ⚠️ Задай ещё Campaign ID (мы звоним + код) ниже — без него способ не заработает."
+    elif new_method == "flash_call" and not get_zvonok_campaign_id():
+        warning = " ⚠️ Задай ещё Campaign ID (клиент звонит нам) ниже — без него способ не заработает."
+
+    method_label = "☎️ Клиент звонит нам" if new_method == "flash_call" else "📟 Мы звоним + код"
+    await callback.answer(f"Способ верификации: {method_label}.{warning}", show_alert=bool(warning))
+
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
+    await safe_edit_or_send(callback.message, "📞 <b>Верификация телефона (Zvonok)</b>", reply_markup=integrations_zvonok_menu_kb())
 
 
 

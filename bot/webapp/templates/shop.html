@@ -822,13 +822,26 @@
             }
             window._loginPhone = phone;
             window._loginCallId = res.call_id;
-            const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
-            body.innerHTML = `
-                <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
-                <div class="card rounded-xl p-3 mb-3 text-center">${numbersHtml}</div>
+
+            let statusHtml;
+            if (res.method === 'pincode') {
+                statusHtml = `
+                    <p class="text-xs text-mist mb-2">Сейчас вам поступит звонок — примите его и введите этот код на клавиатуре телефона:</p>
+                    <div class="card rounded-xl p-4 mb-3 text-center">
+                        <div class="font-mono text-3xl font-bold text-gold tracking-widest">${escapeHtml(String(res.pincode || ''))}</div>
+                    </div>
+                `;
+            } else {
+                const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
+                statusHtml = `
+                    <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
+                    <div class="card rounded-xl p-3 mb-3 text-center">${numbersHtml}</div>
+                `;
+            }
+            body.innerHTML = statusHtml + `
                 <div class="flex items-center justify-center gap-2">
                     <div class="spinner" style="width:16px;height:16px;"></div>
-                    <span class="text-xs text-mist">Ожидаем звонок…</span>
+                    <span class="text-xs text-mist">Ожидаем подтверждение…</span>
                 </div>
             `;
             window._phoneLoginPollInterval = setInterval(pollPhoneLoginVerification, 1000);
