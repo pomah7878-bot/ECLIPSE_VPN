@@ -409,6 +409,8 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
             if username:
                 user_link += f' (@{escape_html(username)})'
             lines.append(f'👤 Пользователь: {user_link}')
+        elif order.get('_site_buyer_label'):
+            lines.append(f'👤 Покупатель: {escape_html(str(order.get("_site_buyer_label")))}')
         else:
             lines.append(f'👤 Пользователь: ID {user_id_internal or "?"}')
 
