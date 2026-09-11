@@ -208,7 +208,8 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🌐 Сайт и витрина', callback_data='admin_integrations_site'))
     builder.row(InlineKeyboardButton(text='🔐 Способы входа на сайт', callback_data='admin_integrations_auth'))
     builder.row(InlineKeyboardButton(text='📞 Верификация телефона (Zvonok)', callback_data='admin_integrations_zvonok'))
-    builder.row(InlineKeyboardButton(text='📱 Happ / INCY', callback_data='admin_integrations_happ'))
+    builder.row(InlineKeyboardButton(text='📱 Happ', callback_data='admin_integrations_happ'))
+    builder.row(InlineKeyboardButton(text='⚡ INCY', callback_data='admin_integrations_incy'))
     builder.row(InlineKeyboardButton(text='🔑 Внешние ключи и API', callback_data='admin_integrations_apikeys'))
     builder.row(InlineKeyboardButton(text='⚙️ Ограничения устройств', callback_data='admin_integrations_limits'))
     builder.row(back_button('admin_bot_settings'), home_button())
@@ -306,55 +307,29 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def integrations_happ_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Happ / INCY» — Provider ID и связанные с ним настройки
-    поведения приложения."""
-    from database.requests import (
-        get_happ_provider_id, is_happ_autoconnect_enabled,
-        is_happ_hide_settings_enabled, is_happ_notification_expire_enabled,
-        is_happ_sort_by_ping_enabled, is_happ_auto_update_enabled,
-    )
+def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
+    """Подменю настроек конкретного приложения (Happ или INCY) — общий
+    Provider ID (регистрация на happ-proxy.com не зависит от
+    приложения-клиента), но КАЖДЫЙ переключатель — отдельно для этого
+    приложения (см. is_client_toggle_enabled — обнаружено на практике,
+    что Happ и INCY по-разному трактуют одни и те же заголовки)."""
+    from database.requests import get_happ_provider_id, is_client_toggle_enabled, CLIENT_APPS, CLIENT_TOGGLE_LABELS
+    app_label = CLIENT_APPS[app]
     builder = InlineKeyboardBuilder()
     happ_provider_status = "✅ задан" if get_happ_provider_id() else "не задан"
     builder.row(InlineKeyboardButton(
-        text=f"🆔 Happ Provider ID: {happ_provider_status}",
+        text=f"🆔 Provider ID (общий для Happ/INCY): {happ_provider_status}",
         callback_data='admin_edit_happ_provider_id',
     ))
-    builder.row(
-        InlineKeyboardButton(text='⚡ Автовыбор быстрого сервера', callback_data='admin_happ_info:autoconnect'),
-        InlineKeyboardButton(
-            text='✅ Вкл' if is_happ_autoconnect_enabled() else '❌ Выкл',
-            callback_data='admin_toggle_happ_autoconnect',
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(text='📊 Автосортировка по пингу', callback_data='admin_happ_info:sort_ping'),
-        InlineKeyboardButton(
-            text='✅ Вкл' if is_happ_sort_by_ping_enabled() else '❌ Выкл',
-            callback_data='admin_toggle_happ_sort_ping',
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(text='🔔 Родные уведомления об истечении', callback_data='admin_happ_info:notify_expire'),
-        InlineKeyboardButton(
-            text='✅ Вкл' if is_happ_notification_expire_enabled() else '❌ Выкл',
-            callback_data='admin_toggle_happ_notify_expire',
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(text='🔄 Глобальное автообновление подписок', callback_data='admin_happ_info:auto_update'),
-        InlineKeyboardButton(
-            text='✅ Вкл' if is_happ_auto_update_enabled() else '❌ Выкл',
-            callback_data='admin_toggle_happ_auto_update',
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(text='🔒 Скрыть настройки серверов', callback_data='admin_happ_info:hide_settings'),
-        InlineKeyboardButton(
-            text='✅ Вкл' if is_happ_hide_settings_enabled() else '❌ Выкл',
-            callback_data='admin_toggle_happ_hide_settings',
-        ),
-    )
+    _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒'}
+    for toggle, label in CLIENT_TOGGLE_LABELS.items():
+        builder.row(
+            InlineKeyboardButton(text=f"{_icons[toggle]} {label}", callback_data=f'admin_happ_info:{toggle}'),
+            InlineKeyboardButton(
+                text='✅ Вкл' if is_client_toggle_enabled(app, toggle) else '❌ Выкл',
+                callback_data=f'admin_toggle_client_setting:{app}:{toggle}',
+            ),
+        )
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
 

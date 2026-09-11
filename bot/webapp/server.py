@@ -1007,27 +1007,36 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if provider_id:
         headers["providerid"] = provider_id
 
-    from database.requests import is_happ_autoconnect_enabled
-    if provider_id and is_happ_autoconnect_enabled():
-        # "Advanced parameter" — официально работает только при заданном
-        # Provider ID (см. happ.su/main/dev-docs/app-management). Клиент
-        # (Happ/INCY) сам измеряет отклик каждого сервера в подписке и
-        # подключается к самому быстрому при запуске приложения.
-        headers["subscription-autoconnect"] = "1"
-        headers["subscription-autoconnect-type"] = "lowestdelay"
+    # Happ и INCY используют один движок, но по-разному трактуют одни и
+    # те же "Advanced parameter" заголовки — обнаружено на практике:
+    # настройка, нужная для нормальной работы Happ, ломала импорт в
+    # INCY, и наоборот. Поэтому определяем приложение по User-Agent
+    # (Happ шлёт "Happ/4.3.0/...", INCY — "INCY/2.6.1/...") и
+    # применяем настройки, специфичные именно для НЕГО, а не общие.
+    client_ua = request.headers.get("User-Agent", "")
+    if client_ua.startswith("Happ"):
+        detected_app = "happ"
+    elif client_ua.startswith("INCY"):
+        detected_app = "incy"
+    else:
+        detected_app = None
 
-    if provider_id:
-        from database.requests import (
-            is_happ_hide_settings_enabled, is_happ_notification_expire_enabled,
-            is_happ_sort_by_ping_enabled, is_happ_auto_update_enabled,
-        )
-        if is_happ_hide_settings_enabled():
+    if provider_id and detected_app:
+        from database.requests import is_client_toggle_enabled
+        if is_client_toggle_enabled(detected_app, "autoconnect"):
+            # "Advanced parameter" — официально работает только при заданном
+            # Provider ID (см. happ.su/main/dev-docs/app-management). Клиент
+            # сам измеряет отклик каждого сервера в подписке и подключается
+            # к самому быстрому при запуске приложения.
+            headers["subscription-autoconnect"] = "1"
+            headers["subscription-autoconnect-type"] = "lowestdelay"
+        if is_client_toggle_enabled(detected_app, "hide_settings"):
             headers["hide-settings"] = "1"
-        if is_happ_notification_expire_enabled():
+        if is_client_toggle_enabled(detected_app, "notify_expire"):
             headers["notification-subs-expire"] = "1"
-        if is_happ_sort_by_ping_enabled():
+        if is_client_toggle_enabled(detected_app, "sort_ping"):
             headers["subscriptions-sort-type"] = "ping"
-        if is_happ_auto_update_enabled():
+        if is_client_toggle_enabled(detected_app, "auto_update"):
             headers["subscription-auto-update-enable"] = "1"
 
     if "subscription-userinfo" not in headers:
