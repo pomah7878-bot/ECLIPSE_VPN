@@ -1233,8 +1233,15 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
             await pay_bot.session.close()
 
         save_anonymous_purchase_payment_id(order_id, yk_result["yookassa_payment_id"])
-        from database.requests import schedule_payment_auto_check
-        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=20)
+        # Фоновая подстраховка для сайтовых заказов теперь идёт через ОТДЕЛЬНУЮ,
+        # правильную систему (get_abandoned_anonymous_purchases +
+        # run_anonymous_payment_auto_check_scheduler) — она сканирует
+        # anonymous_purchases напрямую по времени, без отдельной таблицы
+        # очереди. Раньше здесь ОШИБОЧНО вызывался schedule_payment_auto_check,
+        # рассчитанный на заказы БОТА (payment_auto_checks.order_id имеет
+        # FOREIGN KEY на payments.order_id) — у сайтовых заказов нет строки в
+        # payments вообще, поэтому эта вставка ломалась с "FOREIGN KEY
+        # constraint failed" везде, где SQLite строго проверяет внешние ключи.
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"
@@ -2011,8 +2018,15 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
             await pay_bot.session.close()
 
         save_anonymous_purchase_payment_id(order_id, yk_result["yookassa_payment_id"])
-        from database.requests import schedule_payment_auto_check
-        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=20)
+        # Фоновая подстраховка для сайтовых заказов теперь идёт через ОТДЕЛЬНУЮ,
+        # правильную систему (get_abandoned_anonymous_purchases +
+        # run_anonymous_payment_auto_check_scheduler) — она сканирует
+        # anonymous_purchases напрямую по времени, без отдельной таблицы
+        # очереди. Раньше здесь ОШИБОЧНО вызывался schedule_payment_auto_check,
+        # рассчитанный на заказы БОТА (payment_auto_checks.order_id имеет
+        # FOREIGN KEY на payments.order_id) — у сайтовых заказов нет строки в
+        # payments вообще, поэтому эта вставка ломалась с "FOREIGN KEY
+        # constraint failed" везде, где SQLite строго проверяет внешние ключи.
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"
@@ -2147,8 +2161,15 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
             await pay_bot.session.close()
 
         save_anonymous_purchase_payment_id(order_id, yk_result["yookassa_payment_id"])
-        from database.requests import schedule_payment_auto_check
-        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=20)
+        # Фоновая подстраховка для сайтовых заказов теперь идёт через ОТДЕЛЬНУЮ,
+        # правильную систему (get_abandoned_anonymous_purchases +
+        # run_anonymous_payment_auto_check_scheduler) — она сканирует
+        # anonymous_purchases напрямую по времени, без отдельной таблицы
+        # очереди. Раньше здесь ОШИБОЧНО вызывался schedule_payment_auto_check,
+        # рассчитанный на заказы БОТА (payment_auto_checks.order_id имеет
+        # FOREIGN KEY на payments.order_id) — у сайтовых заказов нет строки в
+        # payments вообще, поэтому эта вставка ломалась с "FOREIGN KEY
+        # constraint failed" везде, где SQLite строго проверяет внешние ключи.
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"
