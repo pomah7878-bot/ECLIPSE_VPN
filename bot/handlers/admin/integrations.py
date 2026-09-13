@@ -721,6 +721,52 @@ async def edit_zvonok_pincode_campaign_id_save(message: Message, state: FSMConte
     await message.answer(f"✅ Campaign ID (пин-код) сохранён: <code>{value}</code>", parse_mode="HTML")
 
 
+@router.callback_query(F.data == "admin_edit_zvonok_proxy_url")
+async def edit_zvonok_proxy_url_start(callback: CallbackQuery, state: FSMContext):
+    """Ввод HTTP(S)-прокси для запросов к zvonok.com — обход гео-редиректа
+    на callo.com для серверов вне России."""
+    from database.requests import get_zvonok_proxy_url
+
+    await state.set_state(AdminStates.edit_zvonok_proxy_url)
+    current = get_zvonok_proxy_url()
+    current_text = current or "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"🌐 <b>Прокси для запросов к Zvonok</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "Нужен, если ваш сервер находится вне России — zvonok.com редиректит "
+        "запросы к своему API на международный бренд callo.com вместо ответа, "
+        "и верификация телефона падает с ошибкой «временно недоступна».\n\n"
+        "Пришлите адрес в формате:\n"
+        "<code>http://user:pass@host:port</code> или <code>http://host:port</code>\n\n"
+        "Отправьте «-», чтобы отключить прокси.",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_proxy_url, F.text, ~F.text.startswith('/'))
+async def edit_zvonok_proxy_url_save(message: Message, state: FSMContext):
+    """Сохраняет прокси для Zvonok (или отключает, если прислали «-»)."""
+    value = message.text.strip()
+    if value == "-":
+        value = ""
+
+    from database.requests import set_zvonok_proxy_url
+    set_zvonok_proxy_url(value)
+    await state.set_state(AdminStates.integrations_menu)
+
+    if value:
+        await message.answer(f"✅ Прокси для Zvonok сохранён: <code>{value}</code>")
+    else:
+        await message.answer("✅ Прокси для Zvonok отключён.")
+
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
+    await message.answer(
+        "📞 <b>Верификация телефона (Zvonok)</b>",
+        reply_markup=integrations_zvonok_menu_kb(),
+    )
+
+
 _ZVONOK_METHOD_INFO = (
     "📱 <b>Способ верификации звонком</b>\n\n"
     "☎️ <b>Клиент звонит нам</b> — клиент сам звонит на один из наших "

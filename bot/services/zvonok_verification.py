@@ -21,6 +21,17 @@ BASE_URL = "https://zvonok.com/manager/cabapi_external/api/v1/"
 SUCCESS_STATUS = "pincode_ok"
 
 
+def _get_proxy():
+    """Возвращает URL прокси для запросов к zvonok.com, если он настроен
+    в админке (обход гео-редиректа zvonok.com -> callo.com для серверов
+    вне России), иначе None — запросы уходят напрямую, как раньше."""
+    try:
+        from database.requests import get_zvonok_proxy_url
+    except ImportError:
+        return None
+    return get_zvonok_proxy_url() or None
+
+
 async def request_phone_confirmation(phone: str) -> Optional[Dict[str, Any]]:
     """Инициирует проверку номера. Возвращает {call_id, allowed_phones_for_call}
     либо None при ошибке (нет ключа/кампании, сбой сети и т.п.)."""
@@ -39,6 +50,7 @@ async def request_phone_confirmation(phone: str) -> Optional[Dict[str, Any]]:
                 BASE_URL + "phones/confirm/",
                 data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
                 timeout=aiohttp.ClientTimeout(total=10),
+                proxy=_get_proxy(),
             ) as resp:
                 result = await resp.json()
     except Exception as e:
@@ -81,6 +93,7 @@ async def request_phone_confirmation_pincode(phone: str) -> Optional[Dict[str, A
                 BASE_URL + "phones/confirm/",
                 data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
                 timeout=aiohttp.ClientTimeout(total=10),
+                proxy=_get_proxy(),
             ) as resp:
                 result = await resp.json()
     except Exception as e:
@@ -129,6 +142,7 @@ async def check_phone_confirmation(call_id) -> bool:
                 BASE_URL + "phones/call_by_id/",
                 params={"public_key": public_key, "call_id": str(call_id)},
                 timeout=aiohttp.ClientTimeout(total=10),
+                proxy=_get_proxy(),
             ) as resp:
                 result = await resp.json()
     except Exception as e:
