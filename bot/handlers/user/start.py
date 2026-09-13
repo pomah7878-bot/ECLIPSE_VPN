@@ -214,14 +214,23 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
             if unread_count > 0:
                 mark_channel_posts_seen(user_id, get_max_sent_post_id())
 
-        # Кнопка магазина — рядом с новостями, ведёт на публичную витрину
-        # /shop (та же страница, что доступна без Telegram). Показывается
-        # только если домен сайта настроен в админке (Интеграции → Сайт
-        # и витрина → Домен сайта), как и кнопка новостей — нельзя
-        # хардкодить чужой домен для всех инсталляций.
+        # Кнопка магазина — рядом с новостями, ведёт СРАЗУ в личный кабинет
+        # на сайте (не на анонимную витрину): генерируем одноразовый код
+        # входа (тот же механизм, что и в "Мои ключи" -> "Управлять на
+        # сайте"/site_login_code, и что уже используется для перехода из
+        # Happ с ?code=...) и передаём его прямо в URL. Страница /shop уже
+        # умеет сама подхватывать ?code= из адреса и логинить автоматически
+        # (см. tryAutoLoginFromUrl() в shop.html) — фронтенд трогать не
+        # пришлось. Показывается только если домен сайта настроен в
+        # админке, как и кнопка новостей — нельзя хардкодить чужой домен
+        # для всех инсталляций.
         webapp_url = (get_effective_webapp_url() or '').rstrip('/')
         if webapp_url:
-            news_button_row.append(InlineKeyboardButton(text='🛒 Магазин', url=f'{webapp_url}/shop'))
+            from database.requests import create_site_login_code
+            shop_login_code = create_site_login_code(user_id, ttl_minutes=10)
+            news_button_row.append(InlineKeyboardButton(
+                text='🛒 Магазин', url=f'{webapp_url}/shop?code={shop_login_code}',
+            ))
 
         if news_button_row:
             append_buttons = [news_button_row] + (append_buttons or [])
