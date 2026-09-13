@@ -221,6 +221,7 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
+    builder.row(InlineKeyboardButton(text='🔐 Turnstile site key', callback_data='admin_edit_turnstile_site_key'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
     builder.row(InlineKeyboardButton(text='🖼 Логотип (сайт + бот)', callback_data='admin_edit_logo'))
     builder.row(InlineKeyboardButton(text='📱 Своё приложение', callback_data='admin_edit_own_app'))

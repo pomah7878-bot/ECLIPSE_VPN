@@ -17,6 +17,7 @@ class AdminStates(StatesGroup):
     # ========== Интеграции (домен, AI, OAuth) ==========
     integrations_menu = State()          # Экран статуса интеграций
     edit_webapp_url = State()            # Ввод домена сайта
+    edit_turnstile_site_key = State()    # Ввод Turnstile site key
     edit_panel_cleanup_days = State()    # Ввод задержки удаления неактивных ключей с панели
     edit_happ_provider_id = State()      # Ввод Happ Provider ID
     edit_logo = State()                  # Загрузка логотипа (фото)
