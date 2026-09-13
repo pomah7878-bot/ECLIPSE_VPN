@@ -310,7 +310,7 @@ async def edit_webapp_url_start(callback: CallbackQuery, state: FSMContext):
         "без валидного HTTPS клиенты будут видеть ошибку безопасности в браузере\n\n"
         "Если это уже готово — отправьте новый адрес, например:\n<code>https://мой-домен.ru</code>\n\n"
         "(без слэша на конце — если добавите, он всё равно уберётся автоматически)",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
     )
     await callback.answer()
 
@@ -341,7 +341,7 @@ async def edit_turnstile_site_key_start(callback: CallbackQuery, state: FSMConte
         "4. Скопируйте выданный <b>Site Key</b> (публичный) и отправьте его сюда\n\n"
         "Не перепутайте с <b>Secret Key</b> — тот отдельно задаётся в "
         "secrets.env на сервере и сюда вводить не нужно.",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
     )
     await callback.answer()
 
@@ -436,7 +436,7 @@ async def edit_panel_cleanup_days_start(callback: CallbackQuery, state: FSMConte
         "продления восстановится та же самая ссылка подписки, клиенту ничего "
         "менять не нужно.\n\n"
         "Отправьте число дней (0 — удалять сразу):",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_limits'),
     )
     await callback.answer()
 
@@ -556,7 +556,7 @@ async def edit_happ_provider_id_start(callback: CallbackQuery, state: FSMContext
         "Получить: зарегистрируйся на <b>happ-proxy.com</b> — ID будет виден в "
         "правом верхнем углу/профиле.\n\n"
         "Отправь свой Provider ID:",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_happ'),
     )
     await callback.answer()
 
@@ -603,7 +603,7 @@ async def edit_zvonok_public_key_start(callback: CallbackQuery, state: FSMContex
         "Получить: зарегистрируйся на <b>zvonok.com</b> → Настройки профиля → "
         "«API Public Key» → «Сгенерировать».\n\n"
         "Отправь ключ:",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
     await callback.answer()
 
@@ -649,7 +649,7 @@ async def edit_zvonok_campaign_id_start(callback: CallbackQuery, state: FSMConte
         "zvonok.com (раздел «📱 Подтверждение номера» → создать кампанию с "
         "этим типом → ID виден в адресной строке страницы кампании).\n\n"
         "Отправь ID кампании:",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
     await callback.answer()
 
@@ -694,7 +694,7 @@ async def edit_zvonok_pincode_campaign_id_start(callback: CallbackQuery, state: 
         "zvonok.com — это ДРУГОЙ тип кампании, не тот же, что «Звонок на проверочный номер». "
         "Создай отдельную кампанию этого типа, ID виден в адресной строке страницы кампании.\n\n"
         "Отправь ID кампании:",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
     await callback.answer()
 
@@ -739,7 +739,7 @@ async def edit_zvonok_proxy_url_start(callback: CallbackQuery, state: FSMContext
         "Пришлите адрес в формате:\n"
         "<code>http://user:pass@host:port</code> или <code>http://host:port</code>\n\n"
         "Отправьте «-», чтобы отключить прокси.",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
     await callback.answer()
 
@@ -1016,7 +1016,7 @@ async def edit_brand_name_start(callback: CallbackQuery, state: FSMContext):
         "Как AI-помощник должен называть ваш сервис, отвечая клиентам "
         "(например: <code>EDITION</code>, <code>MyVPN</code>). Отправьте новое название.\n\n"
         "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
     )
     await callback.answer()
 
@@ -1067,7 +1067,7 @@ async def edit_own_app_start(callback: CallbackQuery, state: FSMContext):
         "<code>Название\nhttps://ссылка-на-приложение</code>\n\n"
         "Чтобы убрать (рекомендовать только сторонние клиенты) — отправьте одно тире: <code>-</code>\n\n"
         "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
     )
     await callback.answer()
 
@@ -1132,7 +1132,7 @@ async def edit_groq_key_start(callback: CallbackQuery, state: FSMContext):
         f"🤖 <b>Ключ AI (Groq)</b>\n\nТекущий: <code>{_mask_secret(current)}</code>\n\n"
         "Получите бесплатный ключ на console.groq.com → API Keys, затем отправьте его сюда.\n\n"
         "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_apikeys'),
     )
     await callback.answer()
 
@@ -1179,7 +1179,7 @@ async def edit_gemini_key_start(callback: CallbackQuery, state: FSMContext):
         "Резервный лейн — используется, когда все модели Groq недоступны. "
         "Получите бесплатный ключ на aistudio.google.com → Get API key, затем отправьте его сюда.\n\n"
         "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_apikeys'),
     )
     await callback.answer()
 
@@ -1226,7 +1226,7 @@ async def edit_tavily_key_start(callback: CallbackQuery, state: FSMContext):
         "Используется AI-консультантом для поиска актуальной информации в интернете.\n"
         "Получите бесплатный ключ на tavily.com → API Keys, затем отправьте его сюда.\n\n"
         "⚠️ После сохранения перезапустите AI-сервис на сервере: <code>systemctl restart eclipse-ai</code>",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_apikeys'),
     )
     await callback.answer()
 
@@ -1400,7 +1400,7 @@ async def edit_oauth_start(callback: CallbackQuery, state: FSMContext):
         f"{name} OAuth — <b>Client ID</b>\n\n"
         f"Текущий: <code>{client_id or 'не задан'}</code>\n\n"
         f"Теперь отправьте сюда Client ID из консоли разработчика {name} (не ссылку выше).",
-        reply_markup=integrations_edit_cancel_kb(),
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_auth'),
     )
     await callback.answer()
 
@@ -1435,7 +1435,7 @@ async def edit_oauth_client_id_save(message: Message, state: FSMContext):
     name = _PROVIDER_NAMES.get(provider, provider)
     await message.answer(
         f"{name} OAuth — <b>Client Secret</b>\n\nТеперь отправьте Client Secret.",
-        parse_mode="HTML", reply_markup=integrations_edit_cancel_kb(),
+        parse_mode="HTML", reply_markup=integrations_edit_cancel_kb('admin_integrations_auth'),
     )
 
 
