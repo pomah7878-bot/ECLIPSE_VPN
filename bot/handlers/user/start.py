@@ -202,18 +202,31 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         from database.requests import (
             count_unread_channel_posts, mark_channel_posts_seen,
             get_max_sent_post_id, get_marketing_channel_id,
+            get_effective_webapp_url,
         )
         channel_id = get_marketing_channel_id()
+        news_button_row = []
         if channel_id:
             channel_username = channel_id.lstrip('@')
             unread_count = count_unread_channel_posts(user_id)
             news_label = f'📰 Новости ({unread_count})' if unread_count > 0 else '📰 Новости'
-            news_button_row = [InlineKeyboardButton(text=news_label, url=f'https://t.me/{channel_username}')]
-            append_buttons = [news_button_row] + (append_buttons or [])
+            news_button_row.append(InlineKeyboardButton(text=news_label, url=f'https://t.me/{channel_username}'))
             if unread_count > 0:
                 mark_channel_posts_seen(user_id, get_max_sent_post_id())
+
+        # Кнопка магазина — рядом с новостями, ведёт на публичную витрину
+        # /shop (та же страница, что доступна без Telegram). Показывается
+        # только если домен сайта настроен в админке (Интеграции → Сайт
+        # и витрина → Домен сайта), как и кнопка новостей — нельзя
+        # хардкодить чужой домен для всех инсталляций.
+        webapp_url = (get_effective_webapp_url() or '').rstrip('/')
+        if webapp_url:
+            news_button_row.append(InlineKeyboardButton(text='🛒 Магазин', url=f'{webapp_url}/shop'))
+
+        if news_button_row:
+            append_buttons = [news_button_row] + (append_buttons or [])
     except Exception as e:
-        logger.warning(f"Не удалось построить кнопку новостей: {e}")
+        logger.warning(f"Не удалось построить кнопку новостей/магазина: {e}")
 
     await render_page(
         target,
