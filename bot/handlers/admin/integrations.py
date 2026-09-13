@@ -505,12 +505,37 @@ async def edit_logo_save(message: Message, state: FSMContext):
         static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "webapp", "static")
         logo_path = os.path.join(static_dir, "logo.png")
         os.makedirs(static_dir, exist_ok=True)
+        logo_bytes = file_io.read()
         with open(logo_path, "wb") as f:
-            f.write(file_io.read())
+            f.write(logo_bytes)
     except Exception as e:
         logger.error(f"Не удалось сохранить загруженный логотип: {e}")
         await safe_edit_or_send(message, "❌ Не удалось сохранить файл логотипа на сервере. Попробуй ещё раз.")
         return
+
+    # Автогенерация favicon из того же изображения — квадратный логотип
+    # уменьшается до трёх стандартных размеров, которые уже подключены
+    # во всех HTML-шаблонах (favicon.ico + два PNG для разных плотностей
+    # экрана). Ошибка здесь не должна ломать сохранение логотипа целиком —
+    # старый favicon просто останется висеть, если конвертация не удалась.
+    try:
+        from PIL import Image
+        import io as _io
+
+        with Image.open(_io.BytesIO(logo_bytes)) as img:
+            img = img.convert("RGBA")
+            png32 = img.resize((32, 32), Image.LANCZOS)
+            png16 = img.resize((16, 16), Image.LANCZOS)
+            png32.save(os.path.join(static_dir, "favicon-32x32.png"), format="PNG")
+            png16.save(os.path.join(static_dir, "favicon-16x16.png"), format="PNG")
+            img.save(
+                os.path.join(static_dir, "favicon.ico"),
+                format="ICO",
+                sizes=[(16, 16), (32, 32), (48, 48)],
+            )
+        logger.info("Favicon пересобран из нового логотипа")
+    except Exception as e:
+        logger.warning(f"Не удалось пересобрать favicon из логотипа (сам логотип сохранён успешно): {e}")
 
     from database.db_pages import update_page_custom
     update_page_custom('main', image=photo.file_id, media_type='photo')
@@ -519,8 +544,11 @@ async def edit_logo_save(message: Message, state: FSMContext):
     await state.clear()
     await safe_edit_or_send(
         message,
-        "✅ Логотип обновлён — и на сайте, и в приветственном сообщении бота.\n\n"
-        "Нажми /start, чтобы сразу увидеть новую картинку в боте.",
+        "✅ Логотип обновлён — на сайте, в приветственном сообщении бота и в иконке "
+        "вкладки браузера (favicon).\n\n"
+        "Нажми /start, чтобы сразу увидеть новую картинку в боте. Обновление favicon "
+        "в уже открытых вкладках браузера может занять время из-за кеширования — "
+        "попробуй жёсткое обновление страницы (Ctrl+F5), если старая иконка не пропала.",
         reply_markup=integrations_site_menu_kb(),
     )
 
