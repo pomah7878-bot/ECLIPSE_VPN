@@ -1952,6 +1952,8 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         return web.json_response({
             "ok": True, "logged_in": True, "account_type": "telegram",
             "can_link_oauth": account.get("provider") in (None, "telegram"),
+            "phone": account.get("phone"),
+            "email": account.get("email"),
             "keys": keys_with_urls,
             "balance_cents": balance_cents,
             "balance_human": balance_human,
@@ -1969,6 +1971,8 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     return web.json_response({
         "ok": True, "logged_in": True, "account_type": "oauth",
         "can_link_oauth": False,
+        "phone": account.get("phone"),
+        "email": account.get("email"),
         "keys": [{
             "key_id": key["id"],
             "display_name": key.get("tariff_name") or f"Ключ #{key['id']}",
@@ -1979,6 +1983,44 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "sub_url": purchase.get("sub_url"),
         }],
     })
+
+
+async def handle_public_account_link_phone_check(request: web.Request) -> web.Response:
+    """POST /api/public/account/link-phone-check — привязывает
+    ПОДТВЕРЖДЁННЫЙ телефон к УЖЕ залогиненному аккаунту (в отличие от
+    /api/public/auth/phone/check, который логинит/создаёт аккаунт по
+    телефону как единственному способу входа). Используется для полной
+    связки: пользователь вошёл через email/telegram и хочет добавить
+    телефон, не теряя существующий email (в отличие от старого
+    attach_oauth_to_existing_account, phone хранится в отдельной
+    колонке — оба способа сосуществуют)."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        body = {}
+    phone = (body.get("phone") or "").strip()
+    call_id = body.get("call_id")
+    if not phone or not call_id:
+        return web.json_response({"ok": False, "message": "Не указан телефон или call_id."}, status=400)
+
+    from bot.services.zvonok_verification import check_phone_confirmation
+    confirmed = await check_phone_confirmation(call_id)
+    if not confirmed:
+        return web.json_response({"ok": True, "verified": False})
+
+    from bot.services.trial_phone_registry import normalize_phone
+    from database.db_accounts import set_account_phone
+
+    normalized = normalize_phone(phone)
+    ok = set_account_phone(account_id, normalized)
+    if not ok:
+        return web.json_response({"ok": False, "message": "Этот номер уже привязан к другому аккаунту."}, status=409)
+
+    return web.json_response({"ok": True, "verified": True, "phone": normalized})
 
 
 async def handle_public_account_logout(request: web.Request) -> web.Response:
@@ -2629,6 +2671,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/zvonok/postback", handle_zvonok_postback)
     app.router.add_post("/api/public/auth/phone/request", handle_public_auth_phone_request)
     app.router.add_post("/api/public/auth/phone/check", handle_public_auth_phone_check)
+    app.router.add_post("/api/public/account/link-phone-check", handle_public_account_link_phone_check)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)

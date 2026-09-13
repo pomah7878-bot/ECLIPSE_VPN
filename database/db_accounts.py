@@ -127,6 +127,27 @@ def link_oauth_to_site_account(account_id: int, telegram_id: int) -> bool:
         return cursor.rowcount > 0
 
 
+def set_account_phone(account_id: int, phone_normalized: str) -> bool:
+    """Привязывает подтверждённый номер телефона к аккаунту личного
+    кабинета (site_accounts.phone) — НЕ трогает provider/email, в
+    отличие от attach_oauth_to_existing_account. Позволяет одному
+    аккаунту иметь и email (через OAuth/telegram), и телефон
+    одновременно, для полной связки. Отклоняет, если номер уже
+    привязан к ДРУГОМУ аккаунту."""
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM site_accounts WHERE phone = ?",
+            (phone_normalized,),
+        ).fetchone()
+        if existing and existing["id"] != account_id:
+            return False
+        cursor = conn.execute(
+            "UPDATE site_accounts SET phone = ? WHERE id = ?",
+            (phone_normalized, account_id),
+        )
+        return cursor.rowcount > 0
+
+
 def attach_oauth_to_existing_account(
     account_id: int,
     provider: str,
