@@ -804,7 +804,8 @@ async def handle_shop_page(request: web.Request) -> web.Response:
         header_format="{brand}",
     )
 
-    turnstile_site_key = os.environ.get("TURNSTILE_SITE_KEY", "")
+    from database.requests import get_effective_turnstile_site_key
+    turnstile_site_key = get_effective_turnstile_site_key()
     if not turnstile_site_key:
         import logging
         logging.getLogger(__name__).warning(

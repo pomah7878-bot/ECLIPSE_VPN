@@ -41,6 +41,8 @@ __all__ = [
     'set_site_auth_method_enabled',
     'get_effective_brand_name',
     'set_brand_name',
+    'get_effective_turnstile_site_key',
+    'set_turnstile_site_key',
     'get_effective_own_app_name',
     'set_own_app_name',
     'get_effective_own_app_url',
@@ -759,6 +761,21 @@ def get_effective_brand_name() -> str:
 def set_brand_name(name: str) -> None:
     """Задаёт название сервиса для текстов AI-помощника."""
     set_setting('brand_name', name.strip())
+
+def get_effective_turnstile_site_key() -> str:
+    """Публичный sitekey Cloudflare Turnstile для виджета капчи на /shop.
+    Значение из админки имеет приоритет над secrets.env; ключ ПРИВЯЗАН
+    К ДОМЕНУ в кабинете Cloudflare — при смене домена сайта нужен новый
+    ключ, иначе виджет капчи откажется грузиться (ошибка Cloudflare)."""
+    from_db = get_setting('turnstile_site_key', '')
+    if from_db:
+        return from_db
+    import os
+    return os.environ.get('TURNSTILE_SITE_KEY', '').strip()
+
+def set_turnstile_site_key(value: str) -> None:
+    """Задаёт публичный sitekey Cloudflare Turnstile для витрины /shop."""
+    set_setting('turnstile_site_key', value.strip())
 
 def get_effective_own_app_name() -> str:
     """Название собственного Android-приложения (если есть) — AI-помощник

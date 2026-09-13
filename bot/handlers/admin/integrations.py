@@ -17,6 +17,7 @@ from database.requests import (
     get_effective_tavily_api_key, set_tavily_api_key,
     get_effective_oauth_credentials, set_oauth_credentials,
     get_effective_brand_name, set_brand_name,
+    get_effective_turnstile_site_key, set_turnstile_site_key,
     get_effective_own_app_name, set_own_app_name,
     get_effective_own_app_url, set_own_app_url,
     is_start_import_buttons_enabled, set_start_import_buttons_enabled,
@@ -312,6 +313,66 @@ async def edit_webapp_url_start(callback: CallbackQuery, state: FSMContext):
         reply_markup=integrations_edit_cancel_kb(),
     )
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_edit_turnstile_site_key")
+async def edit_turnstile_site_key_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.edit_turnstile_site_key)
+    current = get_effective_turnstile_site_key()
+    await safe_edit_or_send(
+        callback.message,
+        f"🔐 <b>Turnstile site key</b>\n\nТекущий: <code>{current or 'не задан'}</code>\n\n"
+        "<b>Зачем это нужно:</b> этот публичный ключ показывает виджет "
+        "«я не робот» (Cloudflare Turnstile) на странице /shop, например "
+        "при получении бесплатного пробного периода — защита от ботов.\n\n"
+        "<b>Важно:</b> ключ ПРИВЯЗАН К ДОМЕНУ в кабинете Cloudflare. "
+        "Если вы разворачиваете бота на новом домене — старый ключ "
+        "работать не будет, нужен новый, привязанный именно к вашему "
+        "домену.\n\n"
+        "<b>Как получить:</b>\n"
+        "1. Зарегистрируйтесь в Cloudflare (бесплатно): "
+        "<code>dash.cloudflare.com</code>\n"
+        "2. В левом меню: Turnstile → Add widget\n"
+        "3. Укажите домен вашего сайта (тот же, что в «Домен сайта» выше)\n"
+        "4. Скопируйте выданный <b>Site Key</b> (публичный) и отправьте его сюда\n\n"
+        "Не перепутайте с <b>Secret Key</b> — тот отдельно задаётся в "
+        "secrets.env на сервере и сюда вводить не нужно.",
+        reply_markup=integrations_edit_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_turnstile_site_key)
+async def edit_turnstile_site_key_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value.startswith("0x"):
+        await safe_edit_or_send(
+            message,
+            "❌ Site key Cloudflare Turnstile обычно начинается с <code>0x</code>. "
+            "Проверьте, что вы скопировали именно Site Key (не Secret Key), "
+            "и попробуйте ещё раз.",
+        )
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    set_turnstile_site_key(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(
+        f"✅ Turnstile site key сохранён: <code>{value}</code>\n\n"
+        "Изменение применится сразу — перезапуск сервиса не требуется.",
+        reply_markup=back_and_home_kb('admin_integrations_site'),
+    )
 
 
 @router.message(AdminStates.edit_webapp_url)
