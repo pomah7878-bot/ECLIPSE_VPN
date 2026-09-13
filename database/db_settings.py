@@ -35,6 +35,8 @@ __all__ = [
     'get_zvonok_pincode_campaign_id',
     'set_zvonok_pincode_campaign_id',
     'get_zvonok_verification_method',
+    'get_zvonok_proxy_url',
+    'set_zvonok_proxy_url',
     'set_zvonok_verification_method',
     'SITE_AUTH_METHODS',
     'is_site_auth_method_enabled',
@@ -643,6 +645,17 @@ def get_zvonok_pincode_campaign_id() -> Optional[str]:
 
 def set_zvonok_pincode_campaign_id(campaign_id: str) -> None:
     set_setting('zvonok_pincode_campaign_id', campaign_id.strip())
+
+
+def get_zvonok_proxy_url():
+    """HTTP(S)-прокси для запросов к zvonok.com — обходит гео-редирект
+    на callo.com для серверов вне России. Пусто — прокси не используется."""
+    value = get_setting('zvonok_proxy_url', '')
+    return value or None
+
+
+def set_zvonok_proxy_url(proxy_url: str) -> None:
+    set_setting('zvonok_proxy_url', proxy_url.strip())
 
 
 def get_zvonok_verification_method() -> str:

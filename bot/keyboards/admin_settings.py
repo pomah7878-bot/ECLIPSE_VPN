@@ -297,7 +297,7 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
     (для двух разных способов) и переключатель, какой способ активен."""
     from database.requests import (
         get_zvonok_public_key, get_zvonok_campaign_id, get_zvonok_pincode_campaign_id,
-        get_zvonok_verification_method,
+        get_zvonok_verification_method, get_zvonok_proxy_url,
     )
     method = get_zvonok_verification_method()
     builder = InlineKeyboardBuilder()
@@ -319,6 +319,10 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text=f"📟 Campaign ID (мы звоним + код): {'✅ задан' if get_zvonok_pincode_campaign_id() else 'не задан'}",
         callback_data='admin_edit_zvonok_pincode_campaign_id',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🌐 Прокси для Zvonok: {'✅ задан' if get_zvonok_proxy_url() else 'не задан'}",
+        callback_data='admin_edit_zvonok_proxy_url',
     ))
     builder.row(InlineKeyboardButton(text='📡 Постбек (мгновенное подтверждение)', callback_data='admin_zvonok_postback_info'))
     builder.row(back_button('admin_integrations'), home_button())

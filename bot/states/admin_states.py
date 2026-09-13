@@ -25,6 +25,7 @@ class AdminStates(StatesGroup):
     edit_zvonok_public_key = State()     # Ввод Zvonok API Public Key
     edit_zvonok_campaign_id = State()    # Ввод Zvonok Campaign ID
     edit_zvonok_pincode_campaign_id = State()  # Ввод Zvonok Campaign ID (пин-код)
+    edit_zvonok_proxy_url = State()      # Ввод HTTP-прокси для Zvonok (обход гео-редиректа)
     edit_groq_key = State()              # Ввод ключа Groq (AI)
     edit_gemini_key = State()            # Ввод ключа Gemini (AI, резервный лейн)
     edit_brand_name = State()            # Ввод названия бренда (для текстов AI)
