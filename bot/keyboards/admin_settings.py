@@ -400,8 +400,12 @@ def integrations_limits_menu_kb() -> InlineKeyboardMarkup:
 
 
 def integrations_edit_cancel_kb(back_callback: str = 'admin_integrations') -> InlineKeyboardMarkup:
-    """Клавиатура отмены при вводе значения интеграции."""
+    """Клавиатура отмены при вводе значения интеграции. «Отмена» ведёт в
+    конкретное подменю (back_callback) — это уже эквивалент «Назад»;
+    «На главную» добавлена отдельно, чтобы не выходить из режима ввода
+    через два тапа, если админ передумал возвращаться в интеграции."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='❌ Отмена', callback_data=back_callback))
+    builder.row(home_button())
     return builder.as_markup()
 
