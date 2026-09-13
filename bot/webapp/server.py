@@ -803,6 +803,24 @@ async def handle_shop_page(request: web.Request) -> web.Response:
         title_format="💎 {brand} — премиальный VPN",
         header_format="{brand}",
     )
+
+    turnstile_site_key = os.environ.get("TURNSTILE_SITE_KEY", "")
+    if not turnstile_site_key:
+        import logging
+        logging.getLogger(__name__).warning(
+            "TURNSTILE_SITE_KEY не задан в secrets.env — виджет Turnstile "
+            "на /shop не будет работать. Получите site key в кабинете "
+            "Cloudflare для домена этой инсталляции и добавьте его в secrets.env."
+        )
+    patched_body = resp.text.replace("{{TURNSTILE_SITE_KEY}}", turnstile_site_key)
+    new_resp = web.Response(text=patched_body, content_type="text/html")
+    for hk, hv in resp.headers.items():
+        if hk.lower() not in ("content-type", "content-length"):
+            new_resp.headers[hk] = hv
+    for ck, morsel in resp.cookies.items():
+        new_resp.cookies[ck] = morsel
+    resp = new_resp
+
     ref_code = request.query.get("ref")
     if ref_code and not request.cookies.get("site_ref_code"):
         # Сохраняем НАВСЕГДА (пока не истечёт) на первый заход по такой
