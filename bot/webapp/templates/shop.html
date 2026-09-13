@@ -857,6 +857,75 @@
             }
         }
 
+        function showLinkPhoneStep() {
+            document.getElementById('linkPhoneToggleBtn').classList.add('hidden');
+            const body = document.getElementById('linkPhoneBody');
+            body.classList.remove('hidden');
+            body.innerHTML = `
+                <input id="linkPhoneInput" type="tel" placeholder="+7 999 123-45-67" autocomplete="tel"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2"
+                    style="outline:none;">
+                <button onclick="requestLinkPhone()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Продолжить</button>
+                <div id="linkPhoneError" class="text-xs text-alert mt-2 text-center"></div>
+            `;
+        }
+
+        async function requestLinkPhone() {
+            const phone = (document.getElementById('linkPhoneInput').value || '').trim();
+            const errBox = document.getElementById('linkPhoneError');
+            errBox.textContent = '';
+            if (!phone) { errBox.textContent = 'Введите номер телефона.'; return; }
+
+            const body = document.getElementById('linkPhoneBody');
+            body.innerHTML = '<div class="flex justify-center py-6"><div class="spinner"></div></div>';
+            const res = await postAPISafe('auth/phone/request', { phone });
+            if (res.error) {
+                showLinkPhoneStep();
+                document.getElementById('linkPhoneError').textContent = res.message || 'Не удалось начать проверку номера.';
+                return;
+            }
+            window._linkPhone = phone;
+            window._linkCallId = res.call_id;
+
+            let statusHtml;
+            if (res.method === 'pincode') {
+                statusHtml = `
+                    <p class="text-xs text-mist mb-2">Сейчас вам поступит звонок — примите его и введите этот код на клавиатуре телефона:</p>
+                    <div class="card rounded-xl p-4 mb-3 text-center">
+                        <div class="font-mono text-3xl font-bold text-gold tracking-widest">${escapeHtml(String(res.pincode || ''))}</div>
+                    </div>
+                `;
+            } else {
+                const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
+                statusHtml = `
+                    <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
+                    <div class="card rounded-xl p-3 mb-3 text-center">${numbersHtml}</div>
+                `;
+            }
+            body.innerHTML = statusHtml + `
+                <div class="flex items-center justify-center gap-2">
+                    <div class="spinner" style="width:16px;height:16px;"></div>
+                    <span class="text-xs text-mist">Ожидаем подтверждение…</span>
+                </div>
+            `;
+            window._linkPhonePollInterval = setInterval(pollLinkPhoneVerification, 1000);
+            pollLinkPhoneVerification();
+        }
+
+        async function pollLinkPhoneVerification() {
+            const res = await postAPISafe('account/link-phone-check', { phone: window._linkPhone, call_id: window._linkCallId });
+            if (res.verified) {
+                clearInterval(window._linkPhonePollInterval);
+                showToast('Телефон привязан!');
+                const sessionRes = await fetchAPI('account/session');
+                renderAccountData(sessionRes);
+            } else if (res.ok === false) {
+                clearInterval(window._linkPhonePollInterval);
+                document.getElementById('linkPhoneBody').innerHTML =
+                    `<p class="text-xs text-alert text-center py-3">${escapeHtml(res.message || 'Не удалось привязать номер.')}</p>`;
+            }
+        }
+
         async function doAccountLogin() {
             const input = document.getElementById('accountCodeInput');
             const code = input.value.trim().toUpperCase();
@@ -1111,7 +1180,7 @@
             }
 
             let linkOAuthBlock = '';
-            if (session.can_link_oauth) {
+            if (session.can_link_oauth && !session.email) {
                 linkOAuthBlock = `
                     <div class="card rounded-2xl p-4 mb-4 text-center">
                         <p class="text-xs text-mist mb-3">Привяжите Google/Яндекс/VK — в следующий раз войдёте одним кликом, без кода.</p>
@@ -1120,6 +1189,21 @@
                             <a href="/auth/yandex/start?link=1" class="btn-secondary rounded-lg px-3 py-2 text-xs">🟡 Яндекс</a>
                             <a href="/auth/vk/start?link=1" class="btn-secondary rounded-lg px-3 py-2 text-xs">🔷 VK</a>
                         </div>
+                    </div>
+                `;
+            }
+
+            // Предложение добавить телефон — если у аккаунта уже есть
+            // email/telegram, но нет привязанного номера. И наоборот
+            // (см. linkOAuthBlock выше) — для полной связки аккаунта на
+            // случай утраты доступа к одному из способов входа.
+            let linkPhoneBlock = '';
+            if (!session.phone) {
+                linkPhoneBlock = `
+                    <div class="card rounded-2xl p-4 mb-4 text-center">
+                        <p class="text-xs text-mist mb-3">Добавьте номер телефона — ещё один способ входа, если потеряете доступ к почте или Telegram.</p>
+                        <button onclick="showLinkPhoneStep()" id="linkPhoneToggleBtn" class="btn-secondary rounded-lg px-4 py-2 text-xs">📱 Добавить телефон</button>
+                        <div id="linkPhoneBody" class="hidden mt-2 text-left"></div>
                     </div>
                 `;
             }
@@ -1140,6 +1224,7 @@
                 balanceBlock +
                 _sessionKeys.map(renderKeyCard).join('') +
                 linkOAuthBlock +
+                linkPhoneBlock +
                 `<button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>`;
         }
 

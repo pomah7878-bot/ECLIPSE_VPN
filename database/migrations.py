@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 104
+LATEST_VERSION = 105
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2097,6 +2097,19 @@ def migration_104(conn: sqlite3.Connection) -> None:
     logger.info("Migration v104 applied: таблица zvonok_postback_status создана")
 
 
+def migration_105(conn: sqlite3.Connection) -> None:
+    """Migration v105: site_accounts.phone — отдельная колонка для номера
+    телефона, независимая от provider/provider_user_id. Раньше телефон
+    хранился как provider='phone', что означало: один аккаунт мог иметь
+    ЛИБО email (через OAuth) ЛИБО телефон, никогда оба одновременно —
+    привязка OAuth к телефонному аккаунту стирала номер (см.
+    attach_oauth_to_existing_account, которая перезаписывает
+    provider/provider_user_id целиком). Теперь оба способа могут
+    сосуществовать в одной записи для полной связки аккаунта."""
+    conn.execute("ALTER TABLE site_accounts ADD COLUMN phone TEXT")
+    logger.info("Migration v105 applied: site_accounts.phone column added")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2129,6 +2142,7 @@ MIGRATIONS = {
     102: migration_102,
     103: migration_103,
     104: migration_104,
+    105: migration_105,
 }
 
 
