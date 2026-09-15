@@ -172,22 +172,29 @@ async def request_phone_confirmation_voice_code(phone: str) -> Optional[Dict[str
         logger.warning("Zvonok: не настроен public_key или campaign_id (диктовка кода) — способ недоступен")
         return None
 
+    # ВАЖНО: кампании типа "Диктовка кода роботом" в Zvonok используют
+    # ОТДЕЛЬНЫЙ эндпоинт /phones/tellcode/, а НЕ /phones/confirm/, который
+    # подходит только для Flash Call / Pincode / Press Digit кампаний.
+    # Запрос на неправильный эндпоинт возвращает ошибку API:
+    # {"status": "error", "data": "Form isn't valid: * campaign_id
+    #  * Invalid campaign type"} — подтверждено официальной OpenAPI-схемой
+    # Zvonok (operationId=2, "Добавить звонок (Диктовка кода)").
     import aiohttp
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                BASE_URL + "phones/confirm/",
+                BASE_URL + "phones/tellcode/",
                 data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
                 timeout=aiohttp.ClientTimeout(total=10),
                 proxy=_get_proxy(),
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (диктовка кода): {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/tellcode/ (диктовка кода): {e}")
         return None
 
     if result.get("status") != "ok":
-        logger.warning(f"Zvonok: phones/confirm/ (диктовка кода) вернул ошибку: {result}")
+        logger.warning(f"Zvonok: phones/tellcode/ (диктовка кода) вернул ошибку: {result}")
         return None
 
     data = result.get("data") or {}
