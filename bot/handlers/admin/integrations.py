@@ -893,6 +893,11 @@ async def edit_zvonok_proxy_url_save(message: Message, state: FSMContext):
     if value == "-":
         value = ""
 
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     from database.requests import set_zvonok_proxy_url
     set_zvonok_proxy_url(value)
     await state.set_state(AdminStates.integrations_menu)
@@ -1516,6 +1521,11 @@ async def edit_incy_update_interval_save(message: Message, state: FSMContext):
         return
 
     hours = int(text)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     from database.requests import set_incy_update_interval_hours
     set_incy_update_interval_hours(hours if hours > 0 else None)
 

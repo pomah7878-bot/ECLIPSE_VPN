@@ -153,6 +153,11 @@ async def process_telegram_id_input(message: Message, state: FSMContext):
 
     await state.update_data(target_user_id=target_user['id'], target_telegram_id=int(text))
 
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     expiry_ms = data.get('expiry_ms') or 0
     if expiry_ms:
         expiry_str = datetime.fromtimestamp(expiry_ms / 1000, tz=timezone.utc).strftime('%d.%m.%Y')

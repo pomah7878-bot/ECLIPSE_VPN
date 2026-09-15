@@ -184,6 +184,10 @@ async def process_key_extend(message: Message, state: FSMContext):
         await safe_edit_or_send(message, '❌ Введите число от -99999 до 99999 (кроме 0)')
         return
     days = int(text)
+    try:
+        await message.delete()
+    except Exception:
+        pass
     data = await state.get_data()
     key_id = data.get('current_key_id')
     from bot.services.key_lifecycle import renew_key_access
@@ -336,6 +340,10 @@ async def process_change_traffic_limit(message: Message, state: FSMContext):
         await safe_edit_or_send(message, '❌ Введите число (0 = без лимита)')
         return
     traffic_gb = int(text)
+    try:
+        await message.delete()
+    except Exception:
+        pass
     data = await state.get_data()
     key_id = data.get('current_key_id')
     key = get_vpn_key_by_id(key_id)
@@ -451,6 +459,10 @@ async def process_add_key_traffic(message: Message, state: FSMContext):
         await safe_edit_or_send(message, '❌ Введите число (0 = без лимита)')
         return
     traffic_gb = int(text)
+    try:
+        await message.delete()
+    except Exception:
+        pass
     await state.update_data(add_key_traffic_gb=traffic_gb)
     await state.set_state(AdminStates.add_key_days)
     await safe_edit_or_send(message, '📅 <b>Срок действия</b>\n\nВведите количество дней:', reply_markup=add_key_step_kb(3), force_new=True)
@@ -466,6 +478,10 @@ async def process_add_key_days(message: Message, state: FSMContext):
         await safe_edit_or_send(message, '❌ Введите число от 1 до 99999')
         return
     days = int(text)
+    try:
+        await message.delete()
+    except Exception:
+        pass
     await state.update_data(add_key_days=days)
     await state.set_state(AdminStates.add_key_confirm)
     data = await state.get_data()

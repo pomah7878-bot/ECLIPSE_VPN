@@ -1561,6 +1561,11 @@ async def edit_link_name_save(message: Message, state: FSMContext):
     _update_help_button(btn_id, {'label': new_label})
     
     await state.clear()
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
     
     await safe_edit_or_send(message,
         f"✅ <b>Название сохранено!</b>\n\n{new_name}",
