@@ -369,7 +369,7 @@ async def edit_turnstile_site_key_save(message: Message, state: FSMContext):
     set_turnstile_site_key(value)
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(
-        f"✅ Turnstile site key сохранён: <code>{value}</code>\n\n"
+        f"✅ Turnstile site key сохранён: <code>{_mask_secret(value)}</code>\n\n"
         "Изменение применится сразу — перезапуск сервиса не требуется.",
         reply_markup=back_and_home_kb('admin_integrations_site'),
     )
@@ -608,7 +608,7 @@ async def edit_happ_provider_id_save(message: Message, state: FSMContext):
     set_happ_provider_id(value)
     await state.set_state(AdminStates.integrations_menu)
 
-    await message.answer(f"✅ Happ Provider ID сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Happ Provider ID сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
@@ -655,7 +655,7 @@ async def edit_zvonok_public_key_save(message: Message, state: FSMContext):
     set_zvonok_public_key(value)
     await state.set_state(AdminStates.integrations_menu)
 
-    await message.answer(f"✅ Zvonok API Public Key сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Zvonok API Public Key сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
@@ -701,7 +701,7 @@ async def edit_zvonok_campaign_id_save(message: Message, state: FSMContext):
     set_zvonok_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
 
-    await message.answer(f"✅ Zvonok Campaign ID сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Zvonok Campaign ID сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_pincode_campaign_id")
@@ -746,7 +746,7 @@ async def edit_zvonok_pincode_campaign_id_save(message: Message, state: FSMConte
     set_zvonok_pincode_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
 
-    await message.answer(f"✅ Campaign ID (пин-код) сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Campaign ID (пин-код) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_flashcall_real_campaign_id")
@@ -784,7 +784,7 @@ async def edit_zvonok_flashcall_real_campaign_id_save(message: Message, state: F
     from database.requests import set_zvonok_flashcall_real_campaign_id
     set_zvonok_flashcall_real_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer(f"✅ Campaign ID (Flash Call) сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Campaign ID (Flash Call) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_voice_code_campaign_id")
@@ -822,7 +822,7 @@ async def edit_zvonok_voice_code_campaign_id_save(message: Message, state: FSMCo
     from database.requests import set_zvonok_voice_code_campaign_id
     set_zvonok_voice_code_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer(f"✅ Campaign ID (диктовка кода) сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Campaign ID (диктовка кода) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_press_digit_campaign_id")
@@ -860,7 +860,7 @@ async def edit_zvonok_press_digit_campaign_id_save(message: Message, state: FSMC
     from database.requests import set_zvonok_press_digit_campaign_id
     set_zvonok_press_digit_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer(f"✅ Campaign ID (нажать цифру) сохранён: <code>{value}</code>", parse_mode="HTML")
+    await message.answer(f"✅ Campaign ID (нажать цифру) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_proxy_url")
@@ -898,7 +898,7 @@ async def edit_zvonok_proxy_url_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
 
     if value:
-        await message.answer(f"✅ Прокси для Zvonok сохранён: <code>{value}</code>")
+        await message.answer(f"✅ Прокси для Zvonok сохранён: <code>{_mask_secret(value)}</code>")
     else:
         await message.answer("✅ Прокси для Zvonok отключён.")
 
