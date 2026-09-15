@@ -1024,6 +1024,17 @@
                 `;
             }
 
+            let claimBlock = '';
+            if (key.claim_code && BOT_USERNAME) {
+                const claimLink = `https://t.me/${BOT_USERNAME}?start=claim_${encodeURIComponent(key.claim_code)}`;
+                claimBlock = `
+                    <div class="mt-4 card rounded-xl p-3" style="background:var(--panel-2);">
+                        <div class="text-xs text-mist mb-2">Есть Telegram? Привяжите этот ключ к боту — сможете продлевать и управлять прямо оттуда.</div>
+                        <a href="${claimLink}" class="block w-full py-2.5 btn-tg rounded-xl font-bold text-xs text-center transition">📲 Открыть в Telegram (привязать)</a>
+                    </div>
+                `;
+            }
+
             return `
                 <div class="card rounded-2xl p-5 mb-4">
                     <div class="flex justify-between items-start mb-1">
@@ -1038,6 +1049,7 @@
                     </div>
                     ${trafficBlock}
                     ${subBlock}
+                    ${claimBlock}
                     <button onclick="toggleInbounds(${key.key_id})" class="w-full py-2 mt-2 text-xs text-mist-dim hover:text-ink transition text-center">🔌 Все подключения</button>
                     <div id="inbounds-${key.key_id}" style="display:none;"></div>
                     <button onclick="openRenewForKey(${key.key_id})" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mt-4">Продлить</button>

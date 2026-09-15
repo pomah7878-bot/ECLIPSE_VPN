@@ -1981,6 +1981,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "traffic_limit": key.get("traffic_limit") or 0,
             "is_active": True,
             "sub_url": purchase.get("sub_url"),
+            "claim_code": purchase.get("claim_code"),
         }],
     })
 
