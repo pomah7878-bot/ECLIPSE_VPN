@@ -111,6 +111,159 @@ async def request_phone_confirmation_pincode(phone: str) -> Optional[Dict[str, A
     }
 
 
+async def request_phone_confirmation_flashcall_real(phone: str) -> Optional[Dict[str, Any]]:
+    """Инициирует НАСТОЯЩИЙ Flash Call (кампания типа 'Flash Call' на
+    zvonok.com, отдельный campaign_id) — Zvonok сам звонит клиенту,
+    код подтверждения — последние 4 цифры номера, с которого поступил
+    звонок. Клиенту НЕ нужно отвечать на звонок — он просто читает
+    цифры со своего экрана входящего вызова и вводит их у нас на
+    сайте. Подтверждение проверяется универсально через
+    check_phone_confirmation (Zvonok сам сверяет введённое с реальным
+    звонком на своей стороне).
+
+    Возвращает {call_id} либо None при ошибке."""
+    from database.requests import get_zvonok_public_key, get_zvonok_flashcall_real_campaign_id
+
+    public_key = get_zvonok_public_key()
+    campaign_id = get_zvonok_flashcall_real_campaign_id()
+    if not public_key or not campaign_id:
+        logger.warning("Zvonok: не настроен public_key или campaign_id (Flash Call) — способ недоступен")
+        return None
+
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                BASE_URL + "phones/confirm/",
+                data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
+                timeout=aiohttp.ClientTimeout(total=10),
+                proxy=_get_proxy(),
+            ) as resp:
+                result = await resp.json()
+    except Exception as e:
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (Flash Call): {e}")
+        return None
+
+    if result.get("status") != "ok":
+        logger.warning(f"Zvonok: phones/confirm/ (Flash Call) вернул ошибку: {result}")
+        return None
+
+    data = result.get("data") or {}
+    return {"call_id": data.get("call_id")}
+
+
+async def request_phone_confirmation_voice_code(phone: str) -> Optional[Dict[str, Any]]:
+    """Инициирует звонок способом 'Диктовка кода роботом' (кампания
+    отдельного типа на zvonok.com) — робот сам звонит клиенту и
+    ПРОИЗНОСИТ код вслух. В отличие от 'pincode' (клиент вводит с
+    клавиатуры ВО ВРЕМЯ звонка), здесь клиент вводит услышанный код
+    У НАС НА САЙТЕ уже ПОСЛЕ звонка — поэтому код нельзя показать
+    заранее (клиент его ещё не знает), а нужно временно сохранить
+    ожидаемое значение у себя (см. save_pending_voice_code) и сверить
+    с тем, что клиент введёт (см. check_voice_code).
+
+    Возвращает {call_id} либо None при ошибке (pincode НЕ возвращается
+    вызывающей стороне — остаётся только в нашей БД для сверки)."""
+    from database.requests import get_zvonok_public_key, get_zvonok_voice_code_campaign_id
+
+    public_key = get_zvonok_public_key()
+    campaign_id = get_zvonok_voice_code_campaign_id()
+    if not public_key or not campaign_id:
+        logger.warning("Zvonok: не настроен public_key или campaign_id (диктовка кода) — способ недоступен")
+        return None
+
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                BASE_URL + "phones/confirm/",
+                data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
+                timeout=aiohttp.ClientTimeout(total=10),
+                proxy=_get_proxy(),
+            ) as resp:
+                result = await resp.json()
+    except Exception as e:
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (диктовка кода): {e}")
+        return None
+
+    if result.get("status") != "ok":
+        logger.warning(f"Zvonok: phones/confirm/ (диктовка кода) вернул ошибку: {result}")
+        return None
+
+    data = result.get("data") or {}
+    call_id = data.get("call_id")
+    pincode = data.get("pincode")
+    if call_id and pincode:
+        save_pending_voice_code(str(call_id), str(pincode))
+    return {"call_id": call_id}
+
+
+async def request_phone_confirmation_press_digit(phone: str) -> Optional[Dict[str, Any]]:
+    """Инициирует звонок способом 'Подтверждение звонком' (кампания
+    отдельного типа на zvonok.com) — робот звонит клиенту и просит
+    нажать конкретную цифру для подтверждения (без диктовки кода).
+    Проверяется универсально через check_phone_confirmation.
+
+    Возвращает {call_id} либо None при ошибке."""
+    from database.requests import get_zvonok_public_key, get_zvonok_press_digit_campaign_id
+
+    public_key = get_zvonok_public_key()
+    campaign_id = get_zvonok_press_digit_campaign_id()
+    if not public_key or not campaign_id:
+        logger.warning("Zvonok: не настроен public_key или campaign_id (подтверждение звонком) — способ недоступен")
+        return None
+
+    import aiohttp
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                BASE_URL + "phones/confirm/",
+                data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
+                timeout=aiohttp.ClientTimeout(total=10),
+                proxy=_get_proxy(),
+            ) as resp:
+                result = await resp.json()
+    except Exception as e:
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (подтверждение звонком): {e}")
+        return None
+
+    if result.get("status") != "ok":
+        logger.warning(f"Zvonok: phones/confirm/ (подтверждение звонком) вернул ошибку: {result}")
+        return None
+
+    data = result.get("data") or {}
+    return {"call_id": data.get("call_id")}
+
+
+def save_pending_voice_code(call_id: str, expected_pincode: str) -> None:
+    """Сохраняет код, который робот продиктует клиенту — временно, до
+    сверки с тем, что клиент введёт на сайте (способ 'voice_code')."""
+    from database.connection import get_db
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO zvonok_pending_voice_codes (call_id, expected_pincode, created_at) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (str(call_id), str(expected_pincode)),
+        )
+        conn.commit()
+
+
+def check_voice_code(call_id: str, entered_code: str) -> bool:
+    """Сверяет код, который клиент ввёл на сайте, с тем, что робот ему
+    продиктовал (способ 'voice_code') — сравнение чисто локальное, не
+    требует похода к API Zvonok, так как мы сами получили ожидаемое
+    значение при инициации звонка."""
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT expected_pincode FROM zvonok_pending_voice_codes WHERE call_id = ?",
+            (str(call_id),),
+        ).fetchone()
+    if not row:
+        return False
+    return str(row["expected_pincode"]).strip() == str(entered_code).strip()
+
+
 async def check_phone_confirmation(call_id) -> bool:
     """Проверяет, подтверждена ли КОНКРЕТНАЯ попытка звонка (по call_id,
     полученному от request_phone_confirmation) — а не любая попытка за

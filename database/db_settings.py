@@ -34,6 +34,13 @@ __all__ = [
     'set_zvonok_campaign_id',
     'get_zvonok_pincode_campaign_id',
     'set_zvonok_pincode_campaign_id',
+    'get_zvonok_flashcall_real_campaign_id',
+    'set_zvonok_flashcall_real_campaign_id',
+    'get_zvonok_voice_code_campaign_id',
+    'set_zvonok_voice_code_campaign_id',
+    'get_zvonok_press_digit_campaign_id',
+    'set_zvonok_press_digit_campaign_id',
+    'ZVONOK_METHODS',
     'get_zvonok_verification_method',
     'get_zvonok_proxy_url',
     'set_zvonok_proxy_url',
@@ -647,6 +654,43 @@ def set_zvonok_pincode_campaign_id(campaign_id: str) -> None:
     set_setting('zvonok_pincode_campaign_id', campaign_id.strip())
 
 
+def get_zvonok_flashcall_real_campaign_id() -> Optional[str]:
+    """ID ОТДЕЛЬНОЙ кампании типа 'Flash Call' в zvonok.com — Zvonok
+    сам звонит клиенту, код подтверждения — последние 4 цифры номера,
+    с которого поступил звонок (клиенту даже не нужно отвечать)."""
+    value = get_setting('zvonok_flashcall_real_campaign_id', '')
+    return value if value else None
+
+
+def set_zvonok_flashcall_real_campaign_id(campaign_id: str) -> None:
+    set_setting('zvonok_flashcall_real_campaign_id', campaign_id.strip())
+
+
+def get_zvonok_voice_code_campaign_id() -> Optional[str]:
+    """ID ОТДЕЛЬНОЙ кампании типа 'Диктовка кода роботом' в zvonok.com
+    — робот сам звонит клиенту и произносит код, клиент вводит
+    услышанное НА НАШЕМ САЙТЕ (а не на клавиатуре телефона, в отличие
+    от способа 'pincode')."""
+    value = get_setting('zvonok_voice_code_campaign_id', '')
+    return value if value else None
+
+
+def set_zvonok_voice_code_campaign_id(campaign_id: str) -> None:
+    set_setting('zvonok_voice_code_campaign_id', campaign_id.strip())
+
+
+def get_zvonok_press_digit_campaign_id() -> Optional[str]:
+    """ID ОТДЕЛЬНОЙ кампании типа 'Подтверждение звонком' в zvonok.com
+    — робот звонит клиенту и просит нажать конкретную цифру для
+    подтверждения (без диктовки кода)."""
+    value = get_setting('zvonok_press_digit_campaign_id', '')
+    return value if value else None
+
+
+def set_zvonok_press_digit_campaign_id(campaign_id: str) -> None:
+    set_setting('zvonok_press_digit_campaign_id', campaign_id.strip())
+
+
 def get_zvonok_proxy_url():
     """HTTP(S)-прокси для запросов к zvonok.com — обходит гео-редирект
     на callo.com для серверов вне России. Пусто — прокси не используется."""
@@ -658,21 +702,41 @@ def set_zvonok_proxy_url(proxy_url: str) -> None:
     set_setting('zvonok_proxy_url', proxy_url.strip())
 
 
+ZVONOK_METHODS = {
+    'flash_call': '☎️ Клиент звонит нам',
+    'flashcall_real': '⚡ Flash Call (код — последние цифры номера)',
+    'pincode': '📟 Мы звоним + код на клавиатуре',
+    'voice_code': '🗣 Робот диктует код (вводится на сайте)',
+    'press_digit': '🔢 Робот просит нажать цифру',
+}
+
+
 def get_zvonok_verification_method() -> str:
     """Какой способ верификации звонком использовать при входе по
-    телефону на сайте:
-      'flash_call' — клиент сам звонит на один из наших служебных
-                     номеров (текущий способ, по умолчанию)
-      'pincode'    — мы сами звоним клиенту, показываем код на сайте
-                     заранее, клиент вводит его с клавиатуры телефона
-                     во время звонка (нужна отдельная кампания-пин-код)
-    """
+    телефону на сайте — все 5 официальных способов Zvonok:
+
+      'flash_call'     — клиент сам звонит на один из наших служебных
+                          номеров, узнаём его по номеру звонящего
+      'flashcall_real' — настоящий Flash Call: Zvonok сам звонит
+                          клиенту, код — последние 4 цифры номера,
+                          с которого поступил звонок (отвечать не нужно)
+      'pincode'        — мы звоним клиенту, показываем код на сайте
+                          заранее, клиент вводит его с клавиатуры
+                          телефона во время звонка
+      'voice_code'      — робот звонит и ПРОИЗНОСИТ код клиенту, тот
+                          вводит услышанное У НАС НА САЙТЕ
+      'press_digit'    — робот звонит и просит нажать конкретную
+                          цифру для подтверждения (без кода)
+
+    Каждый способ требует СВОЙ, отдельно созданный Campaign ID в
+    личном кабинете zvonok.com — у каждого типа кампании свой ID,
+    их нельзя использовать вперемешку."""
     value = get_setting('zvonok_verification_method', 'flash_call')
-    return value if value in ('flash_call', 'pincode') else 'flash_call'
+    return value if value in ZVONOK_METHODS else 'flash_call'
 
 
 def set_zvonok_verification_method(method: str) -> None:
-    if method not in ('flash_call', 'pincode'):
+    if method not in ZVONOK_METHODS:
         raise ValueError(f"Неизвестный способ верификации: {method}")
     set_setting('zvonok_verification_method', method)
 
