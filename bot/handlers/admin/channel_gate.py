@@ -99,6 +99,11 @@ async def process_channel_gate_input(message: Message, state: FSMContext):
     await state.clear()
     logger.info(f"Админ {message.from_user.id} настроил канал для гейта подписки: {text}")
 
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     from database.requests import is_channel_gate_enabled
     enabled = is_channel_gate_enabled()
     await safe_edit_or_send(

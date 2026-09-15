@@ -116,6 +116,11 @@ async def admin_autodelete_days_input(message: Message, state: FSMContext):
         await message.answer("❌ Число дней должно быть от 1 до 365.")
         return
 
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
     from database.requests import set_setting
     from bot.services.expired_key_autodelete import SETTING_DAYS
 

@@ -1025,6 +1025,10 @@ async def broadcast_save_notify_days(message: Message, state: FSMContext):
             reply_markup=broadcast_notify_back_kb()
         )
         return
+    try:
+        await message.delete()
+    except Exception:
+        pass
     
     set_setting('notification_days', str(days))
     

@@ -130,6 +130,11 @@ async def process_channel_settings_input(message: Message, state: FSMContext):
     set_marketing_channel_id(text)
     await state.clear()
     logger.info(f"Админ {message.from_user.id} настроил канал публикаций: {text}")
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
     await safe_edit_or_send(
         message,
         f'✅ Канал сохранён: {text}',
@@ -197,6 +202,10 @@ async def process_channel_post_date(message: Message, state: FSMContext):
         return
     await state.update_data(post_date=parsed_date.isoformat())
     await state.set_state(AdminStates.channel_post_time)
+    try:
+        await message.delete()
+    except Exception:
+        pass
     await safe_edit_or_send(
         message,
         '🕐 <b>Время публикации (по Москве)</b>\n\nВведите время в формате ЧЧ:ММ (например, 14:00).',
@@ -221,6 +230,11 @@ async def process_channel_post_time(message: Message, state: FSMContext):
             force_new=True,
         )
         return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
     data = await state.get_data()
     post_date = datetime.fromisoformat(data['post_date']).date()
