@@ -701,6 +701,7 @@ async def edit_zvonok_campaign_id_save(message: Message, state: FSMContext):
     set_zvonok_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
 
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await message.answer(f"✅ Zvonok Campaign ID сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML", reply_markup=integrations_zvonok_menu_kb())
 
 
@@ -746,6 +747,7 @@ async def edit_zvonok_pincode_campaign_id_save(message: Message, state: FSMConte
     set_zvonok_pincode_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
 
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await message.answer(f"✅ Campaign ID (пин-код) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML", reply_markup=integrations_zvonok_menu_kb())
 
 
@@ -784,6 +786,7 @@ async def edit_zvonok_flashcall_real_campaign_id_save(message: Message, state: F
     from database.requests import set_zvonok_flashcall_real_campaign_id
     set_zvonok_flashcall_real_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await message.answer(f"✅ Campaign ID (Flash Call) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML", reply_markup=integrations_zvonok_menu_kb())
 
 
@@ -822,6 +825,7 @@ async def edit_zvonok_voice_code_campaign_id_save(message: Message, state: FSMCo
     from database.requests import set_zvonok_voice_code_campaign_id
     set_zvonok_voice_code_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await message.answer(f"✅ Campaign ID (диктовка кода) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML", reply_markup=integrations_zvonok_menu_kb())
 
 
@@ -860,6 +864,7 @@ async def edit_zvonok_press_digit_campaign_id_save(message: Message, state: FSMC
     from database.requests import set_zvonok_press_digit_campaign_id
     set_zvonok_press_digit_campaign_id(value)
     await state.set_state(AdminStates.integrations_menu)
+    from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await message.answer(f"✅ Campaign ID (нажать цифру) сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML", reply_markup=integrations_zvonok_menu_kb())
 
 
