@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 105
+LATEST_VERSION = 106
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2110,6 +2110,24 @@ def migration_105(conn: sqlite3.Connection) -> None:
     logger.info("Migration v105 applied: site_accounts.phone column added")
 
 
+def migration_106(conn: sqlite3.Connection) -> None:
+    """Migration v106: создаёт таблицу zvonok_pending_voice_codes — для
+    способа верификации «Диктовка кода роботом»: код НЕ показывается
+    клиенту заранее (в отличие от «Ввод кода при звонке») — робот сам
+    произносит его во время звонка, а клиент вводит услышанное на
+    НАШЕМ сайте. Нужно временно хранить ожидаемое значение (полученное
+    от Zvonok при инициации звонка), чтобы сверить с тем, что клиент
+    введёт."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS zvonok_pending_voice_codes (
+            call_id TEXT PRIMARY KEY,
+            expected_pincode TEXT NOT NULL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v106 applied: таблица zvonok_pending_voice_codes создана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2143,6 +2161,7 @@ MIGRATIONS = {
     103: migration_103,
     104: migration_104,
     105: migration_105,
+    106: migration_106,
 }
 
 

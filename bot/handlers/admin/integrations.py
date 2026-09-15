@@ -749,6 +749,120 @@ async def edit_zvonok_pincode_campaign_id_save(message: Message, state: FSMConte
     await message.answer(f"✅ Campaign ID (пин-код) сохранён: <code>{value}</code>", parse_mode="HTML")
 
 
+@router.callback_query(F.data == "admin_edit_zvonok_flashcall_real_campaign_id")
+async def edit_zvonok_flashcall_real_campaign_id_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_zvonok_flashcall_real_campaign_id
+    await state.set_state(AdminStates.edit_zvonok_flashcall_real_campaign_id)
+    current = get_zvonok_flashcall_real_campaign_id()
+    current_text = current if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"⚡ <b>Campaign ID (Flash Call)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID ОТДЕЛЬНОЙ кампании типа «Flash Call» в личном кабинете zvonok.com — "
+        "Zvonok сам звонит клиенту, код — последние 4 цифры номера, отвечать на звонок не нужно.\n\n"
+        "Отправь ID кампании:",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_flashcall_real_campaign_id, F.text, ~F.text.startswith('/'))
+async def edit_zvonok_flashcall_real_campaign_id_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение. Отправь именно ID кампании ещё раз.")
+        return
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    from database.requests import set_zvonok_flashcall_real_campaign_id
+    set_zvonok_flashcall_real_campaign_id(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(f"✅ Campaign ID (Flash Call) сохранён: <code>{value}</code>", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_edit_zvonok_voice_code_campaign_id")
+async def edit_zvonok_voice_code_campaign_id_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_zvonok_voice_code_campaign_id
+    await state.set_state(AdminStates.edit_zvonok_voice_code_campaign_id)
+    current = get_zvonok_voice_code_campaign_id()
+    current_text = current if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"🗣 <b>Campaign ID (диктовка кода)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID ОТДЕЛЬНОЙ кампании типа «Диктовка кода роботом» в личном кабинете zvonok.com — "
+        "робот звонит клиенту и произносит код, клиент вводит услышанное у нас на сайте.\n\n"
+        "Отправь ID кампании:",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_voice_code_campaign_id, F.text, ~F.text.startswith('/'))
+async def edit_zvonok_voice_code_campaign_id_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение. Отправь именно ID кампании ещё раз.")
+        return
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    from database.requests import set_zvonok_voice_code_campaign_id
+    set_zvonok_voice_code_campaign_id(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(f"✅ Campaign ID (диктовка кода) сохранён: <code>{value}</code>", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_edit_zvonok_press_digit_campaign_id")
+async def edit_zvonok_press_digit_campaign_id_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_zvonok_press_digit_campaign_id
+    await state.set_state(AdminStates.edit_zvonok_press_digit_campaign_id)
+    current = get_zvonok_press_digit_campaign_id()
+    current_text = current if current else "не задан"
+    await safe_edit_or_send(
+        callback.message,
+        f"🔢 <b>Campaign ID (нажать цифру)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID ОТДЕЛЬНОЙ кампании типа «Подтверждение звонком» в личном кабинете zvonok.com — "
+        "робот звонит клиенту и просит нажать конкретную цифру для подтверждения, без кода.\n\n"
+        "Отправь ID кампании:",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_zvonok_press_digit_campaign_id, F.text, ~F.text.startswith('/'))
+async def edit_zvonok_press_digit_campaign_id_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value or value.startswith("/"):
+        await safe_edit_or_send(message, "❌ Похоже, это команда, а не значение. Отправь именно ID кампании ещё раз.")
+        return
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    from database.requests import set_zvonok_press_digit_campaign_id
+    set_zvonok_press_digit_campaign_id(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(f"✅ Campaign ID (нажать цифру) сохранён: <code>{value}</code>", parse_mode="HTML")
+
+
 @router.callback_query(F.data == "admin_edit_zvonok_proxy_url")
 async def edit_zvonok_proxy_url_start(callback: CallbackQuery, state: FSMContext):
     """Ввод HTTP(S)-прокси для запросов к zvonok.com — обход гео-редиректа
@@ -795,49 +909,60 @@ async def edit_zvonok_proxy_url_save(message: Message, state: FSMContext):
     )
 
 
-_ZVONOK_METHOD_INFO = (
-    "📱 <b>Способ верификации звонком</b>\n\n"
-    "☎️ <b>Клиент звонит нам</b> — клиент сам звонит на один из наших "
-    "служебных номеров, мы узнаём его по номеру звонящего. Бесплатно для "
-    "клиента, не требует ничего вводить.\n\n"
-    "📟 <b>Мы звоним + код</b> — мы сами звоним клиенту, показываем код "
-    "заранее на сайте, клиент вводит его с клавиатуры телефона во время "
-    "звонка. Нужна ОТДЕЛЬНАЯ кампания типа «Ввод кода при звонке» (свой "
-    "Campaign ID, создаётся отдельно от первого способа)."
-)
+@router.callback_query(F.data == "admin_zvonok_method_menu")
+async def show_zvonok_method_menu(callback: CallbackQuery):
+    """Показывает подменю выбора одного из пяти способов верификации звонком."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_zvonok_method_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "📱 <b>Способ верификации звонком</b>\n\n"
+        "☎️ <b>Клиент звонит нам</b> — клиент сам звонит на служебный номер, узнаём по номеру звонящего.\n\n"
+        "⚡ <b>Flash Call</b> — Zvonok звонит клиенту, код — последние 4 цифры номера, отвечать не нужно.\n\n"
+        "📟 <b>Мы звоним + код</b> — показываем код на сайте заранее, клиент вводит его с клавиатуры телефона.\n\n"
+        "🗣 <b>Диктовка кода</b> — робот произносит код, клиент вводит услышанное у нас на сайте.\n\n"
+        "🔢 <b>Нажать цифру</b> — робот просит нажать конкретную цифру, без кода.\n\n"
+        "У КАЖДОГО способа — своя, отдельно созданная кампания на zvonok.com со своим Campaign ID.",
+        reply_markup=integrations_zvonok_method_menu_kb(),
+    )
+    await callback.answer()
 
 
-@router.callback_query(F.data == "admin_zvonok_method_info")
-async def show_zvonok_method_info(callback: CallbackQuery):
-    await callback.answer(_ZVONOK_METHOD_INFO, show_alert=True)
-
-
-@router.callback_query(F.data == "admin_toggle_zvonok_method")
-async def toggle_zvonok_method(callback: CallbackQuery):
-    """Переключает способ верификации звонком между 'клиент звонит нам'
-    и 'мы звоним + код' — предупреждает, если для нового способа не
-    задан свой Campaign ID."""
+@router.callback_query(F.data.startswith("admin_set_zvonok_method:"))
+async def set_zvonok_method(callback: CallbackQuery):
+    """Устанавливает конкретный способ верификации из пяти — предупреждает,
+    если для него не задан свой Campaign ID."""
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
     from database.requests import (
-        get_zvonok_verification_method, set_zvonok_verification_method,
-        get_zvonok_campaign_id, get_zvonok_pincode_campaign_id,
+        set_zvonok_verification_method, ZVONOK_METHODS,
+        get_zvonok_campaign_id, get_zvonok_flashcall_real_campaign_id,
+        get_zvonok_pincode_campaign_id, get_zvonok_voice_code_campaign_id,
+        get_zvonok_press_digit_campaign_id,
     )
 
-    current = get_zvonok_verification_method()
-    new_method = "pincode" if current == "flash_call" else "flash_call"
-    set_zvonok_verification_method(new_method)
+    method = callback.data.split(":", 1)[1]
+    if method not in ZVONOK_METHODS:
+        await callback.answer("Неизвестный способ", show_alert=True)
+        return
+    set_zvonok_verification_method(method)
 
+    campaign_getters = {
+        'flash_call': get_zvonok_campaign_id,
+        'flashcall_real': get_zvonok_flashcall_real_campaign_id,
+        'pincode': get_zvonok_pincode_campaign_id,
+        'voice_code': get_zvonok_voice_code_campaign_id,
+        'press_digit': get_zvonok_press_digit_campaign_id,
+    }
     warning = ""
-    if new_method == "pincode" and not get_zvonok_pincode_campaign_id():
-        warning = " ⚠️ Задай ещё Campaign ID (мы звоним + код) ниже — без него способ не заработает."
-    elif new_method == "flash_call" and not get_zvonok_campaign_id():
-        warning = " ⚠️ Задай ещё Campaign ID (клиент звонит нам) ниже — без него способ не заработает."
+    if not campaign_getters[method]():
+        warning = " ⚠️ Задай ещё Campaign ID для этого способа ниже — без него он не заработает."
 
-    method_label = "☎️ Клиент звонит нам" if new_method == "flash_call" else "📟 Мы звоним + код"
-    await callback.answer(f"Способ верификации: {method_label}.{warning}", show_alert=bool(warning))
+    await callback.answer(f"Способ верификации: {ZVONOK_METHODS[method]}.{warning}", show_alert=bool(warning))
 
     from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await safe_edit_or_send(callback.message, "📞 <b>Верификация телефона (Zvonok)</b>", reply_markup=integrations_zvonok_menu_kb())

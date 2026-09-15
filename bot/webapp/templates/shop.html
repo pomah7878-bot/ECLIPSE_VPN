@@ -822,30 +822,79 @@
             }
             window._loginPhone = phone;
             window._loginCallId = res.call_id;
+            renderPhoneVerificationUI(res, body, pollPhoneLoginVerification, '_phoneLoginPollInterval', 'checkVoiceCodeLogin');
+        }
 
-            let statusHtml;
+        function renderPhoneVerificationUI(res, body, pollFn, intervalVarName, voiceCheckFnName) {
             if (res.method === 'pincode') {
-                statusHtml = `
+                body.innerHTML = `
                     <p class="text-xs text-mist mb-2">Сейчас вам поступит звонок — примите его и введите этот код на клавиатуре телефона:</p>
                     <div class="card rounded-xl p-4 mb-3 text-center">
                         <div class="font-mono text-3xl font-bold text-gold tracking-widest">${escapeHtml(String(res.pincode || ''))}</div>
                     </div>
+                    <div class="flex items-center justify-center gap-2">
+                        <div class="spinner" style="width:16px;height:16px;"></div>
+                        <span class="text-xs text-mist">Ожидаем подтверждение…</span>
+                    </div>
+                `;
+                window[intervalVarName] = setInterval(pollFn, 1000);
+                pollFn();
+            } else if (res.method === 'flashcall_real') {
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — отвечать не нужно, просто посмотрите на экран входящего вызова и запомните последние 4 цифры номера.</p>
+                    <div class="flex items-center justify-center gap-2">
+                        <div class="spinner" style="width:16px;height:16px;"></div>
+                        <span class="text-xs text-mist">Ожидаем звонок…</span>
+                    </div>
+                `;
+                window[intervalVarName] = setInterval(pollFn, 1000);
+                pollFn();
+            } else if (res.method === 'press_digit') {
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — робот попросит нажать определённую цифру на клавиатуре для подтверждения.</p>
+                    <div class="flex items-center justify-center gap-2">
+                        <div class="spinner" style="width:16px;height:16px;"></div>
+                        <span class="text-xs text-mist">Ожидаем подтверждение…</span>
+                    </div>
+                `;
+                window[intervalVarName] = setInterval(pollFn, 1000);
+                pollFn();
+            } else if (res.method === 'voice_code') {
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — робот продиктует код. Введите его сюда после звонка:</p>
+                    <input id="voiceCodeInput" type="text" inputmode="numeric" placeholder="Код из звонка"
+                        class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2 text-center font-mono text-lg tracking-widest"
+                        style="outline:none;">
+                    <button onclick="${voiceCheckFnName}()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить</button>
+                    <div id="voiceCodeError" class="text-xs text-alert mt-2 text-center"></div>
                 `;
             } else {
                 const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
-                statusHtml = `
+                body.innerHTML = `
                     <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
                     <div class="card rounded-xl p-3 mb-3 text-center">${numbersHtml}</div>
+                    <div class="flex items-center justify-center gap-2">
+                        <div class="spinner" style="width:16px;height:16px;"></div>
+                        <span class="text-xs text-mist">Ожидаем звонок…</span>
+                    </div>
                 `;
+                window[intervalVarName] = setInterval(pollFn, 1000);
+                pollFn();
             }
-            body.innerHTML = statusHtml + `
-                <div class="flex items-center justify-center gap-2">
-                    <div class="spinner" style="width:16px;height:16px;"></div>
-                    <span class="text-xs text-mist">Ожидаем подтверждение…</span>
-                </div>
-            `;
-            window._phoneLoginPollInterval = setInterval(pollPhoneLoginVerification, 1000);
-            pollPhoneLoginVerification();
+        }
+
+        async function checkVoiceCodeLogin() {
+            const code = (document.getElementById('voiceCodeInput').value || '').trim();
+            const errBox = document.getElementById('voiceCodeError');
+            if (!code) { errBox.textContent = 'Введите код.'; return; }
+            errBox.textContent = '';
+            const res = await postAPISafe('auth/phone/check', { phone: window._loginPhone, call_id: window._loginCallId, entered_code: code });
+            if (res.verified) {
+                const sessionRes = await fetchAPI('account/session');
+                revealApp(sessionRes);
+            } else {
+                errBox.textContent = 'Код не совпадает, попробуйте ещё раз.';
+            }
         }
 
         async function pollPhoneLoginVerification() {
@@ -886,30 +935,22 @@
             }
             window._linkPhone = phone;
             window._linkCallId = res.call_id;
+            renderPhoneVerificationUI(res, body, pollLinkPhoneVerification, '_linkPhonePollInterval', 'checkVoiceCodeLinkPhone');
+        }
 
-            let statusHtml;
-            if (res.method === 'pincode') {
-                statusHtml = `
-                    <p class="text-xs text-mist mb-2">Сейчас вам поступит звонок — примите его и введите этот код на клавиатуре телефона:</p>
-                    <div class="card rounded-xl p-4 mb-3 text-center">
-                        <div class="font-mono text-3xl font-bold text-gold tracking-widest">${escapeHtml(String(res.pincode || ''))}</div>
-                    </div>
-                `;
+        async function checkVoiceCodeLinkPhone() {
+            const code = (document.getElementById('voiceCodeInput').value || '').trim();
+            const errBox = document.getElementById('voiceCodeError');
+            if (!code) { errBox.textContent = 'Введите код.'; return; }
+            errBox.textContent = '';
+            const res = await postAPISafe('account/link-phone-check', { phone: window._linkPhone, call_id: window._linkCallId, entered_code: code });
+            if (res.verified) {
+                showToast('Телефон привязан!');
+                const sessionRes = await fetchAPI('account/session');
+                renderAccountData(sessionRes);
             } else {
-                const numbersHtml = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
-                statusHtml = `
-                    <p class="text-xs text-mist mb-2">Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.</p>
-                    <div class="card rounded-xl p-3 mb-3 text-center">${numbersHtml}</div>
-                `;
+                errBox.textContent = 'Код не совпадает, попробуйте ещё раз.';
             }
-            body.innerHTML = statusHtml + `
-                <div class="flex items-center justify-center gap-2">
-                    <div class="spinner" style="width:16px;height:16px;"></div>
-                    <span class="text-xs text-mist">Ожидаем подтверждение…</span>
-                </div>
-            `;
-            window._linkPhonePollInterval = setInterval(pollLinkPhoneVerification, 1000);
-            pollLinkPhoneVerification();
         }
 
         async function pollLinkPhoneVerification() {

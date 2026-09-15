@@ -293,11 +293,13 @@ def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
 
 
 def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Верификация телефона (Zvonok)» — API Key, оба Campaign ID
-    (для двух разных способов) и переключатель, какой способ активен."""
+    """Подменю «Верификация телефона (Zvonok)» — API Key, свой Campaign
+    ID для КАЖДОГО из пяти официальных способов, и текущий активный способ."""
     from database.requests import (
         get_zvonok_public_key, get_zvonok_campaign_id, get_zvonok_pincode_campaign_id,
-        get_zvonok_verification_method, get_zvonok_proxy_url,
+        get_zvonok_flashcall_real_campaign_id, get_zvonok_voice_code_campaign_id,
+        get_zvonok_press_digit_campaign_id, get_zvonok_verification_method,
+        get_zvonok_proxy_url, ZVONOK_METHODS,
     )
     method = get_zvonok_verification_method()
     builder = InlineKeyboardBuilder()
@@ -305,20 +307,29 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
         text=f"📞 Zvonok API Key: {'✅ задан' if get_zvonok_public_key() else 'не задан'}",
         callback_data='admin_edit_zvonok_public_key',
     ))
-    builder.row(
-        InlineKeyboardButton(text='📱 Способ верификации', callback_data='admin_zvonok_method_info'),
-        InlineKeyboardButton(
-            text='☎️ Клиент звонит нам' if method == 'flash_call' else '📟 Мы звоним + код',
-            callback_data='admin_toggle_zvonok_method',
-        ),
-    )
     builder.row(InlineKeyboardButton(
-        text=f"📞 Campaign ID (клиент звонит нам): {'✅ задан' if get_zvonok_campaign_id() else 'не задан'}",
+        text=f"📱 Способ верификации: {ZVONOK_METHODS[method]}",
+        callback_data='admin_zvonok_method_menu',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"☎️ ID (клиент звонит нам): {'✅' if get_zvonok_campaign_id() else '—'}",
         callback_data='admin_edit_zvonok_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
-        text=f"📟 Campaign ID (мы звоним + код): {'✅ задан' if get_zvonok_pincode_campaign_id() else 'не задан'}",
+        text=f"⚡ ID (Flash Call): {'✅' if get_zvonok_flashcall_real_campaign_id() else '—'}",
+        callback_data='admin_edit_zvonok_flashcall_real_campaign_id',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📟 ID (мы звоним + код): {'✅' if get_zvonok_pincode_campaign_id() else '—'}",
         callback_data='admin_edit_zvonok_pincode_campaign_id',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🗣 ID (диктовка кода): {'✅' if get_zvonok_voice_code_campaign_id() else '—'}",
+        callback_data='admin_edit_zvonok_voice_code_campaign_id',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🔢 ID (нажать цифру): {'✅' if get_zvonok_press_digit_campaign_id() else '—'}",
+        callback_data='admin_edit_zvonok_press_digit_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
         text=f"🌐 Прокси для Zvonok: {'✅ задан' if get_zvonok_proxy_url() else 'не задан'}",
@@ -326,6 +337,18 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
     ))
     builder.row(InlineKeyboardButton(text='📡 Постбек (мгновенное подтверждение)', callback_data='admin_zvonok_postback_info'))
     builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_zvonok_method_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю выбора одного из пяти способов верификации звонком."""
+    from database.requests import get_zvonok_verification_method, ZVONOK_METHODS
+    current = get_zvonok_verification_method()
+    builder = InlineKeyboardBuilder()
+    for method_id, label in ZVONOK_METHODS.items():
+        mark = "✅ " if method_id == current else ""
+        builder.row(InlineKeyboardButton(text=f"{mark}{label}", callback_data=f'admin_set_zvonok_method:{method_id}'))
+    builder.row(back_button('admin_integrations_zvonok'), home_button())
     return builder.as_markup()
 
 
