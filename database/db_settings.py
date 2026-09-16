@@ -41,6 +41,7 @@ __all__ = [
     'get_zvonok_press_digit_campaign_id',
     'set_zvonok_press_digit_campaign_id',
     'ZVONOK_METHODS',
+    'ZVONOK_CAMPAIGN_TYPE_SLUGS',
     'get_zvonok_verification_method',
     'get_zvonok_proxy_url',
     'set_zvonok_proxy_url',
@@ -703,11 +704,23 @@ def set_zvonok_proxy_url(proxy_url: str) -> None:
 
 
 ZVONOK_METHODS = {
-    'flash_call': '☎️ Клиент звонит нам',
-    'flashcall_real': '⚡ Flash Call (код — последние цифры номера)',
-    'pincode': '📟 Мы звоним + код на клавиатуре',
-    'voice_code': '🗣 Робот диктует код (вводится на сайте)',
-    'press_digit': '🔢 Робот просит нажать цифру',
+    'flash_call': '☎️ Звонок на проверочный номер',
+    'flashcall_real': '⚡ Flash Call',
+    'pincode': '📟 Ввод кода при звонке',
+    'voice_code': '🗣 Диктовка кода роботом',
+    'press_digit': '🔢 Подтверждение звонком',
+}
+
+# Тип кампании на самом zvonok.com для каждого способа — используется
+# для прямой ссылки "Создать кампанию" в подсказках бота, чтобы админ
+# не путал типы при создании (обнаружено на практике — Campaign ID
+# для "Подтверждение звонком" оказался кампанией типа "Ввод кода").
+ZVONOK_CAMPAIGN_TYPE_SLUGS = {
+    'flash_call': 'pincode_incoming',
+    'flashcall_real': 'flashcall',
+    'pincode': 'pincode',
+    'voice_code': 'tellcode',
+    'press_digit': 'pincode_short',
 }
 
 

@@ -673,9 +673,9 @@ async def edit_zvonok_campaign_id_start(callback: CallbackQuery, state: FSMConte
     await safe_edit_or_send(
         callback.message,
         f"📞 <b>Zvonok Campaign ID</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
-        "ID кампании типа «Звонок на проверочный номер» в личном кабинете "
-        "zvonok.com (раздел «📱 Подтверждение номера» → создать кампанию с "
-        "этим типом → ID виден в адресной строке страницы кампании).\n\n"
+        "ID кампании ТИПА «Звонок на проверочный номер» на zvonok.com — "
+        "именно этот тип, не любой другой (иначе способ не заработает).\n\n"
+        '<a href="https://zvonok.com/manager/phones/create/?campaign_type=pincode_incoming">➕ Создать кампанию этого типа</a>\n\n'
         "Отправь ID кампании:",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
@@ -718,10 +718,10 @@ async def edit_zvonok_pincode_campaign_id_start(callback: CallbackQuery, state: 
     current_text = current if current else "не задан"
     await safe_edit_or_send(
         callback.message,
-        f"📟 <b>Campaign ID (мы звоним + код)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
-        "ID ОТДЕЛЬНОЙ кампании типа «Ввод кода при звонке» (пин-код) в личном кабинете "
-        "zvonok.com — это ДРУГОЙ тип кампании, не тот же, что «Звонок на проверочный номер». "
-        "Создай отдельную кампанию этого типа, ID виден в адресной строке страницы кампании.\n\n"
+        f"📟 <b>Ввод кода при звонке</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID кампании ТИПА «Ввод кода при звонке» на zvonok.com — "
+        "именно этот тип, не любой другой (иначе способ не заработает).\n\n"
+        '<a href="https://zvonok.com/manager/phones/create/?campaign_type=pincode">➕ Создать кампанию этого типа</a>\n\n'
         "Отправь ID кампании:",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
@@ -762,9 +762,10 @@ async def edit_zvonok_flashcall_real_campaign_id_start(callback: CallbackQuery, 
     current_text = current if current else "не задан"
     await safe_edit_or_send(
         callback.message,
-        f"⚡ <b>Campaign ID (Flash Call)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
-        "ID ОТДЕЛЬНОЙ кампании типа «Flash Call» в личном кабинете zvonok.com — "
-        "Zvonok сам звонит клиенту, код — последние 4 цифры номера, отвечать на звонок не нужно.\n\n"
+        f"⚡ <b>Flash Call</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID кампании ТИПА «Flash Call» на zvonok.com — "
+        "именно этот тип, не любой другой (иначе способ не заработает).\n\n"
+        '<a href="https://zvonok.com/manager/phones/create/?campaign_type=flashcall">➕ Создать кампанию этого типа</a>\n\n'
         "Отправь ID кампании:",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
@@ -801,9 +802,10 @@ async def edit_zvonok_voice_code_campaign_id_start(callback: CallbackQuery, stat
     current_text = current if current else "не задан"
     await safe_edit_or_send(
         callback.message,
-        f"🗣 <b>Campaign ID (диктовка кода)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
-        "ID ОТДЕЛЬНОЙ кампании типа «Диктовка кода роботом» в личном кабинете zvonok.com — "
-        "робот звонит клиенту и произносит код, клиент вводит услышанное у нас на сайте.\n\n"
+        f"🗣 <b>Диктовка кода роботом</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID кампании ТИПА «Диктовка кода роботом» на zvonok.com — "
+        "именно этот тип, не любой другой (иначе способ не заработает).\n\n"
+        '<a href="https://zvonok.com/manager/phones/create/?campaign_type=tellcode">➕ Создать кампанию этого типа</a>\n\n'
         "Отправь ID кампании:",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )
@@ -840,9 +842,11 @@ async def edit_zvonok_press_digit_campaign_id_start(callback: CallbackQuery, sta
     current_text = current if current else "не задан"
     await safe_edit_or_send(
         callback.message,
-        f"🔢 <b>Campaign ID (нажать цифру)</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
-        "ID ОТДЕЛЬНОЙ кампании типа «Подтверждение звонком» в личном кабинете zvonok.com — "
-        "робот звонит клиенту и просит нажать конкретную цифру для подтверждения, без кода.\n\n"
+        f"🔢 <b>Подтверждение звонком</b>\n\nТекущее значение: <code>{current_text}</code>\n\n"
+        "ID кампании ТИПА «Подтверждение звонком» на zvonok.com (робот "
+        "просит нажать конкретную цифру) — именно этот тип, не «Ввод "
+        "кода» и не любой другой (иначе способ не заработает).\n\n"
+        '<a href="https://zvonok.com/manager/phones/create/?campaign_type=pincode_short">➕ Создать кампанию этого типа</a>\n\n'
         "Отправь ID кампании:",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_zvonok'),
     )

@@ -312,7 +312,7 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
         callback_data='admin_zvonok_method_menu',
     ))
     builder.row(InlineKeyboardButton(
-        text=f"☎️ ID (клиент звонит нам): {'✅' if get_zvonok_campaign_id() else '—'}",
+        text=f"☎️ ID (Звонок на проверочный номер): {'✅' if get_zvonok_campaign_id() else '—'}",
         callback_data='admin_edit_zvonok_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
@@ -320,15 +320,15 @@ def integrations_zvonok_menu_kb() -> InlineKeyboardMarkup:
         callback_data='admin_edit_zvonok_flashcall_real_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
-        text=f"📟 ID (мы звоним + код): {'✅' if get_zvonok_pincode_campaign_id() else '—'}",
+        text=f"📟 ID (Ввод кода при звонке): {'✅' if get_zvonok_pincode_campaign_id() else '—'}",
         callback_data='admin_edit_zvonok_pincode_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
-        text=f"🗣 ID (диктовка кода): {'✅' if get_zvonok_voice_code_campaign_id() else '—'}",
+        text=f"🗣 ID (Диктовка кода роботом): {'✅' if get_zvonok_voice_code_campaign_id() else '—'}",
         callback_data='admin_edit_zvonok_voice_code_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
-        text=f"🔢 ID (нажать цифру): {'✅' if get_zvonok_press_digit_campaign_id() else '—'}",
+        text=f"🔢 ID (Подтверждение звонком): {'✅' if get_zvonok_press_digit_campaign_id() else '—'}",
         callback_data='admin_edit_zvonok_press_digit_campaign_id',
     ))
     builder.row(InlineKeyboardButton(
