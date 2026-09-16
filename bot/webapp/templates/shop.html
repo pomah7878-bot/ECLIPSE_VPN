@@ -841,14 +841,13 @@
                 pollFn();
             } else if (res.method === 'flashcall_real') {
                 body.innerHTML = `
-                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — отвечать не нужно, просто посмотрите на экран входящего вызова и запомните последние 4 цифры номера.</p>
-                    <div class="flex items-center justify-center gap-2">
-                        <div class="spinner" style="width:16px;height:16px;"></div>
-                        <span class="text-xs text-mist">Ожидаем звонок…</span>
-                    </div>
+                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — отвечать не нужно. Посмотрите на экран входящего вызова и введите ПОСЛЕДНИЕ 4 ЦИФРЫ этого номера сюда:</p>
+                    <input id="voiceCodeInput" type="text" inputmode="numeric" placeholder="Последние 4 цифры номера"
+                        class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2 text-center font-mono text-lg tracking-widest"
+                        style="outline:none;">
+                    <button onclick="${voiceCheckFnName}()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить</button>
+                    <div id="voiceCodeError" class="text-xs text-alert mt-2 text-center"></div>
                 `;
-                window[intervalVarName] = setInterval(pollFn, 1000);
-                pollFn();
             } else if (res.method === 'press_digit') {
                 body.innerHTML = `
                     <p class="text-xs text-mist mb-2">Сейчас поступит звонок — робот попросит нажать определённую цифру на клавиатуре для подтверждения.</p>
