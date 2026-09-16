@@ -160,6 +160,7 @@ def get_expiring_keys(days: int) -> List[Dict[str, Any]]:
             JOIN users u ON vk.user_id = u.id
             WHERE u.is_banned = 0
             AND u.is_bot_blocked = 0
+            AND u.telegram_id > 0
             AND vk.expires_at > datetime('now')
             AND vk.expires_at <= datetime('now', '+' || ? || ' days')
         """, (days,))
