@@ -310,7 +310,18 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
     from database.requests import get_tariff_by_id
     tariff = get_tariff_by_id(purchase["tariff_id"])
     days = (tariff.get("duration_days") if tariff else None) or 30
-    amount_cents = (tariff.get("price_cents") if tariff else None) or 0
+    # ВАЖНО: price_cents в тарифах — это поле для ДОЛЛАРОВ/крипты (пара с
+    # price_stars), а НЕ рублёвая цена в копейках! Рублёвая цена — в
+    # ОТДЕЛЬНОМ поле price_rub. Сайтовые покупки идут через ЮKassa
+    # (рубли), поэтому final_amount_cents нужно строить из price_rub*100
+    # (как это делает сам бот для рублёвых платежей — см.
+    # bot/handlers/user/payments/balance.py: final_amount_cents = amount_rub * 100),
+    # а не из price_cents напрямую. Раньше здесь по ошибке брали
+    # price_cents — из-за этого суммы в уведомлениях о сайтовых покупках
+    # показывались заниженными в десятки/сотни раз (например, "2,33 ₽"
+    # вместо настоящих 233 ₽).
+    price_rub_value = (tariff.get("price_rub") if tariff else None) or 0
+    amount_cents = int(round(price_rub_value * 100))
 
     try:
         from database.requests import get_site_referrer_code_for_order, get_user_by_referral_code
