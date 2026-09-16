@@ -408,20 +408,40 @@ def get_daily_payments_stats() -> Dict[str, Any]:
         """)
         cardlink_row = cursor.fetchone()
 
+        # 8. Считаем покупки С САЙТА (anonymous_purchases) — раньше эта
+        # функция вообще не знала об этой таблице, из-за чего суточная
+        # статистика молчала про реальные продажи с сайта (обнаружено на
+        # практике — Артём: "в суточную статистику данные с сайта не
+        # подтягивает"). Сайтовые покупки всегда идут через ЮKassa
+        # (рубли), у самой anonymous_purchases нет отдельного
+        # final_amount_cents — берём цену тарифа на момент запроса.
+        cursor = conn.execute("""
+            SELECT
+                COUNT(*) as count,
+                COALESCE(SUM(COALESCE(t.price_rub, 0)), 0) as total_rub
+            FROM anonymous_purchases ap
+            LEFT JOIN tariffs t ON ap.tariff_id = t.id
+            WHERE ap.status = 'paid'
+            AND ap.created_at >= datetime('now', '-1 day')
+        """)
+        site_row = cursor.fetchone()
+
         paid_count = (crypto_row['count'] if crypto_row else 0) + \
                      (stars_row['count'] if stars_row else 0) + \
                      (cards_row['count'] if cards_row else 0) + \
                      (qr_row['count'] if qr_row else 0) + \
                      (wata_row['count'] if wata_row else 0) + \
                      (platega_row['count'] if platega_row else 0) + \
-                     (cardlink_row['count'] if cardlink_row else 0)
+                     (cardlink_row['count'] if cardlink_row else 0) + \
+                     (site_row['count'] if site_row else 0)
         total_cents = crypto_row['total_cents'] if crypto_row else 0
         total_stars = stars_row['total_stars'] if stars_row else 0
         total_rub = (cards_row['total_rub'] if cards_row else 0) + \
                     (qr_row['total_rub'] if qr_row else 0) + \
                     (wata_row['total_rub'] if wata_row else 0) + \
                     (platega_row['total_rub'] if platega_row else 0) + \
-                    (cardlink_row['total_rub'] if cardlink_row else 0)
+                    (cardlink_row['total_rub'] if cardlink_row else 0) + \
+                    (site_row['total_rub'] if site_row else 0)
         
         return {
             'paid_count': paid_count,
