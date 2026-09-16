@@ -115,13 +115,20 @@ async def request_phone_confirmation_flashcall_real(phone: str) -> Optional[Dict
     """Инициирует НАСТОЯЩИЙ Flash Call (кампания типа 'Flash Call' на
     zvonok.com, отдельный campaign_id) — Zvonok сам звонит клиенту,
     код подтверждения — последние 4 цифры номера, с которого поступил
-    звонок. Клиенту НЕ нужно отвечать на звонок — он просто читает
-    цифры со своего экрана входящего вызова и вводит их у нас на
-    сайте. Подтверждение проверяется универсально через
-    check_phone_confirmation (Zvonok сам сверяет введённое с реальным
-    звонком на своей стороне).
+    звонок. Клиенту НЕ нужно отвечать на звонок — он читает цифры со
+    своего экрана входящего вызова и вводит их у нас на сайте.
 
-    Возвращает {call_id} либо None при ошибке."""
+    ВАЖНО (обнаружено на практике): ответ API УЖЕ содержит ожидаемый
+    код (data.pincode) — но его НЕЛЬЗЯ показывать клиенту сразу, иначе
+    теряется весь смысл проверки (любой мог бы просто прочитать код на
+    сайте, не имея доступа к реальному телефону). Сохраняем код у себя
+    (как для 'voice_code') и сверяем ЛОКАЛЬНО с тем, что клиент введёт,
+    прочитав его с экрана входящего звонка — см. check_voice_code
+    (переиспользуется, механизм идентичен: код известен заранее нам,
+    клиент узнаёт его независимо и вводит для сверки).
+
+    Возвращает {call_id} либо None при ошибке (pincode НЕ возвращается
+    вызывающей стороне)."""
     from database.requests import get_zvonok_public_key, get_zvonok_flashcall_real_campaign_id
 
     public_key = get_zvonok_public_key()
@@ -149,7 +156,11 @@ async def request_phone_confirmation_flashcall_real(phone: str) -> Optional[Dict
         return None
 
     data = result.get("data") or {}
-    return {"call_id": data.get("call_id")}
+    call_id = data.get("call_id")
+    pincode = data.get("pincode")
+    if call_id and pincode:
+        save_pending_voice_code(str(call_id), str(pincode))
+    return {"call_id": call_id}
 
 
 async def request_phone_confirmation_voice_code(phone: str) -> Optional[Dict[str, Any]]:
@@ -271,7 +282,7 @@ def check_voice_code(call_id: str, entered_code: str) -> bool:
     return str(row["expected_pincode"]).strip() == str(entered_code).strip()
 
 
-async def check_phone_confirmation(call_id) -> bool:
+async def check_phone_confirmation(call_id, trust_postback_cache: bool = True) -> bool:
     """Проверяет, подтверждена ли КОНКРЕТНАЯ попытка звонка (по call_id,
     полученному от request_phone_confirmation) — а не любая попытка за
     всю историю номера. Критично: если проверять просто по номеру
@@ -280,14 +291,28 @@ async def check_phone_confirmation(call_id) -> bool:
     без реального нового звонка. True — подтверждено (status ==
     'pincode_ok').
 
-    Сначала проверяет ЛОКАЛЬНЫЙ кэш — туда мгновенно попадает результат
-    через постбек (вебхук) от zvonok.com, если он настроен (см.
-    save_postback_status / handle_zvonok_postback), что даёт ответ без
-    похода к их API вообще. Если в кэше пусто (постбек не настроен или
-    ещё не дошёl) — опрашивает API как раньше, это резервный вариант."""
-    cached = get_cached_postback_status(call_id)
-    if cached is not None:
-        return cached
+    trust_postback_cache=True (по умолчанию) — сначала проверяет
+    ЛОКАЛЬНЫЙ кэш, куда мгновенно попадает результат через постбек
+    (вебхук) от zvonok.com. ВАЖНО: это безопасно ТОЛЬКО для способа
+    'flash_call' ('Звонок на проверочный номер'), где событие
+    "Успешный дозвон" на стороне Zvonok семантически означает именно
+    "клиент дозвонился" — этого достаточно для подтверждения.
+
+    Для способов с кодом/цифрой (pincode, press_digit) вызывающая
+    сторона ДОЛЖНА передать trust_postback_cache=False — у ЭТИХ
+    кампаний "Успешный дозвон" на стороне Zvonok означает лишь
+    "абонент ОТВЕТИЛ на звонок", а НЕ "ввёл верный код/нажал верную
+    цифру"! Обнаружено на практике (Рома скопировал тот же постбек
+    "Успешный дозвон" в кампанию "Подтверждение звонком" — в
+    результате ЛЮБОЙ ответивший на звонок кэшировался как
+    подтверждённый, ещё до прихода настоящего pincode_ok/pincode_nook
+    статуса). При trust_postback_cache=False функция ВСЕГДА идёт
+    опрашивать API напрямую, игнорируя локальный кэш постбека, даже
+    если он случайно окажется заполнен для этой кампании."""
+    if trust_postback_cache:
+        cached = get_cached_postback_status(call_id)
+        if cached is not None:
+            return cached
 
     from database.requests import get_zvonok_public_key
 

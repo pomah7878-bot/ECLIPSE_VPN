@@ -1763,16 +1763,26 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
     from database.requests import get_zvonok_verification_method
     import bot.services.zvonok_verification as zv
 
-    if get_zvonok_verification_method() == "voice_code":
-        # Здесь клиент присылает то, что ему продиктовал робот — сверяем
-        # ЛОКАЛЬНО с тем, что мы сами получили при инициации звонка
-        # (не требует похода к API Zvonok).
+    method = get_zvonok_verification_method()
+    if method in ("voice_code", "flashcall_real"):
+        # Здесь клиент присылает то, что ему продиктовал робот, либо
+        # последние 4 цифры номера, с которого поступил звонок —
+        # сверяем ЛОКАЛЬНО с тем, что мы сами получили при инициации
+        # звонка (не требует похода к API Zvonok).
         entered_code = (body.get("entered_code") or "").strip()
         if not entered_code:
-            return web.json_response({"status": "ok", "verified": False, "message": "Введите код, который продиктовал робот."})
+            msg = "Введите код, который продиктовал робот." if method == "voice_code" else "Введите 4 цифры номера, с которого поступил звонок."
+            return web.json_response({"status": "ok", "verified": False, "message": msg})
         confirmed = zv.check_voice_code(call_id, entered_code)
     else:
-        confirmed = await zv.check_phone_confirmation(call_id)
+        # Кэшу постбека доверяем ТОЛЬКО для flash_call ("Звонок на
+        # проверочный номер") — там "Успешный дозвон" на стороне Zvonok
+        # действительно означает "подтверждено". Для методов с кодом/
+        # цифрой (pincode, press_digit) "Успешный дозвон" может
+        # означать лишь "абонент ответил", а НЕ "ввёл верный код" —
+        # доверять кэшу здесь опасно, даже если постбек для этой
+        # кампании случайно окажется настроен.
+        confirmed = await zv.check_phone_confirmation(call_id, trust_postback_cache=(method == "flash_call"))
 
     if not confirmed:
         return web.json_response({"status": "ok", "verified": False})
@@ -2048,13 +2058,17 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     from database.requests import get_zvonok_verification_method
     import bot.services.zvonok_verification as zv
 
-    if get_zvonok_verification_method() == "voice_code":
+    method2 = get_zvonok_verification_method()
+    if method2 in ("voice_code", "flashcall_real"):
         entered_code = (body.get("entered_code") or "").strip()
         if not entered_code:
-            return web.json_response({"ok": True, "verified": False, "message": "Введите код, который продиктовал робот."})
+            msg = "Введите код, который продиктовал робот." if method2 == "voice_code" else "Введите 4 цифры номера, с которого поступил звонок."
+            return web.json_response({"ok": True, "verified": False, "message": msg})
         confirmed = zv.check_voice_code(call_id, entered_code)
     else:
-        confirmed = await zv.check_phone_confirmation(call_id)
+        # См. подробный комментарий в handle_public_auth_phone_check —
+        # кэшу постбека доверяем только для flash_call.
+        confirmed = await zv.check_phone_confirmation(call_id, trust_postback_cache=(method2 == "flash_call"))
     if not confirmed:
         return web.json_response({"ok": True, "verified": False})
 
