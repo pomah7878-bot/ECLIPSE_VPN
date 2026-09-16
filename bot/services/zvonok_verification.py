@@ -133,19 +133,19 @@ async def request_phone_confirmation_flashcall_real(phone: str) -> Optional[Dict
     import aiohttp
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                BASE_URL + "phones/confirm/",
-                data={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
+            async with session.get(
+                BASE_URL + "phones/flashcall/",
+                params={"public_key": public_key, "campaign_id": campaign_id, "phone": phone},
                 timeout=aiohttp.ClientTimeout(total=10),
                 proxy=_get_proxy(),
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (Flash Call): {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/flashcall/ (Flash Call): {e}")
         return None
 
     if result.get("status") != "ok":
-        logger.warning(f"Zvonok: phones/confirm/ (Flash Call) вернул ошибку: {result}")
+        logger.warning(f"Zvonok: phones/flashcall/ вернул ошибку: {result}")
         return None
 
     data = result.get("data") or {}
