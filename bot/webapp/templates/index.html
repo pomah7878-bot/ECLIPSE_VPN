@@ -746,7 +746,7 @@
                     box.innerHTML = '<p class="text-sm text-mist py-6">Тарифы сейчас недоступны.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
                     return;
                 }
-                let html = '<h3 class="font-display text-base font-bold mb-1">Выберите тариф</h3><p class="text-xs text-mist mb-4">Оплата 💳 или через <img src="/static/sbp.svg" class="inline-block h-3 align-text-bottom" alt="СБП"></p><div class="space-y-2">';
+                let html = '<h3 class="font-display text-base font-bold mb-1">Выберите тариф</h3><p class="text-xs text-mist mb-4">Оплата 💳 или через СБП <img src="/static/sbp.svg" class="inline-block h-3 align-text-bottom" alt="СБП"></p><div class="space-y-2">';
                 tariffs.forEach(t => {
                     const currentBadge = t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : '';
                     const currentClass = t.is_current ? ' ring-2 ring-teal' : '';
