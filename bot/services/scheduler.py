@@ -236,6 +236,26 @@ async def collect_daily_stats() -> str:
     if payments_stars > 0:
         payments_text.append(f"⭐{payments_stars}")
     payments_sum = " + ".join(payments_text) if payments_text else "0"
+
+    # Разбивка по каналу продажи — бот отдельно от сайта (запрошено
+    # Романом: раньше суточная статистика показывала только общий
+    # итог, не было видно, сколько именно купили на сайте).
+    def _fmt_payment_sum(cents_v, rub_v, stars_v):
+        parts = []
+        if cents_v > 0:
+            parts.append(f"${cents_v / 100:g}".replace('.', ','))
+        if rub_v > 0:
+            parts.append(f"{rub_v:g}".replace('.', ',') + " ₽")
+        if stars_v > 0:
+            parts.append(f"⭐{stars_v}")
+        return " + ".join(parts) if parts else "0"
+
+    bot_count = payments.get('bot_count', 0)
+    bot_sum = _fmt_payment_sum(
+        payments.get('bot_cents', 0), payments.get('bot_rub', 0), payments.get('bot_stars', 0)
+    )
+    site_count = payments.get('site_count', 0)
+    site_sum = _fmt_payment_sum(0, payments.get('site_rub', 0), 0)
     
     report = f"""📊 <b>Суточная статистика за {today}</b>
 
@@ -251,9 +271,10 @@ async def collect_daily_stats() -> str:
   Создано за сутки: {keys.get('created_today', 0)}
 
 💳 <b>Платежи за сутки:</b>
-  Успешных: {payments_total}
+  🤖 Бот: {bot_count} · {bot_sum}
+  🌐 Сайт: {site_count} · {site_sum}
   Ожидающих: {payments_pending}
-  Сумма: {payments_sum}
+  Итого: {payments_total} · {payments_sum}
 
 🖥️ <b>Серверы:</b>
 {servers_text}
