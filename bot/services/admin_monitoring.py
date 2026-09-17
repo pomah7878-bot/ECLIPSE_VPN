@@ -73,6 +73,25 @@ def _format_payments_sum(payments: Dict[str, Any]) -> str:
     return " + ".join(parts) if parts else "0"
 
 
+def _format_payment_parts(cents: Any = 0, rub: Any = 0, stars: Any = 0) -> str:
+    """То же форматирование, что и _format_payments_sum, но принимает
+    явные значения — нужно для раздельного вывода бот/сайт, где у сайта
+    есть только rub (нет cents/stars)."""
+    parts: List[str] = []
+    cents_v = _safe_int(cents)
+    rub_v = _safe_float(rub, 0) or 0
+    stars_v = _safe_int(stars)
+
+    if cents_v > 0:
+        parts.append(f"${cents_v / 100:g}".replace(".", ","))
+    if rub_v > 0:
+        parts.append(f"{rub_v:g}".replace(".", ",") + " ₽")
+    if stars_v > 0:
+        parts.append(f"⭐{stars_v}")
+
+    return " + ".join(parts) if parts else "0"
+
+
 def _format_rate_pair(up: Any, down: Any) -> str:
     up_value = _safe_int(up)
     down_value = _safe_int(down)
@@ -356,8 +375,9 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
         [
             "",
             "💰 <b>За 24 часа</b>",
-            f"Оплат: {payments.get('paid_count', 0)}",
-            f"Сумма: {_format_payments_sum(payments)}",
+            f"🤖 Бот: {payments.get('bot_count', 0)} · {_format_payment_parts(payments.get('bot_cents', 0), payments.get('bot_rub', 0), payments.get('bot_stars', 0))}",
+            f"🌐 Сайт: {payments.get('site_count', 0)} · {_format_payment_parts(0, payments.get('site_rub', 0), 0)}",
+            f"Итого: {payments.get('paid_count', 0)} · {_format_payments_sum(payments)}",
             "",
             "👥 <b>Клиенты</b>",
             f"Всего: {users.get('total', 0)}",
