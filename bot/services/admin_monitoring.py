@@ -379,7 +379,7 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
             "💰 <b>Оплаты за 24 часа</b>",
             f"🤖 Бот: <b>{payments.get('bot_count', 0)}</b> · {_format_payment_parts(payments.get('bot_cents', 0), payments.get('bot_rub', 0), payments.get('bot_stars', 0))}",
             f"🌐 Сайт: <b>{payments.get('site_count', 0)}</b> · {_format_payment_parts(0, payments.get('site_rub', 0), 0)}",
-            f"▫️ Итого: <b>{payments.get('paid_count', 0)}</b> · {_format_payments_sum(payments)}",
+            f"➤ Итого: <b>{payments.get('paid_count', 0)}</b> · {_format_payments_sum(payments)}",
             divider,
             "👥 <b>Клиенты</b>",
             f"Всего: <b>{users.get('total', 0)}</b>  •  Активных: <b>{users.get('active', 0)}</b>",
