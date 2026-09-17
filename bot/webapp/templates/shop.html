@@ -656,6 +656,16 @@
         function showPaySuccess(pay) {
             const box = document.getElementById('payContent');
             const claimLink = `https://t.me/${BOT_USERNAME}?start=claim_${encodeURIComponent(pay.claim_code)}`;
+            // Запоминаем код в этом браузере — если клиент оплатил, не
+            // войдя на сайт заранее, а позже зайдёт через Google/Яндекс
+            // на ЭТОМ ЖЕ устройстве, автоматически привяжем покупку к
+            // аккаунту без необходимости вручную искать и вводить код.
+            // Найдено на практике (Артём — "у клиента не появился ключ
+            // в личном кабинете" — клиент оплатил анонимно, залогинился
+            // позже, покупка осталась непривязанной).
+            try {
+                localStorage.setItem('eclipse_pending_claim_code', pay.claim_code);
+            } catch (e) { /* localStorage недоступен — не критично, останется ручной код */ }
             let subBlock = '';
             if (pay.sub_url) {
                 subBlock = `
@@ -728,6 +738,29 @@
             if (window.location.hash === '#account') {
                 switchTab('account');
             }
+            tryAutoClaimPendingCode();
+        }
+
+        async function tryAutoClaimPendingCode() {
+            // Если в этом браузере сохранён код от анонимной покупки,
+            // сделанной до входа на сайт — привязываем его автоматически,
+            // без участия клиента.
+            let pendingCode;
+            try {
+                pendingCode = localStorage.getItem('eclipse_pending_claim_code');
+            } catch (e) { return; }
+            if (!pendingCode) return;
+            try {
+                const res = await postAPI('account/link-code', { code: pendingCode });
+                if (res.ok) {
+                    showToast('Ваша предыдущая покупка привязана к аккаунту!');
+                    const sessionRes = await fetchAPI('account/session');
+                    renderAccountData(sessionRes);
+                }
+            } catch (e) { /* тихо — код мог уже быть привязан ранее, это не ошибка */ }
+            try {
+                localStorage.removeItem('eclipse_pending_claim_code');
+            } catch (e) {}
         }
 
         async function loadAndRenderReferralBlock() {
