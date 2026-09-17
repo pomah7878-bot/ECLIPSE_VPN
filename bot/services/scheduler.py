@@ -272,7 +272,7 @@ async def collect_daily_stats() -> str:
 💳 <b>Платежи за сутки</b>
 🤖 Бот: <b>{bot_count}</b> · {bot_sum}
 🌐 Сайт: <b>{site_count}</b> · {site_sum}
-▫️ Итого: <b>{payments_total}</b> · {payments_sum} <i>(ожидают: {payments_pending})</i>
+➤ Итого: <b>{payments_total}</b> · {payments_sum} <i>(ожидают: {payments_pending})</i>
 {divider}
 🖥️ <b>Серверы</b>
 {servers_text}
