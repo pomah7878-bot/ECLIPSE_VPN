@@ -257,26 +257,24 @@ async def collect_daily_stats() -> str:
     site_count = payments.get('site_count', 0)
     site_sum = _fmt_payment_sum(0, payments.get('site_rub', 0), 0)
     
-    report = f"""📊 <b>Суточная статистика за {today}</b>
+    divider = "━━━━━━━━━━━━━━━━━━━━"
 
-👥 <b>Пользователи:</b>
-  Всего: {users.get('total', 0)}
-  Активных: {users.get('active', 0)}
-  Новых за сутки: {new_users}
+    report = f"""📊 <b>Суточная статистика</b> · {today}
+{divider}
+👥 <b>Пользователи</b>
+Всего: <b>{users.get('total', 0)}</b>  •  Активных: <b>{users.get('active', 0)}</b>
+Новых за сутки: <b>{new_users}</b>
 
-🔑 <b>VPN-ключи:</b>
-  Всего: {keys.get('total', 0)}
-  Активных: {keys.get('active', 0)}
-  Истёкших: {keys.get('expired', 0)}
-  Создано за сутки: {keys.get('created_today', 0)}
-
-💳 <b>Платежи за сутки:</b>
-  🤖 Бот: {bot_count} · {bot_sum}
-  🌐 Сайт: {site_count} · {site_sum}
-  Ожидающих: {payments_pending}
-  Итого: {payments_total} · {payments_sum}
-
-🖥️ <b>Серверы:</b>
+🔑 <b>VPN-ключи</b>
+Всего: <b>{keys.get('total', 0)}</b>  •  Активных: <b>{keys.get('active', 0)}</b>
+Истёкших: <b>{keys.get('expired', 0)}</b>  •  Создано за сутки: <b>{keys.get('created_today', 0)}</b>
+{divider}
+💳 <b>Платежи за сутки</b>
+🤖 Бот: <b>{bot_count}</b> · {bot_sum}
+🌐 Сайт: <b>{site_count}</b> · {site_sum}
+▫️ Итого: <b>{payments_total}</b> · {payments_sum} <i>(ожидают: {payments_pending})</i>
+{divider}
+🖥️ <b>Серверы</b>
 {servers_text}
 """
     return report

@@ -371,22 +371,22 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
     users = snapshot.get("users", {})
     keys = snapshot.get("keys", {})
 
+    divider = "━━━━━━━━━━━━━━━━━━━━"
+
     lines.extend(
         [
-            "",
-            "💰 <b>За 24 часа</b>",
-            f"🤖 Бот: {payments.get('bot_count', 0)} · {_format_payment_parts(payments.get('bot_cents', 0), payments.get('bot_rub', 0), payments.get('bot_stars', 0))}",
-            f"🌐 Сайт: {payments.get('site_count', 0)} · {_format_payment_parts(0, payments.get('site_rub', 0), 0)}",
-            f"Итого: {payments.get('paid_count', 0)} · {_format_payments_sum(payments)}",
-            "",
+            divider,
+            "💰 <b>Оплаты за 24 часа</b>",
+            f"🤖 Бот: <b>{payments.get('bot_count', 0)}</b> · {_format_payment_parts(payments.get('bot_cents', 0), payments.get('bot_rub', 0), payments.get('bot_stars', 0))}",
+            f"🌐 Сайт: <b>{payments.get('site_count', 0)}</b> · {_format_payment_parts(0, payments.get('site_rub', 0), 0)}",
+            f"▫️ Итого: <b>{payments.get('paid_count', 0)}</b> · {_format_payments_sum(payments)}",
+            divider,
             "👥 <b>Клиенты</b>",
-            f"Всего: {users.get('total', 0)}",
-            f"Активных: {users.get('active', 0)}",
-            f"Новых за 24 часа: {snapshot.get('new_users', 0)}",
-            "",
+            f"Всего: <b>{users.get('total', 0)}</b>  •  Активных: <b>{users.get('active', 0)}</b>",
+            f"Новых за 24 часа: <b>{snapshot.get('new_users', 0)}</b>",
+            divider,
             "🔑 <b>Ключи</b>",
-            f"Активных: {keys.get('active', 0)}",
-            f"Истекают за 24 часа: {snapshot.get('expiring_24h', 0)}",
+            f"Активных: <b>{keys.get('active', 0)}</b>  •  Истекают за 24 часа: <b>{snapshot.get('expiring_24h', 0)}</b>",
         ]
     )
 
