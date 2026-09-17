@@ -426,6 +426,11 @@ def get_daily_payments_stats() -> Dict[str, Any]:
         """)
         site_row = cursor.fetchone()
 
+        # Разбивка по каналу продажи — бот отдельно от сайта
+        # (запрошено Романом для суточной статистики).
+        site_count = site_row['count'] if site_row else 0
+        site_total_rub = site_row['total_rub'] if site_row else 0
+
         paid_count = (crypto_row['count'] if crypto_row else 0) + \
                      (stars_row['count'] if stars_row else 0) + \
                      (cards_row['count'] if cards_row else 0) + \
@@ -442,13 +447,22 @@ def get_daily_payments_stats() -> Dict[str, Any]:
                     (platega_row['total_rub'] if platega_row else 0) + \
                     (cardlink_row['total_rub'] if cardlink_row else 0) + \
                     (site_row['total_rub'] if site_row else 0)
+
+        bot_count = paid_count - site_count
+        bot_total_rub = total_rub - site_total_rub
         
         return {
             'paid_count': paid_count,
             'paid_cents': total_cents,
             'paid_stars': total_stars,
             'paid_rub': total_rub,
-            'pending_count': 0 
+            'pending_count': 0,
+            'bot_count': bot_count,
+            'bot_cents': total_cents,
+            'bot_stars': total_stars,
+            'bot_rub': bot_total_rub,
+            'site_count': site_count,
+            'site_rub': site_total_rub,
         }
 
 def get_key_payments_history(key_id: int) -> List[Dict[str, Any]]:
