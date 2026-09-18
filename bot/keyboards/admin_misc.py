@@ -76,6 +76,10 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
         # инсталляциях (с заданным LICENSE_KEY) кнопка не нужна — они
         # не выдают лицензии другим.
         builder.row(InlineKeyboardButton(text='🔑 Лицензии партнёров', callback_data='admin_licenses'))
+    else:
+        # Обратная сторона — на партнёрской инсталляции показываем
+        # кнопку проверки/покупки СВОЕЙ лицензии вместо панели выдачи.
+        builder.row(InlineKeyboardButton(text='💳 Моя лицензия', callback_data='my_license'))
     builder.row(home_button())
     return builder.as_markup()
 

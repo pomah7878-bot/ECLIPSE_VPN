@@ -87,3 +87,12 @@ def license_cancel_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(back_button('admin_licenses'))
     return builder.as_markup()
+
+
+def my_license_kb(buy_deep_link: str) -> InlineKeyboardMarkup:
+    """Клавиатура партнёрской (обратной) стороны — «Моя лицензия»."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="💳 Купить / продлить", url=buy_deep_link))
+    builder.row(InlineKeyboardButton(text="🔄 Обновить статус", callback_data="my_license_refresh"))
+    builder.row(back_button('admin_panel'), home_button())
+    return builder.as_markup()
