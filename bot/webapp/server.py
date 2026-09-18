@@ -1882,6 +1882,25 @@ async def handle_public_account_oauth_exchange(request: web.Request) -> web.Resp
     return resp
 
 
+async def handle_license_check(request: web.Request) -> web.Response:
+    """POST /api/license/check — эндпоинт лицензионного сервера (работает
+    на ГЛАВНОЙ инсталляции). Клиентские боты whitelabel-партнёров стучатся
+    сюда своим license_key, чтобы узнать текущий тариф (basic/full) и срок
+    действия. Body JSON: {"license_key": "ECLW-XXXX-XXXX-XXXX"}."""
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"valid": False, "message": "Некорректный запрос."}, status=400)
+
+    license_key = (data.get("license_key") or "").strip()
+    if not license_key:
+        return web.json_response({"valid": False, "message": "Не передан license_key."}, status=400)
+
+    from database.db_licenses import check_license_validity
+    result = check_license_validity(license_key)
+    return web.json_response(result)
+
+
 async def handle_public_account_claim_purchase(request: web.Request) -> web.Response:
     """POST /api/public/account/claim-purchase — для УЖЕ залогиненного (через
     OAuth/телефон) аккаунта: привязывает к нему покупку с сайта по её
@@ -2731,9 +2750,48 @@ async def cors_middleware(request: web.Request, handler):
 # App factory
 # ============================================================
 
+_LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
+    "/happ-sub/",
+    "/import",
+    "/api/status",
+    "/api/ping",
+    "/api/license/",
+    "/static/",
+    "/favicon.ico",
+)
+
+
+@web.middleware
+async def license_gate_middleware(request: web.Request, handler):
+    """Блокирует доступ к сайту/личному кабинету (шоп, оплата, аккаунт),
+    если у whitelabel-партнёра нет активной лицензии полного тарифа —
+    см. bot/services/license.py. Доставка подписки для уже оплативших
+    клиентов (см. _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES) НИКОГДА не
+    блокируется вне зависимости от статуса лицензии."""
+    path = request.path
+    if any(path.startswith(prefix) for prefix in _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES):
+        return await handler(request)
+
+    from bot.services.license import is_feature_available
+    if not is_feature_available("site_webapp"):
+        if path.startswith("/api/"):
+            return web.json_response(
+                {"error": "feature_unavailable", "message": "Сайт временно недоступен."},
+                status=503,
+            )
+        return web.Response(
+            text="<html><body style='font-family:sans-serif;text-align:center;padding:60px;'>"
+                 "<h2>Сайт временно недоступен</h2></body></html>",
+            content_type="text/html",
+            status=503,
+        )
+
+    return await handler(request)
+
+
 def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
-    app = web.Application(middlewares=[cors_middleware])
+    app = web.Application(middlewares=[cors_middleware, license_gate_middleware])
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
     app.router.add_get("/favicon.ico", handle_favicon)
@@ -2772,6 +2830,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/link-phone-check", handle_public_account_link_phone_check)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
+    app.router.add_post("/api/license/check", handle_license_check)
     app.router.add_post("/api/public/account/claim-purchase", handle_public_account_claim_purchase)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)

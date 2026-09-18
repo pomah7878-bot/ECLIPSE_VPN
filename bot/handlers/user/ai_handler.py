@@ -147,6 +147,11 @@ class AIChatStates(StatesGroup):
 @router.message(Command("ai"))
 async def ai_command(message: Message, command: CommandObject, state: FSMContext):
     """Handle /ai command"""
+    from bot.services.license import is_feature_available, FEATURE_UPGRADE_MESSAGE
+    if not is_feature_available("ai_assistant"):
+        await message.answer(FEATURE_UPGRADE_MESSAGE, parse_mode="HTML")
+        return
+
     user_id = message.from_user.id
     
     if command.args:
@@ -289,6 +294,11 @@ async def ai_feedback_handler(query: CallbackQuery):
 @router.callback_query(F.data == "ai_support_open")
 async def ai_support_open_handler(query: CallbackQuery, state: FSMContext):
     """Открыть AI-помощника по кнопке главного меню."""
+    from bot.services.license import is_feature_available, FEATURE_UPGRADE_MESSAGE
+    if not is_feature_available("ai_assistant"):
+        await query.answer("Эта функция доступна в полном тарифе", show_alert=True)
+        return
+
     await state.set_state(AIChatStates.waiting_for_question)
     await query.answer()
     await query.message.answer(

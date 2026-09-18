@@ -96,6 +96,11 @@ async def show_marketing_menu(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
+    from bot.services.license import is_feature_available, FEATURE_UPGRADE_MESSAGE
+    if not is_feature_available("broadcast_marketing"):
+        await callback.answer("Эта функция доступна в полном тарифе", show_alert=True)
+        return
+
     await state.set_state(AdminStates.admin_menu)
 
     text = (
