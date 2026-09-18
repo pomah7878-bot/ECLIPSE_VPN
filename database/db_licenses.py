@@ -205,3 +205,46 @@ def get_abandoned_license_purchases(older_than_minutes: int = 5) -> List[Dict[st
             (older_than_minutes,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ============================================================================
+# РЕДАКТИРОВАНИЕ ТАРИФОВ НА ЛИЦЕНЗИИ (все поля + активация/деактивация)
+# ============================================================================
+
+def update_license_tariff_field(tariff_id: int, field: str, value) -> bool:
+    """Обновляет ОДНО поле тарифа. field должно быть из белого списка —
+    защита от SQL-инъекции через имя столбца."""
+    allowed_fields = {"name", "tier", "duration_days", "price_rub", "is_active", "display_order"}
+    if field not in allowed_fields:
+        raise ValueError(f"Недопустимое поле для обновления: {field}")
+    with get_db() as conn:
+        cursor = conn.execute(
+            f"UPDATE license_tariffs SET {field} = ? WHERE id = ?",
+            (value, tariff_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def get_all_license_tariffs() -> List[Dict[str, Any]]:
+    """В отличие от get_active_license_tariffs — возвращает ВСЕ тарифы,
+    включая деактивированные (для экрана управления)."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM license_tariffs ORDER BY display_order, price_rub"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def activate_license_tariff(tariff_id: int) -> bool:
+    with get_db() as conn:
+        cursor = conn.execute("UPDATE license_tariffs SET is_active = 1 WHERE id = ?", (tariff_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def delete_license_tariff(tariff_id: int) -> bool:
+    with get_db() as conn:
+        cursor = conn.execute("DELETE FROM license_tariffs WHERE id = ?", (tariff_id,))
+        conn.commit()
+        return cursor.rowcount > 0
