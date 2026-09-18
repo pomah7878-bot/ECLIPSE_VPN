@@ -37,7 +37,13 @@ GATED_FEATURES = {
     "ai_assistant": "🤖 AI-помощник",
     "zvonok_verification": "📞 Верификация по звонку (Zvonok)",
     "site_webapp": "🌐 Сайт/личный кабинет",
-    "broadcast_marketing": "📢 Рассылка/маркетинг",
+    "broadcast_marketing": "📢 Рассылка",
+    "promo_coupons": "🎟 Промокоды и купоны",
+    "custom_app": "📱 Своё Android-приложение",
+    "channel_posts": "📰 Публикация в канал/группу",
+    "trial_period": "🎁 Пробный период (автовыдача)",
+    "referral_system": "🔗 Реферальная система",
+    "app_import": "📲 Импорт в Happ/INCY/Karing",
 }
 
 _GRACE_PERIOD_HOURS = 72

@@ -86,6 +86,10 @@ async def admin_promocodes(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
+    from bot.services.license import is_feature_available, FEATURE_UPGRADE_MESSAGE
+    if not is_feature_available("promo_coupons"):
+        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
+        return
     await state.set_state(AdminStates.admin_menu)
     promocodes = get_promo_codes("promo")
     text = (
@@ -266,6 +270,10 @@ async def admin_promocode_edit_value(message: Message, state: FSMContext):
 async def admin_coupons(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.license import is_feature_available, FEATURE_UPGRADE_MESSAGE
+    if not is_feature_available("promo_coupons"):
+        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
         return
     await state.set_state(AdminStates.admin_menu)
     text = (

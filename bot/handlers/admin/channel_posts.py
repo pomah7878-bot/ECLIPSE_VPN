@@ -57,6 +57,10 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
+    from bot.services.license import is_feature_available
+    if not is_feature_available("channel_posts"):
+        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
+        return
     await state.clear()
     from database.requests import get_marketing_channel_id
     channel_id = get_marketing_channel_id()

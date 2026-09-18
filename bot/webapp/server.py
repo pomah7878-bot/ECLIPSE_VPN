@@ -2680,6 +2680,10 @@ async def handle_index(request: web.Request) -> web.Response:
     )
 async def handle_import(request: web.Request) -> web.Response:
     """GET /import — раздаёт страницу-редирект для импорта подписки в Happ/INCY."""
+    from bot.services.license import is_feature_available
+    if not is_feature_available("app_import"):
+        return web.Response(text="<h1>Страница временно недоступна</h1>", status=503)
+
     import_path = os.path.join(_TEMPLATES_DIR, "import.html")
     if os.path.exists(import_path):
         return web.FileResponse(import_path)
