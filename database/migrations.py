@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 108
+LATEST_VERSION = 109
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2181,6 +2181,31 @@ def migration_108(conn: sqlite3.Connection) -> None:
     logger.info("Migration v108 applied: таблицы license_tariffs и license_purchases созданы")
 
 
+def migration_109(conn: sqlite3.Connection) -> None:
+    """Migration v109: добавляет поле features (список функций через
+    запятую — 'ai_assistant,zvonok_verification,...') в partner_licenses
+    и license_tariffs. Раньше был жёсткий выбор из двух готовых наборов
+    (basic/full) — теперь администратор вручную выбирает ЛЮБОЙ набор из
+    доступных функций для каждой конкретной лицензии/тарифа. Колонка
+    tier сохраняется для обратной совместимости со старыми записями
+    (basic → пустой набор, full → все функции), но новый код опирается
+    на features."""
+    try:
+        conn.execute("ALTER TABLE partner_licenses ADD COLUMN features TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass  # колонка уже существует (повторный прогон миграции)
+    try:
+        conn.execute("ALTER TABLE license_tariffs ADD COLUMN features TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+
+    # Переносим старые записи: tier='full' -> все функции, tier='basic' -> пусто
+    all_features = "ai_assistant,zvonok_verification,site_webapp,broadcast_marketing"
+    conn.execute("UPDATE partner_licenses SET features = ? WHERE tier = 'full' AND (features IS NULL OR features = '')", (all_features,))
+    conn.execute("UPDATE license_tariffs SET features = ? WHERE tier = 'full' AND (features IS NULL OR features = '')", (all_features,))
+    logger.info("Migration v109 applied: добавлено поле features, старые basic/full перенесены")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2217,6 +2242,7 @@ MIGRATIONS = {
     106: migration_106,
     107: migration_107,
     108: migration_108,
+    109: migration_109,
 }
 
 

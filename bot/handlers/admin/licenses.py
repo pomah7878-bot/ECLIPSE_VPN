@@ -14,8 +14,9 @@ from bot.keyboards.admin_licenses import (
     licenses_menu_kb, license_detail_kb, license_deactivate_confirm_kb,
     license_create_tier_kb, license_create_duration_kb, license_tariffs_menu_kb,
     license_cancel_kb, my_license_kb, license_tariff_detail_kb,
-    license_tariff_delete_confirm_kb, license_tariff_edit_tier_kb,
+    license_tariff_delete_confirm_kb, license_tariff_edit_features_kb,
     license_tariff_edit_duration_kb, license_tariff_edit_cancel_kb,
+    license_features_edit_kb, feature_checkboxes_kb,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,22 +62,29 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext):
 
     license_key = callback.data.split(":", 1)[1]
     from database.db_licenses import get_partner_license
+    from bot.services.license import features_from_str, GATED_FEATURES
+
     lic = get_partner_license(license_key)
     if not lic:
         await callback.answer("❌ Лицензия не найдена (возможно, удалена).", show_alert=True)
         return
 
     status_text = "✅ Активна" if lic["is_active"] else "🚫 Деактивирована"
-    tier_text = "💎 Полный" if lic["tier"] == "full" else "🔹 Базовый"
     expires_text = lic["expires_at"] or "бессрочно"
+
+    enabled = features_from_str(lic.get("features"))
+    if enabled:
+        features_list = "\n".join(f"  ✅ {GATED_FEATURES[k]}" for k in GATED_FEATURES if k in enabled)
+    else:
+        features_list = "  (нет платных функций)"
 
     text = (
         f"🔑 <b>{lic['partner_name']}</b>\n\n"
         f"Статус: {status_text}\n"
-        f"Тариф: {tier_text}\n"
         f"Действует до: {expires_text}\n"
         f"Ключ: <code>{lic['license_key']}</code>\n"
-        f"Создана: {lic['created_at']}"
+        f"Создана: {lic['created_at']}\n\n"
+        f"Функции:\n{features_list}"
     )
     if lic.get("notes"):
         text += f"\n\nЗаметка: {lic['notes']}"
@@ -103,18 +111,51 @@ async def extend_license_action(callback: CallbackQuery):
     await show_license_detail(callback, None)
 
 
-@router.callback_query(F.data.startswith("license_set_tier:"))
-async def set_license_tier_action(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("license_features_edit:"))
+async def license_features_edit_start(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    _, license_key, new_tier = callback.data.split(":")
-    from database.db_licenses import set_partner_license_tier
-    set_partner_license_tier(license_key, new_tier)
-    await callback.answer(f"✅ Тариф изменён на {new_tier}")
-    callback.data = f"license_view:{license_key}"
-    await show_license_detail(callback, None)
+    license_key = callback.data.split(":", 1)[1]
+    from database.db_licenses import get_partner_license
+    from bot.services.license import features_from_str
+    from bot.keyboards.admin_licenses import license_features_edit_kb
+
+    lic = get_partner_license(license_key)
+    if not lic:
+        await callback.answer("❌ Лицензия не найдена.", show_alert=True)
+        return
+
+    selected = features_from_str(lic.get("features"))
+    await safe_edit_or_send(
+        callback.message,
+        f"🔧 <b>Функции лицензии — {lic['partner_name']}</b>\n\nНажимайте, чтобы включить/выключить:",
+        reply_markup=license_features_edit_kb(license_key, selected),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_toggle_feature:"))
+async def license_toggle_feature_action(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    _, license_key, feature = callback.data.split(":")
+    from database.db_licenses import toggle_license_feature
+    from bot.keyboards.admin_licenses import license_features_edit_kb
+    from database.db_licenses import get_partner_license
+
+    new_selected = toggle_license_feature(license_key, feature)
+    await callback.answer()
+
+    lic = get_partner_license(license_key)
+    await safe_edit_or_send(
+        callback.message,
+        f"🔧 <b>Функции лицензии — {lic['partner_name']}</b>\n\nНажимайте, чтобы включить/выключить:",
+        reply_markup=license_features_edit_kb(license_key, new_selected),
+    )
 
 
 @router.callback_query(F.data.startswith("license_deactivate_confirm:"))
@@ -181,44 +222,91 @@ async def license_create_name_entered(message: Message, state: FSMContext):
     except Exception:
         pass
 
-    await state.update_data(license_partner_name=partner_name)
+    await state.update_data(license_partner_name=partner_name, selected_features=[])
     await message.answer(
-        f"Партнёр: <b>{partner_name}</b>\n\nВыберите тариф:",
+        f"Партнёр: <b>{partner_name}</b>\n\nВыберите функции, которые войдут в лицензию:",
         parse_mode="HTML",
-        reply_markup=license_create_tier_kb(),
+        reply_markup=license_create_tier_kb(set()),
     )
 
 
-@router.callback_query(F.data.startswith("license_create_tier:"))
-async def license_create_tier_selected(callback: CallbackQuery, state: FSMContext):
-    """Общий обработчик выбора тарифа — используется и в потоке выдачи
-    лицензии напрямую, и в потоке создания тарифа на продажу. Различает
-    их по флагу license_flow в данных состояния (устанавливается тем
-    потоком, который открыл этот экран)."""
+@router.callback_query(F.data.startswith("license_create_toggle_feature:"))
+async def license_create_toggle_feature(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
+    feature = callback.data.split(":", 1)[1]
     data = await state.get_data()
-    tier = callback.data.split(":", 1)[1]
+    selected = set(data.get("selected_features", []))
+    if feature in selected:
+        selected.discard(feature)
+    else:
+        selected.add(feature)
+    await state.update_data(selected_features=list(selected))
 
-    if data.get("license_flow") == "tariff_create":
-        await state.update_data(license_tariff_tier=tier)
-        await state.set_state(AdminStates.license_tariff_create_price)
-        await safe_edit_or_send(
-            callback.message,
-            "Введите цену в рублях (например: 5000):",
-            reply_markup=license_cancel_kb(),
-        )
-        await callback.answer()
-        return
-
-    await state.update_data(license_tier=tier)
-    tier_label = "Полный" if tier == "full" else "Базовый"
     await safe_edit_or_send(
         callback.message,
-        f"Тариф: <b>{tier_label}</b>\n\nНа какой срок?",
+        "Выберите функции, которые войдут в лицензию:",
+        reply_markup=license_create_tier_kb(selected),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "license_create_features_done")
+async def license_create_features_done(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await safe_edit_or_send(
+        callback.message,
+        "На какой срок выдать лицензию?",
         reply_markup=license_create_duration_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_tariff_create_toggle_feature:"))
+async def license_tariff_create_toggle_feature(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    feature = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    selected = set(data.get("selected_features", []))
+    if feature in selected:
+        selected.discard(feature)
+    else:
+        selected.add(feature)
+    await state.update_data(selected_features=list(selected))
+
+    from bot.keyboards.admin_licenses import feature_checkboxes_kb
+    await safe_edit_or_send(
+        callback.message,
+        "Выберите функции, которые войдут в этот тариф на продажу:",
+        reply_markup=feature_checkboxes_kb(
+            selected,
+            toggle_prefix="license_tariff_create_toggle_feature",
+            done_callback="license_tariff_create_features_done",
+            back_callback="admin_licenses",
+        ),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "license_tariff_create_features_done")
+async def license_tariff_create_features_done(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.license_tariff_create_price)
+    await safe_edit_or_send(
+        callback.message,
+        "Введите цену в рублях (например: 5000):",
+        reply_markup=license_cancel_kb(),
     )
     await callback.answer()
 
@@ -232,23 +320,28 @@ async def license_create_duration_selected(callback: CallbackQuery, state: FSMCo
     duration_days = int(callback.data.split(":", 1)[1]) or None  # 0 → бессрочно (None)
     data = await state.get_data()
     partner_name = data.get("license_partner_name")
-    tier = data.get("license_tier")
+    selected_features = set(data.get("selected_features", []))
 
-    if not partner_name or not tier:
+    if not partner_name:
         await callback.answer("❌ Данные потеряны, начните заново.", show_alert=True)
         return
 
     from database.db_licenses import create_partner_license
-    license_key = create_partner_license(partner_name, tier, duration_days)
+    from bot.services.license import GATED_FEATURES
+
+    license_key = create_partner_license(partner_name, selected_features, duration_days)
 
     await state.set_state(AdminStates.admin_menu)
     duration_text = f"{duration_days} дней" if duration_days else "бессрочно"
-    tier_label = "Полный" if tier == "full" else "Базовый"
+    if selected_features:
+        features_text = ", ".join(GATED_FEATURES[k] for k in GATED_FEATURES if k in selected_features)
+    else:
+        features_text = "нет платных функций"
     await safe_edit_or_send(
         callback.message,
         f"✅ <b>Лицензия создана</b>\n\n"
         f"Партнёр: {partner_name}\n"
-        f"Тариф: {tier_label}\n"
+        f"Функции: {features_text}\n"
         f"Срок: {duration_text}\n\n"
         f"Ключ (отправьте партнёру для вставки в его secrets.env как LICENSE_KEY):\n"
         f"<code>{license_key}</code>",
@@ -306,17 +399,19 @@ async def license_tariff_create_name_entered(message: Message, state: FSMContext
     except Exception:
         pass
 
-    await state.update_data(license_tariff_name=name)
+    from bot.keyboards.admin_licenses import feature_checkboxes_kb
+    await state.update_data(license_tariff_name=name, selected_features=[])
     await state.set_state(AdminStates.admin_menu)
     await message.answer(
-        f"Название: <b>{name}</b>\n\nВыберите тариф:",
+        f"Название: <b>{name}</b>\n\nВыберите функции, которые войдут в этот тариф на продажу:",
         parse_mode="HTML",
-        reply_markup=license_create_tier_kb(),
+        reply_markup=feature_checkboxes_kb(
+            set(),
+            toggle_prefix="license_tariff_create_toggle_feature",
+            done_callback="license_tariff_create_features_done",
+            back_callback="admin_licenses",
+        ),
     )
-    # Переиспользуем тот же выбор тарифа, но со своим следующим шагом —
-    # помечаем в data, что это поток создания ТАРИФА НА ПРОДАЖУ, а не
-    # выдачи лицензии напрямую.
-    await state.update_data(license_flow="tariff_create")
 
 
 @router.message(AdminStates.license_tariff_create_price)
@@ -338,10 +433,10 @@ async def license_tariff_create_price_entered(message: Message, state: FSMContex
 
     data = await state.get_data()
     name = data.get("license_tariff_name")
-    tier = data.get("license_tariff_tier")
+    selected_features = set(data.get("selected_features", []))
 
     from database.db_licenses import create_license_tariff
-    create_license_tariff(name, tier, price_rub, duration_days=30)
+    create_license_tariff(name, selected_features, price_rub, duration_days=30)
 
     await state.set_state(AdminStates.admin_menu)
     await message.answer(
@@ -409,15 +504,23 @@ async def refresh_my_license(callback: CallbackQuery):
 # ============================================================================
 
 def _format_tariff_detail_text(t: dict) -> str:
+    from bot.services.license import features_from_str, GATED_FEATURES
+
     duration_text = f"{t['duration_days']} дней" if t["duration_days"] else "бессрочно"
-    tier_label = "💎 Полный" if t["tier"] == "full" else "🔹 Базовый"
     status_text = "✅ Включён (виден в /buy_license)" if t["is_active"] else "🚫 Отключён (скрыт из /buy_license)"
+
+    enabled = features_from_str(t.get("features"))
+    if enabled:
+        features_list = "\n".join(f"  ✅ {GATED_FEATURES[k]}" for k in GATED_FEATURES if k in enabled)
+    else:
+        features_list = "  (нет платных функций)"
+
     return (
         f"🏷 <b>{t['name']}</b>\n\n"
-        f"Тариф: {tier_label}\n"
         f"Срок действия лицензии: {duration_text}\n"
         f"Цена: {t['price_rub']:.0f} ₽\n"
-        f"Статус: {status_text}"
+        f"Статус: {status_text}\n\n"
+        f"Функции:\n{features_list}"
     )
 
 
@@ -569,36 +672,47 @@ async def license_tariff_set_duration(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("license_tariff_edit_tier:"))
-async def license_tariff_edit_tier_start(callback: CallbackQuery):
+async def license_tariff_edit_features_start(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
     tariff_id = int(callback.data.split(":", 1)[1])
+    from database.db_licenses import get_license_tariff_by_id
+    from bot.services.license import features_from_str
+    from bot.keyboards.admin_licenses import license_tariff_edit_features_kb
+
+    t = get_license_tariff_by_id(tariff_id)
+    if not t:
+        await callback.answer("❌ Тариф не найден.", show_alert=True)
+        return
+
+    selected = features_from_str(t.get("features"))
     await safe_edit_or_send(
-        callback.message, "🔄 Выберите новый тариф лицензии (что получит покупатель):",
-        reply_markup=license_tariff_edit_tier_kb(tariff_id),
+        callback.message, "🔧 Выберите функции, которые войдут в этот тариф:",
+        reply_markup=license_tariff_edit_features_kb(tariff_id, selected),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("license_tariff_set_tier:"))
-async def license_tariff_set_tier(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("license_tariff_toggle_feature:"))
+async def license_tariff_toggle_feature_action(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    _, tariff_id_str, tier = callback.data.split(":")
+    _, tariff_id_str, feature = callback.data.split(":")
     tariff_id = int(tariff_id_str)
 
-    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
-    update_license_tariff_field(tariff_id, "tier", tier)
-    await callback.answer("✅ Тариф обновлён")
+    from database.db_licenses import toggle_tariff_feature
+    from bot.keyboards.admin_licenses import license_tariff_edit_features_kb
 
-    t = get_license_tariff_by_id(tariff_id)
+    new_selected = toggle_tariff_feature(tariff_id, feature)
+    await callback.answer()
+
     await safe_edit_or_send(
-        callback.message, _format_tariff_detail_text(t),
-        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+        callback.message, "🔧 Выберите функции, которые войдут в этот тариф:",
+        reply_markup=license_tariff_edit_features_kb(tariff_id, new_selected),
     )
 
 

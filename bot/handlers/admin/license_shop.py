@@ -22,10 +22,18 @@ router = Router()
 
 
 def _license_tariffs_kb(tariffs):
+    from bot.services.license import features_from_str, GATED_FEATURES
+
     builder = InlineKeyboardBuilder()
     for t in tariffs:
         duration_text = f"{t['duration_days']} дн." if t["duration_days"] else "бессрочно"
-        tier_label = "Полный" if t["tier"] == "full" else "Базовый"
+        enabled = features_from_str(t.get("features"))
+        if enabled == set(GATED_FEATURES.keys()):
+            tier_label = "Полный"
+        elif not enabled:
+            tier_label = "Базовый"
+        else:
+            tier_label = f"{len(enabled)} функций"
         builder.row(InlineKeyboardButton(
             text=f"{t['name']} — {tier_label}, {duration_text} — {t['price_rub']:.0f} ₽",
             callback_data=f"buy_license_tariff:{t['id']}",
@@ -140,18 +148,26 @@ async def check_license_payment(callback: CallbackQuery):
         return
 
     tariff = get_license_tariff_by_id(purchase["license_tariff_id"])
+    from bot.services.license import features_from_str, GATED_FEATURES
+
+    tariff_features = features_from_str(tariff.get("features"))
     partner_name = callback.from_user.username or callback.from_user.full_name or f"user_{callback.from_user.id}"
     license_key = create_partner_license(
         partner_name=partner_name,
-        tier=tariff["tier"],
+        features=tariff_features,
         duration_days=tariff["duration_days"],
         notes=f"Куплено через бота, order_id={order_id}",
     )
     complete_license_purchase(order_id, license_key)
 
+    if tariff_features:
+        features_text = ", ".join(GATED_FEATURES[k] for k in GATED_FEATURES if k in tariff_features)
+    else:
+        features_text = "нет платных функций"
+
     await callback.message.answer(
         f"🎉 <b>Оплата прошла успешно!</b>\n\n"
-        f"Ваша лицензия ({'Полный' if tariff['tier'] == 'full' else 'Базовый'} тариф) активирована.\n\n"
+        f"Ваша лицензия включает: {features_text}\n\n"
         f"Ключ лицензии (вставьте в secrets.env вашего бота как <code>LICENSE_KEY</code>):\n"
         f"<code>{license_key}</code>\n\n"
         f"Сохраните этот ключ — он понадобится при настройке вашей инсталляции бота.",
