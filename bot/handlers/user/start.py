@@ -472,6 +472,11 @@ async def _continue_start(
                 force_new=True,
             )
 
+    if args == 'buy_license':
+        from bot.handlers.admin.license_shop import buy_license_cmd
+        await buy_license_cmd(send_target)
+        return
+
     if args and args.startswith('claim_'):
         from bot.services.anonymous_purchase import claim_anonymous_purchase
         from bot.keyboards.admin import home_only_kb

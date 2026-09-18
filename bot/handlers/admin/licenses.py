@@ -13,7 +13,7 @@ from bot.utils.text import safe_edit_or_send
 from bot.keyboards.admin_licenses import (
     licenses_menu_kb, license_detail_kb, license_deactivate_confirm_kb,
     license_create_tier_kb, license_create_duration_kb, license_tariffs_menu_kb,
-    license_cancel_kb,
+    license_cancel_kb, my_license_kb,
 )
 
 logger = logging.getLogger(__name__)
@@ -345,3 +345,58 @@ async def license_tariff_create_price_entered(message: Message, state: FSMContex
     await message.answer(
         f"✅ Тариф «{name}» создан ({price_rub:.0f} ₽, 30 дней). Теперь он виден в /buy_license.",
     )
+
+
+# ============================================================================
+# ОБРАТНАЯ СТОРОНА — «💳 Моя лицензия» (на партнёрской инсталляции, где
+# задан LICENSE_KEY). Показывает СВОЙ статус и ведёт диплинком на
+# покупку/продление в ГЛАВНЫЙ бот, где живут тарифы на лицензии.
+# ============================================================================
+
+def _build_my_license_text() -> str:
+    from bot.services.license import get_license_key, get_license_tier
+    from database.requests import get_setting
+
+    license_key = get_license_key()
+    tier = get_license_tier()
+    tier_label = "💎 Полный" if tier == "full" else "🔹 Базовый"
+    expires_at = get_setting("license_expires_at", "") or "бессрочно"
+    partner_name = get_setting("license_partner_name", "") or "—"
+    checked_at = get_setting("license_checked_at", "") or "ещё не проверялась"
+
+    return (
+        f"💳 <b>Моя лицензия</b>\n\n"
+        f"Ключ: <code>{license_key}</code>\n"
+        f"Партнёр: {partner_name}\n"
+        f"Текущий тариф: {tier_label}\n"
+        f"Действует до: {expires_at}\n"
+        f"Последняя проверка: {checked_at}"
+    )
+
+
+@router.callback_query(F.data == "my_license")
+async def show_my_license(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from bot.services.license import get_license_bot_username
+
+    deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
+    await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "my_license_refresh")
+async def refresh_my_license(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from bot.services.license import refresh_license_status, get_license_bot_username
+
+    await callback.answer("Проверяю статус лицензии...")
+    await refresh_license_status()
+
+    deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
+    await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))

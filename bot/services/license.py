@@ -41,6 +41,14 @@ def get_license_server_url() -> str:
     return os.environ.get("LICENSE_SERVER_URL", "https://eclipse.unlimited.bot.nu").rstrip("/")
 
 
+def get_license_bot_username() -> str:
+    """Username ГЛАВНОГО бота (Романа) — там живут тарифы на лицензии и
+    команда /buy_license. Используется для диплинков "Купить/продлить"
+    в панели партнёра, чтобы отправить его оформлять покупку именно
+    туда, а не в его собственный бот (там нет тарифов на лицензии)."""
+    return os.environ.get("LICENSE_BOT_USERNAME", "eclipse_unlimited_bot").lstrip("@")
+
+
 async def refresh_license_status() -> None:
     license_key = get_license_key()
     if not license_key:
