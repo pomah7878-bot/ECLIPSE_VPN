@@ -1882,6 +1882,44 @@ async def handle_public_account_oauth_exchange(request: web.Request) -> web.Resp
     return resp
 
 
+async def handle_public_account_claim_purchase(request: web.Request) -> web.Response:
+    """POST /api/public/account/claim-purchase — для УЖЕ залогиненного (через
+    OAuth/телефон) аккаунта: привязывает к нему покупку с сайта по её
+    claim_code — например, автоматически при входе, если этот же браузер
+    ранее оформлял анонимную покупку до входа (см. tryAutoClaimPendingCode
+    на фронтенде). В отличие от /account/session-login (который создаёт
+    для claim_code НОВУЮ сессию), этот эндпоинт добавляет покупку к
+    ТЕКУЩЕЙ, уже открытой сессии, не подменяя её."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "message": "Некорректный запрос."}, status=400)
+
+    code = (data.get("code") or "").strip()
+    if not code:
+        return web.json_response({"ok": False, "message": "Введите код."}, status=400)
+
+    from database.requests import get_anonymous_purchase_by_claim_code, link_purchase_to_account
+
+    purchase = get_anonymous_purchase_by_claim_code(code)
+    if not purchase:
+        return web.json_response({"ok": False, "message": "Код не найден."})
+
+    existing_account_id = purchase.get("site_account_id")
+    if existing_account_id and existing_account_id != account_id:
+        # Уже привязана к ДРУГОМУ аккаунту — не перехватываем чужую покупку.
+        return web.json_response({"ok": False, "message": "Этот код уже привязан к другому аккаунту."})
+
+    if not existing_account_id:
+        link_purchase_to_account(purchase["order_id"], account_id)
+
+    return web.json_response({"ok": True})
+
+
 async def handle_public_account_link_code(request: web.Request) -> web.Response:
     """POST /api/public/account/link-code — для УЖЕ залогиненного через OAuth
     аккаунта: привязывает его к существующему клиенту бота по коду из бота
@@ -2734,6 +2772,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/link-phone-check", handle_public_account_link_phone_check)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
+    app.router.add_post("/api/public/account/claim-purchase", handle_public_account_claim_purchase)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)
     app.router.add_get("/api/public/account/session", handle_public_account_session)

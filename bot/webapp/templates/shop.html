@@ -751,7 +751,7 @@
             } catch (e) { return; }
             if (!pendingCode) return;
             try {
-                const res = await postAPI('account/link-code', { code: pendingCode });
+                const res = await postAPI('account/claim-purchase', { code: pendingCode });
                 if (res.ok) {
                     showToast('Ваша предыдущая покупка привязана к аккаунту!');
                     const sessionRes = await fetchAPI('account/session');
