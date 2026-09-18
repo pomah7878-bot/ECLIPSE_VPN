@@ -1222,6 +1222,11 @@ async def edit_own_app_start(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
+    from bot.services.license import is_feature_available
+    if not is_feature_available("custom_app"):
+        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
+        return
+
     await state.set_state(AdminStates.edit_own_app_name)
     current_name = get_effective_own_app_name()
     current_url = get_effective_own_app_url()

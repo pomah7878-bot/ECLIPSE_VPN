@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 109
+LATEST_VERSION = 110
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2206,6 +2206,30 @@ def migration_109(conn: sqlite3.Connection) -> None:
     logger.info("Migration v109 applied: добавлено поле features, старые basic/full перенесены")
 
 
+def migration_110(conn: sqlite3.Connection) -> None:
+    """Migration v110: список переключаемых функций расширен с 4 до 10 —
+    добавлены промокоды/купоны, своё приложение, публикация в канал,
+    пробный период, реферальная система, импорт в Happ/INCY/Karing.
+
+    Для лицензий/тарифов, у которых tier='full' (то есть изначально
+    были куплены/выданы "со всеми функциями"), добавляем и НОВЫЕ функции
+    тоже — раз человек платил за "всё", он должен получить и то, что
+    появилось позже, автоматически. Тем, у кого custom-набор (только
+    часть функций из старых четырёх), новые функции НЕ добавляем — им
+    их нужно включить вручную, если захотят."""
+    new_features = ["promo_coupons", "custom_app", "channel_posts", "trial_period", "referral_system", "app_import"]
+
+    for table in ("partner_licenses", "license_tariffs"):
+        rows = conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall()
+        for row in rows:
+            rowid, features_str = row[0], row[1] or ""
+            current = set(f for f in features_str.split(",") if f)
+            current.update(new_features)
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), rowid))
+
+    logger.info("Migration v110 applied: список функций расширен, старым full-лицензиям добавлены новые функции")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2243,6 +2267,7 @@ MIGRATIONS = {
     107: migration_107,
     108: migration_108,
     109: migration_109,
+    110: migration_110,
 }
 
 
