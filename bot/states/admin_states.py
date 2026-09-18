@@ -159,6 +159,8 @@ class AdminStates(StatesGroup):
     license_create_name = State()          # Ввод имени партнёра
     license_tariff_create_name = State()   # Ввод названия тарифа на продажу
     license_tariff_create_price = State()  # Ввод цены тарифа на продажу
+    license_tariff_edit_name = State()     # Редактирование названия существующего тарифа
+    license_tariff_edit_price = State()    # Редактирование цены существующего тарифа
 
     channel_post_edit_text = State()  # Ввод нового текста взамен существующего поста в очереди
 

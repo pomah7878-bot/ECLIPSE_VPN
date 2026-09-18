@@ -13,7 +13,9 @@ from bot.utils.text import safe_edit_or_send
 from bot.keyboards.admin_licenses import (
     licenses_menu_kb, license_detail_kb, license_deactivate_confirm_kb,
     license_create_tier_kb, license_create_duration_kb, license_tariffs_menu_kb,
-    license_cancel_kb, my_license_kb,
+    license_cancel_kb, my_license_kb, license_tariff_detail_kb,
+    license_tariff_delete_confirm_kb, license_tariff_edit_tier_kb,
+    license_tariff_edit_duration_kb, license_tariff_edit_cancel_kb,
 )
 
 logger = logging.getLogger(__name__)
@@ -265,10 +267,10 @@ async def show_license_tariffs_menu(callback: CallbackQuery):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    from database.db_licenses import get_active_license_tariffs
-    tariffs = get_active_license_tariffs()
+    from database.db_licenses import get_all_license_tariffs
+    tariffs = get_all_license_tariffs()
     text = "🏷 <b>Тарифы на продажу лицензий</b>\n\n"
-    text += "Эти тарифы видят пользователи в команде /buy_license." if tariffs else "Пока нет ни одного тарифа на продажу."
+    text += "Клиенты видят в /buy_license только включённые (без 🚫)." if tariffs else "Пока нет ни одного тарифа на продажу."
 
     await safe_edit_or_send(callback.message, text, reply_markup=license_tariffs_menu_kb(tariffs))
     await callback.answer()
@@ -400,3 +402,253 @@ async def refresh_my_license(callback: CallbackQuery):
 
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
     await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))
+
+
+# ============================================================================
+# ПРОСМОТР И РЕДАКТИРОВАНИЕ ОТДЕЛЬНОГО ТАРИФА НА ЛИЦЕНЗИЮ
+# ============================================================================
+
+def _format_tariff_detail_text(t: dict) -> str:
+    duration_text = f"{t['duration_days']} дней" if t["duration_days"] else "бессрочно"
+    tier_label = "💎 Полный" if t["tier"] == "full" else "🔹 Базовый"
+    status_text = "✅ Включён (виден в /buy_license)" if t["is_active"] else "🚫 Отключён (скрыт из /buy_license)"
+    return (
+        f"🏷 <b>{t['name']}</b>\n\n"
+        f"Тариф: {tier_label}\n"
+        f"Срок действия лицензии: {duration_text}\n"
+        f"Цена: {t['price_rub']:.0f} ₽\n"
+        f"Статус: {status_text}"
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_view:"))
+async def show_license_tariff_detail(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    from database.db_licenses import get_license_tariff_by_id
+    t = get_license_tariff_by_id(tariff_id)
+    if not t:
+        await callback.answer("❌ Тариф не найден (возможно, удалён).", show_alert=True)
+        return
+
+    await safe_edit_or_send(
+        callback.message, _format_tariff_detail_text(t),
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_tariff_edit_name:"))
+async def license_tariff_edit_name_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    await state.set_state(AdminStates.license_tariff_edit_name)
+    await state.update_data(editing_tariff_id=tariff_id)
+    await safe_edit_or_send(
+        callback.message, "✏️ Введите новое название тарифа:",
+        reply_markup=license_tariff_edit_cancel_kb(tariff_id),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.license_tariff_edit_name)
+async def license_tariff_edit_name_entered(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    name = (message.text or "").strip()
+    if not name or name.startswith("/"):
+        await message.answer("❌ Введите корректное название.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    data = await state.get_data()
+    tariff_id = data["editing_tariff_id"]
+    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
+    update_license_tariff_field(tariff_id, "name", name)
+    await state.set_state(AdminStates.admin_menu)
+
+    t = get_license_tariff_by_id(tariff_id)
+    await message.answer(
+        f"✅ Название обновлено.\n\n{_format_tariff_detail_text(t)}",
+        parse_mode="HTML",
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_edit_price:"))
+async def license_tariff_edit_price_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    await state.set_state(AdminStates.license_tariff_edit_price)
+    await state.update_data(editing_tariff_id=tariff_id)
+    await safe_edit_or_send(
+        callback.message, "💰 Введите новую цену в рублях (например: 5000):",
+        reply_markup=license_tariff_edit_cancel_kb(tariff_id),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.license_tariff_edit_price)
+async def license_tariff_edit_price_entered(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    text = (message.text or "").strip().replace(",", ".")
+    try:
+        price_rub = float(text)
+    except ValueError:
+        await message.answer("❌ Введите число, например: 5000")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    data = await state.get_data()
+    tariff_id = data["editing_tariff_id"]
+    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
+    update_license_tariff_field(tariff_id, "price_rub", price_rub)
+    await state.set_state(AdminStates.admin_menu)
+
+    t = get_license_tariff_by_id(tariff_id)
+    await message.answer(
+        f"✅ Цена обновлена.\n\n{_format_tariff_detail_text(t)}",
+        parse_mode="HTML",
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_edit_duration:"))
+async def license_tariff_edit_duration_start(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    await safe_edit_or_send(
+        callback.message, "📅 Выберите новый срок действия лицензии по этому тарифу:",
+        reply_markup=license_tariff_edit_duration_kb(tariff_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_tariff_set_duration:"))
+async def license_tariff_set_duration(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    _, tariff_id_str, duration_str = callback.data.split(":")
+    tariff_id = int(tariff_id_str)
+    duration_days = int(duration_str) or None
+
+    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
+    update_license_tariff_field(tariff_id, "duration_days", duration_days)
+    await callback.answer("✅ Срок обновлён")
+
+    t = get_license_tariff_by_id(tariff_id)
+    await safe_edit_or_send(
+        callback.message, _format_tariff_detail_text(t),
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_edit_tier:"))
+async def license_tariff_edit_tier_start(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    await safe_edit_or_send(
+        callback.message, "🔄 Выберите новый тариф лицензии (что получит покупатель):",
+        reply_markup=license_tariff_edit_tier_kb(tariff_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_tariff_set_tier:"))
+async def license_tariff_set_tier(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    _, tariff_id_str, tier = callback.data.split(":")
+    tariff_id = int(tariff_id_str)
+
+    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
+    update_license_tariff_field(tariff_id, "tier", tier)
+    await callback.answer("✅ Тариф обновлён")
+
+    t = get_license_tariff_by_id(tariff_id)
+    await safe_edit_or_send(
+        callback.message, _format_tariff_detail_text(t),
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_toggle:"))
+async def license_tariff_toggle(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    _, tariff_id_str, new_state = callback.data.split(":")
+    tariff_id = int(tariff_id_str)
+
+    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
+    update_license_tariff_field(tariff_id, "is_active", int(new_state))
+    await callback.answer("✅ Статус обновлён")
+
+    t = get_license_tariff_by_id(tariff_id)
+    await safe_edit_or_send(
+        callback.message, _format_tariff_detail_text(t),
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_delete_confirm:"))
+async def license_tariff_delete_confirm(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    await safe_edit_or_send(
+        callback.message,
+        "⚠️ Удалить этот тариф навсегда? Уже выданные по нему лицензии не пострадают — удаляется только карточка тарифа.",
+        reply_markup=license_tariff_delete_confirm_kb(tariff_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_tariff_delete_do:"))
+async def license_tariff_delete_do(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    from database.db_licenses import delete_license_tariff, get_all_license_tariffs
+    delete_license_tariff(tariff_id)
+    await callback.answer("🗑 Тариф удалён")
+
+    tariffs = get_all_license_tariffs()
+    text = "🏷 <b>Тарифы на продажу лицензий</b>\n\n"
+    text += "Клиенты видят в /buy_license только включённые (без 🚫)." if tariffs else "Пока нет ни одного тарифа на продажу."
+    await safe_edit_or_send(callback.message, text, reply_markup=license_tariffs_menu_kb(tariffs))
