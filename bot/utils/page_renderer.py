@@ -1006,10 +1006,11 @@ async def render_page(
     try:
         from config import ADMIN_IDS
         from bot.services.page_context import remember_page_context
+        from bot.utils.admin import is_admin
 
         viewer_id = _target_viewer_id(target)
 
-        if viewer_id in ADMIN_IDS:
+        if is_admin(viewer_id):
             remember_page_context(
                 viewer_id,
                 page_key=page_key,

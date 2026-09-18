@@ -106,7 +106,8 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     else:
         user_id = target.from_user.id if hasattr(target, 'from_user') and target.from_user else 0
 
-    is_admin = user_id in ADMIN_IDS
+    from bot.utils.admin import is_admin as _is_admin_check
+    is_admin = _is_admin_check(user_id)
 
     # Generating tariff text
     tariff_text = _build_tariff_text()

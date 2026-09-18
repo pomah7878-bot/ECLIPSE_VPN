@@ -23,7 +23,9 @@ class ResetAdminPageContextMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        from bot.utils.admin import is_admin
+
         user = data.get('event_from_user')
-        if user and user.id in ADMIN_IDS:
+        if user and is_admin(user.id):
             clear_page_context(user.id)
         return await handler(event, data)

@@ -306,10 +306,10 @@ def _remember_key_delivery_context(
         return
 
     try:
-        from config import ADMIN_IDS
+        from bot.utils.admin import is_admin
         from bot.services.page_context import remember_page_context
 
-        if viewer_id not in ADMIN_IDS:
+        if not is_admin(viewer_id):
             return
 
         render_context = {
