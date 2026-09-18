@@ -27,7 +27,8 @@ class UserAccessGuardMiddleware(BaseMiddleware):
         user = data.get('event_from_user')
         if user is None or getattr(user, 'is_bot', False):
             return await handler(event, data)
-        if user.id in ADMIN_IDS:
+        from bot.utils.admin import is_admin
+        if is_admin(user.id):
             return await handler(event, data)
         if _is_bypassed_extension_callback(event):
             return await handler(event, data)
@@ -49,11 +50,13 @@ def _is_bypassed_extension_callback(event: TelegramObject) -> bool:
 
 
 def _build_guard_context(event: TelegramObject, data: Dict[str, Any]) -> dict[str, Any]:
+    from bot.utils.admin import is_admin
+
     user = data.get('event_from_user')
     bot = data.get('bot')
     context: dict[str, Any] = {
         'telegram_id': getattr(user, 'id', None),
-        'is_admin': getattr(user, 'id', None) in ADMIN_IDS if user else False,
+        'is_admin': is_admin(user.id) if user else False,
         'event_type': 'callback' if isinstance(event, CallbackQuery) else 'message',
     }
     if isinstance(event, CallbackQuery):
