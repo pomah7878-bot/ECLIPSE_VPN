@@ -13,21 +13,31 @@
 код без активной лицензии, платные функции просто не активируются.
 
 Если LICENSE_KEY не задан вообще — считается, что это ГЛАВНАЯ инсталляция
-(у самого Романа), либо старая инсталляция без лицензирования — full доступ
-без проверки (обратная совместимость, никого не отключаем задним числом).
+(у самого Романа), либо старая инсталляция без лицензирования — полный
+доступ без проверки (обратная совместимость, никого не отключаем задним
+числом).
+
+С версии, добавившей произвольный набор функций (features): вместо
+жёсткого выбора между двумя готовыми наборами (basic/full) администратор
+вручную выбирает ЛЮБОЙ набор функций для каждой конкретной лицензии —
+например, можно выдать AI-помощника и сайт, но без рассылок. tier
+('basic'/'full') сохраняется только для отображения и обратной
+совместимости со старыми лицензиями, реальная проверка идёт по features.
 """
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Set
 
 logger = logging.getLogger(__name__)
 
-FULL_TIER_FEATURES = {
-    "ai_assistant",
-    "zvonok_verification",
-    "site_webapp",
-    "broadcast_marketing",
+# Все функции, которые можно ВКЛЮЧАТЬ/ВЫКЛЮЧАТЬ по отдельности для каждой
+# лицензии/тарифа. Ключ → человекочитаемое название (для UI выбора).
+GATED_FEATURES = {
+    "ai_assistant": "🤖 AI-помощник",
+    "zvonok_verification": "📞 Верификация по звонку (Zvonok)",
+    "site_webapp": "🌐 Сайт/личный кабинет",
+    "broadcast_marketing": "📢 Рассылка/маркетинг",
 }
 
 _GRACE_PERIOD_HOURS = 72
@@ -47,6 +57,18 @@ def get_license_bot_username() -> str:
     в панели партнёра, чтобы отправить его оформлять покупку именно
     туда, а не в его собственный бот (там нет тарифов на лицензии)."""
     return os.environ.get("LICENSE_BOT_USERNAME", "eclipse_unlimited_bot").lstrip("@")
+
+
+def features_to_str(features) -> str:
+    """Сериализует набор функций в строку для хранения в БД."""
+    return ",".join(sorted(f for f in features if f in GATED_FEATURES))
+
+
+def features_from_str(features_str: Optional[str]) -> Set[str]:
+    """Разбирает строку из БД обратно в набор функций."""
+    if not features_str:
+        return set()
+    return {f.strip() for f in features_str.split(",") if f.strip() in GATED_FEATURES}
 
 
 async def refresh_license_status() -> None:
@@ -73,39 +95,58 @@ async def refresh_license_status() -> None:
         return
 
     if not data.get("valid"):
+        set_setting("license_features", "")
         set_setting("license_tier", "basic")
         set_setting("license_checked_at", datetime.utcnow().isoformat())
         logger.warning(f"Лицензия недействительна или истекла: {data.get('message', '')}")
         return
 
-    tier = data.get("tier") if data.get("tier") in ("basic", "full") else "basic"
-    set_setting("license_tier", tier)
+    features_str = data.get("features") or ""
+    set_setting("license_features", features_str)
+    set_setting("license_tier", data.get("tier") or "basic")
     set_setting("license_checked_at", datetime.utcnow().isoformat())
     set_setting("license_expires_at", data.get("expires_at") or "")
     set_setting("license_partner_name", data.get("partner_name") or "")
-    logger.info(f"Лицензия обновлена: тариф={tier}")
+    logger.info(f"Лицензия обновлена: функции={features_str or '(нет)'}")
 
 
-def get_license_tier() -> str:
+def get_enabled_features() -> Set[str]:
+    """Возвращает набор функций, доступных ЭТОЙ инсталляции прямо сейчас.
+
+    Если LICENSE_KEY не задан вообще (главная инсталляция или старая без
+    лицензирования) — доступны ВСЕ функции, проверка не требуется.
+
+    Если задан, но ещё ни разу не проверялся, или последняя проверка
+    старше грейс-периода — доступных функций НЕТ (безопасный дефолт)."""
     if not get_license_key():
-        return "full"
+        return set(GATED_FEATURES.keys())
 
     from database.requests import get_setting
 
-    tier = get_setting("license_tier", "basic")
     checked_at_str = get_setting("license_checked_at", "")
     if not checked_at_str:
-        return "basic"
+        return set()
 
     try:
         checked_at = datetime.fromisoformat(checked_at_str)
     except ValueError:
-        return "basic"
+        return set()
 
     if datetime.utcnow() - checked_at > timedelta(hours=_GRACE_PERIOD_HOURS):
-        return "basic"
+        return set()
 
-    return tier if tier in ("basic", "full") else "basic"
+    return features_from_str(get_setting("license_features", ""))
+
+
+def get_license_tier() -> str:
+    """Сохранено для обратной совместимости и отображения — 'full', если
+    включены ВСЕ функции, 'basic', если ни одной, иначе 'custom'."""
+    enabled = get_enabled_features()
+    if enabled == set(GATED_FEATURES.keys()):
+        return "full"
+    if not enabled:
+        return "basic"
+    return "custom"
 
 
 def is_full_tier() -> bool:
@@ -113,12 +154,12 @@ def is_full_tier() -> bool:
 
 
 def is_feature_available(feature: str) -> bool:
-    if feature not in FULL_TIER_FEATURES:
+    if feature not in GATED_FEATURES:
         return True
-    return is_full_tier()
+    return feature in get_enabled_features()
 
 
 FEATURE_UPGRADE_MESSAGE = (
-    "🔒 <b>Эта функция доступна в полном тарифе</b>\n\n"
-    "Чтобы разблокировать, обратитесь к поставщику лицензии для перехода на полный тариф."
+    "🔒 <b>Эта функция недоступна на вашем тарифе</b>\n\n"
+    "Чтобы разблокировать, обратитесь к поставщику лицензии."
 )

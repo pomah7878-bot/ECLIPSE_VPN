@@ -11,7 +11,7 @@ def licenses_menu_kb(licenses: list) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for lic in licenses[:20]:  # не более 20 в одном экране, чтобы не раздувать сообщение
         status_icon = "✅" if lic["is_active"] else "🚫"
-        tier_icon = "💎" if lic["tier"] == "full" else "🔹"
+        tier_icon = {"full": "💎", "basic": "🔹", "custom": "🔧"}.get(lic["tier"], "🔹")
         builder.row(InlineKeyboardButton(
             text=f"{status_icon} {tier_icon} {lic['partner_name']}",
             callback_data=f"license_view:{lic['license_key']}",
@@ -28,9 +28,7 @@ def license_detail_kb(license_key: str, is_active: bool, tier: str) -> InlineKey
     builder.row(InlineKeyboardButton(text="📅 Продлить на 30 дней", callback_data=f"license_extend:{license_key}:30"))
     builder.row(InlineKeyboardButton(text="📅 Продлить на 365 дней", callback_data=f"license_extend:{license_key}:365"))
 
-    other_tier = "basic" if tier == "full" else "full"
-    other_tier_label = "Базовый" if other_tier == "basic" else "Полный"
-    builder.row(InlineKeyboardButton(text=f"🔄 Сменить на «{other_tier_label}»", callback_data=f"license_set_tier:{license_key}:{other_tier}"))
+    builder.row(InlineKeyboardButton(text="🔧 Настроить функции", callback_data=f"license_features_edit:{license_key}"))
 
     if is_active:
         builder.row(InlineKeyboardButton(text="🚫 Деактивировать", callback_data=f"license_deactivate_confirm:{license_key}"))
@@ -47,14 +45,30 @@ def license_deactivate_confirm_kb(license_key: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def license_create_tier_kb() -> InlineKeyboardMarkup:
+def feature_checkboxes_kb(selected: set, toggle_prefix: str, done_callback: str, back_callback: str) -> InlineKeyboardMarkup:
+    """Универсальная клавиатура-переключатель для выбора набора функций —
+    используется и при создании лицензии/тарифа, и при редактировании уже
+    существующих. toggle_prefix — префикс callback_data для переключения
+    одной функции (получит ':{feature_key}' в конце). done_callback —
+    что нажать, когда выбор закончен."""
+    from bot.services.license import GATED_FEATURES
+
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🔹 Базовый", callback_data="license_create_tier:basic"),
-        InlineKeyboardButton(text="💎 Полный", callback_data="license_create_tier:full"),
-    )
-    builder.row(back_button('admin_licenses'))
+    for key, label in GATED_FEATURES.items():
+        mark = "✅" if key in selected else "⬜️"
+        builder.row(InlineKeyboardButton(text=f"{mark} {label}", callback_data=f"{toggle_prefix}:{key}"))
+    builder.row(InlineKeyboardButton(text="✅ Готово", callback_data=done_callback))
+    builder.row(back_button(back_callback))
     return builder.as_markup()
+
+
+def license_create_tier_kb(selected: set) -> InlineKeyboardMarkup:
+    return feature_checkboxes_kb(
+        selected,
+        toggle_prefix="license_create_toggle_feature",
+        done_callback="license_create_features_done",
+        back_callback="admin_licenses",
+    )
 
 
 def license_create_duration_kb() -> InlineKeyboardMarkup:
@@ -91,7 +105,7 @@ def license_tariff_detail_kb(tariff_id: int, is_active: bool) -> InlineKeyboardM
     builder.row(InlineKeyboardButton(text="✏️ Название", callback_data=f"license_tariff_edit_name:{tariff_id}"))
     builder.row(InlineKeyboardButton(text="💰 Цена", callback_data=f"license_tariff_edit_price:{tariff_id}"))
     builder.row(InlineKeyboardButton(text="📅 Срок действия", callback_data=f"license_tariff_edit_duration:{tariff_id}"))
-    builder.row(InlineKeyboardButton(text="🔄 Тариф (basic/full)", callback_data=f"license_tariff_edit_tier:{tariff_id}"))
+    builder.row(InlineKeyboardButton(text="🔧 Настроить функции", callback_data=f"license_tariff_edit_tier:{tariff_id}"))
     if is_active:
         builder.row(InlineKeyboardButton(text="🚫 Отключить (скрыть из /buy_license)", callback_data=f"license_tariff_toggle:{tariff_id}:0"))
     else:
@@ -110,14 +124,22 @@ def license_tariff_delete_confirm_kb(tariff_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def license_tariff_edit_tier_kb(tariff_id: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🔹 Базовый", callback_data=f"license_tariff_set_tier:{tariff_id}:basic"),
-        InlineKeyboardButton(text="💎 Полный", callback_data=f"license_tariff_set_tier:{tariff_id}:full"),
+def license_tariff_edit_features_kb(tariff_id: int, selected: set) -> InlineKeyboardMarkup:
+    return feature_checkboxes_kb(
+        selected,
+        toggle_prefix=f"license_tariff_toggle_feature:{tariff_id}",
+        done_callback=f"license_tariff_view:{tariff_id}",
+        back_callback=f"license_tariff_view:{tariff_id}",
     )
-    builder.row(back_button(f'license_tariff_view:{tariff_id}'))
-    return builder.as_markup()
+
+
+def license_features_edit_kb(license_key: str, selected: set) -> InlineKeyboardMarkup:
+    return feature_checkboxes_kb(
+        selected,
+        toggle_prefix=f"license_toggle_feature:{license_key}",
+        done_callback=f"license_view:{license_key}",
+        back_callback=f"license_view:{license_key}",
+    )
 
 
 def license_tariff_edit_duration_kb(tariff_id: int) -> InlineKeyboardMarkup:

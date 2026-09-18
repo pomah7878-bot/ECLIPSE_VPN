@@ -3,7 +3,7 @@
 import secrets
 import string
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from database.connection import get_db
 
@@ -14,9 +14,16 @@ def generate_license_key() -> str:
     return "ECLW-" + "-".join(groups)
 
 
-def create_partner_license(partner_name: str, tier: str, duration_days: Optional[int] = None, notes: str = "") -> str:
-    if tier not in ("basic", "full"):
-        raise ValueError(f"Неизвестный тариф: {tier}")
+def create_partner_license(partner_name: str, features, duration_days: Optional[int] = None, notes: str = "") -> str:
+    """features — набор (set/list) ключей функций из bot.services.license.GATED_FEATURES,
+    например {'ai_assistant', 'site_webapp'}. Пустой набор — тариф без
+    платных функций вообще."""
+    from bot.services.license import features_to_str
+
+    features_str = features_to_str(features) if not isinstance(features, str) else features
+    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    enabled = set(features_str.split(",")) if features_str else set()
+    tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
 
     license_key = generate_license_key()
     expires_at = None
@@ -25,8 +32,8 @@ def create_partner_license(partner_name: str, tier: str, duration_days: Optional
 
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO partner_licenses (license_key, partner_name, tier, expires_at, notes) VALUES (?, ?, ?, ?, ?)",
-            (license_key, partner_name, tier, expires_at, notes),
+            "INSERT INTO partner_licenses (license_key, partner_name, tier, features, expires_at, notes) VALUES (?, ?, ?, ?, ?, ?)",
+            (license_key, partner_name, tier, features_str, expires_at, notes),
         )
         conn.commit()
     return license_key
@@ -46,13 +53,20 @@ def list_partner_licenses() -> List[Dict[str, Any]]:
         return [dict(r) for r in rows]
 
 
-def set_partner_license_tier(license_key: str, tier: str) -> bool:
-    if tier not in ("basic", "full"):
-        raise ValueError(f"Неизвестный тариф: {tier}")
+def set_partner_license_features(license_key: str, features) -> bool:
+    """Устанавливает ПОЛНЫЙ набор функций для лицензии (перезаписывает,
+    не добавляет). features — set/list ключей или готовая CSV-строка."""
+    from bot.services.license import features_to_str
+
+    features_str = features_to_str(features) if not isinstance(features, str) else features
+    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    enabled = set(features_str.split(",")) if features_str else set()
+    tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
+
     with get_db() as conn:
         cursor = conn.execute(
-            "UPDATE partner_licenses SET tier = ?, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?",
-            (tier, license_key.strip().upper()),
+            "UPDATE partner_licenses SET tier = ?, features = ?, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?",
+            (tier, features_str, license_key.strip().upper()),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -113,6 +127,7 @@ def check_license_validity(license_key: str) -> Dict[str, Any]:
     return {
         "valid": True,
         "tier": license_row["tier"],
+        "features": license_row.get("features") or "",
         "expires_at": expires_at,
         "partner_name": license_row["partner_name"],
     }
@@ -122,13 +137,18 @@ def check_license_validity(license_key: str) -> Dict[str, Any]:
 # ТАРИФЫ НА САМИ ЛИЦЕНЗИИ (продажа whitelabel-доступа через бота)
 # ============================================================================
 
-def create_license_tariff(name: str, tier: str, price_rub: float, duration_days: Optional[int] = None) -> int:
-    if tier not in ("basic", "full"):
-        raise ValueError(f"Неизвестный тариф: {tier}")
+def create_license_tariff(name: str, features, price_rub: float, duration_days: Optional[int] = None) -> int:
+    from bot.services.license import features_to_str
+
+    features_str = features_to_str(features) if not isinstance(features, str) else features
+    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    enabled = set(features_str.split(",")) if features_str else set()
+    tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
+
     with get_db() as conn:
         cursor = conn.execute(
-            "INSERT INTO license_tariffs (name, tier, duration_days, price_rub) VALUES (?, ?, ?, ?)",
-            (name, tier, duration_days, price_rub),
+            "INSERT INTO license_tariffs (name, tier, features, duration_days, price_rub) VALUES (?, ?, ?, ?, ?)",
+            (name, tier, features_str, duration_days, price_rub),
         )
         conn.commit()
         return cursor.lastrowid
@@ -214,7 +234,7 @@ def get_abandoned_license_purchases(older_than_minutes: int = 5) -> List[Dict[st
 def update_license_tariff_field(tariff_id: int, field: str, value) -> bool:
     """Обновляет ОДНО поле тарифа. field должно быть из белого списка —
     защита от SQL-инъекции через имя столбца."""
-    allowed_fields = {"name", "tier", "duration_days", "price_rub", "is_active", "display_order"}
+    allowed_fields = {"name", "tier", "features", "duration_days", "price_rub", "is_active", "display_order"}
     if field not in allowed_fields:
         raise ValueError(f"Недопустимое поле для обновления: {field}")
     with get_db() as conn:
@@ -248,3 +268,40 @@ def delete_license_tariff(tariff_id: int) -> bool:
         cursor = conn.execute("DELETE FROM license_tariffs WHERE id = ?", (tariff_id,))
         conn.commit()
         return cursor.rowcount > 0
+
+
+def toggle_license_feature(license_key: str, feature: str) -> Set[str]:
+    """Переключает ОДНУ функцию (вкл/выкл) для лицензии, остальные не
+    трогает. Возвращает итоговый набор включённых функций."""
+    from bot.services.license import features_from_str
+
+    lic = get_partner_license(license_key)
+    current = features_from_str(lic.get("features") if lic else "")
+    if feature in current:
+        current.discard(feature)
+    else:
+        current.add(feature)
+    set_partner_license_features(license_key, current)
+    return current
+
+
+def toggle_tariff_feature(tariff_id: int, feature: str) -> Set[str]:
+    """То же самое, но для тарифа на продажу (а не уже выданной лицензии)."""
+    from bot.services.license import features_from_str, features_to_str
+
+    tariff = get_license_tariff_by_id(tariff_id)
+    current = features_from_str(tariff.get("features") if tariff else "")
+    if feature in current:
+        current.discard(feature)
+    else:
+        current.add(feature)
+    features_str = features_to_str(current)
+    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    tier = "full" if current == all_keys else ("basic" if not current else "custom")
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE license_tariffs SET tier = ?, features = ? WHERE id = ?",
+            (tier, features_str, tariff_id),
+        )
+        conn.commit()
+    return current
