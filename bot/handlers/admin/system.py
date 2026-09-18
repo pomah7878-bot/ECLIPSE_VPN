@@ -755,6 +755,205 @@ async def admin_set_bot_mode(callback: CallbackQuery, state: FSMContext):
 # MANUAL UPDATE OF THE BOT (COMMAND /UPDATE)
 # ============================================================================
 
+@router.message(Command("license_create"))
+async def license_create_cmd(message: Message):
+    """Скрытая команда: /license_create Имя_партнёра тариф [дней]"""
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split(maxsplit=3)
+    if len(parts) < 3:
+        await message.answer(
+            "Использование: <code>/license_create Имя_партнёра тариф [дней]</code>\n\n"
+            "Тариф: <code>basic</code> или <code>full</code>. Дней не указано — бессрочная лицензия.",
+            parse_mode="HTML",
+        )
+        return
+    partner_name = parts[1]
+    tier = parts[2].lower()
+    duration_days = None
+    if len(parts) > 3:
+        try:
+            duration_days = int(parts[3])
+        except ValueError:
+            await message.answer("❌ Число дней должно быть целым числом.")
+            return
+    if tier not in ("basic", "full"):
+        await message.answer("❌ Тариф должен быть <code>basic</code> или <code>full</code>.", parse_mode="HTML")
+        return
+    from database.db_licenses import create_partner_license
+    license_key = create_partner_license(partner_name, tier, duration_days)
+    duration_text = f"{duration_days} дней" if duration_days else "бессрочно"
+    await message.answer(
+        f"✅ <b>Лицензия создана</b>\n\n"
+        f"Партнёр: {partner_name}\n"
+        f"Тариф: {tier}\n"
+        f"Срок: {duration_text}\n\n"
+        f"Ключ (отправь партнёру для вставки в его secrets.env как LICENSE_KEY):\n"
+        f"<code>{license_key}</code>",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("license_list"))
+async def license_list_cmd(message: Message):
+    """Скрытая команда: показывает список всех лицензий партнёров."""
+    if not is_admin(message.from_user.id):
+        return
+    from database.db_licenses import list_partner_licenses
+    licenses = list_partner_licenses()
+    if not licenses:
+        await message.answer("Лицензий пока нет.")
+        return
+    lines = ["📋 <b>Лицензии партнёров:</b>\n"]
+    for lic in licenses:
+        status = "✅ активна" if lic["is_active"] else "🚫 деактивирована"
+        expires = lic["expires_at"] or "бессрочно"
+        lines.append(
+            f"<b>{lic['partner_name']}</b> — {lic['tier']} — {status}\n"
+            f"  <code>{lic['license_key']}</code>\n"
+            f"  до: {expires}\n"
+        )
+    text = "\n".join(lines)
+    if len(text) > 4000:
+        text = text[:3990] + "\n\n… (список обрезан)"
+    await message.answer(text, parse_mode="HTML")
+
+
+@router.message(Command("license_extend"))
+async def license_extend_cmd(message: Message):
+    """Скрытая команда: /license_extend КЛЮЧ дней"""
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 3:
+        await message.answer("Использование: <code>/license_extend КЛЮЧ дней</code>", parse_mode="HTML")
+        return
+    license_key, days_str = parts[1], parts[2]
+    try:
+        days = int(days_str)
+    except ValueError:
+        await message.answer("❌ Число дней должно быть целым числом.")
+        return
+    from database.db_licenses import extend_partner_license
+    ok = extend_partner_license(license_key, days)
+    if ok:
+        await message.answer(f"✅ Лицензия <code>{license_key}</code> продлена на {days} дней.", parse_mode="HTML")
+    else:
+        await message.answer("❌ Лицензия с таким ключом не найдена.")
+
+
+@router.message(Command("license_deactivate"))
+async def license_deactivate_cmd(message: Message):
+    """Скрытая команда: /license_deactivate КЛЮЧ"""
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    if len(parts) != 2:
+        await message.answer("Использование: <code>/license_deactivate КЛЮЧ</code>", parse_mode="HTML")
+        return
+    from database.db_licenses import deactivate_partner_license
+    ok = deactivate_partner_license(parts[1])
+    if ok:
+        await message.answer(f"✅ Лицензия <code>{parts[1]}</code> деактивирована.", parse_mode="HTML")
+    else:
+        await message.answer("❌ Лицензия с таким ключом не найдена.")
+
+
+@router.message(Command("license_tariff_create"))
+async def license_tariff_create_cmd(message: Message):
+    """Скрытая команда: /license_tariff_create Название тариф цена [дней]
+    Например: /license_tariff_create "Полный на месяц" full 5000 30
+    Дней не указано — бессрочная лицензия при покупке этого тарифа."""
+    if not is_admin(message.from_user.id):
+        return
+    import shlex
+    try:
+        parts = shlex.split(message.text or "")
+    except ValueError:
+        await message.answer("❌ Не удалось разобрать команду — проверь кавычки.")
+        return
+    if len(parts) < 4:
+        await message.answer(
+            "Использование: <code>/license_tariff_create Название тариф цена [дней]</code>\n\n"
+            'Пример: <code>/license_tariff_create "Полный месяц" full 5000 30</code>\n'
+            "Тариф: <code>basic</code> или <code>full</code>. Дней не указано — бессрочная лицензия.",
+            parse_mode="HTML",
+        )
+        return
+    name = parts[1]
+    tier = parts[2].lower()
+    try:
+        price_rub = float(parts[3])
+    except ValueError:
+        await message.answer("❌ Цена должна быть числом.")
+        return
+    duration_days = None
+    if len(parts) > 4:
+        try:
+            duration_days = int(parts[4])
+        except ValueError:
+            await message.answer("❌ Число дней должно быть целым числом.")
+            return
+    if tier not in ("basic", "full"):
+        await message.answer("❌ Тариф должен быть <code>basic</code> или <code>full</code>.", parse_mode="HTML")
+        return
+    from database.db_licenses import create_license_tariff
+    tariff_id = create_license_tariff(name, tier, price_rub, duration_days)
+    duration_text = f"{duration_days} дней" if duration_days else "бессрочно"
+    await message.answer(
+        f"✅ <b>Тариф на лицензию создан</b> (id={tariff_id})\n\n"
+        f"Название: {name}\n"
+        f"Тариф: {tier}\n"
+        f"Цена: {price_rub:.0f} ₽\n"
+        f"Срок: {duration_text}\n\n"
+        f"Теперь любой пользователь может купить его командой <code>/buy_license</code>.",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("license_tariff_list"))
+async def license_tariff_list_cmd(message: Message):
+    """Скрытая команда: список тарифов на лицензии."""
+    if not is_admin(message.from_user.id):
+        return
+    from database.db_licenses import get_active_license_tariffs
+    tariffs = get_active_license_tariffs()
+    if not tariffs:
+        await message.answer("Тарифов на лицензию пока нет. Создай через /license_tariff_create.")
+        return
+    lines = ["📋 <b>Тарифы на лицензию:</b>\n"]
+    for t in tariffs:
+        duration_text = f"{t['duration_days']} дн." if t["duration_days"] else "бессрочно"
+        lines.append(f"id={t['id']} — {t['name']} — {t['tier']} — {duration_text} — {t['price_rub']:.0f} ₽")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(Command("license_status"))
+async def license_status_cmd(message: Message):
+    """Скрытая команда: показывает статус лицензии ЭТОЙ инсталляции."""
+    if not is_admin(message.from_user.id):
+        return
+    from bot.services.license import get_license_key, get_license_tier
+    from database.requests import get_setting
+    license_key = get_license_key()
+    if not license_key:
+        await message.answer("🔓 Эта инсталляция без лицензирования (главная, либо старая версия) — все функции доступны.")
+        return
+    tier = get_license_tier()
+    expires_at = get_setting("license_expires_at", "") or "бессрочно"
+    partner_name = get_setting("license_partner_name", "") or "—"
+    checked_at = get_setting("license_checked_at", "") or "ещё не проверялась"
+    await message.answer(
+        f"🔑 <b>Статус лицензии</b>\n\n"
+        f"Ключ: <code>{license_key}</code>\n"
+        f"Партнёр: {partner_name}\n"
+        f"Тариф: <b>{tier}</b>\n"
+        f"Действует до: {expires_at}\n"
+        f"Последняя проверка: {checked_at}",
+        parse_mode="HTML",
+    )
+
+
 @router.message(Command("update"))
 async def admin_update_cmd(message: Message, state: FSMContext):
     """Hidden emergency update command for administrators."""

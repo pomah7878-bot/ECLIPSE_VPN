@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 106
+LATEST_VERSION = 108
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2128,6 +2128,59 @@ def migration_106(conn: sqlite3.Connection) -> None:
     logger.info("Migration v106 applied: таблица zvonok_pending_voice_codes создана")
 
 
+def migration_107(conn: sqlite3.Connection) -> None:
+    """Migration v107: создаёт таблицу partner_licenses — лицензии
+    whitelabel-партнёров (запускается на ГЛАВНОМ сервере — том, что
+    выступает "лицензионным сервером" для всех остальных инсталляций
+    бота). Каждая инсталляция бота у партнёра стучится сюда своим
+    license_key, чтобы узнать свой тариф (basic/full) и до какого
+    числа он активен."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS partner_licenses (
+            license_key TEXT PRIMARY KEY,
+            partner_name TEXT NOT NULL,
+            tier TEXT NOT NULL DEFAULT 'basic',
+            expires_at TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v107 applied: таблица partner_licenses создана")
+
+
+def migration_108(conn: sqlite3.Connection) -> None:
+    """Migration v108: создаёт таблицы license_tariffs (тарифы на сами
+    whitelabel-лицензии — отдельные от VPN-тарифов) и license_purchases
+    (заказы на покупку лицензии через бота, для автовыдачи ключа после
+    оплаты)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS license_tariffs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            duration_days INTEGER,
+            price_rub REAL NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS license_purchases (
+            order_id TEXT PRIMARY KEY,
+            telegram_id INTEGER NOT NULL,
+            license_tariff_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            license_key TEXT,
+            yookassa_payment_id TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v108 applied: таблицы license_tariffs и license_purchases созданы")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2162,6 +2215,8 @@ MIGRATIONS = {
     104: migration_104,
     105: migration_105,
     106: migration_106,
+    107: migration_107,
+    108: migration_108,
 }
 
 

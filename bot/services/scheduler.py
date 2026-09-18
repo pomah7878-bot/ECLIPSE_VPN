@@ -1544,3 +1544,25 @@ async def run_traffic_sync_scheduler(bot: Bot) -> None:
             logger.error(f"Ошибка в планировщике синхронизации трафика: {e}")
             # Wait 2 minutes and try again
             await asyncio.sleep(120)
+
+
+async def run_license_check_scheduler(bot: Bot) -> None:
+    """Фоновая задача периодической проверки лицензии whitelabel-партнёра
+    (каждые 6 часов)."""
+    from bot.services.license import refresh_license_status, get_license_key
+
+    if not get_license_key():
+        return
+
+    logger.info("🔑 Планировщик проверки лицензии запущен (каждые 6 часов)")
+
+    while True:
+        try:
+            await refresh_license_status()
+        except asyncio.CancelledError:
+            logger.info("Планировщик проверки лицензии остановлен")
+            break
+        except Exception as e:
+            logger.error(f"Ошибка в планировщике проверки лицензии: {e}")
+
+        await asyncio.sleep(6 * 3600)

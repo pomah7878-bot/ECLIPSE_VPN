@@ -16,7 +16,7 @@ from config import BOT_TOKEN
 from database.migrations import run_migrations
 
 from bot.services.vpn_api import close_all_clients
-from bot.services.scheduler import run_daily_tasks, run_update_check_scheduler, run_traffic_sync_scheduler, run_channel_posts_scheduler, run_duplicate_detection_scheduler
+from bot.services.scheduler import run_daily_tasks, run_update_check_scheduler, run_traffic_sync_scheduler, run_channel_posts_scheduler, run_duplicate_detection_scheduler, run_license_check_scheduler
 from bot.services.payment_auto_check import run_payment_auto_check_scheduler, run_anonymous_payment_auto_check_scheduler
 from bot.webapp.server import run_webapp
 
@@ -219,6 +219,7 @@ async def main():
     anonymous_payment_check_tasks = asyncio.create_task(run_anonymous_payment_auto_check_scheduler(bot))
     channel_posts_tasks = asyncio.create_task(run_channel_posts_scheduler(bot))
     duplicate_detection_tasks = asyncio.create_task(run_duplicate_detection_scheduler(bot))
+    license_check_tasks = asyncio.create_task(run_license_check_scheduler(bot))
     webapp_task = asyncio.create_task(
         run_webapp(host="127.0.0.1", port=3000)
     )

@@ -54,6 +54,8 @@ def home_only_kb() -> InlineKeyboardMarkup:
 
 def admin_main_menu_kb() -> InlineKeyboardMarkup:
     """Main menu of the admin panel."""
+    from bot.services.license import get_license_key
+
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text='🖥️ Сервера', callback_data='admin_servers'),
@@ -67,6 +69,13 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text='⚙️ Настройки бота', callback_data='admin_bot_settings'),
         InlineKeyboardButton(text='🧩 Расширения', callback_data='admin_extensions_diagnostics')
     )
+    if not get_license_key():
+        # Раздел управления whitelabel-лицензиями партнёров имеет смысл
+        # только на инсталляции, которая САМА выступает лицензионным
+        # сервером (обычно — главная, у Романа). На партнёрских
+        # инсталляциях (с заданным LICENSE_KEY) кнопка не нужна — они
+        # не выдают лицензии другим.
+        builder.row(InlineKeyboardButton(text='🔑 Лицензии партнёров', callback_data='admin_licenses'))
     builder.row(home_button())
     return builder.as_markup()
 
