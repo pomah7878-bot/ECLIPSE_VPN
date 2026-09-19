@@ -74,15 +74,15 @@ async def show_payments_menu(callback: CallbackQuery, state: FSMContext):
         text += "⚪ <b>Telegram Stars</b>\n"
 
     if cards:
-        text += "🟢 <b>TG payments</b>\n"
+        text += "🟢 <b>Оплата картой</b>\n"
     else:
-        text += "⚪ <b>TG payments</b>\n"
+        text += "⚪ <b>Оплата картой</b>\n"
 
     if qr:
         shop_id = get_setting('yookassa_shop_id', '')
-        text += f"🟢 <b>ЮКасса</b> | Shop ID: <code>{shop_id or '—'}</code>\n"
+        text += f"🟢 <b>СБП</b> | Shop ID: <code>{shop_id or '—'}</code>\n"
     else:
-        text += "⚪ <b>ЮКасса</b>\n"
+        text += "⚪ <b>СБП</b>\n"
 
     if wata:
         text += "🟢 <b>WATA</b>\n"
@@ -218,7 +218,7 @@ async def show_cards_management_menu(callback: CallbackQuery, state: FSMContext)
         token_display = "Не установлен ❌"
     
     text = (
-        "💳 <b>TG payments</b>\n\n"
+        "💳 <b>Оплата картой</b>\n\n"
         "Для работы этого способа необходимо настроить Telegram Payments через провайдера ЮКасса.\n\n"
         "❗️ <b>ШАГ 1: РЕГИСТРАЦИЯ</b>\n"
         "Обязательно <a href=\"https://yookassa.ru/joinups/?source=sva\">зарегистрируйте магазин в ЮКассе по этой ссылке</a>\n\n"
@@ -244,7 +244,7 @@ async def _set_cards_enabled(callback: CallbackQuery, state: FSMContext, target_
     current = is_cards_enabled()
     if current == target_enabled:
         status = "уже включены" if target_enabled else "уже выключены"
-        await callback.answer(f"TG payments {status}")
+        await callback.answer(f"Оплата картой {status}")
         return
 
     # Cannot be enabled if there is no token
@@ -256,7 +256,7 @@ async def _set_cards_enabled(callback: CallbackQuery, state: FSMContext, target_
     set_setting('cards_enabled', new_value)
 
     status = "включена ✅" if new_value == '1' else "выключена"
-    await callback.answer(f"TG payments {status}")
+    await callback.answer(f"Оплата картой {status}")
     await show_cards_management_menu(callback, state)
 
 
@@ -383,7 +383,7 @@ async def show_qr_management_menu(callback: CallbackQuery, state: FSMContext):
     secret_display = f"Установлен ✅ (<code>{secret_key[:4]}...{secret_key[-4:]}</code>)" if len(secret_key) >= 8 else "❌ Не задан"
 
     text = (
-        "📱 <b>ЮКасса</b>\n\n"
+        "📱 <b>СБП</b>\n\n"
         "Позволяет принимать оплату картами и через СБП по QR-коду,\n"
         "без Telegram Payments.\n\n"
         "📋 <b>Как получить доступ:</b>\n"

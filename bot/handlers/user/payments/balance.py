@@ -553,7 +553,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         await show_payment_configuration_status(
             callback.message,
             body_text='Попробуйте другой способ доплаты или обратитесь в поддержку.',
-            payment_provider_title='TG payments',
+            payment_provider_title='Оплата картой',
         )
         await callback.answer()
         return
@@ -623,7 +623,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
     back_cb = f'key_renew:{key_id}' if key_id else 'buy_key'
     invoice_sent = await send_telegram_invoice_or_status(
         callback,
-        provider_title='TG payments',
+        provider_title='Оплата картой',
         log_context=f"balance_cards order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
         description=f"Оплата тарифа «{tariff['name']}» ({tariff['duration_days']} дн.).",
@@ -729,9 +729,9 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
     )
     await show_payment_status_message(
         callback.message,
-        title_html='⏳ Создаём оплату через ЮКассу...',
+        title_html='⏳ Создаём оплату через СБП...',
         body_html='',
-        payment_provider_title='ЮКасса',
+        payment_provider_title='СБП',
     )
     try:
         bot_info = await callback.bot.get_me()
@@ -757,7 +757,7 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
                 callback.message,
                 title_html='❌ <b>ЮКасса не вернула данные для оплаты</b>',
                 body_text='Попробуйте позже.',
-                payment_provider_title='ЮКасса',
+                payment_provider_title='СБП',
                 reply_markup=home_only_kb(),
             )
             return
@@ -767,7 +767,7 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
             default_qr_payment_page_text,
         )
         payment_context = build_qr_payment_page_context(
-            title='📱 <b>ЮКасса</b>',
+            title='📱 <b>СБП</b>',
             tariff_name=escape_html(tariff['name']),
             price_str=f"{remaining_rub:.2f} ₽",
             days=tariff['duration_days'],
@@ -803,6 +803,6 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
                 f'<i>{escape_html(str(e))}</i>\n\n'
                 'Попробуйте другой способ оплаты.'
             ),
-            payment_provider_title='ЮКасса',
+            payment_provider_title='СБП',
             reply_markup=home_only_kb(),
         )
