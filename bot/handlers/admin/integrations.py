@@ -102,6 +102,10 @@ async def show_integrations_zvonok_menu(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
+    from bot.services.license import is_feature_available
+    if not is_feature_available("zvonok_verification"):
+        await callback.answer("Эта функция доступна в полном тарифе", show_alert=True)
+        return
     from bot.keyboards.admin_settings import integrations_zvonok_menu_kb
     await safe_edit_or_send(
         callback.message,

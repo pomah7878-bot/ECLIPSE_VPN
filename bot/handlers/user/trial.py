@@ -24,6 +24,10 @@ async def show_trial_subscription(callback: CallbackQuery):
 
     user_id = callback.from_user.id
 
+    from bot.services.license import is_feature_available
+    if not is_feature_available("trial_period"):
+        await callback.answer('❌ Пробная подписка недоступна', show_alert=True)
+        return
     if not is_trial_enabled():
         await callback.answer('❌ Пробная подписка недоступна', show_alert=True)
         return
@@ -211,9 +215,13 @@ async def _activate_trial(
 async def activate_trial_subscription(callback: CallbackQuery, state: FSMContext):
     """Активирует пробник в режиме 'account' (один пробник на весь аккаунт)."""
     from database.requests import is_trial_enabled, get_trial_tariff_id, has_used_trial, mark_trial_used
+    from bot.services.license import is_feature_available
 
     user_id = callback.from_user.id
 
+    if not is_feature_available("trial_period"):
+        await callback.answer('❌ Пробная подписка недоступна', show_alert=True)
+        return
     if not is_trial_enabled():
         await callback.answer('❌ Пробная подписка недоступна', show_alert=True)
         return
@@ -244,7 +252,11 @@ async def activate_trial_subscription_group(callback: CallbackQuery, state: FSMC
         is_trial_enabled, get_group_by_id, get_user_internal_id,
         get_eligible_trial_group_ids, mark_group_trial_used,
     )
+    from bot.services.license import is_feature_available
 
+    if not is_feature_available("trial_period"):
+        await callback.answer('❌ Пробная подписка недоступна', show_alert=True)
+        return
     if not is_trial_enabled():
         await callback.answer('❌ Пробная подписка недоступна', show_alert=True)
         return
