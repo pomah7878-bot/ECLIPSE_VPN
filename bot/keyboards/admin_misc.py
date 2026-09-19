@@ -54,7 +54,7 @@ def home_only_kb() -> InlineKeyboardMarkup:
 
 def admin_main_menu_kb() -> InlineKeyboardMarkup:
     """Main menu of the admin panel."""
-    from bot.services.license import get_license_key
+    from bot.services.license import is_license_server
 
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -69,16 +69,14 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text='⚙️ Настройки бота', callback_data='admin_bot_settings'),
         InlineKeyboardButton(text='🧩 Расширения', callback_data='admin_extensions_diagnostics')
     )
-    if not get_license_key():
-        # Раздел управления whitelabel-лицензиями партнёров имеет смысл
-        # только на инсталляции, которая САМА выступает лицензионным
-        # сервером (обычно — главная, у Романа). На партнёрских
-        # инсталляциях (с заданным LICENSE_KEY) кнопка не нужна — они
-        # не выдают лицензии другим.
+    if is_license_server():
+        # Раздел управления whitelabel-лицензиями партнёров — только на
+        # ГЛАВНОЙ инсталляции (IS_LICENSE_SERVER=1 в secrets.env).
         builder.row(InlineKeyboardButton(text='🔑 Лицензии партнёров', callback_data='admin_licenses'))
     else:
-        # Обратная сторона — на партнёрской инсталляции показываем
-        # кнопку проверки/покупки СВОЕЙ лицензии вместо панели выдачи.
+        # Обратная сторона — на ЛЮБОЙ другой инсталляции (партнёрской,
+        # включая совсем новую, где лицензия ещё не введена вообще)
+        # показываем кнопку покупки/ввода/проверки СВОЕЙ лицензии.
         builder.row(InlineKeyboardButton(text='💳 Моя лицензия', callback_data='my_license'))
     builder.row(home_button())
     return builder.as_markup()

@@ -161,6 +161,7 @@ class AdminStates(StatesGroup):
     license_tariff_create_price = State()  # Ввод цены тарифа на продажу
     license_tariff_edit_name = State()     # Редактирование названия существующего тарифа
     license_tariff_edit_price = State()    # Редактирование цены существующего тарифа
+    my_license_enter_code = State()        # Партнёр вводит код лицензии, выданный напрямую
 
     channel_post_edit_text = State()  # Ввод нового текста взамен существующего поста в очереди
 
