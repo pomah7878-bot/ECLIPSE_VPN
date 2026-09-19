@@ -383,7 +383,7 @@ async def show_qr_management_menu(callback: CallbackQuery, state: FSMContext):
     secret_display = f"Установлен ✅ (<code>{secret_key[:4]}...{secret_key[-4:]}</code>)" if len(secret_key) >= 8 else "❌ Не задан"
 
     text = (
-        "🏦 <b>Оплата по СБП</b>\n\n"
+        "📱 <b>Оплата по СБП</b>\n\n"
         "Позволяет принимать оплату картами и через СБП по QR-коду,\n"
         "без Telegram Payments.\n\n"
         "📋 <b>Как получить доступ:</b>\n"
