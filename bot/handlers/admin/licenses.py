@@ -451,12 +451,24 @@ async def license_tariff_create_price_entered(message: Message, state: FSMContex
 # ============================================================================
 
 def _build_my_license_text() -> str:
-    from bot.services.license import get_license_key, get_license_tier
+    from bot.services.license import get_license_key, get_enabled_features, GATED_FEATURES
     from database.requests import get_setting
 
     license_key = get_license_key()
-    tier = get_license_tier()
-    tier_label = "💎 Полный" if tier == "full" else "🔹 Базовый"
+    if not license_key:
+        return (
+            f"💳 <b>Моя лицензия</b>\n\n"
+            f"Лицензия ещё не активирована.\n\n"
+            f"Если вы уже оплатили — введите код кнопкой ниже. Если ещё "
+            f"нет — купите лицензию, чтобы разблокировать платные функции."
+        )
+
+    enabled = get_enabled_features()
+    if enabled:
+        features_list = "\n".join(f"  ✅ {GATED_FEATURES[k]}" for k in GATED_FEATURES if k in enabled)
+    else:
+        features_list = "  (нет активных платных функций)"
+
     expires_at = get_setting("license_expires_at", "") or "бессрочно"
     partner_name = get_setting("license_partner_name", "") or "—"
     checked_at = get_setting("license_checked_at", "") or "ещё не проверялась"
@@ -465,9 +477,9 @@ def _build_my_license_text() -> str:
         f"💳 <b>Моя лицензия</b>\n\n"
         f"Ключ: <code>{license_key}</code>\n"
         f"Партнёр: {partner_name}\n"
-        f"Текущий тариф: {tier_label}\n"
         f"Действует до: {expires_at}\n"
-        f"Последняя проверка: {checked_at}"
+        f"Последняя проверка: {checked_at}\n\n"
+        f"Функции:\n{features_list}"
     )
 
 
@@ -766,3 +778,51 @@ async def license_tariff_delete_do(callback: CallbackQuery):
     text = "🏷 <b>Тарифы на продажу лицензий</b>\n\n"
     text += "Клиенты видят в /buy_license только включённые (без 🚫)." if tariffs else "Пока нет ни одного тарифа на продажу."
     await safe_edit_or_send(callback.message, text, reply_markup=license_tariffs_menu_kb(tariffs))
+
+
+@router.callback_query(F.data == "my_license_enter_code")
+async def my_license_enter_code_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from bot.keyboards.admin_licenses import my_license_enter_code_cancel_kb
+
+    await state.set_state(AdminStates.my_license_enter_code)
+    await safe_edit_or_send(
+        callback.message,
+        "🔑 Введите код лицензии, который вам выдали (вида ECLW-XXXX-XXXX-XXXX):",
+        reply_markup=my_license_enter_code_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.my_license_enter_code)
+async def my_license_enter_code_entered(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    code = (message.text or "").strip().upper()
+    if not code or code.startswith("/"):
+        await message.answer("❌ Введите корректный код лицензии.")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    from database.requests import set_setting
+    from bot.services.license import refresh_license_status, get_license_bot_username
+
+    # Сохраняем код ПРЯМО В БД (не требует правки secrets.env и
+    # перезапуска бота вручную) — get_license_key() подхватит его
+    # автоматически при следующей же проверке.
+    set_setting("license_key_override", code)
+    await state.set_state(AdminStates.admin_menu)
+
+    await message.answer("🔄 Проверяю код...")
+    await refresh_license_status()
+
+    deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
+    await message.answer(_build_my_license_text(), parse_mode="HTML", reply_markup=my_license_kb(deep_link))

@@ -50,7 +50,31 @@ _GRACE_PERIOD_HOURS = 72
 
 
 def get_license_key() -> Optional[str]:
-    return os.environ.get("LICENSE_KEY", "").strip() or None
+    """Проверяет сначала переменную окружения LICENSE_KEY (secrets.env —
+    задаётся при установке через сервер), затем — ключ, введённый
+    ПРЯМО В БОТЕ через кнопку "🔑 Ввести код лицензии" (для партнёров,
+    которым Роман выдал ключ напрямую, без покупки, и которым не нужно
+    лезть на сервер руками)."""
+    env_key = os.environ.get("LICENSE_KEY", "").strip()
+    if env_key:
+        return env_key
+
+    try:
+        from database.requests import get_setting
+        db_key = (get_setting("license_key_override", "") or "").strip()
+        return db_key or None
+    except Exception:
+        return None
+
+
+def is_license_server() -> bool:
+    """True — это ГЛАВНАЯ инсталляция, которая САМА выдаёт лицензии
+    (у Романа). Определяется ЯВНЫМ признаком IS_LICENSE_SERVER=1 в
+    secrets.env, а НЕ просто отсутствием LICENSE_KEY — иначе только что
+    установленная, ещё НЕ настроенная партнёрская инсталляция (у
+    которой ключа тоже пока нет) ошибочно показала бы панель ВЫДАЧИ
+    лицензий вместо панели "купить/ввести код своей"."""
+    return os.environ.get("IS_LICENSE_SERVER", "").strip() in ("1", "true", "True")
 
 
 def get_license_server_url() -> str:
@@ -119,13 +143,16 @@ async def refresh_license_status() -> None:
 def get_enabled_features() -> Set[str]:
     """Возвращает набор функций, доступных ЭТОЙ инсталляции прямо сейчас.
 
-    Если LICENSE_KEY не задан вообще (главная инсталляция или старая без
-    лицензирования) — доступны ВСЕ функции, проверка не требуется.
+    Если это ГЛАВНАЯ инсталляция (IS_LICENSE_SERVER=1 в secrets.env) —
+    доступны ВСЕ функции, проверка не требуется.
 
-    Если задан, но ещё ни разу не проверялся, или последняя проверка
-    старше грейс-периода — доступных функций НЕТ (безопасный дефолт)."""
-    if not get_license_key():
+    Иначе (партнёрская инсталляция) — если лицензия ещё не введена,
+    ни разу не проверялась, или последняя проверка старше грейс-периода
+    — доступных функций НЕТ (безопасный дефолт, а не "всё бесплатно")."""
+    if is_license_server():
         return set(GATED_FEATURES.keys())
+    if not get_license_key():
+        return set()
 
     from database.requests import get_setting
 
