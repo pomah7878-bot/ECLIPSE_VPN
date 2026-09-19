@@ -166,6 +166,13 @@ async def show_integrations_apikeys_menu(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
+    from bot.services.license import is_feature_available
+    if not is_feature_available("ai_assistant"):
+        # Все ключи в этом разделе (Groq, Gemini, Tavily) обслуживают
+        # именно AI-помощника — без него они бесполезны, поэтому раздел
+        # гейтится той же функцией, а не заводится отдельной.
+        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
+        return
     from bot.keyboards.admin_settings import integrations_apikeys_menu_kb
     await safe_edit_or_send(callback.message, "🔑 <b>Внешние ключи и API</b>", reply_markup=integrations_apikeys_menu_kb())
     await callback.answer()
