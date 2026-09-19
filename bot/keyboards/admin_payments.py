@@ -32,8 +32,8 @@ def payments_menu_kb(stars_enabled: bool, cards_enabled: bool, qr_enabled: bool=
     cards_status = _status_dot(cards_enabled)
     qr_status = _status_dot(qr_enabled)
     builder.row(
-        InlineKeyboardButton(text=f'{cards_status} Оплатить картой', callback_data='admin_payments_cards'),
-        InlineKeyboardButton(text=f'{qr_status} Оплатить по СБП', callback_data='admin_payments_qr'),
+        InlineKeyboardButton(text=f'{cards_status} Оплата картой', callback_data='admin_payments_cards'),
+        InlineKeyboardButton(text=f'{qr_status} Оплата по СБП', callback_data='admin_payments_qr'),
     )
     wata_status = _status_dot(wata_enabled)
     platega_status = _status_dot(platega_enabled)
