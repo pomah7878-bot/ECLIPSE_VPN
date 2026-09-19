@@ -18,10 +18,10 @@ def create_partner_license(partner_name: str, features, duration_days: Optional[
     """features — набор (set/list) ключей функций из bot.services.license.GATED_FEATURES,
     например {'ai_assistant', 'site_webapp'}. Пустой набор — тариф без
     платных функций вообще."""
-    from bot.services.license import features_to_str
+    from bot.services.license import features_to_str, GATED_FEATURES
 
     features_str = features_to_str(features) if not isinstance(features, str) else features
-    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    all_keys = set(GATED_FEATURES.keys())
     enabled = set(features_str.split(",")) if features_str else set()
     tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
 
@@ -56,10 +56,10 @@ def list_partner_licenses() -> List[Dict[str, Any]]:
 def set_partner_license_features(license_key: str, features) -> bool:
     """Устанавливает ПОЛНЫЙ набор функций для лицензии (перезаписывает,
     не добавляет). features — set/list ключей или готовая CSV-строка."""
-    from bot.services.license import features_to_str
+    from bot.services.license import features_to_str, GATED_FEATURES
 
     features_str = features_to_str(features) if not isinstance(features, str) else features
-    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    all_keys = set(GATED_FEATURES.keys())
     enabled = set(features_str.split(",")) if features_str else set()
     tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
 
@@ -138,10 +138,10 @@ def check_license_validity(license_key: str) -> Dict[str, Any]:
 # ============================================================================
 
 def create_license_tariff(name: str, features, price_rub: float, duration_days: Optional[int] = None) -> int:
-    from bot.services.license import features_to_str
+    from bot.services.license import features_to_str, GATED_FEATURES
 
     features_str = features_to_str(features) if not isinstance(features, str) else features
-    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    all_keys = set(GATED_FEATURES.keys())
     enabled = set(features_str.split(",")) if features_str else set()
     tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
 
@@ -296,7 +296,8 @@ def toggle_tariff_feature(tariff_id: int, feature: str) -> Set[str]:
     else:
         current.add(feature)
     features_str = features_to_str(current)
-    all_keys = {"ai_assistant", "zvonok_verification", "site_webapp", "broadcast_marketing"}
+    from bot.services.license import GATED_FEATURES
+    all_keys = set(GATED_FEATURES.keys())
     tier = "full" if current == all_keys else ("basic" if not current else "custom")
     with get_db() as conn:
         conn.execute(

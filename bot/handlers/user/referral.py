@@ -72,9 +72,13 @@ async def show_referral_leaderboard(callback: CallbackQuery):
 async def show_referral_system(callback: CallbackQuery):
     """Shows the referral system section."""
     from bot.utils.page_renderer import render_page
+    from bot.services.license import is_feature_available
 
     telegram_id = callback.from_user.id
 
+    if not is_feature_available("referral_system"):
+        await callback.answer("Эта функция доступна в полном тарифе", show_alert=True)
+        return
     if not is_referral_enabled():
         await callback.answer("❌ Реферальная система недоступна", show_alert=True)
         return
