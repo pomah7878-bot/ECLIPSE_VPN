@@ -80,9 +80,9 @@ async def show_payments_menu(callback: CallbackQuery, state: FSMContext):
 
     if qr:
         shop_id = get_setting('yookassa_shop_id', '')
-        text += f"🟢 <b>Оплата по СБП</b> | Shop ID: <code>{shop_id or '—'}</code>\n"
+        text += f"🟢 <b>Оплатить по СБП</b> | Shop ID: <code>{shop_id or '—'}</code>\n"
     else:
-        text += "⚪ <b>Оплата по СБП</b>\n"
+        text += "⚪ <b>Оплатить по СБП</b>\n"
 
     if wata:
         text += "🟢 <b>WATA</b>\n"
@@ -383,7 +383,7 @@ async def show_qr_management_menu(callback: CallbackQuery, state: FSMContext):
     secret_display = f"Установлен ✅ (<code>{secret_key[:4]}...{secret_key[-4:]}</code>)" if len(secret_key) >= 8 else "❌ Не задан"
 
     text = (
-        "🏦 <b>Оплата по СБП</b>\n\n"
+        "🏦 <b>Оплатить по СБП</b>\n\n"
         "Позволяет принимать оплату картами и через СБП по QR-коду,\n"
         "без Telegram Payments.\n\n"
         "📋 <b>Как получить доступ:</b>\n"
