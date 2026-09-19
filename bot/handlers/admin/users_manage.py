@@ -303,6 +303,23 @@ async def process_coefficient_input(message: Message, state: FSMContext):
             pass
     await state.clear()
 
+@router.callback_query(F.data.regexp('^admin_user_balance:(\\d+)$'))
+async def show_balance_toast(callback: CallbackQuery):
+    """Кнопка-ярлык с текущим балансом — сама сумма уже видна в тексте
+    кнопки, по клику просто подтверждаем, чтобы не оставлять пользователя
+    смотреть на бесконечный спиннер (изменить баланс — соседние кнопки
+    «➕ Пополнить»/«➖ Списать»)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    telegram_id = int(callback.data.split(':')[1])
+    user = get_user_by_telegram_id(telegram_id)
+    if not user:
+        await callback.answer('Пользователь не найден', show_alert=True)
+        return
+    balance_rub = get_user_balance(user['id']) / 100
+    await callback.answer(f'💰 Текущий баланс: {balance_rub:.2f} ₽')
+
 @router.callback_query(F.data.regexp('^admin_user_balance_add:(\\d+)$'))
 async def start_balance_add(callback: CallbackQuery, state: FSMContext):
     """Start of replenishing the user's balance."""
