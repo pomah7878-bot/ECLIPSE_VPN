@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 110
+LATEST_VERSION = 111
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -128,8 +128,8 @@ def _renew_payment_page_buttons() -> str:
         {"id": "btn_renew_enter_promo", "label": "🎟 Ввести промокод",            "color": "secondary", "row": 0, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_crypto",  "label": "🪙 Оплатить USDT",              "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_stars",   "label": "⭐ Оплатить звёздами",          "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-        {"id": "btn_renew_pay_cards",   "label": "💳 Оплата картой",                "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-        {"id": "btn_renew_pay_qr",      "label": "📱 ЮКасса",                     "color": "secondary", "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+        {"id": "btn_renew_pay_cards",   "label": "💳 Оплатить картой",                "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+        {"id": "btn_renew_pay_qr",      "label": "🏦 Оплата по СБП",                     "color": "secondary", "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_wata",    "label": "🌊 WATA",                       "color": "secondary", "row": 5, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_platega", "label": "💸 Platega",                    "color": "secondary", "row": 6, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_cardlink", "label": "🔗 Cardlink",                  "color": "secondary", "row": 7, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
@@ -1117,8 +1117,8 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 {"id": "btn_enter_promo", "label": "🎟 Ввести промокод",        "color": "primary",   "row": 0, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_crypto",  "label": "🪙 Оплатить USDT",          "color": "primary",   "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_stars",   "label": "⭐ Оплатить звёздами",      "color": "primary",   "row": 2, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-                {"id": "btn_pay_cards",   "label": "💳 Оплата картой",           "color": "primary",   "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-                {"id": "btn_pay_qr",      "label": "📱 ЮКасса",                "color": "primary",   "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+                {"id": "btn_pay_cards",   "label": "💳 Оплатить картой",           "color": "primary",   "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+                {"id": "btn_pay_qr",      "label": "🏦 Оплата по СБП",                "color": "primary",   "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_wata",    "label": "🌊 WATA",                  "color": "primary",   "row": 5, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_platega", "label": "💸 Platega",               "color": "primary",   "row": 6, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_cardlink", "label": "🔗 Cardlink",             "color": "primary",   "row": 7, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
@@ -2230,6 +2230,58 @@ def migration_110(conn: sqlite3.Connection) -> None:
     logger.info("Migration v110 applied: список функций расширен, старым full-лицензиям добавлены новые функции")
 
 
+def migration_111(conn: sqlite3.Connection) -> None:
+    """Версия 111: уточнены подписи кнопок оплаты на страницах покупки и
+    продления ключа.
+
+    + "TG payments"/"Оплата картой" -> "Оплатить картой"
+    + "ЮКасса"/подпись СБП с эмодзи телефона -> "Оплата по СБП" с эмодзи банка
+
+    Правит buttons_default (дефолты, задаются миграцией) и buttons_custom
+    (если админ ранее кастомизировал эти кнопки через админ-панель) —
+    в обоих местах ищет и меняет подстроки, чтобы сработало независимо от
+    того, кастомизирована страница или нет."""
+    replacements = [
+        ("📁 TG payments", "💳 Оплатить картой"),
+        ("TG payments", "Оплатить картой"),
+        ("Оплата картой", "Оплатить картой"),
+        ("📱 ЮКасса", "🏦 Оплата по СБП"),
+        ("📱 <b>СБП</b>", "🏦 <b>СБП</b>"),
+        ("📱 СБП", "🏦 СБП"),
+        ("📱 Доплатить через СБП", "🏦 Доплатить через СБП"),
+        ("📱 <b>Оплата по СБП</b>", "🏦 <b>Оплата по СБП</b>"),
+    ]
+
+    for page_key in ("prepayment", "renew_payment"):
+        row = conn.execute(
+            "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = ?",
+            (page_key,)
+        ).fetchone()
+        if row is None:
+            continue
+
+        for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+            raw = row[column_index]
+            if not raw:
+                continue
+            buttons = json.loads(raw)
+            changed = False
+            for btn in buttons:
+                label = btn.get("label", "")
+                for old, new in replacements:
+                    if old in label:
+                        btn["label"] = label.replace(old, new)
+                        changed = True
+                        break
+            if changed:
+                conn.execute(
+                    f"UPDATE pages SET {column_name} = ? WHERE page_key = ?",
+                    (json.dumps(buttons, ensure_ascii=False), page_key)
+                )
+
+    logger.info("Migration v111 applied: подписи кнопок оплаты обновлены (Оплатить картой / Оплата по СБП)")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2268,6 +2320,7 @@ MIGRATIONS = {
     108: migration_108,
     109: migration_109,
     110: migration_110,
+    111: migration_111,
 }
 
 

@@ -580,7 +580,7 @@ async def _continue_start(
                 await show_payment_tariff_select_page(
                     send_target,
                     context=build_payment_tariff_select_page_context(
-                        provider_title_html='💳 <b>Оплата картой</b>',
+                        provider_title_html='💳 <b>Оплатить картой</b>',
                         instruction_html='😔 Нет доступных тарифов.\n\nПопробуйте позже или обратитесь в поддержку.',
                     ),
                     runtime_markup=home_only_kb(),
@@ -588,7 +588,7 @@ async def _continue_start(
             else:
                 await show_payment_tariff_select_page(
                     send_target,
-                    context=build_payment_tariff_select_page_context(provider_title_html='💳 <b>Оплата картой</b>'),
+                    context=build_payment_tariff_select_page_context(provider_title_html='💳 <b>Оплатить картой</b>'),
                     runtime_markup=tariff_select_kb(tariffs, order_id=None, is_cards=True),
                 )
         except Exception as e:
