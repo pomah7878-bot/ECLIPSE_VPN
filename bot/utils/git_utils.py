@@ -486,16 +486,25 @@ def restart_bot(notify_admin_id: int | None = None) -> None:
 
     Uses os.execv to replace the current process with a new one.
 
-    Also restarts the separate eclipse-ai and eclipse-webapp systemd
-    units, if present — they're different processes from the bot and
-    won't pick up code/dependency changes on their own. eclipse-webapp
-    specifically serves the public website/WebApp independently from
-    the bot (by design — so bot restarts don't cause website downtime),
-    which means every site-related fix silently fails to go live unless
-    this unit is ALSO restarted. The bot runs as root (see
-    eclipse-vpn.service), so it has permission to call systemctl
-    directly. Best-effort: a failure here must not block the bot's own
-    restart.
+    Also restarts the separate eclipse-ai systemd unit, if present — it's
+    a different process from the bot and won't pick up code/dependency
+    changes on its own. The bot runs as root (see eclipse-vpn.service),
+    so it has permission to call systemctl directly. Best-effort: a
+    failure here must not block the bot's own restart.
+
+    ВАЖНО: НЕ трогает eclipse-webapp.service — это легаси-сервис от
+    старой архитектуры (когда WebApp запускался отдельным процессом
+    через webapp_main.py). В текущей архитектуре WebApp встроен ПРЯМО
+    в main.py (см. "🌐 WebApp started on ..." в логах eclipse-vpn) и
+    поднимается автоматически вместе с самим ботом — отдельно
+    перезапускать нечего. Обнаружено на практике: если где-то на
+    сервере всё ещё существует файл eclipse-webapp.service (даже
+    неактивный/disabled), эта функция раньше пыталась его
+    ПЕРЕЗАПУСКАТЬ при КАЖДОМ обновлении бота — его собственный
+    ExecStartPre (free_port.sh) при этом убивал ЗАКОННЫЙ процесс
+    eclipse-vpn, чтобы "освободить" порт 3000 для себя, что вызывало
+    зацикленные перезапуски (SIGTERM каждые ~15 секунд) сразу после
+    каждого обновления.
 
     Args:
         notify_admin_id: если передан, сохраняется в настройках (переживает
@@ -520,16 +529,6 @@ def restart_bot(notify_admin_id: int | None = None) -> None:
             logger.info("🔄 eclipse-ai перезапущен вместе с ботом")
     except Exception as e:
         logger.warning(f"Не удалось перезапустить eclipse-ai (бот всё равно перезапустится): {e}")
-
-    try:
-        if os.path.exists('/etc/systemd/system/eclipse-webapp.service'):
-            subprocess.run(
-                ['systemctl', 'restart', 'eclipse-webapp'],
-                capture_output=True, text=True, timeout=30,
-            )
-            logger.info("🔄 eclipse-webapp (сайт/WebApp) перезапущен вместе с ботом")
-    except Exception as e:
-        logger.warning(f"Не удалось перезапустить eclipse-webapp (бот всё равно перезапустится): {e}")
 
     logger.info("🔄 Перезапуск бота...")
     
