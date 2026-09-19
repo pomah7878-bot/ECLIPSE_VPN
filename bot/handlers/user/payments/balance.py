@@ -553,7 +553,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         await show_payment_configuration_status(
             callback.message,
             body_text='Попробуйте другой способ доплаты или обратитесь в поддержку.',
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -623,7 +623,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
     back_cb = f'key_renew:{key_id}' if key_id else 'buy_key'
     invoice_sent = await send_telegram_invoice_or_status(
         callback,
-        provider_title='Оплата картой',
+        provider_title='Оплатить картой',
         log_context=f"balance_cards order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
         description=f"Оплата тарифа «{tariff['name']}» ({tariff['duration_days']} дн.).",
@@ -767,7 +767,7 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
             default_qr_payment_page_text,
         )
         payment_context = build_qr_payment_page_context(
-            title='📱 <b>СБП</b>',
+            title='🏦 <b>СБП</b>',
             tariff_name=escape_html(tariff['name']),
             price_str=f"{remaining_rub:.2f} ₽",
             days=tariff['duration_days'],

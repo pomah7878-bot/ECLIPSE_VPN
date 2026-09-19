@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # YuKassa provider configuration
-_YK_TITLE = '📱 <b>СБП</b>'
+_YK_TITLE = '🏦 <b>СБП</b>'
 _YK_TYPE = 'yookassa_qr'
 _YK_ERROR = 'ЮКасса'
 _YK_QR_FILE = 'qr.png'
@@ -47,7 +47,7 @@ async def pay_cards_select_tariff(callback: CallbackQuery):
         await show_payment_tariff_select_page(
             callback,
             context=build_payment_tariff_select_page_context(
-                provider_title_html='💳 <b>Оплата картой</b>',
+                provider_title_html='💳 <b>Оплатить картой</b>',
                 instruction_html='😔 Нет доступных тарифов.\n\nПопробуйте позже или обратитесь в поддержку.',
             ),
             runtime_markup=home_only_kb(),
@@ -57,7 +57,7 @@ async def pay_cards_select_tariff(callback: CallbackQuery):
     await show_payment_tariff_select_page(
         callback,
         context=build_payment_tariff_select_page_context(
-            provider_title_html='💳 <b>Оплата картой</b>',
+            provider_title_html='💳 <b>Оплатить картой</b>',
         ),
         runtime_markup=tariff_select_kb(tariffs, order_id=order_id, is_cards=True),
     )
@@ -83,7 +83,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
         await show_payment_configuration_status(
             callback.message,
             body_text='Попробуйте другой способ оплаты или обратитесь в поддержку.',
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -110,7 +110,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
         await show_payment_unavailable_status(
             callback.message,
             quote['unavailable_reason'],
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -127,7 +127,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
             callback.message,
             title_html='❌ <b>Цена в рублях не задана</b>',
             body_text='Выберите другой способ оплаты или обратитесь в поддержку.',
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -159,7 +159,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
     promo_note = f" Промокод {quote['promo']['code']} -{quote['discount_percent']}%." if quote.get('promo') else ""
     invoice_sent = await send_telegram_invoice_or_status(
         callback,
-        provider_title='Оплата картой',
+        provider_title='Оплатить картой',
         log_context=f"cards:new_key order={order_id} tariff={tariff.get('id')}",
         title=bot_name,
         description=f"Оплата тарифа «{tariff['name']}» ({days} дн.).{promo_note}",
@@ -198,7 +198,7 @@ async def renew_cards_select_tariff(callback: CallbackQuery):
     if not tariffs:
         await show_payment_no_tariffs_page(
             callback,
-            provider_title_html='💳 <b>Оплата картой</b>',
+            provider_title_html='💳 <b>Оплатить картой</b>',
             instruction_html='😔 Нет доступных тарифов для продления.\n\nПопробуйте позже или обратитесь в поддержку.',
             key_name=key['display_name'],
             back_callback=f'key_renew:{key_id}',
@@ -208,7 +208,7 @@ async def renew_cards_select_tariff(callback: CallbackQuery):
     await show_payment_tariff_select_page(
         callback,
         context=build_payment_tariff_select_page_context(
-            provider_title_html='💳 <b>Оплата картой</b>',
+            provider_title_html='💳 <b>Оплатить картой</b>',
             instruction_html='Выберите тариф для продления:',
             key_name=key['display_name'],
         ),
@@ -238,7 +238,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
         await show_payment_configuration_status(
             callback.message,
             body_text='Попробуйте другой способ оплаты или обратитесь в поддержку.',
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -263,7 +263,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
         await show_payment_unavailable_status(
             callback.message,
             quote['unavailable_reason'],
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -280,7 +280,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
             callback.message,
             title_html='❌ <b>Цена в рублях не задана</b>',
             body_text='Выберите другой способ оплаты или обратитесь в поддержку.',
-            payment_provider_title='Оплата картой',
+            payment_provider_title='Оплатить картой',
         )
         await callback.answer()
         return
@@ -312,7 +312,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
     promo_note = f" Промокод {quote['promo']['code']} -{quote['discount_percent']}%." if quote.get('promo') else ""
     invoice_sent = await send_telegram_invoice_or_status(
         callback,
-        provider_title='Оплата картой',
+        provider_title='Оплатить картой',
         log_context=f"cards:renew order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
         description=f"Продление ключа «{key['display_name']}»: {tariff['name']}.{promo_note}",
