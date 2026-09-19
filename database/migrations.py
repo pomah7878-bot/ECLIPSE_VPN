@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 111
+LATEST_VERSION = 112
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -129,7 +129,7 @@ def _renew_payment_page_buttons() -> str:
         {"id": "btn_renew_pay_crypto",  "label": "🪙 Оплатить USDT",              "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_stars",   "label": "⭐ Оплатить звёздами",          "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_cards",   "label": "💳 Оплатить картой",                "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-        {"id": "btn_renew_pay_qr",      "label": "🏦 Оплата по СБП",                     "color": "secondary", "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+        {"id": "btn_renew_pay_qr",      "label": "🏦 Оплатить по СБП",                     "color": "secondary", "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_wata",    "label": "🌊 WATA",                       "color": "secondary", "row": 5, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_platega", "label": "💸 Platega",                    "color": "secondary", "row": 6, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
         {"id": "btn_renew_pay_cardlink", "label": "🔗 Cardlink",                  "color": "secondary", "row": 7, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
@@ -1118,7 +1118,7 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 {"id": "btn_pay_crypto",  "label": "🪙 Оплатить USDT",          "color": "primary",   "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_stars",   "label": "⭐ Оплатить звёздами",      "color": "primary",   "row": 2, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_cards",   "label": "💳 Оплатить картой",           "color": "primary",   "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
-                {"id": "btn_pay_qr",      "label": "🏦 Оплата по СБП",                "color": "primary",   "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+                {"id": "btn_pay_qr",      "label": "🏦 Оплатить по СБП",                "color": "primary",   "row": 4, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_wata",    "label": "🌊 WATA",                  "color": "primary",   "row": 5, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_platega", "label": "💸 Platega",               "color": "primary",   "row": 6, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_pay_cardlink", "label": "🔗 Cardlink",             "color": "primary",   "row": 7, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
@@ -2282,6 +2282,44 @@ def migration_111(conn: sqlite3.Connection) -> None:
     logger.info("Migration v111 applied: подписи кнопок оплаты обновлены (Оплатить картой / Оплата по СБП)")
 
 
+def migration_112(conn: sqlite3.Connection) -> None:
+    """Версия 112: подпись "Оплата по СБП" -> "Оплатить по СБП" — для
+    согласованности с соседней кнопкой "Оплатить картой" (обе теперь в
+    форме глагола, а не существительного)."""
+    replacements = [
+        ("Оплата по СБП", "Оплатить по СБП"),
+    ]
+
+    for page_key in ("prepayment", "renew_payment"):
+        row = conn.execute(
+            "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = ?",
+            (page_key,)
+        ).fetchone()
+        if row is None:
+            continue
+
+        for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+            raw = row[column_index]
+            if not raw:
+                continue
+            buttons = json.loads(raw)
+            changed = False
+            for btn in buttons:
+                label = btn.get("label", "")
+                for old, new in replacements:
+                    if old in label:
+                        btn["label"] = label.replace(old, new)
+                        changed = True
+                        break
+            if changed:
+                conn.execute(
+                    f"UPDATE pages SET {column_name} = ? WHERE page_key = ?",
+                    (json.dumps(buttons, ensure_ascii=False), page_key)
+                )
+
+    logger.info("Migration v112 applied: подпись СБП переведена в форму глагола (Оплатить по СБП)")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2321,6 +2359,7 @@ MIGRATIONS = {
     109: migration_109,
     110: migration_110,
     111: migration_111,
+    112: migration_112,
 }
 
 

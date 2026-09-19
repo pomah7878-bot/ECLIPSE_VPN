@@ -22,7 +22,7 @@ PAYMENT_TYPE_LABELS: Dict[str, str] = {
     'stars': '⭐ Telegram Stars',
     'crypto': '💰 Крипто (USDT)',
     'cards': '💳 Оплатить картой',
-    'yookassa_qr': '🏦 Оплата по СБП',
+    'yookassa_qr': '🏦 Оплатить по СБП',
     'wata': '🌊 WATA',
     'platega': '💸 Platega',
     'cardlink': '🔗 Cardlink',
