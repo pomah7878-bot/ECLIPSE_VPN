@@ -93,7 +93,7 @@ async def process_expired_key_autodeletion(bot: Any) -> Dict[str, int]:
 
         try:
             builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="\U0001F6D2 Оформить новую подписку", callback_data="buy"))
+            builder.row(InlineKeyboardButton(text="\U0001F6D2 Оформить новую подписку", callback_data="buy_key"))
             await bot.send_message(
                 telegram_id,
                 notice_text,
