@@ -15,8 +15,36 @@ import qrcode
 import io
 import math
 import asyncio
+import os
 from collections import defaultdict
 from typing import Optional, Dict, Any, Tuple
+
+
+_SBP_LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "sbp_logo_qr.png")
+
+
+def _overlay_sbp_logo(qr_img):
+    """Накладывает логотип СБП в центр QR-кода (как делают официальные
+    банковские приложения) — размер логотипа ограничен ~22% от ширины
+    QR, чтобы не портить сканируемость. ВАЖНО: сам QR должен быть
+    сгенерирован с error_correction=ERROR_CORRECT_H — иначе перекрытие
+    центра логотипом может сделать код нечитаемым."""
+    from PIL import Image
+
+    try:
+        logo = Image.open(_SBP_LOGO_PATH).convert("RGBA")
+    except Exception as e:
+        logger.warning(f"Не удалось загрузить логотип СБП для QR ({e}) — код без логотипа")
+        return qr_img
+
+    qr_img = qr_img.convert("RGBA")
+    target_width = int(qr_img.width * 0.22)
+    scale = target_width / logo.width
+    logo = logo.resize((target_width, int(logo.height * scale)), Image.LANCZOS)
+
+    pos = ((qr_img.width - logo.width) // 2, (qr_img.height - logo.height) // 2)
+    qr_img.paste(logo, pos, logo)
+    return qr_img
 
 from database.requests import (
     find_order_by_order_id, complete_order, is_order_already_paid,
@@ -276,13 +304,14 @@ async def create_yookassa_qr_payment(
 
     qr = qrcode.QRCode(
         version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,  # H (не L) — обязательно для логотипа в центре, иначе код может перестать сканироваться
         box_size=10,
         border=4,
     )
     qr.add_data(qr_data)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
+    img = _overlay_sbp_logo(img)
     bio = io.BytesIO()
     img.save(bio, format="PNG")
     qr_image_data = bio.getvalue()

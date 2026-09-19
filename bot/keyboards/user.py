@@ -87,7 +87,7 @@ def balance_payment_kb(
         if 'card' in available_methods:
             builder.row(
                 InlineKeyboardButton(
-                    text="💳 Доплатить через TG payments",
+                    text="💳 Доплатить картой",
                     callback_data=f"pay_card_balance:{tariff_id}:{key_id if key_id else '0'}"
                 )
             )
