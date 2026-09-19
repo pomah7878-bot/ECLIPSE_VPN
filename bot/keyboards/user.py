@@ -95,7 +95,7 @@ def balance_payment_kb(
         if 'qr' in available_methods:
             builder.row(
                 InlineKeyboardButton(
-                    text="📱 Доплатить через ЮКассу",
+                    text="📱 Доплатить через СБП",
                     callback_data=f"pay_qr_balance:{tariff_id}:{key_id if key_id else '0'}"
                 )
             )
@@ -156,7 +156,7 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
                     continue
                 price_display = f"{price_rub} ₽"
                 prefix = "qr_pay"
-                emoji = '📱'
+                emoji = '📱 СБП'
             elif is_wata:
                 price_rub = tariff.get('price_rub')
                 # WATA minimum 10 ₽
@@ -294,7 +294,7 @@ def renew_tariff_select_kb(tariffs: list, key_id: int, order_id: str = None, is_
                 continue
             price_display = f"{price_rub} ₽"
             prefix = "renew_pay_qr"
-            emoji = '📱'
+            emoji = '📱 СБП'
         elif is_wata:
             price_rub = tariff.get('price_rub')
             if price_rub is None or price_rub < 10:
