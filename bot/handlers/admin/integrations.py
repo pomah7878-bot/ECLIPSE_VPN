@@ -25,6 +25,7 @@ from database.requests import (
     is_welcome_page_enabled, set_welcome_page_enabled,
     WELCOME_TEMPLATES, get_welcome_template_id, set_welcome_template_id,
     CABINET_THEMES, get_cabinet_theme_id, set_cabinet_theme_id,
+    SHOP_THEMES, get_shop_theme_id, set_shop_theme_id,
 )
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
@@ -1120,6 +1121,48 @@ async def set_cabinet_theme_handler(callback: CallbackQuery, state: FSMContext):
         return
 
     await show_cabinet_theme_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_shop_theme_menu")
+async def show_shop_theme_menu(callback: CallbackQuery, state: FSMContext):
+    """Показывает список доступных тем страницы /shop."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    current_id = get_shop_theme_id()
+    lines = ["🛍 <b>Тема витрины (/shop)</b>\n", "Применяется сразу, без обновления бота:\n"]
+    for tid, info in SHOP_THEMES.items():
+        mark = "✅ " if tid == current_id else ""
+        lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    for tid, info in SHOP_THEMES.items():
+        mark = "✅ " if tid == current_id else ""
+        builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_shop_theme:{tid}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_site"))
+
+    await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_set_shop_theme:"))
+async def set_shop_theme_handler(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет выбранную тему витрины и возвращает в это же подменю."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    theme_id = callback.data.split(":", 1)[1]
+    try:
+        set_shop_theme_id(theme_id)
+        await callback.answer(f"✅ Применена тема: {SHOP_THEMES[theme_id]['label']}")
+    except ValueError:
+        await callback.answer("❌ Неизвестная тема", show_alert=True)
+        return
+
+    await show_shop_theme_menu(callback, state)
 
 
 @router.callback_query(F.data == "admin_device_limit_type_menu")

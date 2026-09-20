@@ -27,6 +27,38 @@
             --mist: #8B90A0;
             --mist-dim: #565A68;
         }
+        /* Темы витрины (shop_theme_id, см. /api/public/site-info) — только
+           переопределение CSS-переменных выше, разметка и вся JS-логика
+           (оплата, авторизация, Turnstile) не меняются вообще. Тема "classic"
+           не переопределяет ничего — это исходный вид. */
+        body[data-theme="platinum"] {
+            --void: #06070A;
+            --panel: #101116;
+            --panel-2: #171922;
+            --hairline: rgba(255,255,255,0.06);
+            --gold: #7C9CFF;
+            --gold-bright: #A6BFFF;
+            --teal: #4DE6C8;
+            --alert: #FF6B6B;
+            --amber: #FFB454;
+            --ink: #F5F6FA;
+            --mist: #9AA0B4;
+            --mist-dim: #565A68;
+        }
+        body[data-theme="rose"] {
+            --void: #120A10;
+            --panel: #1D1219;
+            --panel-2: #271822;
+            --hairline: rgba(255,255,255,0.08);
+            --gold: #E8A0BD;
+            --gold-bright: #F5BFD6;
+            --teal: #7ED6C1;
+            --alert: #FF7A85;
+            --amber: #F0B86E;
+            --ink: #FBF3F6;
+            --mist: #B79AA8;
+            --mist-dim: #6E5560;
+        }
         * { box-sizing: border-box; }
         body {
             background-color: var(--void);
@@ -405,6 +437,9 @@
             try {
                 const res = await fetch('/api/public/site-info');
                 const site = await res.json();
+                if (site.shop_theme_id && site.shop_theme_id !== 'classic') {
+                    document.body.dataset.theme = site.shop_theme_id;
+                }
                 if (site.brand_name) {
                     document.getElementById('pageTitle').textContent = '💎 ' + site.brand_name + ' — премиальный VPN';
                     document.getElementById('brandHeader').textContent = site.brand_name;

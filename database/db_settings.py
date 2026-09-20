@@ -72,6 +72,9 @@ __all__ = [
     'get_device_limit_type',
     'set_device_limit_type',
     'set_cabinet_theme_id',
+    'SHOP_THEMES',
+    'get_shop_theme_id',
+    'set_shop_theme_id',
     'delete_setting',
     'is_update_notifications_enabled',
     'get_display_timezone',
@@ -468,6 +471,27 @@ def set_cabinet_theme_id(theme_id: str) -> None:
     if theme_id not in CABINET_THEMES:
         raise ValueError(f"Неизвестная тема кабинета: {theme_id}")
     set_setting('cabinet_theme_id', theme_id)
+
+
+SHOP_THEMES = {
+    'classic':  {'label': '🥇 Classic Gold', 'description': 'Тёплое золото на графите — текущий вид, ничего менять не нужно'},
+    'platinum': {'label': '🖤 Platinum Noir', 'description': 'Холодный платиново-синий акцент на почти чёрном фоне — строгий премиум'},
+    'rose':     {'label': '🌸 Rose Quartz', 'description': 'Розово-золотой акцент на глубоком сливовом фоне — мягкий премиум'},
+}
+
+
+def get_shop_theme_id() -> str:
+    """id выбранной темы страницы /shop. По умолчанию 'classic' — визуально
+    ничего не меняется, пока админ явно не выберет другую."""
+    value = get_setting('shop_theme_id', 'classic')
+    return value if value in SHOP_THEMES else 'classic'
+
+
+def set_shop_theme_id(theme_id: str) -> None:
+    """Задаёт тему страницы /shop."""
+    if theme_id not in SHOP_THEMES:
+        raise ValueError(f"Неизвестная тема магазина: {theme_id}")
+    set_setting('shop_theme_id', theme_id)
 
 
 def is_channel_gate_enabled() -> bool:
