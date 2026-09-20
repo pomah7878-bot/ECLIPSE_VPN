@@ -361,14 +361,14 @@ async def process_change_traffic_limit(message: Message, state: FSMContext):
         result_text = f'✅ Лимит трафика успешно обновлён: {traffic_text}!'
         if not stats.get('ok'):
             result_text += '\n\n⚠️ БД обновлена, но панель синхронизирована не полностью.'
-        await safe_edit_or_send(message, result_text, force_new=True)
+        await safe_edit_or_send(message, result_text, force_new=True, reply_markup=key_view_kb(key_id, key.get('telegram_id')))
         await state.set_state(AdminStates.key_view)
     except VPNAPIError as e:
         logger.error(f'Ошибка обновления лимита трафика: {e}')
-        await safe_edit_or_send(message, f'❌ Ошибка: {e}')
+        await safe_edit_or_send(message, f'❌ Ошибка: {e}', reply_markup=key_view_kb(key_id, key.get('telegram_id')))
     except Exception as e:
         logger.error(f'Неожиданная ошибка при обновлении лимита трафика: {e}')
-        await safe_edit_or_send(message, '❌ Ошибка при обновлении лимита трафика')
+        await safe_edit_or_send(message, '❌ Ошибка при обновлении лимита трафика', reply_markup=key_view_kb(key_id, key.get('telegram_id')))
 
 @router.callback_query(F.data.startswith('admin_user_add_key:'))
 async def start_add_key(callback: CallbackQuery, state: FSMContext):
