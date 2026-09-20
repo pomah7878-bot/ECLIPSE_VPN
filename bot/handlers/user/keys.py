@@ -818,10 +818,14 @@ async def key_traffic_chart_handler(callback: CallbackQuery):
     history = get_key_traffic_history(key_id, days=14)
     png_bytes = generate_traffic_chart(history, keyname)
 
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    back_kb = InlineKeyboardBuilder()
+    back_kb.row(InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}'))
     await callback.message.answer_photo(
         photo=BufferedInputFile(png_bytes, filename="traffic_chart.png"),
         caption=f"📈 <b>Статистика трафика — {keyname}</b>\n\nПоследние 14 дней (данные накапливаются постепенно).",
         parse_mode="HTML",
+        reply_markup=back_kb.as_markup(),
     )
 
 
