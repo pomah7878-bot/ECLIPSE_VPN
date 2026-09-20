@@ -947,8 +947,10 @@ async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name
     from database.requests import get_effective_webapp_url
     deeplink = f"{get_effective_webapp_url()}/import?scheme={scheme}&url=" + urllib.parse.quote(sub_url, safe='')
     await callback.answer()
+    from bot.keyboards.admin_misc import home_button
     markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"📥 Открыть в {app_name}", url=deeplink)]
+        [InlineKeyboardButton(text=f"📥 Открыть в {app_name}", url=deeplink)],
+        [home_button()],
     ])
     await callback.message.answer(
         f"Нажмите на кнопку ниже, чтобы импортировать вашу подписку в {app_name}:",
