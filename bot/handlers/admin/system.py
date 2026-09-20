@@ -485,7 +485,8 @@ async def save_extension_setting_from_message(message: Message, state: FSMContex
     editing_message = data.get('editing_message')
     if not extension_id or not field_key:
         await state.clear()
-        await safe_edit_or_send(message, "❌ Ошибка состояния.", force_new=True)
+        from bot.keyboards.admin_misc import home_only_kb
+        await safe_edit_or_send(message, "❌ Ошибка состояния.", force_new=True, reply_markup=home_only_kb())
         return
 
     from bot.utils.extension_settings import (
@@ -1573,7 +1574,8 @@ async def edit_link_url_save(message: Message, state: FSMContext):
     
     if not btn_id:
         await state.clear()
-        await safe_edit_or_send(message, "❌ Ошибка состояния.", force_new=True)
+        from bot.keyboards.admin_misc import home_only_kb
+        await safe_edit_or_send(message, "❌ Ошибка состояния.", force_new=True, reply_markup=home_only_kb())
         return
     
     new_value = get_message_text_for_storage(message, 'plain')
@@ -1741,7 +1743,8 @@ async def edit_link_name_save(message: Message, state: FSMContext):
     
     if not btn_id:
         await state.clear()
-        await safe_edit_or_send(message, "❌ Ошибка состояния.", force_new=True)
+        from bot.keyboards.admin_misc import home_only_kb
+        await safe_edit_or_send(message, "❌ Ошибка состояния.", force_new=True, reply_markup=home_only_kb())
         return
     
     from bot.utils.text import get_message_text_for_storage
