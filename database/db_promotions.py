@@ -2,7 +2,7 @@ import datetime
 import logging
 import re
 import secrets
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .connection import get_db
 from .db_settings import get_setting, set_setting
@@ -46,6 +46,8 @@ __all__ = [
     "set_coupon_auto_discount_percent",
     "get_coupon_auto_lifetime_days",
     "set_coupon_auto_lifetime_days",
+    "delete_promo_code",
+    "delete_unused_coupons",
 ]
 
 
@@ -404,6 +406,42 @@ def set_promo_code_active(promo_code_id: int, is_active: bool) -> bool:
 
 def set_promo_code_ai_visible(promo_code_id: int, ai_visible: bool) -> bool:
     return update_promo_code(promo_code_id, ai_visible=ai_visible)
+
+
+def delete_promo_code(promo_code_id: int) -> Tuple[bool, str]:
+    """Удаляет промокод/купон, если он ни разу не был использован.
+
+    Если код уже активировался хоть раз (usage_count > 0), удаление
+    заблокировано — это стёрло бы финансовую историю по связанным заказам
+    (promo_redemptions удаляется каскадом вместе с кодом). В этом случае
+    код можно только выключить (set_promo_code_active), но не удалить.
+
+    Возвращает (успех, причина_отказа_если_не_успех).
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT usage_count FROM promo_codes WHERE id = ?",
+            (promo_code_id,),
+        ).fetchone()
+        if row is None:
+            return False, "not_found"
+        if row["usage_count"] > 0:
+            return False, "has_usage"
+        conn.execute("DELETE FROM promo_codes WHERE id = ?", (promo_code_id,))
+        conn.commit()
+        return True, ""
+
+
+def delete_unused_coupons() -> int:
+    """Удаляет все ни разу не использованные купоны (type='coupon',
+    usage_count=0). Используется активные не трогает. Возвращает
+    количество удалённых записей."""
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM promo_codes WHERE type = 'coupon' AND usage_count = 0",
+        )
+        conn.commit()
+        return cur.rowcount
 
 
 def set_user_active_promo_code(user_id: int, promo_code_id: int) -> bool:

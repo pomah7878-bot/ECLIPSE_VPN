@@ -28,7 +28,16 @@ def promocode_detail_kb(promo: dict) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="📊 Размер скидки", callback_data=f"admin_promocode_edit_discount:{promo['id']}"))
     builder.row(InlineKeyboardButton(text="⏳ Срок действия", callback_data=f"admin_promocode_edit_expires:{promo['id']}"))
     builder.row(InlineKeyboardButton(text="🔢 Лимит активаций", callback_data=f"admin_promocode_edit_limit:{promo['id']}"))
+    if not promo.get("usage_count"):
+        builder.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin_promocode_delete_ask:{promo['id']}"))
     builder.row(back_button("admin_promocodes"), home_button())
+    return builder.as_markup()
+
+
+def promocode_delete_confirm_kb(promo_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🗑 Да, удалить", callback_data=f"admin_promocode_delete_yes:{promo_id}"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_promocode_view:{promo_id}"))
     return builder.as_markup()
 
 
@@ -39,7 +48,15 @@ def coupons_menu_kb(enabled: bool, discount_percent: int, lifetime_days: int) ->
     builder.row(InlineKeyboardButton(text=f"📊 Размер скидки: {discount_percent}%", callback_data="admin_coupons_edit_discount"))
     builder.row(InlineKeyboardButton(text=f"⏳ Время жизни: {lifetime_days} дн.", callback_data="admin_coupons_edit_lifetime"))
     builder.row(InlineKeyboardButton(text="🎲 Сгенерировать", callback_data="admin_coupons_generate"))
+    builder.row(InlineKeyboardButton(text="🗑 Удалить неиспользованные", callback_data="admin_coupons_delete_unused_ask"))
     builder.row(back_button("admin_marketing"), home_button())
+    return builder.as_markup()
+
+
+def coupons_delete_unused_confirm_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🗑 Да, удалить все", callback_data="admin_coupons_delete_unused_yes"))
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_coupons"))
     return builder.as_markup()
 
 
