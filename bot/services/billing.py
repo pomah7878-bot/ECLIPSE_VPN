@@ -1448,10 +1448,9 @@ async def process_payment_order(
         вызовах — например, от автопроверки платежей).
     """
     from database.requests import (
-        update_payment_key_id, create_initial_vpn_key, extend_vpn_key,
+        update_payment_key_id, create_initial_vpn_key,
     )
     from database.db_tariffs import get_tariff_by_id
-    from bot.services.vpn_api import extend_key_on_server
 
     order = find_order_by_order_id(order_id)
     if not order:
@@ -1487,13 +1486,20 @@ async def process_payment_order(
         return True, text, order
 
     if vpn_key_id:
-        # Продление уже существующего ключа
+        # Продление уже существующего ключа. Используем тот же надёжный путь,
+        # что и продление из личного кабинета на сайте (renew_anonymous_vpn_key):
+        # renew_key_access не только продлевает срок, но и — если передан
+        # tariff_id — переносит ключ на новый тариф целиком (трафик и лимит
+        # устройств тоже), а не только дату. Раньше здесь были только
+        # extend_vpn_key()+extend_key_on_server(), которые трогают исключительно
+        # срок действия — при продлении с переходом на другой тариф трафик и
+        # лимит устройств оставались от старого тарифа.
         if order['_payment_processed_now']:
-            extend_vpn_key(vpn_key_id, days)
+            from bot.services.key_lifecycle import renew_key_access
             try:
-                await extend_key_on_server(vpn_key_id, days)
+                await renew_key_access(vpn_key_id, days, reset_traffic=True, tariff_id=tariff_id)
             except Exception as e:
-                logger.error(f"Не удалось продлить ключ {vpn_key_id} на панели для заказа {order_id}: {e}")
+                logger.error(f"Не удалось продлить ключ {vpn_key_id} для заказа {order_id}: {e}")
         text = f"✅ Подписка продлена на {days} дней!"
     else:
         # Новая покупка — черновой ключ, сервер выбирается пользователем позже
