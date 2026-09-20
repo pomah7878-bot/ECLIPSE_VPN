@@ -197,12 +197,13 @@ async def process_key_extend(message: Message, state: FSMContext):
         result_text = f'✅ Срок действия ключа {action_text} дней!'
         if not result['panel_synced']:
             result_text += '\n\n⚠️ БД обновлена, но панель синхронизирована не полностью. Повторная синхронизация сможет дожать состояние.'
-        await safe_edit_or_send(message, result_text, force_new=True)
         key = get_vpn_key_by_id(key_id)
+        await safe_edit_or_send(message, result_text, force_new=True, reply_markup=key_view_kb(key_id, key.get('telegram_id')) if key else None)
         if key:
             await state.set_state(AdminStates.key_view)
     else:
-        await safe_edit_or_send(message, '❌ Ошибка продления ключа')
+        key = get_vpn_key_by_id(key_id)
+        await safe_edit_or_send(message, '❌ Ошибка продления ключа', reply_markup=key_view_kb(key_id, key.get('telegram_id')) if key else None)
 
 @router.callback_query(F.data.startswith('admin_key_reset_traffic:'))
 @regular_panel_operation
