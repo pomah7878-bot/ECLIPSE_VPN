@@ -47,3 +47,10 @@ def promotion_cancel_kb(back_callback: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data=back_callback))
     return builder.as_markup()
+
+
+def promotion_back_kb(back_callback: str) -> InlineKeyboardMarkup:
+    """Клавиатура после уже свершившегося действия — отменять нечего."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data=back_callback))
+    return builder.as_markup()

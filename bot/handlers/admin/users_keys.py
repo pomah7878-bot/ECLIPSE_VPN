@@ -9,7 +9,7 @@ from config import ADMIN_IDS
 from database.requests import get_users_stats, get_all_users_paginated, get_user_by_telegram_id, toggle_user_ban, get_user_vpn_keys, get_user_payments_stats, get_vpn_key_by_id, create_vpn_key_admin, get_active_servers, get_all_tariffs, get_user_balance, get_user_referral_coefficient, add_to_balance, deduct_from_balance, set_user_referral_coefficient
 from bot.utils.admin import is_admin
 from bot.utils.datetime_format import format_datetime_for_display
-from bot.utils.text import escape_html, safe_edit_or_send
+from bot.utils.text import escape_html, safe_edit_or_send, send_temp_notice
 from bot.utils.panel_email import get_panel_email_prefix
 from bot.states.admin_states import AdminStates
 from bot.keyboards.admin import users_menu_kb, users_list_kb, user_view_kb, user_ban_confirm_kb, key_view_kb, add_key_server_kb, add_key_inbound_kb, add_key_step_kb, add_key_confirm_kb, users_input_cancel_kb, key_action_cancel_kb, back_and_home_kb, home_only_kb, key_tariff_select_kb
@@ -198,7 +198,7 @@ async def process_key_extend(message: Message, state: FSMContext):
         if not result['panel_synced']:
             result_text += '\n\n⚠️ БД обновлена, но панель синхронизирована не полностью. Повторная синхронизация сможет дожать состояние.'
         key = get_vpn_key_by_id(key_id)
-        await safe_edit_or_send(message, result_text, force_new=True, reply_markup=key_view_kb(key_id, key.get('telegram_id')) if key else None)
+        await send_temp_notice(message, result_text, force_new=True, reply_markup=key_view_kb(key_id, key.get('telegram_id')) if key else None)
         if key:
             await state.set_state(AdminStates.key_view)
     else:
@@ -362,7 +362,7 @@ async def process_change_traffic_limit(message: Message, state: FSMContext):
         result_text = f'✅ Лимит трафика успешно обновлён: {traffic_text}!'
         if not stats.get('ok'):
             result_text += '\n\n⚠️ БД обновлена, но панель синхронизирована не полностью.'
-        await safe_edit_or_send(message, result_text, force_new=True, reply_markup=key_view_kb(key_id, key.get('telegram_id')))
+        await send_temp_notice(message, result_text, force_new=True, reply_markup=key_view_kb(key_id, key.get('telegram_id')))
         await state.set_state(AdminStates.key_view)
     except VPNAPIError as e:
         logger.error(f'Ошибка обновления лимита трафика: {e}')

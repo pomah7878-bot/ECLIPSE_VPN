@@ -11,6 +11,7 @@ from bot.keyboards.admin import (
     promocode_detail_kb,
     promocodes_list_kb,
     promotion_cancel_kb,
+    promotion_back_kb,
 )
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
@@ -391,4 +392,4 @@ async def admin_coupons_generate_count(message: Message, state: FSMContext):
         f"Количество: <b>{len(coupons)}</b>\n\n"
         f"<pre>{html.escape(codes)}</pre>"
     )
-    await safe_edit_or_send(message, text, reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+    await safe_edit_or_send(message, text, reply_markup=promotion_back_kb("admin_coupons"), force_new=True)
