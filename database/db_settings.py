@@ -475,8 +475,8 @@ def set_cabinet_theme_id(theme_id: str) -> None:
 
 SHOP_THEMES = {
     'classic':  {'label': '🥇 Classic Gold', 'description': 'Тёплое золото на графите — текущий вид, ничего менять не нужно'},
-    'platinum': {'label': '🖤 Platinum Noir', 'description': 'Холодный платиново-синий акцент на почти чёрном фоне — строгий премиум'},
-    'rose':     {'label': '🌸 Rose Quartz', 'description': 'Розово-золотой акцент на глубоком сливовом фоне — мягкий премиум'},
+    'platinum': {'label': '🖤 Platinum Noir', 'description': 'Жёсткая геометрия: острые углы, офсетные тени, тарифы в 2 колонки на широких экранах — строгий структурный премиум'},
+    'rose':     {'label': '🌸 Rose Quartz', 'description': 'Матовое стекло, мягкое свечение, более просторная колонка — бутиковый премиум'},
 }
 
 
