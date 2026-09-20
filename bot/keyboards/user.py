@@ -142,7 +142,7 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
                     continue
                 price_display = f"{price_rub} ₽"
                 prefix = "cards_pay"
-                emoji = '💳'
+                emoji = ''
             elif is_demo:
                 price_rub = tariff.get('price_rub')
                 if price_rub is None or price_rub <= 1:
@@ -156,7 +156,7 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
                     continue
                 price_display = f"{price_rub} ₽"
                 prefix = "qr_pay"
-                emoji = '🏦 СБП'
+                emoji = ''
             elif is_wata:
                 price_rub = tariff.get('price_rub')
                 # WATA minimum 10 ₽
@@ -197,7 +197,7 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
             
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{emoji} {tariff['name']} — {price_display}",
+                    text=f"{emoji} {tariff['name']} — {price_display}".strip(),
                     callback_data=cb_data
                 )
             )
@@ -287,14 +287,14 @@ def renew_tariff_select_kb(tariffs: list, key_id: int, order_id: str = None, is_
                 continue
             price_display = f"{price_rub} ₽"
             prefix = "renew_pay_cards"
-            emoji = '💳'
+            emoji = ''
         elif is_qr:
             price_rub = tariff.get('price_rub')
             if price_rub is None or price_rub <= 0:
                 continue
             price_display = f"{price_rub} ₽"
             prefix = "renew_pay_qr"
-            emoji = '🏦 СБП'
+            emoji = ''
         elif is_wata:
             price_rub = tariff.get('price_rub')
             if price_rub is None or price_rub < 10:
@@ -343,7 +343,7 @@ def renew_tariff_select_kb(tariffs: list, key_id: int, order_id: str = None, is_
             cb_data += f":{order_id}"
             
         is_current = current_tariff_id is not None and tariff['id'] == current_tariff_id
-        button_label = f"{emoji} {tariff['name']} — {price_display}"
+        button_label = f"{emoji} {tariff['name']} — {price_display}".strip()
         if is_current:
             button_label = f"✅ {button_label} (текущий)"
 
@@ -383,7 +383,7 @@ def custom_payment_tariff_select_kb(
             continue
         builder.row(
             InlineKeyboardButton(
-                text=f"💳 {tariff['name']} — {_format_rub_button_price(price_rub)}",
+                text=f"{tariff['name']} — {_format_rub_button_price(price_rub)}",
                 callback_data=f"pet:{provider_id}:{tariff['id']}",
             )
         )
@@ -412,7 +412,7 @@ def custom_payment_renew_tariff_select_kb(
             continue
         builder.row(
             InlineKeyboardButton(
-                text=f"💳 {tariff['name']} — {_format_rub_button_price(price_rub)}",
+                text=f"{tariff['name']} — {_format_rub_button_price(price_rub)}",
                 callback_data=f"ret:{provider_id}:{key_id}:{tariff['id']}",
             )
         )
