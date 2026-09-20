@@ -27,15 +27,20 @@
             --mist: #8B90A0;
             --mist-dim: #565A68;
         }
-        /* Темы витрины (shop_theme_id, см. /api/public/site-info) — только
-           переопределение CSS-переменных выше, разметка и вся JS-логика
-           (оплата, авторизация, Turnstile) не меняются вообще. Тема "classic"
-           не переопределяет ничего — это исходный вид. */
+        /* Темы витрины (shop_theme_id, см. /api/public/site-info). Разметка и
+           вся JS-логика (оплата, авторизация, Turnstile) — общие и единые
+           для всех тем, не меняются вообще. Здесь — только переопределения
+           через CSS custom properties и селекторы body[data-theme=...] с
+           более высокой специфичностью, чем у утилитных классов Tailwind,
+           поэтому !important почти нигде не нужен. Тема "classic" ничего
+           не переопределяет — это исходный вид. */
+
+        /* ---------- Тема "platinum" → PLATINUM NOIR (жёсткая геометрия) ---------- */
         body[data-theme="platinum"] {
             --void: #06070A;
             --panel: #101116;
             --panel-2: #171922;
-            --hairline: rgba(255,255,255,0.06);
+            --hairline: #23252E;
             --gold: #7C9CFF;
             --gold-bright: #A6BFFF;
             --teal: #4DE6C8;
@@ -43,13 +48,60 @@
             --amber: #FFB454;
             --ink: #F5F6FA;
             --mist: #9AA0B4;
-            --mist-dim: #565A68;
+            --mist-dim: #5A6072;
+            font-family: 'Space Grotesk', 'Manrope', -apple-system, sans-serif;
         }
+        body[data-theme="platinum"] .corona-glow { display: none; }
+        body[data-theme="platinum"] .btn-primary {
+            background: var(--gold);
+            color: #06070A;
+            box-shadow: 4px 4px 0 #000;
+            border: 2px solid #000;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        body[data-theme="platinum"] .btn-primary:hover { filter: none; box-shadow: 4px 4px 0 #000; }
+        body[data-theme="platinum"] .btn-primary:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0 0 0 #000;
+        }
+        body[data-theme="platinum"] .btn-secondary {
+            border: 2px solid var(--hairline);
+            box-shadow: 3px 3px 0 rgba(124,156,255,0.12);
+        }
+        body[data-theme="platinum"] .card, body[data-theme="platinum"] .feature-chip {
+            border: 2px solid var(--hairline);
+            box-shadow: 5px 5px 0 rgba(124,156,255,0.08);
+        }
+        body[data-theme="platinum"] .tariff-card { border: 2px solid var(--hairline) !important; }
+        body[data-theme="platinum"] .tariff-card:hover { border-color: var(--gold) !important; transform: translate(-2px,-2px); box-shadow: 4px 4px 0 rgba(124,156,255,0.25); }
+        body[data-theme="platinum"] .rounded-2xl, body[data-theme="platinum"] .rounded-xl,
+        body[data-theme="platinum"] .rounded-3xl, body[data-theme="platinum"] .rounded-t-3xl,
+        body[data-theme="platinum"] .rounded-lg, body[data-theme="platinum"] .rounded,
+        body[data-theme="platinum"] .rounded-full, body[data-theme="platinum"] img.rounded-full {
+            border-radius: 3px;
+        }
+        body[data-theme="platinum"] #brandHeader {
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        body[data-theme="platinum"] .traffic-fill, body[data-theme="platinum"] .traffic-bar-bg { border-radius: 0; }
+        body[data-theme="platinum"] .traffic-bar-bg { border: 1px solid var(--hairline); }
+        /* Расположение: два тарифа в ряд на экранах шире телефона — более
+           "табличная", структурная подача, в духе всей темы */
+        @media (min-width: 480px) {
+            body[data-theme="platinum"] #tariffList {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+            }
+        }
+
+        /* ---------- Тема "rose" → ROSE QUARTZ (мягкое стекло) ---------- */
         body[data-theme="rose"] {
             --void: #120A10;
             --panel: #1D1219;
             --panel-2: #271822;
-            --hairline: rgba(255,255,255,0.08);
+            --hairline: rgba(255,255,255,0.10);
             --gold: #E8A0BD;
             --gold-bright: #F5BFD6;
             --teal: #7ED6C1;
@@ -58,7 +110,46 @@
             --ink: #FBF3F6;
             --mist: #B79AA8;
             --mist-dim: #6E5560;
+            font-family: 'Manrope', -apple-system, sans-serif;
+            background: radial-gradient(circle at 20% 0%, rgba(232,160,189,0.16) 0%, transparent 45%),
+                        radial-gradient(circle at 85% 20%, rgba(126,214,193,0.10) 0%, transparent 40%),
+                        var(--void);
+            background-attachment: fixed;
         }
+        body[data-theme="rose"] .card, body[data-theme="rose"] .feature-chip {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px) saturate(150%);
+            -webkit-backdrop-filter: blur(20px) saturate(150%);
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: 0 8px 28px -8px rgba(0,0,0,0.4);
+        }
+        body[data-theme="rose"] .btn-primary {
+            box-shadow: 0 6px 22px -6px rgba(232,160,189,0.55);
+        }
+        body[data-theme="rose"] .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,255,255,0.14);
+        }
+        body[data-theme="rose"] .tariff-card:hover { transform: translateY(-2px) scale(1.01); }
+        body[data-theme="rose"] .rounded-2xl, body[data-theme="rose"] .rounded-xl {
+            border-radius: 22px;
+        }
+        body[data-theme="rose"] .rounded-3xl, body[data-theme="rose"] .rounded-t-3xl {
+            border-radius: 28px;
+        }
+        body[data-theme="rose"] #payContent, body[data-theme="rose"] #toast {
+            backdrop-filter: blur(26px) saturate(160%);
+            -webkit-backdrop-filter: blur(26px) saturate(160%);
+        }
+        body[data-theme="rose"] #brandHeader { font-weight: 800; letter-spacing: 0.01em; }
+        body[data-theme="rose"] .corona-glow {
+            width: 380px; height: 380px; top: -100px;
+            background: radial-gradient(circle, rgba(232,160,189,0.22) 0%, rgba(232,160,189,0) 70%);
+        }
+        /* Расположение: более просторная, "бутиковая" центральная колонка */
+        body[data-theme="rose"] .max-w-md { max-width: 30rem; }
         * { box-sizing: border-box; }
         body {
             background-color: var(--void);
