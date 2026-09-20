@@ -17,6 +17,7 @@ from bot.keyboards.admin_panel_import import (
     orphan_list_kb,
     orphan_import_cancel_kb,
     orphan_import_confirm_kb,
+    orphan_import_done_kb,
 )
 
 logger = logging.getLogger(__name__)
@@ -200,7 +201,7 @@ async def confirm_orphan_import(callback: CallbackQuery, state: FSMContext):
             callback.message,
             f'⚠️ Клиент <code>{data["email"]}</code> уже есть в базе бота (импортирован ранее). '
             f'Новая запись не создана.',
-            reply_markup=orphan_import_cancel_kb(data['server_id']),
+            reply_markup=orphan_import_done_kb(data['server_id']),
         )
         return
 
@@ -228,6 +229,6 @@ async def confirm_orphan_import(callback: CallbackQuery, state: FSMContext):
     await safe_edit_or_send(
         callback.message,
         f'✅ Готово! Клиент <code>{data["email"]}</code> привязан к Telegram ID {data["target_telegram_id"]} как ключ #{key_id}.',
-        reply_markup=orphan_import_cancel_kb(data['server_id']),
+        reply_markup=orphan_import_done_kb(data['server_id']),
     )
     await callback.answer()

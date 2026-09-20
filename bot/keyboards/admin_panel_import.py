@@ -23,6 +23,14 @@ def orphan_import_cancel_kb(server_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def orphan_import_done_kb(server_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура после уже свершившегося действия (успех или отказ из-за
+    дубликата) — отменять уже нечего, поэтому "Назад", а не "Отмена"."""
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data=f'admin_import_orphans:{server_id}'))
+    return builder.as_markup()
+
+
 def orphan_import_confirm_kb(server_id: int) -> InlineKeyboardMarkup:
     """Клавиатура подтверждения импорта."""
     builder = InlineKeyboardBuilder()
