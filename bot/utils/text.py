@@ -3,6 +3,7 @@ from aiogram.exceptions import TelegramBadRequest
 from typing import Literal, Optional, Union
 from html import escape as escape_attr
 from html.parser import HTMLParser
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
@@ -371,3 +372,33 @@ async def safe_edit_or_send(
                     link_preview_options=link_preview
                 )
         raise
+
+
+async def send_temp_notice(
+    message: Message,
+    text: str,
+    reply_markup=None,
+    delay: float = 3.0,
+    **kwargs,
+) -> Message:
+    """Как safe_edit_or_send, но само удаляет отправленное сообщение через
+    `delay` секунд.
+
+    Для коротких уведомлений об успехе ("✅ Готово!", "✅ ... обновлён"),
+    которые нужны только для подтверждения действия — без этого они
+    накапливаются в чате навсегда и выглядят как мусор. НЕ использовать для
+    сообщений с данными, которые админу может понадобиться прочитать позже
+    (сгенерированные коды, ошибки для диагностики и т.п.) — те должны
+    оставаться в чате.
+    """
+    sent = await safe_edit_or_send(message, text, reply_markup=reply_markup, **kwargs)
+
+    async def _delete_later():
+        await asyncio.sleep(delay)
+        try:
+            await sent.delete()
+        except Exception:
+            pass
+
+    asyncio.create_task(_delete_later())
+    return sent

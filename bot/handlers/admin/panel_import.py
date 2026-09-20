@@ -11,7 +11,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
 
 from bot.utils.admin import is_admin
-from bot.utils.text import safe_edit_or_send, get_message_text_for_storage
+from bot.utils.text import safe_edit_or_send, get_message_text_for_storage, send_temp_notice
 from bot.states.admin_states import AdminStates
 from bot.keyboards.admin_panel_import import (
     orphan_list_kb,
@@ -197,7 +197,7 @@ async def confirm_orphan_import(callback: CallbackQuery, state: FSMContext):
             f"⚠️ Клиент {data['email']} уже был импортирован ранее — пропускаю, чтобы не создавать дубликат.",
             show_alert=True,
         )
-        await safe_edit_or_send(
+        await send_temp_notice(
             callback.message,
             f'⚠️ Клиент <code>{data["email"]}</code> уже есть в базе бота (импортирован ранее). '
             f'Новая запись не создана.',
@@ -226,9 +226,10 @@ async def confirm_orphan_import(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     logger.info(f"Админ {callback.from_user.id} импортировал клиента '{data['email']}' как ключ #{key_id} для пользователя {data['target_telegram_id']}")
 
-    await safe_edit_or_send(
+    await send_temp_notice(
         callback.message,
         f'✅ Готово! Клиент <code>{data["email"]}</code> привязан к Telegram ID {data["target_telegram_id"]} как ключ #{key_id}.',
         reply_markup=orphan_import_done_kb(data['server_id']),
+        delay=4.0,
     )
     await callback.answer()
