@@ -868,7 +868,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     /welcome, /, /shop), чтобы не хардкодить эти данные в HTML — они
     берутся из настроек текущей инсталляции, как и везде в остальном боте."""
     from database.requests import (
-        get_effective_brand_name, get_cabinet_theme_id, get_marketing_channel_id,
+        get_effective_brand_name, get_cabinet_theme_id, get_shop_theme_id, get_marketing_channel_id,
         is_site_auth_method_enabled, get_zvonok_public_key, get_zvonok_campaign_id,
     )
 
@@ -887,6 +887,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "brand_name": get_effective_brand_name(),
         "bot_username": bot_username,
         "cabinet_theme_id": get_cabinet_theme_id(),
+        "shop_theme_id": get_shop_theme_id(),
         "news_channel_url": channel_url,
         "code_login_enabled": is_site_auth_method_enabled('code'),
         "phone_login_enabled": phone_login_enabled,

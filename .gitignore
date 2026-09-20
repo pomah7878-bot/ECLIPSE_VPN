@@ -26,6 +26,15 @@ database/ai_history.db*
 # Локальные бэкапы (создаются автоматически планировщиком)
 backup/
 
+# Загружаемый админом брендинг (лого + автосгенерированные favicon) — НЕ
+# отслеживаем в git, иначе git pull/reset при обновлении бота молча
+# затирает кастомный логотип обратно на дефолтный. *.default.* — это
+# сами дефолты (шаблон для новых установок), они остаются в git.
+bot/webapp/static/logo.png
+bot/webapp/static/favicon.ico
+bot/webapp/static/favicon-32x32.png
+bot/webapp/static/favicon-16x16.png
+
 # Virtual Environment
 venv/
 env/

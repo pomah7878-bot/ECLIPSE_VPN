@@ -218,7 +218,7 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
 
 def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     """Подменю «Сайт и витрина» — домен, бренд, приложение, витрина."""
-    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES
+    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_shop_theme_id, SHOP_THEMES
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     builder.row(InlineKeyboardButton(text='🔐 Turnstile site key', callback_data='admin_edit_turnstile_site_key'))
@@ -244,6 +244,10 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(
         text=f"🎭 Тема личного кабинета: {CABINET_THEMES[get_cabinet_theme_id()]['label']}",
         callback_data='admin_cabinet_theme_menu',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🛍 Тема магазина (/shop): {SHOP_THEMES[get_shop_theme_id()]['label']}",
+        callback_data='admin_shop_theme_menu',
     ))
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()

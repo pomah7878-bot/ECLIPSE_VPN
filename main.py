@@ -53,12 +53,43 @@ logger = logging.getLogger(__name__)
 
 
 
+def _seed_brand_assets_if_missing() -> None:
+    """Восстанавливает logo.png/favicon.* из *.default.* версий, если живого
+    файла нет на диске — это либо совсем новая установка (файл никогда не
+    отслеживался в git, см. .gitignore), либо файл случайно потерялся.
+
+    Не трогает файл, если он УЖЕ есть — админский кастомный логотип не
+    перезаписывается. *.default.* версии — обычные файлы в git, они как раз
+    и переживают git pull/reset при обновлении бота, в отличие от живых.
+    """
+    import shutil
+    static_dir = os.path.join(os.path.dirname(__file__), "bot", "webapp", "static")
+    pairs = (
+        ("logo.default.png", "logo.png"),
+        ("favicon.default.ico", "favicon.ico"),
+        ("favicon-32x32.default.png", "favicon-32x32.png"),
+        ("favicon-16x16.default.png", "favicon-16x16.png"),
+    )
+    for default_name, live_name in pairs:
+        live_path = os.path.join(static_dir, live_name)
+        default_path = os.path.join(static_dir, default_name)
+        if os.path.exists(live_path) or not os.path.exists(default_path):
+            continue
+        try:
+            shutil.copy2(default_path, live_path)
+            logger.info(f"Бренд-ассет {live_name} восстановлен из {default_name} (файла не было на диске)")
+        except Exception as e:
+            logger.warning(f"Не удалось восстановить бренд-ассет {live_name}: {e}")
+
+
 async def on_startup(bot: Bot):
     """Actions when starting a bot."""
     logger.info("🚀 Бот запускается...")
     
     # Applying database migrations
     run_migrations()
+
+    _seed_brand_assets_if_missing()
 
     from bot.utils.telegram_links import load_telegram_link_domain
 
