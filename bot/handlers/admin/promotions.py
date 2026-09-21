@@ -18,7 +18,7 @@ from bot.keyboards.admin import (
 from bot.states.admin_states import AdminStates
 from bot.utils.admin import is_admin
 from bot.utils.telegram_links import build_telegram_link, get_telegram_link_domain
-from bot.utils.text import escape_html, get_message_text_for_storage, safe_edit_or_send, send_temp_notice
+from bot.utils.text import escape_html, get_message_text_for_storage, safe_edit_or_send
 from database.requests import (
     create_coupon_batch,
     create_promo_code,
@@ -216,7 +216,7 @@ async def admin_promocode_delete_ask(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("admin_promocode_delete_yes:"))
-async def admin_promocode_delete_yes(callback: CallbackQuery):
+async def admin_promocode_delete_yes(callback: CallbackQuery, state: FSMContext):
     promo_id = int(callback.data.split(":")[1])
     promo = get_promo_code_by_id(promo_id)
     if not promo:
@@ -229,8 +229,8 @@ async def admin_promocode_delete_yes(callback: CallbackQuery):
         else:
             await callback.answer("Промокод не найден", show_alert=True)
         return
-    await send_temp_notice(callback.message, f"✅ Промокод <code>{promo['code']}</code> удалён.", reply_markup=promotion_back_kb("admin_promocodes"))
-    await callback.answer()
+    await callback.answer(f"✅ Промокод {promo['code']} удалён")
+    await admin_promocodes(callback, state)
 
 
 @router.callback_query(F.data.startswith("admin_promocode_toggle:"))
@@ -450,14 +450,10 @@ async def admin_coupons_delete_unused_ask(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "admin_coupons_delete_unused_yes")
-async def admin_coupons_delete_unused_yes(callback: CallbackQuery):
+async def admin_coupons_delete_unused_yes(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
     count = delete_unused_coupons()
-    await send_temp_notice(
-        callback.message,
-        f"✅ Удалено неиспользованных купонов: {count}.",
-        reply_markup=promotion_back_kb("admin_coupons"),
-    )
-    await callback.answer()
+    await callback.answer(f"✅ Удалено неиспользованных купонов: {count}")
+    await admin_coupons(callback, state)
