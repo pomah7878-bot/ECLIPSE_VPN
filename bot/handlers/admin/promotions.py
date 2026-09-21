@@ -62,6 +62,21 @@ async def _delete_input(message: Message) -> None:
         pass
 
 
+async def _replace_wizard_prompt(target: Message, state: FSMContext, text: str, reply_markup=None) -> None:
+    """Отправляет очередной шаг мастера (создание промокода/генератор
+    купонов), удаляя предыдущее приглашение бота, чтобы шаги пошагового
+    ввода не копились в чате один под другим."""
+    data = await state.get_data()
+    prev_id = data.get("_wizard_prompt_id")
+    if prev_id:
+        try:
+            await target.bot.delete_message(target.chat.id, prev_id)
+        except Exception:
+            pass
+    sent = await safe_edit_or_send(target, text, reply_markup=reply_markup, force_new=True)
+    await state.update_data(_wizard_prompt_id=sent.message_id)
+
+
 def _promocode_text(promo: dict, bot_username: str | None = None) -> str:
     limit = promo.get("activation_limit")
     limit_text = str(limit) if limit else "без лимита"
@@ -118,6 +133,7 @@ async def admin_promocode_add(callback: CallbackQuery, state: FSMContext):
         "➕ <b>Новый промокод</b>\n\nВведите имя промокода. Можно использовать только <code>0-9</code>, <code>A-Z</code>, <code>a-z</code>.",
         reply_markup=promotion_cancel_kb("admin_promocodes"),
     )
+    await state.update_data(_wizard_prompt_id=callback.message.message_id)
     await callback.answer()
 
 
@@ -126,14 +142,14 @@ async def promocode_add_code(message: Message, state: FSMContext):
     await _delete_input(message)
     code = get_message_text_for_storage(message, "plain").strip()
     if not is_base62_code(code):
-        await safe_edit_or_send(message, "❌ Код должен быть в base62: <code>0-9</code>, <code>A-Z</code>, <code>a-z</code>.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Код должен быть в base62: <code>0-9</code>, <code>A-Z</code>, <code>a-z</code>.", reply_markup=promotion_cancel_kb("admin_promocodes"))
         return
     if get_promo_code_by_code(code):
-        await safe_edit_or_send(message, "❌ Такой код уже существует. Введите другой код.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Такой код уже существует. Введите другой код.", reply_markup=promotion_cancel_kb("admin_promocodes"))
         return
     await state.update_data(promocode_code=code)
     await state.set_state(AdminStates.promocode_add_discount)
-    await safe_edit_or_send(message, "📊 <b>Скидка</b>\n\nВведите размер скидки от 0 до 100%.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+    await _replace_wizard_prompt(message, state, "📊 <b>Скидка</b>\n\nВведите размер скидки от 0 до 100%.", reply_markup=promotion_cancel_kb("admin_promocodes"))
 
 
 @router.message(AdminStates.promocode_add_discount, F.text, ~F.text.startswith("/"))
@@ -141,11 +157,11 @@ async def promocode_add_discount(message: Message, state: FSMContext):
     await _delete_input(message)
     value = get_message_text_for_storage(message, "plain").strip()
     if not value.isdigit() or not 0 <= int(value) <= 100:
-        await safe_edit_or_send(message, "❌ Введите число от 0 до 100.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Введите число от 0 до 100.", reply_markup=promotion_cancel_kb("admin_promocodes"))
         return
     await state.update_data(promocode_discount=int(value))
     await state.set_state(AdminStates.promocode_add_expires)
-    await safe_edit_or_send(message, "⏳ <b>Срок действия</b>\n\nВведите дату в формате <code>YYYY-MM-DD</code> или <code>0</code>, если срок не ограничен.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+    await _replace_wizard_prompt(message, state, "⏳ <b>Срок действия</b>\n\nВведите дату в формате <code>YYYY-MM-DD</code> или <code>0</code>, если срок не ограничен.", reply_markup=promotion_cancel_kb("admin_promocodes"))
 
 
 @router.message(AdminStates.promocode_add_expires, F.text, ~F.text.startswith("/"))
@@ -155,11 +171,11 @@ async def promocode_add_expires(message: Message, state: FSMContext):
     try:
         expires_at = _parse_expires(raw)
     except ValueError:
-        await safe_edit_or_send(message, "❌ Неверная дата. Введите <code>YYYY-MM-DD</code> или <code>0</code>.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Неверная дата. Введите <code>YYYY-MM-DD</code> или <code>0</code>.", reply_markup=promotion_cancel_kb("admin_promocodes"))
         return
     await state.update_data(promocode_expires=expires_at)
     await state.set_state(AdminStates.promocode_add_limit)
-    await safe_edit_or_send(message, "🔢 <b>Лимит активаций</b>\n\nВведите количество применений или <code>0</code> для многоразового промокода без лимита.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+    await _replace_wizard_prompt(message, state, "🔢 <b>Лимит активаций</b>\n\nВведите количество применений или <code>0</code> для многоразового промокода без лимита.", reply_markup=promotion_cancel_kb("admin_promocodes"))
 
 
 @router.message(AdminStates.promocode_add_limit, F.text, ~F.text.startswith("/"))
@@ -167,7 +183,7 @@ async def promocode_add_limit(message: Message, state: FSMContext):
     await _delete_input(message)
     raw = get_message_text_for_storage(message, "plain").strip()
     if not raw.isdigit():
-        await safe_edit_or_send(message, "❌ Введите целое число.", reply_markup=promotion_cancel_kb("admin_promocodes"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Введите целое число.", reply_markup=promotion_cancel_kb("admin_promocodes"))
         return
     data = await state.get_data()
     promo_id = create_promo_code(
@@ -179,10 +195,10 @@ async def promocode_add_limit(message: Message, state: FSMContext):
         source="admin",
         code_type="promo",
     )
-    await state.clear()
     promo = get_promo_code_by_id(promo_id)
     bot_info = await message.bot.get_me()
-    await safe_edit_or_send(message, _promocode_text(promo, bot_info.username), reply_markup=promocode_detail_kb(promo), force_new=True)
+    await _replace_wizard_prompt(message, state, _promocode_text(promo, bot_info.username), reply_markup=promocode_detail_kb(promo))
+    await state.clear()
 
 
 @router.callback_query(F.data.startswith("admin_promocode_view:"))
@@ -277,6 +293,7 @@ async def admin_promocode_edit_start(callback: CallbackQuery, state: FSMContext)
         "limit": "Введите лимит применений или <code>0</code> без лимита.",
     }
     await safe_edit_or_send(callback.message, f"✏️ <b>Редактирование</b>\n\n{hints[field]}", reply_markup=promotion_cancel_kb(f"admin_promocode_view:{promo_id}"))
+    await state.update_data(_wizard_prompt_id=callback.message.message_id)
     await callback.answer()
 
 
@@ -299,12 +316,12 @@ async def admin_promocode_edit_value(message: Message, state: FSMContext):
                 raise ValueError()
             update_promo_code(promo_id, activation_limit=int(raw))
     except ValueError:
-        await safe_edit_or_send(message, "❌ Значение не принято. Проверьте формат и попробуйте ещё раз.", reply_markup=promotion_cancel_kb(f"admin_promocode_view:{promo_id}"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Значение не принято. Проверьте формат и попробуйте ещё раз.", reply_markup=promotion_cancel_kb(f"admin_promocode_view:{promo_id}"))
         return
-    await state.clear()
     promo = get_promo_code_by_id(promo_id)
     bot_info = await message.bot.get_me()
-    await safe_edit_or_send(message, _promocode_text(promo, bot_info.username), reply_markup=promocode_detail_kb(promo), force_new=True)
+    await _replace_wizard_prompt(message, state, _promocode_text(promo, bot_info.username), reply_markup=promocode_detail_kb(promo))
+    await state.clear()
 
 
 @router.callback_query(F.data == "admin_coupons")
@@ -348,6 +365,7 @@ async def admin_coupon_setting_start(callback: CallbackQuery, state: FSMContext)
     await state.set_state(AdminStates.coupon_setting_value)
     prompt = "Введите скидку от 0 до 100%." if field == "discount" else "Введите время жизни купона в днях."
     await safe_edit_or_send(callback.message, f"🎫 <b>Настройка купонов</b>\n\n{prompt}", reply_markup=promotion_cancel_kb("admin_coupons"))
+    await state.update_data(_wizard_prompt_id=callback.message.message_id)
     await callback.answer()
 
 
@@ -366,21 +384,22 @@ async def admin_coupon_setting_save(message: Message, state: FSMContext):
                 raise ValueError()
             set_coupon_auto_lifetime_days(int(raw))
     except ValueError:
-        await safe_edit_or_send(message, "❌ Значение не принято. Введите корректное число.", reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Значение не принято. Введите корректное число.", reply_markup=promotion_cancel_kb("admin_coupons"))
         return
-    await state.clear()
-    await safe_edit_or_send(
+    await _replace_wizard_prompt(
         message,
+        state,
         "✅ <b>Настройка сохранена</b>",
         reply_markup=coupons_menu_kb(get_coupon_auto_enabled(), get_coupon_auto_discount_percent(), get_coupon_auto_lifetime_days()),
-        force_new=True,
     )
+    await state.clear()
 
 
 @router.callback_query(F.data == "admin_coupons_generate")
 async def admin_coupons_generate(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.coupon_generate_discount)
     await safe_edit_or_send(callback.message, "🎲 <b>Генератор купонов</b>\n\nВведите размер скидки от 0 до 100%.", reply_markup=promotion_cancel_kb("admin_coupons"))
+    await state.update_data(_wizard_prompt_id=callback.message.message_id)
     await callback.answer()
 
 
@@ -389,11 +408,11 @@ async def admin_coupons_generate_discount(message: Message, state: FSMContext):
     await _delete_input(message)
     raw = get_message_text_for_storage(message, "plain").strip()
     if not raw.isdigit() or not 0 <= int(raw) <= 100:
-        await safe_edit_or_send(message, "❌ Введите число от 0 до 100.", reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Введите число от 0 до 100.", reply_markup=promotion_cancel_kb("admin_coupons"))
         return
     await state.update_data(coupon_generate_discount=int(raw))
     await state.set_state(AdminStates.coupon_generate_lifetime)
-    await safe_edit_or_send(message, "⏳ <b>Срок жизни</b>\n\nВведите количество дней.", reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+    await _replace_wizard_prompt(message, state, "⏳ <b>Срок жизни</b>\n\nВведите количество дней.", reply_markup=promotion_cancel_kb("admin_coupons"))
 
 
 @router.message(AdminStates.coupon_generate_lifetime, F.text, ~F.text.startswith("/"))
@@ -401,11 +420,11 @@ async def admin_coupons_generate_lifetime(message: Message, state: FSMContext):
     await _delete_input(message)
     raw = get_message_text_for_storage(message, "plain").strip()
     if not raw.isdigit() or int(raw) <= 0:
-        await safe_edit_or_send(message, "❌ Введите количество дней больше 0.", reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Введите количество дней больше 0.", reply_markup=promotion_cancel_kb("admin_coupons"))
         return
     await state.update_data(coupon_generate_lifetime=int(raw))
     await state.set_state(AdminStates.coupon_generate_count)
-    await safe_edit_or_send(message, "🔢 <b>Количество</b>\n\nВведите количество купонов. За один раз можно создать до 500.", reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+    await _replace_wizard_prompt(message, state, "🔢 <b>Количество</b>\n\nВведите количество купонов. За один раз можно создать до 500.", reply_markup=promotion_cancel_kb("admin_coupons"))
 
 
 @router.message(AdminStates.coupon_generate_count, F.text, ~F.text.startswith("/"))
@@ -413,7 +432,7 @@ async def admin_coupons_generate_count(message: Message, state: FSMContext):
     await _delete_input(message)
     raw = get_message_text_for_storage(message, "plain").strip()
     if not raw.isdigit() or not 1 <= int(raw) <= 500:
-        await safe_edit_or_send(message, "❌ Введите число от 1 до 500.", reply_markup=promotion_cancel_kb("admin_coupons"), force_new=True)
+        await _replace_wizard_prompt(message, state, "❌ Введите число от 1 до 500.", reply_markup=promotion_cancel_kb("admin_coupons"))
         return
     data = await state.get_data()
     coupons = create_coupon_batch(
@@ -423,7 +442,6 @@ async def admin_coupons_generate_count(message: Message, state: FSMContext):
         source="admin_generated",
         created_by_admin_id=message.from_user.id,
     )
-    await state.clear()
     codes = "\n".join(coupon["code"] for coupon in coupons)
     text = (
         "✅ <b>Купоны сгенерированы</b>\n\n"
@@ -432,7 +450,8 @@ async def admin_coupons_generate_count(message: Message, state: FSMContext):
         f"Количество: <b>{len(coupons)}</b>\n\n"
         f"<pre>{html.escape(codes)}</pre>"
     )
-    await safe_edit_or_send(message, text, reply_markup=promotion_back_kb("admin_coupons"), force_new=True)
+    await _replace_wizard_prompt(message, state, text, reply_markup=promotion_back_kb("admin_coupons"))
+    await state.clear()
 
 
 @router.callback_query(F.data == "admin_coupons_delete_unused_ask")
