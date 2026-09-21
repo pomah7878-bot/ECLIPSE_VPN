@@ -1355,8 +1355,8 @@ _SESSION_TTL_SECONDS = 30 * 24 * 3600
 
 
 def _get_session_secret() -> bytes:
-    from config import SUPPORT_API_TOKEN
-    return SUPPORT_API_TOKEN.encode()
+    from database.requests import get_site_session_secret
+    return get_site_session_secret().encode()
 
 
 def _sign_session(account_id: int) -> str:

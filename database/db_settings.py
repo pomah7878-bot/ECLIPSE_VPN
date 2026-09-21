@@ -76,6 +76,7 @@ __all__ = [
     'get_shop_theme_id',
     'set_shop_theme_id',
     'delete_setting',
+    'get_site_session_secret',
     'is_update_notifications_enabled',
     'get_display_timezone',
     'set_display_timezone',
@@ -166,6 +167,21 @@ def set_setting(key: str, value: str) -> None:
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """, (key, value))
         logger.info(f"Настройка обновлена: {key}")
+
+
+def get_site_session_secret() -> str:
+    """Отдельный секрет для подписи сессионных cookie личного кабинета на
+    сайте (site_session). Раньше для этого ошибочно переиспользовался
+    SUPPORT_API_TOKEN — секрет совсем другого, отдельного AI-support
+    сервиса; утечка того токена позволила бы подделать сессию любого
+    пользователя сайта. Теперь — свой случайный секрет per-инсталляция,
+    генерируется один раз при первом обращении и хранится в БД, никакой
+    ручной настройки не требуется."""
+    value = get_setting('site_session_secret')
+    if not value:
+        value = secrets.token_hex(32)
+        set_setting('site_session_secret', value)
+    return value
 
 def delete_setting(key: str) -> bool:
     """
