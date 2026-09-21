@@ -878,7 +878,44 @@ async def edit_server_value(message: Message, state: FSMContext):
             path = parsed.path
             if not path.endswith('/'):
                 path += '/'
-                
+        except Exception as e:
+            await safe_edit_or_send(message,
+                "❌ Неверный формат ссылки. Убедитесь, что указан хост и по умолчанию подставляется <code>https://</code>.\nПример: <code>123.45.67.89:2053/api/</code>"
+            )
+            return
+
+        # Проверяем, что по новому адресу панель реально отвечает — так же,
+        # как уже делается при смене api_token. Это даёт админу мгновенное
+        # подтверждение, что смена IP/домена (например, после блокировки)
+        # действительно решила проблему, а не просто сохраняет строку и
+        # узнаёт о проблеме только на следующей плановой синхронизации.
+        candidate = dict(get_server_by_id(server_id) or {})
+        candidate['protocol'] = protocol
+        candidate['host'] = host
+        candidate['port'] = port
+        candidate['web_base_path'] = path
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+        test_result = await test_server_connection(candidate)
+        if not test_result['success']:
+            await safe_edit_or_send(
+                message,
+                "❌ <b>Адрес не сохранён</b>\n\n"
+                f"Панель по новому адресу не отвечает: <code>{escape_html(test_result['message'])}</code>\n\n"
+                "Если IP/домен только что сменился — подождите обновления DNS или проверьте, "
+                "что панель на новом адресе реально запущена, и введите адрес ещё раз.",
+                reply_markup=edit_server_kb(
+                    current_param,
+                    get_total_params(auth_method),
+                ),
+                force_new=True,
+            )
+            return
+
+        try:
             # We save all 4 parameters in the database
             update_server_field(server_id, 'protocol', protocol)
             update_server_field(server_id, 'host', host)
