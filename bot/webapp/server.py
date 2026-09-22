@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 _TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+# Кэш последней успешно полученной от панели подписки (Happ/INCY),
+# ключ — sub_id. In-memory, живёт до перезапуска процесса — если панель
+# временно недоступна (таймауты, сетевые проблемы на её стороне), клиент
+# получает последнее рабочее содержимое вместо голой ошибки 502.
+# См. handle_happ_subscription().
+_HAPP_SUB_CACHE: dict = {}
+
 
 # ============================================================
 # Аутентификация: проверка Telegram initData через aiogram
@@ -984,6 +991,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         for name in _forward_header_names
         if name in request.headers
     }
+    served_from_cache = False
     try:
         async with _aiohttp.ClientSession() as session:
             async with session.get(
@@ -1003,25 +1011,53 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 headers = CIMultiDict(
                     (k, v) for k, v in upstream.headers.items() if k.lower() not in _skip
                 )
+        if upstream_status == 200 and body:
+            # Панель ответила успешно — запоминаем на случай, если она
+            # временно ляжет до следующего запроса (см. ниже).
+            _HAPP_SUB_CACHE[sub_id] = (body, dict(headers))
     except Exception as e:
-        logger.warning(f"handle_happ_subscription: не удалось получить подписку у панели ({sub_id[:8]}...): {e}")
-        return web.Response(status=502, text="Upstream subscription unavailable")
+        cached = _HAPP_SUB_CACHE.get(sub_id)
+        if cached:
+            logger.warning(
+                f"handle_happ_subscription: панель недоступна ({sub_id[:8]}...): {e} — "
+                f"отдаю клиенту последнюю успешно полученную подписку из кэша"
+            )
+            body, cached_headers = cached
+            headers = CIMultiDict(cached_headers)
+            upstream_status = 200
+            served_from_cache = True
+        else:
+            logger.warning(f"handle_happ_subscription: не удалось получить подписку у панели ({sub_id[:8]}...): {e}")
+            return web.Response(status=502, text="Upstream subscription unavailable")
 
     if upstream_status != 200:
-        # Панель НЕ подтвердила успех (например, 404 — клиент удалён с
-        # панели/рассинхронизация, а в нашей БД ключ всё ещё числится
-        # активным). Раньше здесь ОТСУТСТВОВАЛА эта проверка — клиент
-        # получал 200 OK с чем бы панель ни ответила, включая пустое
-        # тело при 404. Найдено на практике (сервер Артёма) и починено
-        # вчера — но при более поздних правках сегодня (разведение
-        # настроек Happ/INCY) эта проверка была случайно утеряна при
-        # переписывании соседнего блока. Восстановлено.
-        logger.warning(
-            f"handle_happ_subscription: панель вернула {upstream_status} для "
-            f"sub_id={sub_id[:8]}... (client_uuid={key.get('client_uuid')}) — "
-            f"ключ есть в БД, но панель его не находит. Похоже на рассинхронизацию."
-        )
-        return web.Response(status=502, text="Subscription temporarily unavailable — please try again shortly")
+        cached = _HAPP_SUB_CACHE.get(sub_id)
+        if cached:
+            logger.warning(
+                f"handle_happ_subscription: панель вернула {upstream_status} для sub_id={sub_id[:8]}... — "
+                f"отдаю клиенту последнюю успешно полученную подписку из кэша"
+            )
+            body, cached_headers = cached
+            headers = CIMultiDict(cached_headers)
+            served_from_cache = True
+        else:
+            # Панель НЕ подтвердила успех (например, 404 — клиент удалён с
+            # панели/рассинхронизация, а в нашей БД ключ всё ещё числится
+            # активным). Раньше здесь ОТСУТСТВОВАЛА эта проверка — клиент
+            # получал 200 OK с чем бы панель ни ответила, включая пустое
+            # тело при 404. Найдено на практике (сервер Артёма) и починено
+            # вчера — но при более поздних правках сегодня (разведение
+            # настроек Happ/INCY) эта проверка была случайно утеряна при
+            # переписывании соседнего блока. Восстановлено.
+            logger.warning(
+                f"handle_happ_subscription: панель вернула {upstream_status} для "
+                f"sub_id={sub_id[:8]}... (client_uuid={key.get('client_uuid')}) — "
+                f"ключ есть в БД, но панель его не находит. Похоже на рассинхронизацию."
+            )
+            return web.Response(status=502, text="Subscription temporarily unavailable — please try again shortly")
+
+    if served_from_cache:
+        headers["X-Eclipse-Cache-Fallback"] = "1"
 
     from database.requests import get_effective_brand_name, get_effective_webapp_url
     if "Content-Type" not in headers:
