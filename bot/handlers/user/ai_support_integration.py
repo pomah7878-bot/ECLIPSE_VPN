@@ -14,14 +14,16 @@ AI_FEEDBACK_ENDPOINT = f"{AI_SERVICE_URL}/feedback"
 AI_STATS_ENDPOINT = f"{AI_SERVICE_URL}/stats"
 
 
-async def get_ai_response(user_id: int, message: str, image_base64: str | None = None) -> tuple[str, bool, str | None]:
+async def get_ai_response(user_id: int, message: str, image_base64: str | None = None, voice_base64: str | None = None) -> tuple[str, bool, str | None]:
     """
     Отправляет запрос к AI сервису и возвращает ответ.
 
     Args:
         user_id: Telegram ID пользователя
-        message: Сообщение пользователя (может быть пустым, если прислан только скриншот)
+        message: Сообщение пользователя (может быть пустым, если прислан только скриншот/голос)
         image_base64: data URL скриншота ошибки, если клиент его прислал
+        voice_base64: raw base64 голосового сообщения (OGG/Opus), если клиент его прислал —
+            сервис сам расшифрует речь в текст через Whisper и продолжит как с обычным вопросом
 
     Returns:
         (reply_text, should_escalate, response_id): Ответ от AI, флаг эскалации
@@ -29,7 +31,7 @@ async def get_ai_response(user_id: int, message: str, image_base64: str | None =
     """
     try:
         headers = {"X-Support-Token": SUPPORT_API_TOKEN}
-        payload = {"user_id": user_id, "message": message, "image_base64": image_base64}
+        payload = {"user_id": user_id, "message": message, "image_base64": image_base64, "voice_base64": voice_base64}
         
         async with aiohttp.ClientSession() as session:
             async with session.post(
