@@ -103,6 +103,9 @@ __all__ = [
     'is_demo_payment_enabled',
     'get_effective_webapp_url',
     'set_webapp_url',
+    'get_webapp_url_backup',
+    'set_webapp_url_backup',
+    'swap_webapp_url_with_backup',
     'get_effective_groq_api_key',
     'set_groq_api_key',
     'get_effective_tavily_api_key',
@@ -952,6 +955,31 @@ def set_own_app_url(url: str) -> None:
 def set_webapp_url(url: str) -> None:
     """Сохраняет домен сайта/WebApp, заданный через админ-панель."""
     set_setting('webapp_url', url.strip().rstrip('/'))
+
+
+def get_webapp_url_backup() -> str:
+    """Резервный домен сайта — второй, заранее настроенный адрес (свои DNS
+    A-запись + SSL-сертификат + тот же nginx/бот-бэкенд), указывающий на
+    тот же сервер. Держится наготове на случай блокировки основного
+    домена: одна кнопка "Сделать основным" — и все НОВЫЕ ссылки подписки
+    сразу используют его, без правки кода и без перезапуска бота."""
+    return get_setting('webapp_url_backup', '') or ''
+
+
+def set_webapp_url_backup(url: str) -> None:
+    """Сохраняет резервный домен сайта."""
+    set_setting('webapp_url_backup', url.strip().rstrip('/'))
+
+
+def swap_webapp_url_with_backup() -> None:
+    """Меняет местами основной и резервный домен сайта. Один вызов —
+    и резервный домен становится основным (используется для всех НОВЫХ
+    ссылок подписки), а прежний основной становится резервным (остаётся
+    под рукой, если понадобится откатиться назад)."""
+    primary = get_setting('webapp_url', '') or ''
+    backup = get_setting('webapp_url_backup', '') or ''
+    set_setting('webapp_url', backup)
+    set_setting('webapp_url_backup', primary)
 
 def get_effective_groq_api_key() -> str:
     """Ключ Groq для AI-консультанта. Значение из админки имеет приоритет

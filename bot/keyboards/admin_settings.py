@@ -218,9 +218,13 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
 
 def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     """Подменю «Сайт и витрина» — домен, бренд, приложение, витрина."""
-    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_shop_theme_id, SHOP_THEMES
+    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_shop_theme_id, SHOP_THEMES, get_webapp_url_backup
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
+    backup_label = '🔁 Резервный домен' + (f': {get_webapp_url_backup()}' if get_webapp_url_backup() else ' (не задан)')
+    builder.row(InlineKeyboardButton(text=backup_label, callback_data='admin_edit_webapp_url_backup'))
+    if get_webapp_url_backup():
+        builder.row(InlineKeyboardButton(text='🔄 Сделать резервный основным', callback_data='admin_swap_webapp_url_ask'))
     builder.row(InlineKeyboardButton(text='🔐 Turnstile site key', callback_data='admin_edit_turnstile_site_key'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
     builder.row(InlineKeyboardButton(text='🖼 Логотип (сайт + бот)', callback_data='admin_edit_logo'))

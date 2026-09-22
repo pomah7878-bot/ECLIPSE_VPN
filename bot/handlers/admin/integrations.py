@@ -426,6 +426,107 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
 
 
+@router.callback_query(F.data == "admin_edit_webapp_url_backup")
+async def edit_webapp_url_backup_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_webapp_url_backup
+    await state.set_state(AdminStates.edit_webapp_url_backup)
+    current = get_webapp_url_backup()
+    await safe_edit_or_send(
+        callback.message,
+        f"🔁 <b>Резервный домен сайта</b>\n\nТекущий: <code>{current or 'не задан'}</code>\n\n"
+        "<b>Зачем это нужно:</b> если основной домен заблокируют (провайдер/DPI режет по SNI — "
+        "частая ситуация), достаточно одной кнопки «Сделать резервный основным» — все НОВЫЕ "
+        "ссылки подписки сразу пойдут через него, без правки кода и без перезапуска бота. "
+        "Уже выданные клиентам ссылки на СТАРЫЙ домен продолжат работать, только пока старый "
+        "домен жив, поэтому не удаляйте старый домен/nginx/сертификат — просто держите его на "
+        "подхвате.\n\n"
+        "<b>Готовьте заранее, а не в момент блокировки:</b>\n"
+        "1. Отдельный, ещё не использованный домен — свой DNS (A-запись) на IP этого сервера\n"
+        "2. На сервере — свой nginx server-блок для него, проксирующий на того же бота/WebApp\n"
+        "3. Выпущен и подключён свой SSL-сертификат\n\n"
+        "Если это уже готово — отправьте адрес, например:\n<code>https://резервный-домен.ru</code>",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_webapp_url_backup)
+async def edit_webapp_url_backup_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.requests import set_webapp_url_backup
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value.startswith("https://"):
+        await safe_edit_or_send(
+            message,
+            "❌ Адрес обязательно должен начинаться с <code>https://</code> (не http://).",
+        )
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    set_webapp_url_backup(value)
+    await state.set_state(AdminStates.integrations_menu)
+
+    check_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔍 Проверить резервный домен", web_app=WebAppInfo(url=value))],
+    ])
+    await message.answer(
+        f"✅ Резервный домен сохранён: <code>{value}</code>\n\n"
+        "Нажми кнопку ниже, чтобы сразу проверить, что личный кабинет на нём тоже открывается — "
+        "лучше убедиться заранее, а не в момент, когда основной домен уже заблокирован.",
+        parse_mode="HTML", reply_markup=check_kb,
+    )
+    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
+@router.callback_query(F.data == "admin_swap_webapp_url_ask")
+async def admin_swap_webapp_url_ask(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_webapp_url_backup
+    primary = get_effective_webapp_url()
+    backup = get_webapp_url_backup()
+    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Да, поменять местами", callback_data="admin_swap_webapp_url_yes")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_site")],
+    ])
+    await safe_edit_or_send(
+        callback.message,
+        "🔄 <b>Поменять домены местами?</b>\n\n"
+        f"Основной станет: <code>{backup}</code>\n"
+        f"Резервным станет: <code>{primary}</code>\n\n"
+        "Все НОВЫЕ ссылки подписки сразу начнут использовать новый основной домен. "
+        "Уже выданные клиентам ссылки на прежний основной домен продолжат работать сами по "
+        "себе — их никто не трогает, просто держите тот домен/nginx/сертификат живым и дальше.",
+        reply_markup=confirm_kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_swap_webapp_url_yes")
+async def admin_swap_webapp_url_yes(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import swap_webapp_url_with_backup
+    swap_webapp_url_with_backup()
+    new_primary = get_effective_webapp_url()
+    await callback.answer(f"✅ Основной домен теперь: {new_primary}")
+    await show_integrations_site_menu(callback)
+
+
 @router.callback_query(F.data == "admin_edit_panel_cleanup_days")
 async def edit_panel_cleanup_days_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
