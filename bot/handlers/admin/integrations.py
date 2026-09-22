@@ -8,6 +8,7 @@ config.py/secrets.env by hand on the server.
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 
 from database.requests import (
@@ -524,6 +525,9 @@ async def edit_cloudflare_token_start(callback: CallbackQuery, state: FSMContext
     from database.requests import get_cloudflare_api_token
     await state.set_state(AdminStates.edit_cloudflare_api_token)
     current = get_cloudflare_api_token()
+    kb = integrations_edit_cancel_kb('admin_integrations_site')
+    if current:
+        kb.inline_keyboard.insert(0, [InlineKeyboardButton(text='🗑 Удалить токен', callback_data='admin_delete_cloudflare_token_ask')])
     await safe_edit_or_send(
         callback.message,
         f"☁️ <b>Cloudflare API-токен</b>\n\nТекущий: <code>{_mask_secret(current) if current else 'не задан'}</code>\n\n"
@@ -536,7 +540,7 @@ async def edit_cloudflare_token_start(callback: CallbackQuery, state: FSMContext
         "2. Create Token → шаблон «Edit zone DNS»\n"
         "3. Ограничьте зоной(ями), где будете заводить резервные домены\n"
         "4. Скопируйте токен и отправьте сюда",
-        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
+        reply_markup=kb,
     )
     await callback.answer()
 
