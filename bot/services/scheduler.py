@@ -292,11 +292,14 @@ async def send_daily_stats(bot: Bot) -> None:
         
         for admin_id in ADMIN_IDS:
             try:
+                home_kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="🈴 На главную", callback_data="start")]
+                ])
                 await bot.send_message(
                     chat_id=admin_id,
                     text=report,
                     parse_mode="HTML",
-                    reply_markup=ReplyKeyboardRemove()
+                    reply_markup=home_kb
                 )
                 logger.info(f"Статистика отправлена админу {admin_id}")
             except Exception as e:
@@ -516,6 +519,9 @@ async def send_backup_archive(bot: Bot) -> None:
         caption = build_backup_caption(today, panel_backups.warnings)
         
         # Sent to admins
+        home_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🈴 На главную", callback_data="start")]
+        ])
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_document(
@@ -523,7 +529,7 @@ async def send_backup_archive(bot: Bot) -> None:
                     document=BufferedInputFile(archive_data, filename=filename),
                     caption=caption,
                     parse_mode="HTML",
-                    reply_markup=ReplyKeyboardRemove()
+                    reply_markup=home_kb
                 )
                 logger.info(f"Бэкап отправлен админу {admin_id}")
             except Exception as e:
