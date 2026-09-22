@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 112
+LATEST_VERSION = 113
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1166,9 +1166,12 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 "3. Нажмите подключиться!"
             ),
             'buttons': json.dumps([
-                {"id": "btn_help",      "label": "📄 Инструкция",  "color": "secondary", "row": 0, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_help"},
-                {"id": "btn_my_keys",   "label": "🔑 Мои ключи",  "color": "secondary", "row": 0, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
-                {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
+                {"id": "btn_key_import_happ",   "label": "🚀 Импорт в Happ",   "color": "success",   "row": 0, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+                {"id": "btn_key_import_incy",   "label": "⚡️ Импорт в INCY",   "color": "primary",   "row": 0, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
+                {"id": "btn_key_import_karing", "label": "🎯 Импорт в Karing", "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+                {"id": "btn_help",      "label": "📄 Инструкция",  "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_help"},
+                {"id": "btn_my_keys",   "label": "🔑 Мои ключи",  "color": "secondary", "row": 2, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+                {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
             ], ensure_ascii=False),
         },
     }
@@ -2320,6 +2323,52 @@ def migration_112(conn: sqlite3.Connection) -> None:
     logger.info("Migration v112 applied: подпись СБП переведена в форму глагола (Оплатить по СБП)")
 
 
+def migration_113(conn: sqlite3.Connection) -> None:
+    """Migration v113: добавляет кнопки быстрого импорта (Happ/INCY/Karing)
+    на экран выдачи ключа (key_delivery) для УЖЕ существующих установок.
+    Раньше эти кнопки были только на странице деталей ключа (key_details,
+    "Мои ключи"), и чтобы найти их, нужно было сделать лишний переход —
+    теперь они сразу видны в сообщении о выдаче/продлении ключа.
+
+    Трогает только buttons_default (не buttons_custom) — если админ уже
+    настроил свой текст/кнопки для этой страницы через редактор, его
+    кастомизация не перезаписывается: новые кнопки в этом случае нужно
+    будет добавить вручную через тот же редактор."""
+    import json as _json
+
+    row = conn.execute(
+        "SELECT buttons_default FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row or not row[0]:
+        logger.info("Migration v113: страница key_delivery не найдена — пропускаю")
+        return
+
+    buttons = _json.loads(row[0])
+    ids_present = {b.get("id") for b in buttons}
+    if "btn_key_import_happ" in ids_present:
+        logger.info("Migration v113: кнопки импорта уже есть — пропускаю")
+        return
+
+    for b in buttons:
+        b["row"] = b.get("row", 0) + 1
+
+    import_buttons = [
+        {"id": "btn_key_import_happ", "label": "🚀 Импорт в Happ", "color": "success",
+         "row": 0, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+        {"id": "btn_key_import_incy", "label": "⚡️ Импорт в INCY", "color": "primary",
+         "row": 0, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
+        {"id": "btn_key_import_karing", "label": "🎯 Импорт в Karing", "color": "secondary",
+         "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
+    ]
+    new_buttons = import_buttons + buttons
+
+    conn.execute(
+        "UPDATE pages SET buttons_default = ? WHERE page_key = 'key_delivery'",
+        (_json.dumps(new_buttons, ensure_ascii=False),),
+    )
+    logger.info("Migration v113 applied: import buttons added to key_delivery page")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2360,6 +2409,7 @@ MIGRATIONS = {
     110: migration_110,
     111: migration_111,
     112: migration_112,
+    113: migration_113,
 }
 
 
