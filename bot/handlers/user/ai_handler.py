@@ -232,6 +232,48 @@ async def handle_ai_screenshot(message: Message, state: FSMContext):
         await processing.edit_text("⚠️ Не удалось обработать скриншот. Попробуйте ещё раз или опишите проблему текстом.")
 
 
+@router.message(AIChatStates.waiting_for_question, F.voice)
+async def handle_ai_voice(message: Message, state: FSMContext):
+    """Обработка голосового сообщения в AI-диалоге — расшифровывается через
+    Whisper на стороне сервиса и дальше идёт по ОБЫЧНОМУ текстовому
+    пайплайну (в отличие от скриншотов), то есть с полным доступом ко всем
+    инструментам (проверка платежа, продление ключа и т.д.)."""
+    user_id = message.from_user.id
+
+    processing = await message.answer("🎙️ Слушаю голосовое сообщение...")
+
+    try:
+        voice = message.voice
+        if voice.duration and voice.duration > 120:
+            await processing.edit_text("⚠️ Голосовое слишком длинное (максимум 2 минуты). Опишите вопрос покороче или текстом.")
+            return
+
+        file = await message.bot.get_file(voice.file_id)
+        if file.file_size and file.file_size > 8 * 1024 * 1024:
+            await processing.edit_text("⚠️ Файл слишком большой. Опишите вопрос текстом, пожалуйста.")
+            return
+
+        file_io = await message.bot.download_file(file.file_path)
+        voice_b64 = base64.b64encode(file_io.read()).decode("ascii")
+
+        reply_text, escalate, response_id = await get_ai_response(user_id, "", voice_base64=voice_b64)
+
+        builder = _build_ai_reply_keyboard(response_id, reply_text, escalate)
+
+        await processing.edit_text(
+            f"<b>💬 AI:</b>\n\n{_format_ai_reply_html(reply_text)}",
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML",
+            link_preview_options=LinkPreviewOptions(is_disabled=True)
+        )
+
+        if escalate:
+            await _escalate_to_admins(message, user_id, "[голосовое сообщение]", reply_text)
+    except Exception as e:
+        logger.error(f"AI voice error: {e}")
+        await processing.edit_text("⚠️ Не удалось обработать голосовое сообщение. Попробуйте ещё раз или опишите вопрос текстом.")
+
+
 @router.message(AIChatStates.waiting_for_question, _not_other_command)
 async def handle_ai_question(message: Message, state: FSMContext):
     """Handle questions in AI chat"""
@@ -239,7 +281,7 @@ async def handle_ai_question(message: Message, state: FSMContext):
     question = message.text
 
     if question is None:
-        await message.answer("🤔 Я понимаю только текст или скриншот. Опишите вопрос словами или пришлите фото ошибки.")
+        await message.answer("🤔 Я понимаю только текст, скриншот или голосовое сообщение.")
         return
 
     if question == "/cancel":

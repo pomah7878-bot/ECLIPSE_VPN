@@ -10,6 +10,7 @@ import time
 import json
 import uuid
 import html
+import base64
 from html.parser import HTMLParser
 import asyncio
 import sqlite3
@@ -444,6 +445,22 @@ async def analyze_screenshot(image_data_url: str, question: str, system_prompt: 
     except APIError as e:
         logger.warning(f"Ошибка анализа скриншота ({e})")
         return "Не удалось проанализировать изображение прямо сейчас. Опишите проблему текстом, пожалуйста, или напишите в поддержку."
+
+
+async def transcribe_voice_groq(audio_bytes: bytes, filename: str = "voice.ogg") -> str:
+    """Расшифровывает голосовое сообщение через Groq Whisper (тот же клиент
+    и ключ, что уже используется для текстовых ответов — Groq известен
+    очень быстрым инференсом Whisper). Бросает исключение при ошибке —
+    вызывающий код сам решает, как объяснить это клиенту."""
+    transcription = await client.audio.transcriptions.create(
+        model="whisper-large-v3",
+        file=(filename, audio_bytes),
+        response_format="text",
+    )
+    # response_format="text" у OpenAI-совместимого API Groq возвращает
+    # либо голую строку, либо объект с .text — обрабатываем оба варианта
+    text = transcription if isinstance(transcription, str) else getattr(transcription, "text", "")
+    return (text or "").strip()
 
 
 async def _chat_completion_with_fallback(messages, **kwargs):
@@ -1893,6 +1910,7 @@ class ConsultRequest(BaseModel):
     user_id: int
     message: str
     image_base64: str | None = None  # data URL скриншота, если клиент прислал фото
+    voice_base64: str | None = None  # raw base64 содержимого голосового сообщения (OGG/Opus)
 
 class ConsultResponse(BaseModel):
     reply: str
@@ -1966,6 +1984,24 @@ async def _notify_admins_escalation(user_id: int, question: str, history_message
 @app.post("/consult", response_model=ConsultResponse)
 @limiter.limit("10/minute")
 async def consult(req: ConsultRequest, request: Request, token: str = Depends(verify_token)):
+    if req.voice_base64:
+        try:
+            audio_bytes = base64.b64decode(req.voice_base64)
+            transcribed = await transcribe_voice_groq(audio_bytes)
+        except Exception as e:
+            logger.error(f"Ошибка транскрипции голосового сообщения (user {req.user_id}): {e}")
+            return ConsultResponse(
+                reply="Не удалось распознать голосовое сообщение. Опишите вопрос текстом, пожалуйста.",
+                escalate=False,
+            )
+        if not transcribed:
+            return ConsultResponse(
+                reply="В голосовом сообщении не удалось распознать речь. Попробуйте ещё раз или опишите вопрос текстом.",
+                escalate=False,
+            )
+        logger.info(f"🎙️ AI распознал голосовое сообщение (user {req.user_id}): {transcribed}")
+        req.message = transcribed
+
     async with _lock:
         history_messages = _load_recent_history(req.user_id, MAX_HISTORY_MESSAGES) + [
             {"role": "user", "content": req.message}
