@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 113
+LATEST_VERSION = 114
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2369,6 +2369,26 @@ def migration_113(conn: sqlite3.Connection) -> None:
     logger.info("Migration v113 applied: import buttons added to key_delivery page")
 
 
+def migration_114(conn: sqlite3.Connection) -> None:
+    """Версия 114: новая платная функция "🌐 Автонастройка резервного
+    домена (DNS+nginx+SSL)" — добавлена в GATED_FEATURES.
+
+    Как и при расширении в v110: лицензиям/тарифам с tier='full' новая
+    функция добавляется автоматически (кто платил за "всё", получает и
+    новое). Тем, у кого custom-набор, функцию нужно включить вручную."""
+    new_feature = "domain_autoprovision"
+
+    for table in ("partner_licenses", "license_tariffs"):
+        rows = conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall()
+        for row in rows:
+            rowid, features_str = row[0], row[1] or ""
+            current = set(f for f in features_str.split(",") if f)
+            current.add(new_feature)
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), rowid))
+
+    logger.info("Migration v114 applied: domain_autoprovision добавлена старым full-лицензиям")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2410,6 +2430,7 @@ MIGRATIONS = {
     111: migration_111,
     112: migration_112,
     113: migration_113,
+    114: migration_114,
 }
 
 

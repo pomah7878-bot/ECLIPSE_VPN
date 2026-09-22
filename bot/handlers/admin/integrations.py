@@ -431,6 +431,10 @@ async def edit_webapp_url_backup_start(callback: CallbackQuery, state: FSMContex
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
+    from bot.services.license import is_feature_available
+    if not is_feature_available("domain_autoprovision"):
+        await callback.answer("Эта функция доступна в полном тарифе", show_alert=True)
+        return
 
     from database.requests import get_webapp_url_backup, get_cloudflare_api_token
     await state.set_state(AdminStates.edit_webapp_url_backup)
@@ -511,6 +515,10 @@ async def edit_webapp_url_backup_save(message: Message, state: FSMContext):
 async def edit_cloudflare_token_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.license import is_feature_available
+    if not is_feature_available("domain_autoprovision"):
+        await callback.answer("Эта функция доступна в полном тарифе", show_alert=True)
         return
 
     from database.requests import get_cloudflare_api_token

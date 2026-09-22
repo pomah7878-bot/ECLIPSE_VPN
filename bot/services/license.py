@@ -47,6 +47,7 @@ GATED_FEATURES = {
     "trial_period": "🎁 Пробный период (автовыдача)",
     "referral_system": "🔗 Реферальная система",
     "app_import": "📲 Импорт в Happ/INCY/Karing",
+    "domain_autoprovision": "🌐 Автонастройка резервного домена (DNS+nginx+SSL)",
 }
 
 _GRACE_PERIOD_HOURS = 72
