@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 114
+LATEST_VERSION = 115
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2389,6 +2389,48 @@ def migration_114(conn: sqlite3.Connection) -> None:
     logger.info("Migration v114 applied: domain_autoprovision добавлена старым full-лицензиям")
 
 
+def migration_115(conn: sqlite3.Connection) -> None:
+    """Версия 115: убирает кнопки быстрого импорта ("Открыть в Happ/INCY/
+    Karing/ECLIPSE VPN") со страницы деталей ключа (key_details) —
+    они добавлялись туда миграцией v94, но с v113 те же самые кнопки уже
+    показываются на экране выдачи/продления ключа (key_delivery), где их
+    видно сразу, без лишнего перехода. На карточке управления ключом
+    (Мои ключи → конкретный ключ) они дублировались и просто загромождали
+    экран действиями по редактированию/продлению ключа.
+
+    Правит и buttons_default, и buttons_custom (если админ настраивал
+    страницу через редактор и добавил себе ещё и "Открыть в ECLIPSE VPN"
+    вручную — эта кнопка тоже убирается)."""
+    import_button_ids = {
+        "btn_key_import_happ", "btn_key_import_incy",
+        "btn_key_import_karing", "btn_key_import_eclipse",
+    }
+
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v115: страница 'key_details' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        filtered = [b for b in buttons if b.get("id") not in import_button_ids]
+        if len(filtered) != len(buttons):
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+                (json.dumps(filtered, ensure_ascii=False),)
+            )
+
+    logger.info("Migration v115 applied: кнопки импорта убраны со страницы key_details")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2431,6 +2473,7 @@ MIGRATIONS = {
     112: migration_112,
     113: migration_113,
     114: migration_114,
+    115: migration_115,
 }
 
 
