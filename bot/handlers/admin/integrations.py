@@ -554,6 +554,14 @@ async def edit_cloudflare_token_save(message: Message, state: FSMContext):
     except Exception:
         pass
 
+    if not value or value.startswith("/"):
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer(
+            "❌ Ввод отменён — это не похоже на токен.",
+            reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
+        )
+        return
+
     set_cloudflare_api_token(value)
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(
@@ -1883,3 +1891,71 @@ async def edit_oauth_client_secret_save(message: Message, state: FSMContext):
         f"✅ {name} OAuth сохранён: <code>{_mask_secret(value)}</code>",
         parse_mode="HTML", reply_markup=integrations_menu_kb(),
     )
+
+
+# ============================================================
+# Удаление Cloudflare API-токена и резервного домена
+# ============================================================
+
+def _delete_confirm_kb(confirm_callback: str, cancel_callback: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🗑 Да, удалить", callback_data=confirm_callback),
+        InlineKeyboardButton(text="❌ Отмена", callback_data=cancel_callback),
+    )
+    return builder.as_markup()
+
+
+@router.callback_query(F.data == "admin_delete_cloudflare_token_ask")
+async def delete_cloudflare_token_ask(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await safe_edit_or_send(
+        callback.message,
+        "☁️ Удалить сохранённый Cloudflare API-токен?\n\n"
+        "Автонастройка новых резервных доменов через Cloudflare перестанет работать, "
+        "пока вы не зададите токен заново. Уже настроенные домены не пострадают.",
+        reply_markup=_delete_confirm_kb("admin_delete_cloudflare_token_confirm", "admin_integrations_site"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_delete_cloudflare_token_confirm")
+async def delete_cloudflare_token_confirm(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import set_cloudflare_api_token
+    set_cloudflare_api_token("")
+    await callback.answer("✅ Токен удалён")
+    await safe_edit_or_send(callback.message, "Сайт и витрина:", reply_markup=integrations_site_menu_kb())
+
+
+@router.callback_query(F.data == "admin_delete_webapp_url_backup_ask")
+async def delete_webapp_url_backup_ask(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_webapp_url_backup
+    current = get_webapp_url_backup()
+    await safe_edit_or_send(
+        callback.message,
+        f"🔁 Удалить резервный домен <code>{current}</code> из настроек бота?\n\n"
+        "Это уберёт домен только из настроек бота — сам сайт, nginx-конфиг и SSL-сертификат "
+        "на сервере останутся нетронутыми, домен нужно будет удалить вручную, если он больше не нужен.",
+        parse_mode="HTML",
+        reply_markup=_delete_confirm_kb("admin_delete_webapp_url_backup_confirm", "admin_integrations_site"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_delete_webapp_url_backup_confirm")
+async def delete_webapp_url_backup_confirm(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import set_webapp_url_backup
+    set_webapp_url_backup("")
+    await callback.answer("✅ Резервный домен удалён из настроек")
+    await safe_edit_or_send(callback.message, "Сайт и витрина:", reply_markup=integrations_site_menu_kb())
