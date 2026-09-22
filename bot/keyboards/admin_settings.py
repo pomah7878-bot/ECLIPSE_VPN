@@ -210,7 +210,7 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='📞 Верификация телефона (Zvonok)', callback_data='admin_integrations_zvonok'))
     builder.row(InlineKeyboardButton(text='📱 Happ', callback_data='admin_integrations_happ'))
     builder.row(InlineKeyboardButton(text='⚡ INCY', callback_data='admin_integrations_incy'))
-    builder.row(InlineKeyboardButton(text='🔑 Внешние ключи и API', callback_data='admin_integrations_apikeys'))
+    builder.row(InlineKeyboardButton(text='🤖 AI-суппорт: ключи и настройки', callback_data='admin_integrations_apikeys'))
     builder.row(InlineKeyboardButton(text='⚙️ Ограничения устройств', callback_data='admin_integrations_limits'))
     builder.row(back_button('admin_bot_settings'), home_button())
     return builder.as_markup()
@@ -406,8 +406,11 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
 
 
 def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Внешние ключи и API» — AI-провайдеры, веб-поиск."""
+    """Подменю «AI-суппорт: ключи и настройки» — вкл/выкл, AI-провайдеры, веб-поиск."""
+    from database.requests import is_ai_support_enabled
     builder = InlineKeyboardBuilder()
+    status = '🟢 Включён' if is_ai_support_enabled() else '⚪ Выключен'
+    builder.row(InlineKeyboardButton(text=f'AI-суппорт: {status}', callback_data='admin_toggle_ai_support'))
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))

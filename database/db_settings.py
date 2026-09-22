@@ -106,6 +106,8 @@ __all__ = [
     'get_webapp_url_backup',
     'set_webapp_url_backup',
     'swap_webapp_url_with_backup',
+    'is_ai_support_enabled',
+    'set_ai_support_enabled',
     'get_cloudflare_api_token',
     'set_cloudflare_api_token',
     'get_effective_groq_api_key',
@@ -982,6 +984,19 @@ def swap_webapp_url_with_backup() -> None:
     backup = get_setting('webapp_url_backup', '') or ''
     set_setting('webapp_url', backup)
     set_setting('webapp_url_backup', primary)
+
+
+def is_ai_support_enabled() -> bool:
+    """Включён ли AI-суппорт админом. Отдельно от лицензии (is_feature_
+    available('ai_assistant')) — партнёр с оплаченной функцией всё равно
+    может временно выключить её сам (например, чтобы не тратить лимиты
+    Groq/Gemini), не теряя саму лицензию. По умолчанию включён, если
+    ключи вообще заданы."""
+    return get_setting('ai_support_enabled', '1') == '1'
+
+
+def set_ai_support_enabled(enabled: bool) -> None:
+    set_setting('ai_support_enabled', '1' if enabled else '0')
 
 
 def get_cloudflare_api_token() -> str:
