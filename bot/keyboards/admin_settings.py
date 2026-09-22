@@ -222,22 +222,11 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     cf_label = '☁️ Cloudflare API-токен' + (': настроен ✅' if get_cloudflare_api_token() else ' (не задан)')
-    if get_cloudflare_api_token():
-        builder.row(
-            InlineKeyboardButton(text=cf_label, callback_data='admin_edit_cloudflare_token'),
-            InlineKeyboardButton(text='🗑 Удалить', callback_data='admin_delete_cloudflare_token_ask'),
-        )
-    else:
-        builder.row(InlineKeyboardButton(text=cf_label, callback_data='admin_edit_cloudflare_token'))
+    builder.row(InlineKeyboardButton(text=cf_label, callback_data='admin_edit_cloudflare_token'))
     backup_label = '🔁 Резервный домен' + (f': {get_webapp_url_backup()}' if get_webapp_url_backup() else ' (не задан)')
+    builder.row(InlineKeyboardButton(text=backup_label, callback_data='admin_edit_webapp_url_backup'))
     if get_webapp_url_backup():
-        builder.row(
-            InlineKeyboardButton(text=backup_label, callback_data='admin_edit_webapp_url_backup'),
-            InlineKeyboardButton(text='🗑 Удалить', callback_data='admin_delete_webapp_url_backup_ask'),
-        )
         builder.row(InlineKeyboardButton(text='🔄 Сделать резервный основным', callback_data='admin_swap_webapp_url_ask'))
-    else:
-        builder.row(InlineKeyboardButton(text=backup_label, callback_data='admin_edit_webapp_url_backup'))
     builder.row(InlineKeyboardButton(text='🔐 Turnstile site key', callback_data='admin_edit_turnstile_site_key'))
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
     builder.row(InlineKeyboardButton(text='🖼 Логотип (сайт + бот)', callback_data='admin_edit_logo'))

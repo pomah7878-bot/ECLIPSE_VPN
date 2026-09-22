@@ -1193,7 +1193,7 @@ async def toggle_start_import_buttons(callback: CallbackQuery, state: FSMContext
     current = is_start_import_buttons_enabled()
     set_start_import_buttons_enabled(not current)
     await callback.answer("✅ Кнопки включены" if not current else "⚪ Кнопки выключены")
-    await show_integrations_menu(callback, state)
+    await show_integrations_site_menu(callback)
 
 
 @router.callback_query(F.data == "admin_toggle_start_balance_button")
@@ -1206,7 +1206,7 @@ async def toggle_start_balance_button(callback: CallbackQuery, state: FSMContext
     current = is_start_balance_button_enabled()
     set_start_balance_button_enabled(not current)
     await callback.answer("✅ Кнопка включена" if not current else "⚪ Кнопка выключена")
-    await show_integrations_menu(callback, state)
+    await show_integrations_site_menu(callback)
 
 
 @router.callback_query(F.data == "admin_toggle_welcome_page")
@@ -1224,7 +1224,7 @@ async def toggle_welcome_page(callback: CallbackQuery, state: FSMContext):
         await callback.answer(f"✅ Витрина включена: {webapp_url}/welcome", show_alert=True)
     else:
         await callback.answer("✅ Витрина включена" if not current else "⚪ Витрина выключена (адрес теперь отдаёт 404)")
-    await show_integrations_menu(callback, state)
+    await show_integrations_site_menu(callback)
 
 
 @router.callback_query(F.data == "admin_welcome_template_menu")
