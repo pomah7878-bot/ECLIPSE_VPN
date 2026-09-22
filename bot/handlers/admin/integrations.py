@@ -432,23 +432,25 @@ async def edit_webapp_url_backup_start(callback: CallbackQuery, state: FSMContex
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    from database.requests import get_webapp_url_backup
+    from database.requests import get_webapp_url_backup, get_cloudflare_api_token
     await state.set_state(AdminStates.edit_webapp_url_backup)
     current = get_webapp_url_backup()
+    cf_line = (
+        "☁️ Cloudflare-токен настроен — DNS-запись бот создаст сам."
+        if get_cloudflare_api_token()
+        else "📋 Cloudflare-токен не задан — бот попросит добавить одну A-запись вручную, дальше всё остальное сделает сам."
+    )
     await safe_edit_or_send(
         callback.message,
-        f"🔁 <b>Резервный домен сайта</b>\n\nТекущий: <code>{current or 'не задан'}</code>\n\n"
+        f"🔁 <b>Резервный домен сайта — автонастройка</b>\n\nТекущий: <code>{current or 'не задан'}</code>\n\n"
         "<b>Зачем это нужно:</b> если основной домен заблокируют (провайдер/DPI режет по SNI — "
-        "частая ситуация), достаточно одной кнопки «Сделать резервный основным» — все НОВЫЕ "
-        "ссылки подписки сразу пойдут через него, без правки кода и без перезапуска бота. "
-        "Уже выданные клиентам ссылки на СТАРЫЙ домен продолжат работать, только пока старый "
-        "домен жив, поэтому не удаляйте старый домен/nginx/сертификат — просто держите его на "
-        "подхвате.\n\n"
-        "<b>Готовьте заранее, а не в момент блокировки:</b>\n"
-        "1. Отдельный, ещё не использованный домен — свой DNS (A-запись) на IP этого сервера\n"
-        "2. На сервере — свой nginx server-блок для него, проксирующий на того же бота/WebApp\n"
-        "3. Выпущен и подключён свой SSL-сертификат\n\n"
-        "Если это уже готово — отправьте адрес, например:\n<code>https://резервный-домен.ru</code>",
+        "частая ситуация), одной кнопкой «Сделать резервный основным» все НОВЫЕ ссылки подписки "
+        "сразу пойдут через резервный, без перезапуска бота. Уже выданные клиентам ссылки на "
+        "СТАРЫЙ домен продолжат работать сами по себе, поэтому не удаляйте его.\n\n"
+        f"{cf_line}\n\n"
+        "Единственное, что нужно заранее — сам домен должен быть куплен (у любого регистратора). "
+        "Всё остальное (DNS, nginx, SSL) бот настроит сам за один проход.\n\n"
+        "Отправьте домен (без <code>https://</code>), например:\n<code>резервный-домен.ru</code>",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
     )
     await callback.answer()
@@ -459,13 +461,13 @@ async def edit_webapp_url_backup_save(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
 
-    from database.requests import set_webapp_url_backup
-    value = get_message_text_for_storage(message, "plain").strip()
-    if not value.startswith("https://"):
-        await safe_edit_or_send(
-            message,
-            "❌ Адрес обязательно должен начинаться с <code>https://</code> (не http://).",
-        )
+    from database.requests import set_webapp_url_backup, get_cloudflare_api_token
+    from bot.services.domain_provisioning import provision_backup_domain
+
+    raw = get_message_text_for_storage(message, "plain").strip()
+    domain = raw.replace("https://", "").replace("http://", "").strip().strip("/")
+    if not domain or "." not in domain:
+        await safe_edit_or_send(message, "❌ Похоже на невалидный домен. Отправьте домен без протокола, например: <code>резервный-домен.ru</code>")
         return
 
     try:
@@ -473,19 +475,84 @@ async def edit_webapp_url_backup_save(message: Message, state: FSMContext):
     except Exception:
         pass
 
-    set_webapp_url_backup(value)
     await state.set_state(AdminStates.integrations_menu)
+    cf_token = get_cloudflare_api_token()
+    progress_msg = await message.answer(f"🚀 <b>Автонастройка {domain}</b>\n\nНачинаю...", parse_mode="HTML")
 
-    check_kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔍 Проверить резервный домен", web_app=WebAppInfo(url=value))],
-    ])
-    await message.answer(
-        f"✅ Резервный домен сохранён: <code>{value}</code>\n\n"
-        "Нажми кнопку ниже, чтобы сразу проверить, что личный кабинет на нём тоже открывается — "
-        "лучше убедиться заранее, а не в момент, когда основной домен уже заблокирован.",
-        parse_mode="HTML", reply_markup=check_kb,
-    )
+    last_text = ""
+    success = False
+    async for step in provision_backup_domain(domain, cloudflare_api_token=cf_token or None):
+        last_text = step
+        try:
+            await progress_msg.edit_text(f"🚀 <b>Автонастройка {domain}</b>\n\n{step}", parse_mode="HTML")
+        except Exception:
+            pass
+        if step.startswith("✅ Готово!"):
+            success = True
+
+    if success:
+        set_webapp_url_backup(f"https://{domain}")
+        check_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Проверить резервный домен", web_app=WebAppInfo(url=f"https://{domain}"))],
+        ])
+        await message.answer(
+            f"🎉 Резервный домен настроен и сохранён: <code>https://{domain}</code>",
+            parse_mode="HTML", reply_markup=check_kb,
+        )
+    else:
+        await message.answer(
+            f"⚠️ Автонастройка не завершилась успехом (см. последний шаг выше) — резервный домен "
+            f"НЕ сохранён. Устраните причину и отправьте домен ещё раз.",
+        )
     await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+
+
+@router.callback_query(F.data == "admin_edit_cloudflare_token")
+async def edit_cloudflare_token_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_cloudflare_api_token
+    await state.set_state(AdminStates.edit_cloudflare_api_token)
+    current = get_cloudflare_api_token()
+    await safe_edit_or_send(
+        callback.message,
+        f"☁️ <b>Cloudflare API-токен</b>\n\nТекущий: <code>{_mask_secret(current) if current else 'не задан'}</code>\n\n"
+        "<b>Зачем это нужно:</b> если DNS ваших доменов управляется через Cloudflare, бот сможет "
+        "сам создавать A-запись резервного домена — без единого ручного действия при автонастройке.\n\n"
+        "Если DNS не в Cloudflare — просто пропустите это, автонастройка всё равно сработает, "
+        "только с одним ручным шагом (добавить A-запись у вашего регистратора).\n\n"
+        "<b>Как получить токен:</b>\n"
+        "1. dash.cloudflare.com → профиль (справа сверху) → My Profile → API Tokens\n"
+        "2. Create Token → шаблон «Edit zone DNS»\n"
+        "3. Ограничьте зоной(ями), где будете заводить резервные домены\n"
+        "4. Скопируйте токен и отправьте сюда",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_cloudflare_api_token)
+async def edit_cloudflare_token_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    from database.requests import set_cloudflare_api_token
+    value = get_message_text_for_storage(message, "plain").strip()
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    set_cloudflare_api_token(value)
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(
+        f"✅ Cloudflare API-токен сохранён: <code>{_mask_secret(value)}</code>\n\n"
+        "Теперь автонастройка резервного домена будет создавать DNS-запись сама.",
+        parse_mode="HTML", reply_markup=integrations_menu_kb(),
+    )
 
 
 @router.callback_query(F.data == "admin_swap_webapp_url_ask")

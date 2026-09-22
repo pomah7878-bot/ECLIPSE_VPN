@@ -106,6 +106,8 @@ __all__ = [
     'get_webapp_url_backup',
     'set_webapp_url_backup',
     'swap_webapp_url_with_backup',
+    'get_cloudflare_api_token',
+    'set_cloudflare_api_token',
     'get_effective_groq_api_key',
     'set_groq_api_key',
     'get_effective_tavily_api_key',
@@ -980,6 +982,17 @@ def swap_webapp_url_with_backup() -> None:
     backup = get_setting('webapp_url_backup', '') or ''
     set_setting('webapp_url', backup)
     set_setting('webapp_url_backup', primary)
+
+
+def get_cloudflare_api_token() -> str:
+    """API-токен Cloudflare для автосоздания DNS A-записи резервного
+    домена. Не обязателен — без него автонастройка просто попросит
+    добавить A-запись вручную (один раз) и дальше сделает nginx+SSL сама."""
+    return get_setting('cloudflare_api_token', '') or ''
+
+
+def set_cloudflare_api_token(token: str) -> None:
+    set_setting('cloudflare_api_token', token.strip())
 
 def get_effective_groq_api_key() -> str:
     """Ключ Groq для AI-консультанта. Значение из админки имеет приоритет
