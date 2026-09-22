@@ -168,7 +168,7 @@ async def show_zvonok_postback_info(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_integrations_apikeys")
 async def show_integrations_apikeys_menu(callback: CallbackQuery):
-    """Подменю «Внешние ключи и API»."""
+    """Подменю «AI-суппорт: ключи и настройки»."""
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
@@ -180,8 +180,28 @@ async def show_integrations_apikeys_menu(callback: CallbackQuery):
         await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
         return
     from bot.keyboards.admin_settings import integrations_apikeys_menu_kb
-    await safe_edit_or_send(callback.message, "🔑 <b>Внешние ключи и API</b>", reply_markup=integrations_apikeys_menu_kb())
+    await safe_edit_or_send(callback.message, "🤖 <b>AI-суппорт: ключи и настройки</b>", reply_markup=integrations_apikeys_menu_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_ai_support")
+async def toggle_ai_support(callback: CallbackQuery):
+    """Включает/выключает AI-суппорт (не трогая саму лицензию — партнёр
+    может временно отключить, например, чтобы не тратить лимиты Groq/
+    Gemini, и включить обратно в любой момент)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.license import is_feature_available
+    if not is_feature_available("ai_assistant"):
+        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
+        return
+    from database.requests import is_ai_support_enabled, set_ai_support_enabled
+    current = is_ai_support_enabled()
+    set_ai_support_enabled(not current)
+    await callback.answer("✅ AI-суппорт включён" if not current else "⚪ AI-суппорт выключен")
+    from bot.keyboards.admin_settings import integrations_apikeys_menu_kb
+    await safe_edit_or_send(callback.message, "🤖 <b>AI-суппорт: ключи и настройки</b>", reply_markup=integrations_apikeys_menu_kb())
 
 
 @router.callback_query(F.data == "admin_integrations_happ")

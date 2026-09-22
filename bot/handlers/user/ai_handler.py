@@ -151,6 +151,10 @@ async def ai_command(message: Message, command: CommandObject, state: FSMContext
     if not is_feature_available("ai_assistant"):
         await message.answer(FEATURE_UPGRADE_MESSAGE, parse_mode="HTML")
         return
+    from database.requests import is_ai_support_enabled
+    if not is_ai_support_enabled():
+        await message.answer("🤖 AI-помощник временно недоступен.")
+        return
 
     user_id = message.from_user.id
     
@@ -297,6 +301,10 @@ async def ai_support_open_handler(query: CallbackQuery, state: FSMContext):
     from bot.services.license import is_feature_available, FEATURE_UPGRADE_MESSAGE
     if not is_feature_available("ai_assistant"):
         await query.answer("Эта функция доступна в полном тарифе", show_alert=True)
+        return
+    from database.requests import is_ai_support_enabled
+    if not is_ai_support_enabled():
+        await query.answer("🤖 AI-помощник временно недоступен", show_alert=True)
         return
 
     await state.set_state(AIChatStates.waiting_for_question)
