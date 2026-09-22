@@ -658,6 +658,24 @@ SUGGEST_KEY_REPLACEMENT_TOOL = {
 }
 
 
+SUGGEST_KEY_RENEWAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "suggest_key_renewal",
+        "description": (
+            "Даёт клиенту прямую ссылку на карточку его ключа с кнопкой "
+            "«Продлить» (покупка/продление подписки на новый срок). "
+            "Используй, когда клиент хочет продлить подписку, спрашивает "
+            "про тарифы на продление или пишет 'хочу ещё на месяц' и "
+            "похожее. НЕ создаёт платёж сам (клиент сам выбирает тариф и "
+            "способ оплаты в боте) — только доставляет его на нужный экран "
+            "в один клик."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
 CHECK_PAYMENT_NOW_TOOL = {
     "type": "function",
     "function": {
@@ -1090,6 +1108,60 @@ async def suggest_key_replacement(telegram_id: int) -> str:
         f"Ссылка на карточку ключа «{key_name}» готова: {deep_link}\n"
         f"На этой карточке есть кнопка «🔄 Заменить» — клиенту нужно нажать её, "
         f"выбрать сервер и подтвердить. Дай клиенту эту ссылку как HTML-кнопку "
+        f"(<a href=\"{deep_link}\">текст</a>), объясни коротко, что это займёт пару кликов."
+    )
+
+
+async def suggest_key_renewal(telegram_id: int) -> str:
+    """Возвращает deep-link на карточку единственного активного ключа
+    клиента, где есть кнопка «Продлить». Не создаёт платёж сам — только
+    доставляет клиента к уже проверенному интерактивному потоку (там
+    клиент сам выбирает тариф и способ оплаты)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось найти ключ: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для продления: {e}")
+        return "Не удалось найти ключ из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных ключей — продлевать нечего. Предложи оформить новый тариф через «💳 Купить ключ»."
+
+    if len(key_rows) > 1:
+        lines = []
+        for k in key_rows:
+            name = k["custom_name"] or f"ключ #{k['id']}"
+            lines.append(f"— {name} (id={k['id']})")
+        listing = "\n".join(lines)
+        return (
+            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
+            f"именно продлить:\n{listing}\n"
+            f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент ещё раз."
+        )
+
+    key_id = key_rows[0]["id"]
+    key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
+    bot_username = await _resolve_bot_username()
+    if not bot_username:
+        return f"Не удалось сформировать ссылку на карточку ключа «{key_name}» — попробуйте ещё раз через минуту или откройте «🔑 Мои ключи» вручную."
+    deep_link = f"https://t.me/{bot_username}?start=renew_{key_id}"
+    return (
+        f"Ссылка на карточку ключа «{key_name}» готова: {deep_link}\n"
+        f"На этой карточке есть кнопка «📈 Продлить» — клиенту нужно нажать её, "
+        f"выбрать тариф и способ оплаты. Дай клиенту эту ссылку как HTML-кнопку "
         f"(<a href=\"{deep_link}\">текст</a>), объясни коротко, что это займёт пару кликов."
     )
 
@@ -1960,7 +2032,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -1968,7 +2040,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -2083,6 +2155,14 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": replace_result,
                     })
+                elif tool_call.function.name == "suggest_key_renewal":
+                    logger.info(f"📈 AI даёт ссылку на продление ключа (user {req.user_id})")
+                    renewal_result = await suggest_key_renewal(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": renewal_result,
+                    })
                 elif tool_call.function.name == "check_payment_now":
                     logger.info(f"💳 AI проверяет платёж прямо сейчас (user {req.user_id})")
                     payment_result = await check_payment_now(req.user_id)
@@ -2104,7 +2184,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
