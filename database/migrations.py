@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 116
+LATEST_VERSION = 117
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -68,10 +68,11 @@ def _my_keys_page_text() -> str:
 
 
 def _my_keys_page_buttons() -> str:
-    """Default buttons on the key list page."""
-    return json.dumps([
-        {"id": "btn_back_main", "label": "🈴 На главную", "color": "secondary", "row": 0, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
-    ], ensure_ascii=False)
+    """Default buttons on the key list page. "На главную" здесь
+    отсутствует специально — добавляется программно САМОЙ ПОСЛЕДНЕЙ (после
+    "Управлять на сайте", если она есть) в _render_my_keys_page, чтобы
+    навигация всегда оставалась внизу списка, а не посередине."""
+    return json.dumps([], ensure_ascii=False)
 
 
 def _custom_profile_page_text() -> str:
@@ -2470,7 +2471,38 @@ def migration_116(conn: sqlite3.Connection) -> None:
 
     logger.info("Migration v116 applied: кнопки импорта на главной переведены на прямую ссылку")
 
-    logger.info("Migration v115 applied: кнопки импорта убраны со страницы key_details")
+
+def migration_117(conn: sqlite3.Connection) -> None:
+    """Версия 117: кнопка "На главную" на странице "Мои ключи" опускается
+    в самый низ — под "Управлять на сайте" (если она есть), а не висит
+    посередине между списком ключей и ссылкой на сайт.
+
+    btn_back_main убирается со страницы как отдельная кнопка БД — теперь
+    она добавляется программно в _render_my_keys_page() последней в
+    append_buttons, всегда после "Управлять на сайте"."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'my_keys'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v117: страница 'my_keys' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        filtered = [b for b in buttons if b.get("id") != "btn_back_main"]
+        if len(filtered) != len(buttons):
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'my_keys'",
+                (json.dumps(filtered, ensure_ascii=False),)
+            )
+
+    logger.info("Migration v117 applied: btn_back_main убран со страницы my_keys (теперь добавляется программно последним)")
 
 
 MIGRATIONS = {
@@ -2517,6 +2549,7 @@ MIGRATIONS = {
     114: migration_114,
     115: migration_115,
     116: migration_116,
+    117: migration_117,
 }
 
 
