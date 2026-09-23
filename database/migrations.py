@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 115
+LATEST_VERSION = 116
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2428,6 +2428,48 @@ def migration_115(conn: sqlite3.Connection) -> None:
                 (json.dumps(filtered, ensure_ascii=False),)
             )
 
+
+def migration_116(conn: sqlite3.Connection) -> None:
+    """Версия 116: кнопки импорта на главной странице (btn_start_import_happ/
+    incy) переводятся с action_type="internal" на action_type="system" —
+    чтобы они, как и одноимённые кнопки на карточке ключа (v1.84), могли
+    вести сразу по прямой ссылке в один клик вместо промежуточного экрана
+    "Открыть в ...".
+
+    action_value больше не нужен для системных кнопок (резолвер определяется
+    напрямую по id кнопки) — оставляем как есть, он просто игнорируется.
+
+    Правит и buttons_default, и buttons_custom."""
+    import_button_ids = {"btn_start_import_happ", "btn_start_import_incy"}
+
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'main'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v116: страница 'main' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        changed = False
+        for b in buttons:
+            if b.get("id") in import_button_ids and b.get("action_type") != "system":
+                b["action_type"] = "system"
+                changed = True
+        if changed:
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'main'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+
+    logger.info("Migration v116 applied: кнопки импорта на главной переведены на прямую ссылку")
+
     logger.info("Migration v115 applied: кнопки импорта убраны со страницы key_details")
 
 
@@ -2474,6 +2516,7 @@ MIGRATIONS = {
     113: migration_113,
     114: migration_114,
     115: migration_115,
+    116: migration_116,
 }
 
 
