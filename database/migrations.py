@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 117
+LATEST_VERSION = 118
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1172,7 +1172,8 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 {"id": "btn_key_import_karing", "label": "🎯 Импорт в Karing", "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_help",      "label": "📄 Инструкция",  "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_help"},
                 {"id": "btn_my_keys",   "label": "🔑 Мои ключи",  "color": "secondary", "row": 2, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
-                {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
+                {"id": "btn_key_delivery_back", "label": "⬅️ Назад",   "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+                {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 3, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
             ], ensure_ascii=False),
         },
     }
@@ -2505,6 +2506,51 @@ def migration_117(conn: sqlite3.Connection) -> None:
     logger.info("Migration v117 applied: btn_back_main убран со страницы my_keys (теперь добавляется программно последним)")
 
 
+def migration_118(conn: sqlite3.Connection) -> None:
+    """Версия 118: кнопка "⬅️ Назад" на экране выдачи/продления ключа
+    (key_delivery) — раньше её не было вообще, хотя у соседнего экрана
+    выбора способа оплаты при продлении (renew_payment) такая кнопка уже
+    есть (btn_renew_back). Ведёт туда же, куда и уже существующая кнопка
+    "Мои ключи" (cmd_my_keys) — у этого экрана нет единственного
+    фиксированного родителя (сюда попадают и после покупки, и после
+    продления), поэтому "Мои ключи" — самый универсальный вариант "назад".
+
+    Правит и buttons_default, и buttons_custom."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v118: страница 'key_delivery' не найдена, пропускаю")
+        return
+
+    back_button = {
+        "id": "btn_key_delivery_back", "label": "⬅️ Назад", "color": "secondary",
+        "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys",
+    }
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if any(b.get("id") == "btn_key_delivery_back" for b in buttons):
+            continue
+        # Сдвигаем "На главную" на следующую колонку, чтобы Назад встал перед ней
+        for b in buttons:
+            if b.get("id") == "btn_back_main":
+                b["col"] = 1
+        buttons.append(back_button)
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+
+    logger.info("Migration v118 applied: кнопка Назад добавлена на экран выдачи/продления ключа")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2550,6 +2596,7 @@ MIGRATIONS = {
     115: migration_115,
     116: migration_116,
     117: migration_117,
+    118: migration_118,
 }
 
 
