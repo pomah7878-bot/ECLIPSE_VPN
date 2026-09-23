@@ -598,6 +598,18 @@ def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     return {"callback_data": "import_incy"}
 
 
+def _resolve_start_import_happ(ctx: dict) -> Optional[dict]:
+    """Кнопка быстрого импорта в Happ на главной странице — тот же прямой
+    путь, что и у кнопки на карточке ключа (_resolve_key_import_happ)."""
+    return _resolve_key_import_happ(ctx)
+
+
+def _resolve_start_import_incy(ctx: dict) -> Optional[dict]:
+    """Кнопка быстрого импорта в INCY на главной странице — тот же прямой
+    путь, что и у кнопки на карточке ключа (_resolve_key_import_incy)."""
+    return _resolve_key_import_incy(ctx)
+
+
 
 # Map: button_id → handler
 SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
@@ -636,6 +648,8 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_import_karing": _resolve_key_import_karing,
     "btn_key_import_incy": _resolve_key_import_incy,
     "btn_key_import_eclipse": _resolve_key_import_eclipse,
+    "btn_start_import_happ": _resolve_start_import_happ,
+    "btn_start_import_incy": _resolve_start_import_incy,
 }
 
 
