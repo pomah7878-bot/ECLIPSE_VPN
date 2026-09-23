@@ -518,34 +518,83 @@ def _resolve_key_traffic_chart(ctx: dict) -> Optional[dict]:
     return {"callback_data": f"key_traffic_chart:{key_id}"}
 
 
+def _build_direct_import_deeplink(ctx: dict, scheme: str) -> Optional[str]:
+    """Строит прямую ссылку для импорта подписки в приложение (Happ/INCY/
+    Karing/ECLIPSE VPN) синхронно, без похода к панели — чтобы кнопка вела
+    сразу на импорт в один клик, без промежуточного экрана "Открыть в ...".
+
+    Работает только когда настроен домен сайта (get_effective_webapp_url)
+    — тогда публичная ссылка подписки строится напрямую из sub_id, без
+    обращения к панели. Если домен не настроен — возвращает None, и
+    вызывающий код падает обратно на старый способ через callback
+    (там уже есть асинхронный путь через панель для этого случая).
+    """
+    from bot.services.license import is_feature_available
+    if not is_feature_available("app_import"):
+        return None
+    telegram_id = ctx.get('telegram_id')
+    if not telegram_id:
+        return None
+    from database.requests import get_effective_webapp_url
+    webapp_url = get_effective_webapp_url()
+    if not webapp_url:
+        return None
+    from database.db_keys import get_user_keys_for_display
+    keys = get_user_keys_for_display(telegram_id)
+    candidates = [k for k in keys if k.get('is_active') and k.get('sub_id')]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda k: k.get('id') or 0, reverse=True)
+    sub_id = candidates[0]['sub_id']
+    webapp_url = webapp_url.rstrip('/')
+    sub_url = f"{webapp_url}/happ-sub/{sub_id}"
+    import urllib.parse
+    return f"{webapp_url}/import?scheme={scheme}&url=" + urllib.parse.quote(sub_url, safe='')
+
+
 def _resolve_key_import_happ(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение Happ.
 
-    Подключена к уже существующему обработчику import_happ
-    (bot/handlers/user/keys.py), который сам проверяет наличие активного
-    ключа с подпиской и мягко сообщает об ошибке, если его нет.
+    Если домен сайта настроен — ведёт СРАЗУ по прямой ссылке (один клик).
+    Иначе падает на старый обработчик import_happ (bot/handlers/user/
+    keys.py), который сам проверяет наличие активного ключа с подпиской
+    и мягко сообщает об ошибке, если его нет — там нужен запрос к панели,
+    поэтому остаётся отдельным шагом.
     """
+    deeplink = _build_direct_import_deeplink(ctx, "happ")
+    if deeplink:
+        return {"url": deeplink}
     return {"callback_data": "import_happ"}
 
 
 
 def _resolve_key_import_karing(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение Karing."""
+    deeplink = _build_direct_import_deeplink(ctx, "karing")
+    if deeplink:
+        return {"url": deeplink}
     return {"callback_data": "import_karing"}
 
 
 def _resolve_key_import_eclipse(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в наше приложение ECLIPSE VPN
     (форк v2rayNG, схема eclipsevpn://install-sub)."""
+    deeplink = _build_direct_import_deeplink(ctx, "eclipse")
+    if deeplink:
+        return {"url": deeplink}
     return {"callback_data": "import_eclipse"}
 
 def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение INCY.
 
-    Подключена к уже существующему обработчику import_incy
-    (bot/handlers/user/keys.py), который сам проверяет наличие активного
-    ключа с подпиской и мягко сообщает об ошибке, если его нет.
+    Если домен сайта настроен — ведёт СРАЗУ по прямой ссылке (один клик).
+    Иначе падает на старый обработчик import_incy (bot/handlers/user/
+    keys.py), который сам проверяет наличие активного ключа с подпиской
+    и мягко сообщает об ошибке, если его нет.
     """
+    deeplink = _build_direct_import_deeplink(ctx, "incy")
+    if deeplink:
+        return {"url": deeplink}
     return {"callback_data": "import_incy"}
 
 
