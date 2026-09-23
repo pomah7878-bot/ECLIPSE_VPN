@@ -460,6 +460,9 @@ async def edit_webapp_url_backup_start(callback: CallbackQuery, state: FSMContex
     from database.requests import get_webapp_url_backup, get_cloudflare_api_token
     await state.set_state(AdminStates.edit_webapp_url_backup)
     current = get_webapp_url_backup()
+    kb = integrations_edit_cancel_kb('admin_integrations_site')
+    if current:
+        kb.inline_keyboard.insert(0, [InlineKeyboardButton(text='🗑 Удалить домен', callback_data='admin_delete_webapp_url_backup_ask')])
     cf_line = (
         "☁️ Cloudflare-токен настроен — DNS-запись бот создаст сам."
         if get_cloudflare_api_token()
@@ -476,7 +479,7 @@ async def edit_webapp_url_backup_start(callback: CallbackQuery, state: FSMContex
         "Единственное, что нужно заранее — сам домен должен быть куплен (у любого регистратора). "
         "Всё остальное (DNS, nginx, SSL) бот настроит сам за один проход.\n\n"
         "Отправьте домен (без <code>https://</code>), например:\n<code>резервный-домен.ru</code>",
-        reply_markup=integrations_edit_cancel_kb('admin_integrations_site'),
+        reply_markup=kb,
     )
     await callback.answer()
 
@@ -1952,6 +1955,7 @@ async def delete_cloudflare_token_confirm(callback: CallbackQuery, state: FSMCon
         return
     from database.requests import set_cloudflare_api_token
     set_cloudflare_api_token("")
+    await state.clear()
     await callback.answer("✅ Токен удалён")
     await safe_edit_or_send(callback.message, "Сайт и витрина:", reply_markup=integrations_site_menu_kb())
 
@@ -1981,5 +1985,6 @@ async def delete_webapp_url_backup_confirm(callback: CallbackQuery, state: FSMCo
         return
     from database.requests import set_webapp_url_backup
     set_webapp_url_backup("")
+    await state.clear()
     await callback.answer("✅ Резервный домен удалён из настроек")
     await safe_edit_or_send(callback.message, "Сайт и витрина:", reply_markup=integrations_site_menu_kb())
