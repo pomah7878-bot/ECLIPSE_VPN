@@ -105,7 +105,7 @@ def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None, mode: str=
     builder.row(InlineKeyboardButton(text='✏️ Изменить текст', callback_data='admin_trial_edit_text'))
     tariff_label = tariff_name if tariff_name else 'не задан'
     builder.row(InlineKeyboardButton(text=f'📋 Общий тариф: {tariff_label}', callback_data='admin_trial_select_tariff'))
-    builder.row(back_button('admin_panel'), home_button())
+    builder.row(back_button('admin_payments'), home_button())
     return builder.as_markup()
 
 def expired_key_autodelete_settings_kb(enabled: bool, days: int) -> InlineKeyboardMarkup:
@@ -120,7 +120,7 @@ def expired_key_autodelete_settings_kb(enabled: bool, days: int) -> InlineKeyboa
     ))
     builder.row(InlineKeyboardButton(text=f'📅 Дней до удаления: {days}', callback_data='admin_autodelete_edit_days'))
     builder.row(InlineKeyboardButton(text='✏️ Изменить текст уведомления', callback_data='admin_autodelete_edit_text'))
-    builder.row(back_button('admin_panel'), home_button())
+    builder.row(back_button('admin_payments'), home_button())
     return builder.as_markup()
 
 
