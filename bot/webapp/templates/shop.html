@@ -173,6 +173,32 @@
         .text-mist-dim { color: var(--mist-dim); }
         .text-gold { color: var(--gold); }
         .text-teal { color: var(--teal); }
+        #connStatusBar {
+            border: 1px solid var(--hairline);
+            background: var(--panel);
+            transition: border-color 0.3s, background 0.3s;
+        }
+        #connStatusBar.protected {
+            border-color: var(--teal);
+            background: color-mix(in srgb, var(--teal) 10%, var(--panel));
+        }
+        #connStatusBar.unprotected {
+            border-color: var(--alert);
+            background: color-mix(in srgb, var(--alert) 10%, var(--panel));
+        }
+        #connStatusDot {
+            width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+        }
+        #connStatusBar.protected #connStatusDot {
+            background: var(--teal);
+            box-shadow: 0 0 8px var(--teal);
+        }
+        #connStatusBar.unprotected #connStatusDot {
+            background: var(--alert);
+            box-shadow: 0 0 8px var(--alert);
+        }
+        #connStatusBar.protected #connStatusTitle { color: var(--teal); }
+        #connStatusBar.unprotected #connStatusTitle { color: var(--alert); }
         .text-alert { color: var(--alert); }
         .btn-primary {
             background: linear-gradient(135deg, var(--gold), var(--gold-bright));
@@ -246,6 +272,16 @@
 <body>
     <div class="relative overflow-hidden">
         <div class="corona-glow"></div>
+
+        <div id="connStatusWidget" class="max-w-md mx-auto px-4 pt-3" style="display:none;">
+            <div id="connStatusBar" class="rounded-2xl px-4 py-3 flex items-center gap-3">
+                <span id="connStatusDot"></span>
+                <div style="flex:1;min-width:0;">
+                    <div id="connStatusTitle" class="font-display text-sm font-bold"></div>
+                    <div id="connStatusSub" class="text-mist-dim" style="font-size:12px;"></div>
+                </div>
+            </div>
+        </div>
 
         <div class="max-w-md mx-auto px-4 pt-8 pb-4 relative">
             <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
@@ -555,6 +591,30 @@
                     document.getElementById('oauthButtons').classList.remove('hidden');
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
+        })();
+
+        (async function checkConnectionStatus() {
+            try {
+                const res = await fetch('/api/public/connection-status');
+                const data = await res.json();
+                const widget = document.getElementById('connStatusWidget');
+                const bar = document.getElementById('connStatusBar');
+                const title = document.getElementById('connStatusTitle');
+                const sub = document.getElementById('connStatusSub');
+                if (!widget || !bar) return;
+
+                if (data.protected) {
+                    bar.classList.add('protected');
+                    title.textContent = '✅ Вы защищены';
+                    sub.textContent = 'Соединение зашифровано';
+                } else {
+                    bar.classList.add('unprotected');
+                    title.textContent = '⚠️ Вы не защищены';
+                    const loc = [data.city, data.country].filter(Boolean).join(', ');
+                    sub.textContent = (data.ip || '') + (loc ? ' · ' + loc : '');
+                }
+                widget.style.display = 'block';
+            } catch (e) { /* виджет не критичен — молча пропускаем */ }
         })();
 
         function escapeHtml(s) {

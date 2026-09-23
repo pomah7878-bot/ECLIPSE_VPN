@@ -1436,6 +1436,68 @@ def _get_client_ip(request: web.Request) -> str:
     return request.remote or "unknown"
 
 
+_connection_status_ip_cache: dict = {"ips": set(), "checked_at": 0.0}
+_CONNECTION_STATUS_CACHE_TTL = 300  # 5 минут — резолвить хосты серверов на каждый визит смысла нет
+
+
+async def _get_known_vpn_server_ips() -> set:
+    """Множество IP-адресов всех активных VPN-серверов (панелей). Если
+    посетитель сайта заходит с одного из этих адресов — значит его трафик
+    реально идёт через наш VPN (когда клиент подключён, ВЕСЬ его интернет,
+    включая открытие сайта, выходит через IP сервера). Резолвится не чаще
+    раза в 5 минут, чтобы не бить DNS на каждый визит виджета."""
+    import time as _time
+    now = _time.time()
+    if now - _connection_status_ip_cache["checked_at"] < _CONNECTION_STATUS_CACHE_TTL:
+        return _connection_status_ip_cache["ips"]
+
+    import socket
+    from database.db_servers import get_all_servers
+    ips = set()
+    for srv in get_all_servers():
+        if not srv.get("is_active"):
+            continue
+        host = (srv.get("host") or "").strip()
+        if not host:
+            continue
+        try:
+            resolved = socket.gethostbyname(host)
+            ips.add(resolved)
+        except (socket.gaierror, OSError):
+            ips.add(host)  # уже голый IP, либо временно не резолвится — пробуем как есть
+
+    _connection_status_ip_cache["ips"] = ips
+    _connection_status_ip_cache["checked_at"] = now
+    return ips
+
+
+async def handle_public_connection_status(request: web.Request) -> web.Response:
+    """GET /api/public/connection-status — для виджета "Вы защищены /
+    не защищены" на витрине. Сверяет IP посетителя с адресами наших
+    собственных VPN-серверов — никаких cookie или клиентских проверок,
+    только реальный маршрут трафика. Если IP не наш — отдаёт страну/город
+    через бесплатный гео-сервис, чтобы показать "вот что видно о вас"."""
+    ip = _get_client_ip(request)
+    known_ips = await _get_known_vpn_server_ips()
+    protected = ip in known_ips
+
+    result = {"ip": ip, "protected": protected, "country": None, "city": None}
+
+    if not protected and ip and ip != "unknown":
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
+                async with session.get(f"http://ip-api.com/json/{ip}?fields=status,country,city") as resp:
+                    data = await resp.json()
+                    if data.get("status") == "success":
+                        result["country"] = data.get("country")
+                        result["city"] = data.get("city")
+        except Exception as e:
+            logger.debug(f"connection-status: гео-запрос не удался для {ip}: {e}")
+
+    return web.json_response(result)
+
+
 def _trial_rate_limit_check(ip: str) -> bool:
     """True, если можно пробовать — не превышен лимит попыток с этого IP."""
     import time
@@ -2853,6 +2915,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
     app.router.add_get("/api/public/site-info", handle_public_site_info)
+    app.router.add_get("/api/public/connection-status", handle_public_connection_status)
     app.router.add_get("/happ-sub/{sub_id}", handle_happ_subscription)
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
