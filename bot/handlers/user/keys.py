@@ -57,9 +57,10 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
         return
 
     from database.requests import get_effective_webapp_url
-    my_keys_append_buttons = None
+    my_keys_append_buttons = []
     if get_effective_webapp_url():
-        my_keys_append_buttons = [[InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')]]
+        my_keys_append_buttons.append([InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')])
+    my_keys_append_buttons.append([InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
 
     await render_page(
         target,
