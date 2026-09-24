@@ -16,6 +16,7 @@ import asyncio
 import sqlite3
 import logging
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request, Depends, Security
 from fastapi.responses import JSONResponse
@@ -630,6 +631,21 @@ CHECK_ACTIVE_DEVICES_TOOL = {
 }
 
 
+_KEY_IDENTIFIER_PARAM = {
+    "key_identifier": {
+        "type": "string",
+        "description": (
+            "Название или номер ключа клиента (например «admin», «#86», «86»). "
+            "ОБЯЗАТЕЛЬНО передавай это поле, если у клиента НЕСКОЛЬКО активных "
+            "ключей и он уже сказал (в этом или предыдущем сообщении), какой из "
+            "них имеет в виду — иначе инструмент снова не сможет понять, для "
+            "какого ключа выполнять действие, и уточнение зациклится. Если у "
+            "клиента только один активный ключ, поле не нужно."
+        ),
+    }
+}
+
+
 TOGGLE_AUTO_RENEWAL_TOOL = {
     "type": "function",
     "function": {
@@ -639,7 +655,7 @@ TOGGLE_AUTO_RENEWAL_TOOL = {
             "советует). Используй, если клиент просит сделать это СЕЙЧАС, "
             "а не объяснить как. Безопасно и обратимо."
         ),
-        "parameters": {"type": "object", "properties": {}},
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
     },
 }
 
@@ -657,7 +673,7 @@ CLEAR_DEVICE_IPS_TOOL = {
             "сменил телефон/переустановил приложение. Безопасно и "
             "обратимо, тариф/срок/трафик не затрагивает."
         ),
-        "parameters": {"type": "object", "properties": {}},
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
     },
 }
 
@@ -673,7 +689,7 @@ SUGGEST_KEY_REPLACEMENT_TOOL = {
             "ключ. НЕ выполняет замену сам (это делает клиент подтверждением "
             "в боте) — только доставляет его на нужный экран в один клик."
         ),
-        "parameters": {"type": "object", "properties": {}},
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
     },
 }
 
@@ -691,7 +707,7 @@ SUGGEST_KEY_RENEWAL_TOOL = {
             "способ оплаты в боте) — только доставляет его на нужный экран "
             "в один клик."
         ),
-        "parameters": {"type": "object", "properties": {}},
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
     },
 }
 
@@ -955,7 +971,42 @@ async def check_active_devices(telegram_id: int) -> str:
     return "\n".join(parts)
 
 
-async def toggle_auto_renewal(telegram_id: int) -> str:
+def _resolve_ambiguous_key(key_rows: list, key_identifier: Optional[str]):
+    """Пытается однозначно выбрать один ключ из key_rows по строке
+    key_identifier, которую модель передала после того, как клиент назвал
+    нужный ключ (по имени или номеру, например «admin», «#86», «86»).
+    Возвращает подходящий dict-ключ, либо None, если идентификатор пуст,
+    ничего не совпало, или совпало сразу несколько ключей."""
+    if not key_identifier:
+        return None
+    ident = key_identifier.strip()
+    if ident.startswith("#"):
+        ident = ident[1:]
+    ident = ident.strip().lower()
+    if not ident:
+        return None
+
+    exact = []
+    for k in key_rows:
+        name = (k.get("custom_name") or "").strip().lower()
+        id_str = str(k["id"])
+        if ident == id_str or ident == name or ident == f"ключ #{id_str}":
+            exact.append(k)
+    if len(exact) == 1:
+        return exact[0]
+
+    partial = [
+        k for k in key_rows
+        if (k.get("custom_name") or "").strip().lower()
+        and ident in (k.get("custom_name") or "").strip().lower()
+    ]
+    if len(partial) == 1:
+        return partial[0]
+
+    return None
+
+
+async def toggle_auto_renewal(telegram_id: int, key_identifier: Optional[str] = None) -> str:
     """Включает/выключает автопродление для ЕДИНСТВЕННОГО активного ключа
     клиента. Явно проверяет принадлежность ключа этому telegram_id перед
     изменением — toggle_key_auto_renew сама этого не делает."""
@@ -982,21 +1033,26 @@ async def toggle_auto_renewal(telegram_id: int) -> str:
     if not key_rows:
         return "У клиента нет активных ключей — переключать нечего."
 
+    chosen_key = key_rows[0]
     if len(key_rows) > 1:
-        lines = []
-        for k in key_rows:
-            name = k["custom_name"] or f"ключ #{k['id']}"
-            state = "включено" if k["auto_renew"] else "выключено"
-            lines.append(f"— {name}: автопродление сейчас {state}")
-        listing = "\n".join(lines)
-        return (
-            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
-            f"именно менять автопродление:\n{listing}\n"
-            f"Не переключай автоматически — сначала спроси клиента, какой ключ он имеет в виду."
-        )
+        chosen_key = _resolve_ambiguous_key(key_rows, key_identifier)
+        if chosen_key is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                state = "включено" if k["auto_renew"] else "выключено"
+                lines.append(f"— {name}: автопродление сейчас {state}")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+                f"именно менять автопродление:\n{listing}\n"
+                f"Не переключай автоматически — сначала спроси клиента, какой ключ он имеет в виду, "
+                f"а затем вызови этот инструмент ещё раз, передав key_identifier с названием/номером "
+                f"ключа, который назвал клиент."
+            )
 
-    key_id = key_rows[0]["id"]
-    key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
+    key_id = chosen_key["id"]
+    key_name = chosen_key["custom_name"] or f"ключ #{key_id}"
     try:
         from database.db_keys import toggle_key_auto_renew
         new_state = toggle_key_auto_renew(key_id)
@@ -1009,12 +1065,13 @@ async def toggle_auto_renewal(telegram_id: int) -> str:
     return f"Готово. Автопродление для «{key_name}» теперь {state_text}."
 
 
-async def clear_device_ips(telegram_id: int) -> str:
-    """Сбрасывает лимит устройств на панели для ЕДИНСТВЕННОГО активного
-    ключа клиента — список IP (режим ограничения 'ip') ИЛИ список HWID
-    привязанных устройств (режим ограничения 'hwid'), в зависимости от
-    того, какой тип сейчас включён в настройках бота (Интеграции →
-    Ограничение устройств). Явно проверяет принадлежность ключа этому
+async def clear_device_ips(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Сбрасывает лимит устройств на панели для активного ключа клиента —
+    список IP (режим ограничения 'ip') ИЛИ список HWID привязанных
+    устройств (режим ограничения 'hwid'), в зависимости от того, какой тип
+    сейчас включён в настройках бота (Интеграции → Ограничение устройств).
+    Если у клиента несколько активных ключей, key_identifier используется
+    для выбора нужного. Явно проверяет принадлежность ключа этому
     telegram_id перед изменением, аналогично toggle_auto_renewal."""
     if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
         return "Не удалось выполнить действие: БД недоступна."
@@ -1040,19 +1097,24 @@ async def clear_device_ips(telegram_id: int) -> str:
     if not key_rows:
         return "У клиента нет активных настроенных ключей — сбрасывать нечего."
 
-    if len(key_rows) > 1:
-        lines = []
-        for k in key_rows:
-            name = k["custom_name"] or f"ключ #{k['id']}"
-            lines.append(f"— {name}")
-        listing = "\n".join(lines)
-        return (
-            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
-            f"именно сбрасывать лимит устройств:\n{listing}\n"
-            f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду."
-        )
-
     key = key_rows[0]
+    if len(key_rows) > 1:
+        resolved = _resolve_ambiguous_key(key_rows, key_identifier)
+        if resolved is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                lines.append(f"— {name}")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+                f"именно сбрасывать лимит устройств:\n{listing}\n"
+                f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду, "
+                f"а затем вызови этот инструмент ещё раз, передав key_identifier с названием/номером "
+                f"ключа, который назвал клиент."
+            )
+        key = resolved
+
     key_name = key["custom_name"] or f"ключ #{key['id']}"
     try:
         from database.db_servers import get_server_by_id
@@ -1108,11 +1170,12 @@ async def clear_device_ips(telegram_id: int) -> str:
     )
 
 
-async def suggest_key_replacement(telegram_id: int) -> str:
-    """Возвращает deep-link на карточку единственного активного ключа
-    клиента, где есть кнопка «Заменить». Не выполняет замену сам — только
-    доставляет клиента к уже проверенному интерактивному потоку (там порядок
-    операций такой, что клиент сам подтверждает каждый шаг)."""
+async def suggest_key_replacement(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Возвращает deep-link на карточку активного ключа клиента, где есть
+    кнопка «Заменить». Если ключей несколько, key_identifier выбирает
+    нужный. Не выполняет замену сам — только доставляет клиента к уже
+    проверенному интерактивному потоку (там порядок операций такой, что
+    клиент сам подтверждает каждый шаг)."""
     if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
         return "Не удалось найти ключ: БД недоступна."
     try:
@@ -1136,20 +1199,24 @@ async def suggest_key_replacement(telegram_id: int) -> str:
     if not key_rows:
         return "У клиента нет активных ключей — заменять нечего."
 
+    chosen_key = key_rows[0]
     if len(key_rows) > 1:
-        lines = []
-        for k in key_rows:
-            name = k["custom_name"] or f"ключ #{k['id']}"
-            lines.append(f"— {name} (id={k['id']})")
-        listing = "\n".join(lines)
-        return (
-            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
-            f"именно заменить:\n{listing}\n"
-            f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент ещё раз."
-        )
+        chosen_key = _resolve_ambiguous_key(key_rows, key_identifier)
+        if chosen_key is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                lines.append(f"— {name} (id={k['id']})")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
+                f"именно заменить:\n{listing}\n"
+                f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент "
+                f"ещё раз, передав key_identifier с названием/номером ключа."
+            )
 
-    key_id = key_rows[0]["id"]
-    key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
+    key_id = chosen_key["id"]
+    key_name = chosen_key["custom_name"] or f"ключ #{key_id}"
     bot_username = await _resolve_bot_username()
     if not bot_username:
         return f"Не удалось сформировать ссылку на карточку ключа «{key_name}» — попробуйте ещё раз через минуту или откройте «🔑 Мои ключи» вручную."
@@ -1162,11 +1229,12 @@ async def suggest_key_replacement(telegram_id: int) -> str:
     )
 
 
-async def suggest_key_renewal(telegram_id: int) -> str:
-    """Возвращает deep-link на карточку единственного активного ключа
-    клиента, где есть кнопка «Продлить». Не создаёт платёж сам — только
-    доставляет клиента к уже проверенному интерактивному потоку (там
-    клиент сам выбирает тариф и способ оплаты)."""
+async def suggest_key_renewal(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Возвращает deep-link на карточку активного ключа клиента, где есть
+    кнопка «Продлить». Если ключей несколько, key_identifier выбирает
+    нужный. Не создаёт платёж сам — только доставляет клиента к уже
+    проверенному интерактивному потоку (там клиент сам выбирает тариф и
+    способ оплаты)."""
     if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
         return "Не удалось найти ключ: БД недоступна."
     try:
@@ -1190,20 +1258,24 @@ async def suggest_key_renewal(telegram_id: int) -> str:
     if not key_rows:
         return "У клиента нет активных ключей — продлевать нечего. Предложи оформить новый тариф через «💳 Купить ключ»."
 
+    chosen_key = key_rows[0]
     if len(key_rows) > 1:
-        lines = []
-        for k in key_rows:
-            name = k["custom_name"] or f"ключ #{k['id']}"
-            lines.append(f"— {name} (id={k['id']})")
-        listing = "\n".join(lines)
-        return (
-            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
-            f"именно продлить:\n{listing}\n"
-            f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент ещё раз."
-        )
+        chosen_key = _resolve_ambiguous_key(key_rows, key_identifier)
+        if chosen_key is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                lines.append(f"— {name} (id={k['id']})")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
+                f"именно продлить:\n{listing}\n"
+                f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент "
+                f"ещё раз, передав key_identifier с названием/номером ключа."
+            )
 
-    key_id = key_rows[0]["id"]
-    key_name = key_rows[0]["custom_name"] or f"ключ #{key_id}"
+    key_id = chosen_key["id"]
+    key_name = chosen_key["custom_name"] or f"ключ #{key_id}"
     bot_username = await _resolve_bot_username()
     if not bot_username:
         return f"Не удалось сформировать ссылку на карточку ключа «{key_name}» — попробуйте ещё раз через минуту или откройте «🔑 Мои ключи» вручную."
@@ -2201,32 +2273,52 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "content": devices_result,
                     })
                 elif tool_call.function.name == "toggle_auto_renewal":
-                    logger.info(f"🔄 AI переключает автопродление (user {req.user_id})")
-                    renew_result = await toggle_auto_renewal(req.user_id)
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"🔄 AI переключает автопродление (user {req.user_id}, key={key_identifier})")
+                    renew_result = await toggle_auto_renewal(req.user_id, key_identifier)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": renew_result,
                     })
                 elif tool_call.function.name == "clear_device_ips":
-                    logger.info(f"🧹 AI сбрасывает лимит устройств (IP/HWID) (user {req.user_id})")
-                    clear_result = await clear_device_ips(req.user_id)
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"🧹 AI сбрасывает лимит устройств (IP/HWID) (user {req.user_id}, key={key_identifier})")
+                    clear_result = await clear_device_ips(req.user_id, key_identifier)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": clear_result,
                     })
                 elif tool_call.function.name == "suggest_key_replacement":
-                    logger.info(f"🔄 AI даёт ссылку на замену ключа (user {req.user_id})")
-                    replace_result = await suggest_key_replacement(req.user_id)
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"🔄 AI даёт ссылку на замену ключа (user {req.user_id}, key={key_identifier})")
+                    replace_result = await suggest_key_replacement(req.user_id, key_identifier)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
                         "content": replace_result,
                     })
                 elif tool_call.function.name == "suggest_key_renewal":
-                    logger.info(f"📈 AI даёт ссылку на продление ключа (user {req.user_id})")
-                    renewal_result = await suggest_key_renewal(req.user_id)
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"📈 AI даёт ссылку на продление ключа (user {req.user_id}, key={key_identifier})")
+                    renewal_result = await suggest_key_renewal(req.user_id, key_identifier)
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
