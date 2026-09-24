@@ -649,9 +649,12 @@ CLEAR_DEVICE_IPS_TOOL = {
     "function": {
         "name": "clear_device_ips",
         "description": (
-            "Реально сбрасывает список IP устройств ключа на панели (не "
-            "просто советует). Используй, если клиент упёрся в лимит "
-            "устройств из-за старых/неактуальных подключений. Безопасно и "
+            "Реально сбрасывает лимит устройств ключа на панели (не просто "
+            "советует) — список IP-адресов ИЛИ список привязанных устройств "
+            "(HWID), в зависимости от того, какой тип ограничения сейчас "
+            "включён у этого админа. Используй, если клиент упёрся в лимит "
+            "устройств из-за старых/неактуальных подключений или "
+            "сменил телефон/переустановил приложение. Безопасно и "
             "обратимо, тариф/срок/трафик не затрагивает."
         ),
         "parameters": {"type": "object", "properties": {}},
@@ -1007,9 +1010,12 @@ async def toggle_auto_renewal(telegram_id: int) -> str:
 
 
 async def clear_device_ips(telegram_id: int) -> str:
-    """Сбрасывает список IP-адресов на панели для ЕДИНСТВЕННОГО активного
-    ключа клиента. Явно проверяет принадлежность ключа этому telegram_id
-    перед изменением, аналогично toggle_auto_renewal."""
+    """Сбрасывает лимит устройств на панели для ЕДИНСТВЕННОГО активного
+    ключа клиента — список IP (режим ограничения 'ip') ИЛИ список HWID
+    привязанных устройств (режим ограничения 'hwid'), в зависимости от
+    того, какой тип сейчас включён в настройках бота (Интеграции →
+    Ограничение устройств). Явно проверяет принадлежность ключа этому
+    telegram_id перед изменением, аналогично toggle_auto_renewal."""
     if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
         return "Не удалось выполнить действие: БД недоступна."
     try:
@@ -1028,7 +1034,7 @@ async def clear_device_ips(telegram_id: int) -> str:
         key_rows = [dict(row) for row in cur.fetchall()]
         conn.close()
     except Exception as e:
-        logger.error(f"Ошибка при поиске ключей клиента для сброса IP: {e}")
+        logger.error(f"Ошибка при поиске ключей клиента для сброса лимита устройств: {e}")
         return "Не удалось выполнить действие из-за ошибки БД."
 
     if not key_rows:
@@ -1042,7 +1048,7 @@ async def clear_device_ips(telegram_id: int) -> str:
         listing = "\n".join(lines)
         return (
             f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
-            f"именно сбрасывать список IP:\n{listing}\n"
+            f"именно сбрасывать лимит устройств:\n{listing}\n"
             f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду."
         )
 
@@ -1050,27 +1056,54 @@ async def clear_device_ips(telegram_id: int) -> str:
     key_name = key["custom_name"] or f"ключ #{key['id']}"
     try:
         from database.db_servers import get_server_by_id
+        from database.db_settings import get_device_limit_type
         from bot.services.vpn_api import get_client_from_server_data
+        from bot.services.panels.base import VPNAPIError
 
         server_data = get_server_by_id(key["server_id"])
         if not server_data:
             return "Не удалось выполнить действие: сервер ключа не найден."
         client = get_client_from_server_data(server_data)
+        limit_type = get_device_limit_type()
+
+        if limit_type == 'hwid':
+            method, endpoint, what_lower, what_cap = (
+                'DELETE',
+                f'/panel/api/clients/hwids/{key["panel_email"]}',
+                "список привязанных устройств (HWID)",
+                "Список привязанных устройств (HWID)",
+            )
+        else:
+            method, endpoint, what_lower, what_cap = (
+                'POST',
+                f'/panel/api/clients/clearIps/{key["panel_email"]}',
+                "список IP-адресов",
+                "Список IP-адресов",
+            )
+
         result = await asyncio.wait_for(
-            client._request('POST', f'/panel/api/clients/clearIps/{key["panel_email"]}'),
+            client._request(method, endpoint),
             timeout=8.0,
         )
         if not isinstance(result, dict) or not result.get('success'):
-            return "Панель не подтвердила сброс списка IP — попробуйте ещё раз или обратитесь в поддержку."
+            return "Панель не подтвердила сброс лимита устройств — попробуйте ещё раз или обратитесь в поддержку."
     except asyncio.TimeoutError:
         return "Сервер не ответил вовремя, попробуйте ещё раз чуть позже."
+    except VPNAPIError as e:
+        if "404" in str(e) or "не найден" in str(e).lower():
+            return (
+                "Панель не поддерживает сброс привязанных устройств (HWID) — нужна более "
+                "новая версия 3x-ui. Обратитесь в поддержку."
+            )
+        logger.error(f"Ошибка сброса лимита устройств для ключа {key['id']}: {e}")
+        return "Не удалось сбросить лимит устройств из-за технической ошибки."
     except Exception as e:
-        logger.error(f"Ошибка сброса IP для ключа {key['id']}: {e}")
-        return "Не удалось сбросить список IP из-за технической ошибки."
+        logger.error(f"Ошибка сброса лимита устройств для ключа {key['id']}: {e}")
+        return "Не удалось сбросить лимит устройств из-за технической ошибки."
 
-    logger.info(f"AI сбросил список IP для ключа {key['id']} (user {telegram_id})")
+    logger.info(f"AI сбросил {what_lower} для ключа {key['id']} (user {telegram_id})")
     return (
-        f"Готово. Список запомненных IP-адресов для «{key_name}» сброшен. "
+        f"Готово. {what_cap} для «{key_name}» сброшен. "
         f"Лимит устройств теперь свободен — первые новые подключения снова его займут."
     )
 
@@ -2176,7 +2209,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "content": renew_result,
                     })
                 elif tool_call.function.name == "clear_device_ips":
-                    logger.info(f"🧹 AI сбрасывает список IP устройств (user {req.user_id})")
+                    logger.info(f"🧹 AI сбрасывает лимит устройств (IP/HWID) (user {req.user_id})")
                     clear_result = await clear_device_ips(req.user_id)
                     messages.append({
                         "role": "tool",
