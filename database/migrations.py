@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 118
+LATEST_VERSION = 119
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2551,6 +2551,22 @@ def migration_118(conn: sqlite3.Connection) -> None:
     logger.info("Migration v118 applied: кнопка Назад добавлена на экран выдачи/продления ключа")
 
 
+def migration_119(conn: sqlite3.Connection) -> None:
+    """Версия 119: новая колонка servers.public_ip — явно указанный
+    публичный IP сервера для виджета "Вы защищены" на витрине (v1.88).
+
+    Виджет резолвит DNS у server.host (адрес для входа в саму панель) —
+    но это не всегда тот же адрес, через который реально выходит VLESS-
+    трафик клиентов. Например, если панель за Cloudflare — её домен
+    резолвится в IP Cloudflare, а не в реальный IP сервера (Cloudflare не
+    проксирует VLESS-порты); или сервер с несколькими внешними IP
+    ("Global Auto" и подобные). public_ip позволяет админу задать реальный
+    адрес явно; если не задан — резолвинг host остаётся резервным
+    вариантом (обратная совместимость, ничего не ломается)."""
+    _add_column(conn, "servers", "public_ip TEXT")
+    logger.info("Migration v119 applied: добавлена колонка servers.public_ip")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2597,6 +2613,7 @@ MIGRATIONS = {
     116: migration_116,
     117: migration_117,
     118: migration_118,
+    119: migration_119,
 }
 
 

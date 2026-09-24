@@ -153,7 +153,7 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
 
     await safe_edit_or_send(message, 
         "\n".join(lines),
-        reply_markup=server_view_kb(server_id, server['is_active'], groups_count > 1)
+        reply_markup=server_view_kb(server_id, server['is_active'], groups_count > 1, server.get('public_ip') or '')
     )
 
 
@@ -1110,8 +1110,166 @@ async def edit_server_inbound_group_save(message: Message, state: FSMContext):
 
 
 # ============================================================================
-# DELETING A SERVER
+# PUBLIC IP (для виджета "Вы защищены" на витрине)
 # ============================================================================
+
+@router.callback_query(F.data.startswith("admin_server_public_ip:"))
+async def edit_server_public_ip_start(callback: CallbackQuery, state: FSMContext):
+    """Экран настройки публичного IP — того адреса, через который реально
+    выходит VLESS-трафик клиентов (для виджета "Вы защищены" на витрине).
+    Может отличаться от адреса самой панели (server.host), например если
+    панель за Cloudflare или сервер имеет несколько внешних IP."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    server_id = int(callback.data.split(":")[1])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    await state.update_data(server_id=server_id)
+    await state.set_state(AdminStates.edit_server_public_ip)
+
+    current = server.get("public_ip") or ""
+    kb_rows = [[InlineKeyboardButton(text="🔍 Определить автоматически", callback_data=f"admin_server_public_ip_auto:{server_id}")]]
+    if current:
+        kb_rows.append([InlineKeyboardButton(text="🗑 Удалить", callback_data=f"admin_server_public_ip_delete:{server_id}")])
+    kb_rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_server_view:{server_id}")])
+
+    await safe_edit_or_send(
+        callback.message,
+        f"🌐 <b>Публичный IP сервера</b>\n\nТекущий: <code>{current or 'не задан'}</code>\n\n"
+        "Используется только для виджета «Вы защищены» на витрине сайта — сверяет "
+        "IP посетителя с этим адресом, чтобы показать, реально ли он подключён к VPN.\n\n"
+        "Обычно совпадает с адресом самой панели, но может отличаться — например, если "
+        "панель находится за Cloudflare (VLESS-порты через Cloudflare не проксируются, "
+        "клиент подключается напрямую к origin-серверу) или сервер имеет несколько "
+        "внешних IP.\n\n"
+        "Нажмите «🔍 Определить автоматически» — бот сам возьмёт любой активный ключ на "
+        "этом сервере и извлечёт реальный адрес прямо из его VLESS-ссылки. Либо введите "
+        "IP вручную сообщением.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_server_public_ip_auto:"))
+async def edit_server_public_ip_autodetect(callback: CallbackQuery, state: FSMContext):
+    """Пытается автоматически определить реальный публичный IP, разбирая
+    VLESS-ссылку любого активного ключа на этом сервере."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    server_id = int(callback.data.split(":")[1])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    await callback.answer("🔍 Определяю адрес...")
+
+    from bot.services.vpn_api import detect_server_public_ip
+    ok, result = await detect_server_public_ip(server_id)
+
+    back_row = [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_server_public_ip:{server_id}")]
+
+    if not ok:
+        await safe_edit_or_send(
+            callback.message,
+            f"❌ <b>Не удалось определить адрес автоматически</b>\n\n{result}\n\n"
+            "Можно ввести IP вручную сообщением (вернитесь назад и отправьте адрес текстом).",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[back_row]),
+        )
+        return
+
+    await safe_edit_or_send(
+        callback.message,
+        f"🔍 <b>Найден адрес:</b> <code>{result}</code>\n\n"
+        "Это адрес, извлечённый из реальной VLESS-ссылки одного из активных ключей на "
+        "этом сервере — именно через него сейчас подключаются клиенты.\n\n"
+        "Применить его как публичный IP для виджета «Вы защищены»?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"✅ Применить {result}", callback_data=f"admin_server_public_ip_apply:{server_id}:{result}")],
+            back_row,
+        ]),
+    )
+
+
+@router.callback_query(F.data.startswith("admin_server_public_ip_apply:"))
+async def edit_server_public_ip_apply(callback: CallbackQuery, state: FSMContext):
+    """Сохраняет IP, найденный автоопределением."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    _, server_id_str, ip = callback.data.split(":", 2)
+    server_id = int(server_id_str)
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    update_server(server_id, public_ip=ip)
+    await state.set_state(AdminStates.server_view)
+    await state.update_data(server_id=server_id)
+    await callback.answer(f"✅ Публичный IP установлен: {ip}")
+    await render_server_view(callback.message, server_id, state)
+
+
+@router.callback_query(F.data.startswith("admin_server_public_ip_delete:"))
+async def edit_server_public_ip_delete(callback: CallbackQuery, state: FSMContext):
+    """Убирает публичный IP — виджет вернётся к резолвингу host по умолчанию."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    server_id = int(callback.data.split(":")[1])
+    server = get_server_by_id(server_id)
+    if not server:
+        await callback.answer("❌ Сервер не найден", show_alert=True)
+        return
+
+    update_server(server_id, public_ip=None)
+    await state.set_state(AdminStates.server_view)
+    await state.update_data(server_id=server_id)
+    await callback.answer("✅ Публичный IP удалён")
+    await render_server_view(callback.message, server_id, state)
+
+
+@router.message(AdminStates.edit_server_public_ip)
+async def edit_server_public_ip_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    data = await state.get_data()
+    server_id = data.get("server_id")
+    if not server_id:
+        await state.clear()
+        return
+
+    value = get_message_text_for_storage(message, "plain").strip()
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    if not value or len(value) > 100:
+        await message.answer(
+            "❌ Похоже на невалидный адрес. Попробуйте ещё раз или используйте автоопределение.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_server_public_ip:{server_id}")],
+            ]),
+        )
+        return
+
+    update_server(server_id, public_ip=value)
+    await state.set_state(AdminStates.server_view)
+    await message.answer(f"✅ Публичный IP установлен: {value}")
+    await render_server_view(message, server_id, state)
 
 @router.callback_query(F.data.startswith("admin_server_delete:"))
 async def confirm_delete_server(callback: CallbackQuery, state: FSMContext):
