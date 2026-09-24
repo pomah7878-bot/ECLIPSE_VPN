@@ -1429,10 +1429,22 @@ _TRIAL_RATE_LIMIT_MAX_ATTEMPTS = 3   # максимум попыток с одн
 
 
 def _get_client_ip(request: web.Request) -> str:
-    """Реальный IP клиента — учитывает заголовок от прокси (nginx), если есть."""
+    """Реальный IP клиента — учитывает заголовок от прокси (nginx), если есть.
+
+    ВАЖНО: берём ПОСЛЕДНЕЕ значение в X-Forwarded-For, а не первое. nginx
+    обычно ДОБАВЛЯЕТ реальный IP подключившегося клиента в конец цепочки
+    (директива proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for),
+    а не заменяет заголовок целиком — значит любой внешний запрос может
+    прислать СВОЙ X-Forwarded-For с произвольным (поддельным) IP первым
+    значением. Взятие первого значения без проверки превращает публичные
+    эндпоинты (например /api/public/connection-status — виджет "Вы
+    защищены") в оракул: можно перебором значений выяснить настоящие IP
+    VPN-серверов, просто проверяя, для какого IP приходит "защищено"."""
     forwarded = request.headers.get("X-Forwarded-For", "")
     if forwarded:
-        return forwarded.split(",")[0].strip()
+        parts = [p.strip() for p in forwarded.split(",") if p.strip()]
+        if parts:
+            return parts[-1]
     return request.remote or "unknown"
 
 
