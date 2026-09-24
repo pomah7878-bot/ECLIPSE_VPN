@@ -325,10 +325,10 @@ def editor_kb(
     Message editor keyboard.
     
     Layout:
-    [🗑 Remove media] # if there is media
-    [🇬🇧/🇷🇺 переключатель языка] # if show_translate_button
-    [⬅️ Back] [🈴 Home]
     [📝 Send a new message ⬇️]
+    [🇬🇧/🇷🇺 переключатель языка] # if show_translate_button
+    [🗑 Remove media] # if there is media
+    [⬅️ Back] [🈴 Home]
     
     Args:
         back_callback: callback_data for the back button
@@ -343,11 +343,20 @@ def editor_kb(
 
     builder = InlineKeyboardBuilder()
 
-    if can_delete_media:
+    # Верхний ряд: подсказка "отправьте новое сообщение" — сразу под
+    # текстом/медиа, чтобы админ сразу видел, что делать дальше
+    if has_help:
         builder.row(
             InlineKeyboardButton(
-                text="🗑 Удалить медиа",
-                callback_data="msg_editor_delete_media"
+                text="📝 Отправьте новое сообщение ⬇️",
+                callback_data="msg_editor_show_help"
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="📝 Отправьте новое сообщение ⬇️",
+                callback_data="msg_editor_noop_alert"
             )
         )
 
@@ -367,30 +376,20 @@ def editor_kb(
                 )
             )
 
-    # Back + Home — ниже переключателя языка (не выше)
+    if can_delete_media:
+        builder.row(
+            InlineKeyboardButton(
+                text="🗑 Удалить медиа",
+                callback_data="msg_editor_delete_media"
+            )
+        )
+
+    # Нижний ряд: навигация — Назад/На главную в самом низу
     builder.row(
         InlineKeyboardButton(text="⬅️ Назад", callback_data=back_callback),
         InlineKeyboardButton(text="🈴 На главную", callback_data="start"),
     )
-    
-    # Bottom row: enter button
-    if has_help:
-        # The button shows help before entering
-        builder.row(
-            InlineKeyboardButton(
-                text="📝 Отправьте новое сообщение ⬇️",
-                callback_data="msg_editor_show_help"
-            )
-        )
-    else:
-        # Placeholder button (just a visual indicator, the editor is already waiting for input)
-        builder.row(
-            InlineKeyboardButton(
-                text="📝 Отправьте новое сообщение ⬇️",
-                callback_data="msg_editor_noop_alert"
-            )
-        )
-    
+
     return builder.as_markup()
 
 
