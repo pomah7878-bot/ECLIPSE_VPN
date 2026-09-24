@@ -230,6 +230,18 @@
         }
         .sub-url-box:hover { border-color: rgba(217,174,108,0.4); background: #20212C; }
         .tariff-card { cursor: pointer; transition: border-color 0.15s ease, transform 0.1s ease; }
+        @keyframes tariffFadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .tariff-card { animation: tariffFadeIn 0.4s ease-out both; }
+        .tariff-savings-badge {
+            font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+            background: color-mix(in srgb, var(--teal) 16%, transparent);
+            color: var(--teal); border-radius: 999px; padding: 2px 8px; margin-top: 6px;
+            animation: tariffFadeIn 0.5s ease-out both;
+            animation-delay: 0.15s;
+        }
         .tariff-card:hover { border-color: rgba(217,174,108,0.4); transform: translateY(-1px); }
         .tariff-card:active { transform: scale(0.98); }
         .tab-btn { transition: all 0.2s; }
@@ -683,13 +695,38 @@
                     box.innerHTML = '<p class="text-sm text-mist text-center py-6">Тарифы сейчас недоступны. Загляните позже.</p>';
                     return;
                 }
-                box.innerHTML = tariffs.map(t => `
-                    <button onclick="selectTariffAndPay(${t.id})" class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center transition active:scale-[0.98]">
+                // Цена в день — понятнее, чем большая сумма разом, особенно для
+                // длинных тарифов. "Выгоднее на X%" считается относительно
+                // цены/дня САМОГО КОРОТКОГО ПО СРОКУ тарифа В ТОЙ ЖЕ ГРУППЕ (по
+                // объёму трафика) — это и есть "цена без скидки за долгий срок",
+                // с которой сравнивают более длинные планы. Группировка по
+                // трафику нужна, чтобы не сравнивать между собой безлимитный
+                // тариф и тариф с ограничением — это разные продукты.
+                const shortestByGroup = {};
+                tariffs.forEach(t => {
+                    const key = t.traffic_limit_gb || 'unlimited';
+                    if (!(key in shortestByGroup) || t.duration_days < shortestByGroup[key].duration_days) {
+                        shortestByGroup[key] = t;
+                    }
+                });
+                box.innerHTML = tariffs.map((t, i) => {
+                    const dailyPrice = t.price_rub / t.duration_days;
+                    const baselineTariff = shortestByGroup[t.traffic_limit_gb || 'unlimited'];
+                    const baselineDaily = baselineTariff.price_rub / baselineTariff.duration_days;
+                    const savingsPct = Math.round((1 - dailyPrice / baselineDaily) * 100);
+                    const savingsBadge = t.id !== baselineTariff.id && savingsPct >= 5
+                        ? `<div class="tariff-savings-badge">Выгоднее на ${savingsPct}%</div>`
+                        : '';
+                    return `
+                    <button onclick="selectTariffAndPay(${t.id})" style="animation-delay:${i * 0.07}s" class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center transition active:scale-[0.98]">
                         <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
                         <div class="text-xs text-mist mb-4">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
                         <div class="text-gold font-display font-bold text-2xl mt-auto">${t.price_rub.toFixed(0)} ₽</div>
+                        <div class="text-[11px] text-mist-dim mt-1">≈ ${dailyPrice.toFixed(dailyPrice < 10 ? 1 : 0)} ₽/день</div>
+                        ${savingsBadge}
                     </button>
-                `).join('');
+                `;
+                }).join('');
             } catch(e) {
                 box.innerHTML = '<p class="text-sm text-alert text-center py-6">Не удалось загрузить тарифы. Обновите страницу.</p>';
             }
