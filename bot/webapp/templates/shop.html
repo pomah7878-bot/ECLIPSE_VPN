@@ -273,7 +273,7 @@
     <div class="relative overflow-hidden">
         <div class="corona-glow"></div>
 
-        <div id="connStatusWidget" class="max-w-md mx-auto px-4 pt-3" style="display:none;">
+        <div id="connStatusWidget" class="max-w-md md:max-w-2xl mx-auto px-4 pt-3" style="display:none;">
             <div id="connStatusBar" class="rounded-2xl px-4 py-3 flex items-center gap-3">
                 <span id="connStatusDot"></span>
                 <div style="flex:1;min-width:0;">
@@ -283,7 +283,7 @@
             </div>
         </div>
 
-        <div class="max-w-md mx-auto px-4 pt-8 pb-4 relative">
+        <div class="max-w-md md:max-w-5xl mx-auto px-4 pt-8 pb-4 relative">
             <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
                 class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
                 style="text-decoration:none;position:absolute;top:12px;right:16px;display:none;">📰</a>
@@ -304,8 +304,8 @@
         </div>
     </div>
 
-    <div class="max-w-md mx-auto px-4">
-        <div id="authGate" class="card rounded-2xl p-5 mb-6">
+    <div class="max-w-md md:max-w-5xl mx-auto px-4">
+        <div id="authGate" class="card rounded-2xl p-5 mb-6 max-w-md mx-auto">
             <div class="text-xs text-mist mb-4 text-center leading-relaxed">
                 ⚠️ Используя VPN-сервис, вы подтверждаете, что действуете самостоятельно и на свой страх и риск, и несёте ответственность за соблюдение законодательства своей страны.
             </div>
@@ -345,28 +345,30 @@
         </div>
 
         <div id="mainApp" class="hidden">
-        <div class="flex gap-1 bg-panel-2 rounded-2xl p-1 mb-5">
+        <div class="flex gap-1 bg-panel-2 rounded-2xl p-1 mb-5 max-w-md mx-auto">
             <button id="tabBuyBtn" onclick="switchTab('buy')" class="tab-btn active flex-1 py-2.5 rounded-xl text-sm font-semibold">🛒 Купить</button>
             <button id="tabAccountBtn" onclick="switchTab('account')" class="tab-btn flex-1 py-2.5 rounded-xl text-sm font-semibold">👤 Личный кабинет</button>
         </div>
 
         <div id="buyTab">
-            <div id="trialBanner"></div>
-            <div id="tariffList" class="space-y-3 mb-6">
-                <div class="flex justify-center py-10"><div class="spinner"></div></div>
+            <div class="max-w-md mx-auto">
+                <div id="trialBanner"></div>
             </div>
-            <div class="card rounded-2xl p-4 text-xs text-mist text-center mb-6">
+            <div id="tariffList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
+                <div class="flex justify-center py-10 sm:col-span-2 lg:col-span-3"><div class="spinner"></div></div>
+            </div>
+            <div class="card rounded-2xl p-4 text-xs text-mist text-center mb-6 max-w-md mx-auto">
                 После оплаты — рабочий ключ сразу на этой странице. Код доступа сохранит его в личном кабинете и позволит забрать в Telegram одним тапом.
             </div>
         </div>
 
-        <div id="accountTab" class="hidden">
+        <div id="accountTab" class="hidden max-w-md mx-auto">
             <div id="accountDataBox"></div>
             <div id="referralBox" class="hidden"></div>
         </div>
         </div>
 
-        <div class="text-center text-xs text-mist-dim mt-4 pb-8">
+        <div class="text-center text-xs text-mist-dim mt-4 pb-8 max-w-md mx-auto">
             💳 Карта · СБП <img src='/static/sbp.svg' class='inline-block h-3 align-text-bottom' alt='СБП'> · Безопасно и быстро
         </div>
     </div>
@@ -682,12 +684,10 @@
                     return;
                 }
                 box.innerHTML = tariffs.map(t => `
-                    <button onclick="selectTariffAndPay(${t.id})" class="tariff-card w-full card rounded-2xl p-4 flex justify-between items-center transition active:scale-[0.98]">
-                        <div class="text-left">
-                            <div class="font-semibold text-sm">${escapeHtml(t.name)}</div>
-                            <div class="text-xs text-mist mt-0.5">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
-                        </div>
-                        <div class="text-gold font-display font-bold text-lg">${t.price_rub.toFixed(0)} ₽</div>
+                    <button onclick="selectTariffAndPay(${t.id})" class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center transition active:scale-[0.98]">
+                        <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
+                        <div class="text-xs text-mist mb-4">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
+                        <div class="text-gold font-display font-bold text-2xl mt-auto">${t.price_rub.toFixed(0)} ₽</div>
                     </button>
                 `).join('');
             } catch(e) {
