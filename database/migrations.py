@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 127
+LATEST_VERSION = 128
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1172,7 +1172,7 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 {"id": "btn_key_import_karing", "label": "🎯 Импорт в Karing", "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_help",      "label": "📄 Инструкция",  "color": "secondary", "row": 1, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_help"},
                 {"id": "btn_my_keys",   "label": "🔑 Мои ключи",  "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
-                {"id": "btn_key_delivery_back", "label": "⬅️ Назад",   "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+                {"id": "btn_key_delivery_back", "label": "⬅️ Назад",   "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 3, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
             ], ensure_ascii=False),
         },
@@ -2833,6 +2833,50 @@ def migration_127(conn: sqlite3.Connection) -> None:
     logger.info("Migration v127 applied: btn_key_delivery_back переставлен перед btn_back_main в самом массиве")
 
 
+def migration_128(conn: sqlite3.Connection) -> None:
+    """Версия 128: кнопка "⬅️ Назад" на экране key_delivery теперь ведёт
+    на карточку ТОГО ЖЕ ключа (на шаг назад), а не сразу к общему списку
+    "Мои ключи". Раньше это была internal-кнопка с action_value
+    'cmd_my_keys' (всегда список); теперь это system-кнопка
+    (_resolve_key_delivery_back), которая строит callback 'key:{key_id}' —
+    но для этого сама программа выдачи ключа (send_key_with_qr /
+    render_key_delivery_page) должна передавать key_id в контекст рендера,
+    что сделано отдельно в коде. Здесь только переключаем сохранённые в БД
+    button-записи с internal на system."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v128: страница 'key_delivery' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+
+        changed = False
+        for b in buttons:
+            if b.get("id") == "btn_key_delivery_back" and (
+                b.get("action_type") != "system" or b.get("action_value") is not None
+            ):
+                b["action_type"] = "system"
+                b["action_value"] = None
+                changed = True
+
+        if changed:
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+
+    logger.info("Migration v128 applied: btn_key_delivery_back переключена на system-обработчик (шаг назад к карточке ключа)")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2887,6 +2931,7 @@ MIGRATIONS = {
     124: migration_124,
     126: migration_126,
     127: migration_127,
+    128: migration_128,
 }
 
 

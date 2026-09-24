@@ -182,6 +182,7 @@ def _get_key_delivery_markup(
     raw_value: str,
     viewer_id: Optional[int] = None,
     bot_username: str = '',
+    key_id: Optional[int] = None,
 ) -> Optional[InlineKeyboardMarkup]:
     """Takes the page keyboard from the database if it is available, otherwise uses fallback."""
     try:
@@ -195,6 +196,8 @@ def _get_key_delivery_markup(
             render_context['telegram_id'] = viewer_id
         if bot_username:
             render_context['bot_username'] = bot_username
+        if key_id:
+            render_context['key_id'] = key_id
 
         markup = build_page_keyboard(
             KEY_DELIVERY_PAGE,
@@ -212,6 +215,7 @@ def _get_json_document_markup(
     raw_value: str,
     viewer_id: Optional[int] = None,
     bot_username: str = '',
+    key_id: Optional[int] = None,
 ) -> Optional[InlineKeyboardMarkup]:
     """Returns page-backed buttons for issuing a key for a JSON file."""
     return _get_key_delivery_markup(
@@ -219,6 +223,7 @@ def _get_json_document_markup(
         raw_value,
         viewer_id=viewer_id,
         bot_username=bot_username,
+        key_id=key_id,
     )
 
 
@@ -300,6 +305,7 @@ def _remember_key_delivery_context(
     kind: str,
     attach_markup: bool,
     bot_username: str = '',
+    key_id: Optional[int] = None,
 ) -> None:
     """Remembers the key issuing page for the /yaa context command."""
     if not viewer_id:
@@ -322,6 +328,8 @@ def _remember_key_delivery_context(
         }
         if bot_username:
             render_context['bot_username'] = bot_username
+        if key_id:
+            render_context['key_id'] = key_id
 
         remember_page_context(
             viewer_id,
@@ -342,6 +350,7 @@ async def render_key_delivery_page(
     kind: str = 'key',
     attach_markup: bool = True,
     viewer_id: Optional[int] = None,
+    key_id: Optional[int] = None,
 ) -> Message:
     """Renders a special page for issuing a key with a QR and remembers it for /yaa."""
     target_message = _get_target_message(messageable)
@@ -356,6 +365,7 @@ async def render_key_delivery_page(
             raw_value,
             viewer_id=resolved_viewer_id,
             bot_username=bot_username,
+            key_id=key_id,
         )
         if attach_markup else None
     )
@@ -376,6 +386,7 @@ async def render_key_delivery_page(
         kind=kind,
         attach_markup=attach_markup,
         bot_username=bot_username,
+        key_id=key_id,
     )
     return rendered_message
 
@@ -392,6 +403,7 @@ async def rerender_key_delivery_page_context(page_context, viewer_id: int) -> bo
         raw_value=raw_value,
         is_new=bool(context.get(KEY_DELIVERY_CONTEXT_IS_NEW)),
         kind=context.get(KEY_DELIVERY_CONTEXT_KIND) or 'key',
+        key_id=context.get('key_id'),
         attach_markup=bool(context.get(KEY_DELIVERY_CONTEXT_ATTACH_MARKUP, True)),
         viewer_id=viewer_id,
     )
@@ -448,6 +460,7 @@ async def send_key_with_qr(
                 is_new=is_new,
                 kind='subscription',
                 attach_markup=True,
+                key_id=key_data.get('id'),
             )
             return
 
@@ -478,6 +491,7 @@ async def send_key_with_qr(
             link,
             viewer_id=viewer_id,
             bot_username=bot_username,
+            key_id=key_data.get('id'),
         )
             
         json_config = generate_json(config)
@@ -490,6 +504,7 @@ async def send_key_with_qr(
             is_new=is_new,
             kind='key',
             attach_markup=False,
+            key_id=key_data.get('id'),
         )
 
         # 4. Send JSON config file

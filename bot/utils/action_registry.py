@@ -427,6 +427,18 @@ def _resolve_key_show_key(ctx: dict) -> Optional[dict]:
     return {"callback_data": f"key_show:{key_id}"}
 
 
+def _resolve_key_delivery_back(ctx: dict) -> Optional[dict]:
+    """«Назад» на экране выдачи ключа — должна вести на шаг назад, то есть
+    на карточку ЭТОГО конкретного ключа (откуда обычно и попадают на этот
+    экран), а не сразу к общему списку «Мои ключи». Если key_id почему-то
+    не передан в контекст (старое сохранённое состояние /yaa и т.п.) —
+    откатываемся к списку ключей, чтобы кнопка не сломалась."""
+    key_id = _get_renew_key_id(ctx)
+    if key_id:
+        return {"callback_data": f"key:{key_id}"}
+    return {"callback_data": "my_keys"}
+
+
 def _resolve_key_show_subscription(ctx: dict) -> Optional[dict]:
     """Button to show subscription link."""
     key_id = _get_key_details_id(ctx)
@@ -636,6 +648,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_renew_back": _resolve_renew_back,
     "btn_key_show_key": _resolve_key_show_key,
     "btn_key_show_subscription": _resolve_key_show_subscription,
+    "btn_key_delivery_back": _resolve_key_delivery_back,
     "btn_key_configure": _resolve_key_configure,
     "btn_key_renew": _resolve_key_renew,
     "btn_key_replace": _resolve_key_replace,
