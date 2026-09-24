@@ -325,9 +325,9 @@ def editor_kb(
     Message editor keyboard.
     
     Layout:
-    [⬅️ Back] [🈴 Home]
     [🗑 Remove media] # if there is media
     [🇬🇧/🇷🇺 переключатель языка] # if show_translate_button
+    [⬅️ Back] [🈴 Home]
     [📝 Send a new message ⬇️]
     
     Args:
@@ -342,12 +342,6 @@ def editor_kb(
         can_delete_media = True
 
     builder = InlineKeyboardBuilder()
-    
-    # Top row: Back + Home
-    builder.row(
-        InlineKeyboardButton(text="⬅️ Назад", callback_data=back_callback),
-        InlineKeyboardButton(text="🈴 На главную", callback_data="start"),
-    )
 
     if can_delete_media:
         builder.row(
@@ -372,6 +366,12 @@ def editor_kb(
                     callback_data="msg_editor_toggle_lang"
                 )
             )
+
+    # Back + Home — ниже переключателя языка (не выше)
+    builder.row(
+        InlineKeyboardButton(text="⬅️ Назад", callback_data=back_callback),
+        InlineKeyboardButton(text="🈴 На главную", callback_data="start"),
+    )
     
     # Bottom row: enter button
     if has_help:
