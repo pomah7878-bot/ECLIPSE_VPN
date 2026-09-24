@@ -1271,7 +1271,7 @@ async def edit_server_public_ip_delete(callback: CallbackQuery, state: FSMContex
     await render_server_view(callback.message, server_id, state)
 
 
-@router.message(AdminStates.edit_server_public_ip)
+@router.message(AdminStates.edit_server_public_ip, F.text, ~F.text.startswith("/"))
 async def edit_server_public_ip_save(message: Message, state: FSMContext):
     if not is_admin(message.from_user.id):
         return
@@ -1290,9 +1290,13 @@ async def edit_server_public_ip_save(message: Message, state: FSMContext):
         pass
 
     ip_list = _parse_ip_list(raw)
-    if not ip_list or len(raw) > 1000:
+    # Каждый адрес должен хотя бы отдалённо походить на IP/домен: без "/"
+    # (защита от случайно попавших команд вроде /start), с точкой внутри.
+    invalid = [ip for ip in ip_list if "/" in ip or "." not in ip or len(ip) > 253]
+    if not ip_list or invalid or len(raw) > 1000:
+        reason = f"Не похоже на адрес: {', '.join(invalid)}" if invalid else "Похоже на невалидный список адресов."
         await message.answer(
-            "❌ Похоже на невалидный список адресов. Попробуйте ещё раз или используйте автоопределение.",
+            f"❌ {reason} Попробуйте ещё раз или используйте автоопределение.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_server_public_ip:{server_id}")],
             ]),

@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 119
+LATEST_VERSION = 120
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2567,6 +2567,24 @@ def migration_119(conn: sqlite3.Connection) -> None:
     logger.info("Migration v119 applied: добавлена колонка servers.public_ip")
 
 
+def migration_120(conn: sqlite3.Connection) -> None:
+    """Версия 120: чистит servers.public_ip от мусора вроде "/start" —
+    до этой версии обработчик ручного ввода не отфильтровывал команды
+    (F.text без ~F.text.startswith("/")), и если админ отправлял /start,
+    находясь в режиме ввода IP, текст команды сохранялся как есть."""
+    rows = conn.execute("SELECT id, public_ip FROM servers WHERE public_ip IS NOT NULL AND public_ip != ''").fetchall()
+    for row in rows:
+        server_id, raw = row[0], row[1] or ""
+        parts = [p.strip() for p in raw.replace(",", " ").split() if p.strip()]
+        cleaned = [p for p in parts if "/" not in p and "." in p and len(p) <= 253]
+        if cleaned != parts:
+            new_value = ", ".join(cleaned) if cleaned else None
+            conn.execute("UPDATE servers SET public_ip = ? WHERE id = ?", (new_value, server_id))
+            logger.info(f"Migration v120: очищен public_ip сервера {server_id}: {raw!r} -> {new_value!r}")
+
+    logger.info("Migration v120 applied: servers.public_ip очищен от невалидных значений")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2614,6 +2632,7 @@ MIGRATIONS = {
     117: migration_117,
     118: migration_118,
     119: migration_119,
+    120: migration_120,
 }
 
 
