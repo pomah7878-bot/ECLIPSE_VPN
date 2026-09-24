@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 120
+LATEST_VERSION = 121
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -334,7 +334,7 @@ def _key_details_page_buttons() -> str:
         {"id": "btn_key_delete",            "label": "🗑 Удалить",           "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system",   "action_value": None},
         {"id": "btn_key_rename",            "label": "✏️ Переименовать",    "color": "secondary", "row": 1, "col": 1, "is_hidden": False, "action_type": "system",   "action_value": None},
         {"id": "btn_key_auto_renew_toggle",  "label": "🔄 Автопродление",     "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "system",   "action_value": None},
-        {"id": "btn_my_keys",               "label": "🔑 Мои ключи",         "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+        {"id": "btn_my_keys",               "label": "⬅️ Назад",             "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
         {"id": "btn_back_main",             "label": "🈴 На главную",        "color": "secondary", "row": 3, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
     ], ensure_ascii=False)
 
@@ -2585,6 +2585,43 @@ def migration_120(conn: sqlite3.Connection) -> None:
     logger.info("Migration v120 applied: servers.public_ip очищен от невалидных значений")
 
 
+def migration_121(conn: sqlite3.Connection) -> None:
+    """Версия 121: на карточке ключа (key_details) кнопка "Мои ключи"
+    переименована в "Назад" — функция та же (возврат к списку ключей), но
+    название точнее отражает, что это навигация назад с карточки
+    конкретного ключа, а не отдельный переход в другой раздел.
+
+    Правит только страницу key_details (не трогает btn_my_keys на других
+    страницах, например key_delivery — там название "Мои ключи" уместно)."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v121: страница 'key_details' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        changed = False
+        for b in buttons:
+            if b.get("id") == "btn_my_keys" and b.get("label") != "⬅️ Назад":
+                b["label"] = "⬅️ Назад"
+                changed = True
+        if changed:
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+
+    logger.info("Migration v121 applied: кнопка 'Мои ключи' на карточке ключа переименована в 'Назад'")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2633,6 +2670,7 @@ MIGRATIONS = {
     118: migration_118,
     119: migration_119,
     120: migration_120,
+    121: migration_121,
 }
 
 
