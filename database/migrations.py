@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 123
+LATEST_VERSION = 124
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2691,6 +2691,53 @@ def migration_123(conn: sqlite3.Connection) -> None:
     logger.info("Migration v123 applied: кнопка 'Мои ключи' возвращена на экран key_delivery")
 
 
+def migration_124(conn: sqlite3.Connection) -> None:
+    """Версия 124: гарантированно ставит "⬅️ Назад" и "🈴 На главную" на
+    экране key_delivery на ОДНУ И ТУ ЖЕ строку (col 0 и col 1), а не
+    полагается на относительный сдвиг, как v123 — если фактическое
+    расположение кнопок на конкретной инсталляции (buttons_custom) уже
+    отличалось от ожидаемого, относительный сдвиг мог не свести их
+    вместе. Здесь номер строки выставляется явно и одинаково для обеих,
+    ниже последней из остальных кнопок."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v124: страница 'key_delivery' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+
+        others = [b for b in buttons if b.get("id") not in ("btn_key_delivery_back", "btn_back_main")]
+        if not others:
+            continue
+        target_row = max((b.get("row") or 0) for b in others) + 1
+
+        changed = False
+        for b in buttons:
+            if b.get("id") == "btn_key_delivery_back" and (b.get("row") != target_row or b.get("col") != 0):
+                b["row"], b["col"] = target_row, 0
+                changed = True
+            elif b.get("id") == "btn_back_main" and (b.get("row") != target_row or b.get("col") != 1):
+                b["row"], b["col"] = target_row, 1
+                changed = True
+
+        if changed:
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+
+    logger.info("Migration v124 applied: Назад и На главную на key_delivery гарантированно в одной строке")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2742,6 +2789,7 @@ MIGRATIONS = {
     121: migration_121,
     122: migration_122,
     123: migration_123,
+    124: migration_124,
 }
 
 
