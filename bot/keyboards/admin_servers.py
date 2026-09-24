@@ -46,7 +46,7 @@ def servers_list_kb(servers: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 
-def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=False) -> InlineKeyboardMarkup:
+def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=False, public_ip: str = '') -> InlineKeyboardMarkup:
     """
     Server view keyboard.
 
@@ -54,6 +54,7 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
         server_id: Server ID
         is_active: Whether the server is active
         show_group_button: Whether to show the "Edit Group" button
+        public_ip: Текущий публичный IP (для виджета "Вы защищены"), если задан
     """
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='✏️ Изменить настройки', callback_data=f'admin_server_edit:{server_id}'))
@@ -62,6 +63,8 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
     if show_group_button:
         builder.row(InlineKeyboardButton(text='📂 Изменить группу', callback_data=f'admin_server_change_group:{server_id}'))
     builder.row(InlineKeyboardButton(text='🧩 Группа inbound\'ов (маркер --N)', callback_data=f'admin_server_inbound_group:{server_id}'))
+    ip_label = f'🌐 Публичный IP: {public_ip}' if public_ip else '🌐 Публичный IP (для виджета «Защищено»)'
+    builder.row(InlineKeyboardButton(text=ip_label, callback_data=f'admin_server_public_ip:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛠 Диагностика', callback_data=f'admin_server_tools:{server_id}'))
     builder.row(InlineKeyboardButton(text='🔗 Импорт ручных клиентов', callback_data=f'admin_import_orphans:{server_id}'))
     builder.row(InlineKeyboardButton(text='🗑️ Удалить сервер', callback_data=f'admin_server_delete:{server_id}'))

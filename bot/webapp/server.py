@@ -1457,6 +1457,15 @@ async def _get_known_vpn_server_ips() -> set:
     for srv in get_all_servers():
         if not srv.get("is_active"):
             continue
+        public_ip = (srv.get("public_ip") or "").strip()
+        if public_ip:
+            # Админ явно указал реальный адрес (v1.89) — доверяем ему
+            # полностью, DNS вообще не трогаем. Актуально, если панель за
+            # Cloudflare (её домен резолвится в IP Cloudflare, а не в
+            # реальный IP сервера — Cloudflare не проксирует VLESS-порты)
+            # или сервер с несколькими внешними IP ("Global Auto" и т.п.).
+            ips.add(public_ip)
+            continue
         host = (srv.get("host") or "").strip()
         if not host:
             continue

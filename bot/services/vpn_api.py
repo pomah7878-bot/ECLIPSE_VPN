@@ -5,7 +5,7 @@ import json
 import logging
 import uuid as _uuid
 from contextlib import asynccontextmanager
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import asyncio
 import inspect
 
@@ -1707,6 +1707,73 @@ async def get_subscription_url_for_key(key: Dict[str, Any]) -> Optional[str]:
         return None
 
 
+async def detect_server_public_ip(server_id: int) -> Tuple[bool, str]:
+    """Пытается автоматически определить реальный публичный IP сервера —
+    тот, через который реально выходит VLESS-трафик клиентов (для виджета
+    "Вы защищены" на витрине). Домен админ-панели (server.host) может
+    отличаться (например, если панель за Cloudflare — VLESS-порты через
+    Cloudflare не проксируются, а значит клиент коннектится НАПРЯМУЮ к
+    origin-серверу по адресу, зашитому в саму VLESS-ссылку).
+
+    Механизм: берём подписку ЛЮБОГО существующего активного ключа на этом
+    сервере (сама панель уже генерирует в ней реальный клиентский адрес),
+    парсим host из первой vless://-ссылки — это и есть тот самый реальный
+    адрес, на который реально подключаются клиенты.
+
+    Returns:
+        (успех, IP или текст ошибки для показа админу)
+    """
+    import base64
+    import re
+    from database.connection import get_db
+
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT id, sub_id FROM vpn_keys
+               WHERE server_id = ? AND sub_id IS NOT NULL AND sub_id != ''
+                     AND expires_at > datetime('now')
+               ORDER BY id DESC LIMIT 1""",
+            (server_id,),
+        ).fetchone()
+
+    if not row:
+        return False, "На этом сервере нет ни одного активного ключа с подпиской — не по чему определять адрес. Создайте хотя бы один тестовый ключ и попробуйте снова."
+
+    key = {"sub_id": row["sub_id"], "server_id": server_id}
+    raw_url = await get_subscription_url_for_key(key)
+    if not raw_url:
+        return False, "Не удалось получить подписку с панели (панель недоступна или subscription отключена в настройках 3x-ui)."
+
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+            async with session.get(raw_url) as resp:
+                if resp.status != 200:
+                    return False, f"Панель ответила {resp.status} при получении подписки."
+                body = await resp.text()
+    except Exception as e:
+        return False, f"Не удалось скачать подписку: {e}"
+
+    try:
+        decoded = base64.b64decode(body + "=" * (-len(body) % 4), validate=True).decode("utf-8", errors="ignore")
+    except Exception:
+        decoded = body  # некоторые панели отдают конфиг без base64
+
+    m = re.search(r"(?:vless|vmess|trojan)://[^@]+@([^:/?#]+):", decoded)
+    if not m:
+        return False, "В подписке не нашлось ни одной ссылки формата vless/vmess/trojan — не удалось извлечь адрес."
+
+    candidate = m.group(1)
+
+    import socket
+    try:
+        resolved_ip = socket.gethostbyname(candidate)
+    except (socket.gaierror, OSError):
+        resolved_ip = candidate  # уже голый IP, либо не резолвится — вернём как есть
+
+    return True, resolved_ip
+
+
 async def get_public_subscription_url_for_key(key: Dict[str, Any]) -> Optional[str]:
     """
     Ссылка на подписку, которую стоит показывать/отправлять КЛИЕНТАМ (в
@@ -1752,4 +1819,5 @@ __all__ = [
     "get_bot_mode", "is_subscription_mode",
     "ensure_subscription_keys_on_server", "sync_key_to_panel_state",
     "get_subscription_url_for_key", "get_public_subscription_url_for_key", "get_key_traffic_snapshot",
+    "detect_server_public_ip",
 ]
