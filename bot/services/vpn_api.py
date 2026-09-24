@@ -1740,16 +1740,29 @@ async def detect_server_public_ip(server_id: int) -> Tuple[bool, str]:
         return False, "На этом сервере нет ни одного активного ключа с подпиской — не по чему определять адрес. Создайте хотя бы один тестовый ключ и попробуйте снова."
 
     key = {"sub_id": row["sub_id"], "server_id": server_id}
-    raw_url = await get_subscription_url_for_key(key)
-    if not raw_url:
-        return False, "Не удалось получить подписку с панели (панель недоступна или subscription отключена в настройках 3x-ui)."
+
+    # Идём НЕ напрямую к панели, а через наш же публичный эндпоинт
+    # /happ-sub/{sub_id} (handle_happ_subscription в bot/webapp/server.py) —
+    # он уже умеет корректно обращаться к панели (в т.ч. пробрасывает
+    # HWID-заголовки, если панель в режиме ограничения устройств, и решает
+    # другие особенности конкретной панели), это тот самый путь, которым
+    # реально пользуются клиенты. Прямой запрос к панели в обход этой
+    # логики на практике возвращал 404 там, где сам /happ-sub/ работает.
+    from database.requests import get_effective_webapp_url
+    webapp_url = get_effective_webapp_url()
+    if webapp_url:
+        fetch_url = f"{webapp_url.rstrip('/')}/happ-sub/{row['sub_id']}"
+    else:
+        fetch_url = await get_subscription_url_for_key(key)
+        if not fetch_url:
+            return False, "Не удалось получить подписку с панели (панель недоступна или subscription отключена в настройках 3x-ui)."
 
     try:
         import aiohttp
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-            async with session.get(raw_url) as resp:
+            async with session.get(fetch_url) as resp:
                 if resp.status != 200:
-                    return False, f"Панель ответила {resp.status} при получении подписки."
+                    return False, f"Не удалось получить подписку (HTTP {resp.status}) по адресу {fetch_url}."
                 body = await resp.text()
     except Exception as e:
         return False, f"Не удалось скачать подписку: {e}"
