@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 126
+LATEST_VERSION = 127
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2786,6 +2786,53 @@ def migration_126(conn: sqlite3.Connection) -> None:
     logger.info("Migration v126 applied: Назад (слева) и На главную (справа) на key_delivery в финальном порядке")
 
 
+def migration_127(conn: sqlite3.Connection) -> None:
+    """Версия 127: реальный порядок отображения кнопок в строке определяется
+    ПОРЯДКОМ ЭЛЕМЕНТОВ В МАССИВЕ buttons, а не полем col — page_renderer
+    строит клавиатуру строго в порядке итерации по списку, col при сборке
+    не используется вообще. Миграции v124/v126 меняли только col, поэтому
+    на инсталляциях, где btn_back_main физически стоял в массиве раньше
+    btn_key_delivery_back, "На главную" продолжала отображаться слева
+    несмотря на "правильный" col. Здесь элементы переставляются местами
+    в самом массиве, чтобы btn_key_delivery_back шёл непосредственно перед
+    btn_back_main."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v127: страница 'key_delivery' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+
+        back_idx = next((i for i, b in enumerate(buttons) if b.get("id") == "btn_key_delivery_back"), None)
+        home_idx = next((i for i, b in enumerate(buttons) if b.get("id") == "btn_back_main"), None)
+        if back_idx is None or home_idx is None:
+            continue
+        if back_idx < home_idx:
+            continue  # уже в правильном порядке
+
+        back_btn = buttons[back_idx]
+        home_btn = buttons[home_idx]
+        remaining = [b for i, b in enumerate(buttons) if i not in (back_idx, home_idx)]
+        insert_at = min(back_idx, home_idx)
+        remaining[insert_at:insert_at] = [back_btn, home_btn]
+
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+            (json.dumps(remaining, ensure_ascii=False),)
+        )
+
+    logger.info("Migration v127 applied: btn_key_delivery_back переставлен перед btn_back_main в самом массиве")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2839,6 +2886,7 @@ MIGRATIONS = {
     123: migration_123,
     124: migration_124,
     126: migration_126,
+    127: migration_127,
 }
 
 
