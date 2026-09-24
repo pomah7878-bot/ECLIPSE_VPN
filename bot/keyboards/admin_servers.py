@@ -63,7 +63,11 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
     if show_group_button:
         builder.row(InlineKeyboardButton(text='📂 Изменить группу', callback_data=f'admin_server_change_group:{server_id}'))
     builder.row(InlineKeyboardButton(text='🧩 Группа inbound\'ов (маркер --N)', callback_data=f'admin_server_inbound_group:{server_id}'))
-    ip_label = f'🌐 Публичный IP: {public_ip}' if public_ip else '🌐 Публичный IP (для виджета «Защищено»)'
+    if public_ip:
+        _ip_count = len([p for p in public_ip.replace(',', ' ').split() if p])
+        ip_label = f'🌐 Публичный IP: {public_ip}' if _ip_count <= 1 else f'🌐 Публичные IP: {_ip_count} адреса(ов)'
+    else:
+        ip_label = '🌐 Публичный IP (для виджета «Защищено»)'
     builder.row(InlineKeyboardButton(text=ip_label, callback_data=f'admin_server_public_ip:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛠 Диагностика', callback_data=f'admin_server_tools:{server_id}'))
     builder.row(InlineKeyboardButton(text='🔗 Импорт ручных клиентов', callback_data=f'admin_import_orphans:{server_id}'))
