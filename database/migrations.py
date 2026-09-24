@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 122
+LATEST_VERSION = 123
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1171,8 +1171,9 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 {"id": "btn_key_import_incy",   "label": "⚡️ Импорт в INCY",   "color": "primary",   "row": 0, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_key_import_karing", "label": "🎯 Импорт в Karing", "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_help",      "label": "📄 Инструкция",  "color": "secondary", "row": 1, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_help"},
-                {"id": "btn_key_delivery_back", "label": "⬅️ Назад",   "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
-                {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 2, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
+                {"id": "btn_my_keys",   "label": "🔑 Мои ключи",  "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+                {"id": "btn_key_delivery_back", "label": "⬅️ Назад",   "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+                {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 3, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
             ], ensure_ascii=False),
         },
     }
@@ -2650,6 +2651,46 @@ def migration_122(conn: sqlite3.Connection) -> None:
     logger.info("Migration v122 applied: дублирующая кнопка 'Мои ключи' убрана с экрана key_delivery")
 
 
+def migration_123(conn: sqlite3.Connection) -> None:
+    """Версия 123: возвращает кнопку "Мои ключи" на экран выдачи/продления
+    ключа (key_delivery) — отмена v122. Админ явно подтвердил, что хочет
+    видеть её на этом экране отдельным рядом, несмотря на то что "⬅️
+    Назад" ведёт туда же."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v123: страница 'key_delivery' не найдена, пропускаю")
+        return
+
+    my_keys_button = {
+        "id": "btn_my_keys", "label": "🔑 Мои ключи", "color": "secondary",
+        "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys",
+    }
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if any(b.get("id") == "btn_my_keys" for b in buttons):
+            continue
+        # Сдвигаем Назад/На главную на следующий ряд, чтобы Мои ключи встала перед ними
+        for b in buttons:
+            if b.get("id") in ("btn_key_delivery_back", "btn_back_main"):
+                b["row"] = b.get("row", 0) + 1
+        buttons.append(my_keys_button)
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+
+    logger.info("Migration v123 applied: кнопка 'Мои ключи' возвращена на экран key_delivery")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2700,6 +2741,7 @@ MIGRATIONS = {
     120: migration_120,
     121: migration_121,
     122: migration_122,
+    123: migration_123,
 }
 
 
