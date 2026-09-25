@@ -382,6 +382,10 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
             text=f"🆔 Happ Provider ID: {happ_provider_status}",
             callback_data='admin_edit_happ_provider_id',
         ))
+        builder.row(InlineKeyboardButton(
+            text="🌐 happ-proxy.com API (лимиты, HWID, push)",
+            callback_data='admin_happ_proxy_menu',
+        ))
 
     _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒', 'hide_url': '🔗'}
     for toggle, label in CLIENT_TOGGLE_LABELS_BY_APP[app].items():
@@ -402,6 +406,48 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
         ))
 
     builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def happ_proxy_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «happ-proxy.com API» — лимитированные ссылки (InstallID),
+    привязка домена, просмотр HWID по ключу, push-уведомления и
+    remote-команды. Отдельная пара учётных данных (provider_code/auth_key)
+    от Provider ID выше — тот просто уходит в заголовок подписки, а этот
+    раздел про сам API happ-proxy.com."""
+    from database.requests import get_happ_proxy_provider_code, get_happ_proxy_auth_key, get_happ_install_limit
+    builder = InlineKeyboardBuilder()
+
+    provider_code = get_happ_proxy_provider_code()
+    auth_key = get_happ_proxy_auth_key()
+    configured = bool(provider_code and auth_key)
+
+    builder.row(InlineKeyboardButton(
+        text=f"🔑 provider_code: {'✅ задан' if provider_code else 'не задан'}",
+        callback_data='admin_edit_happ_proxy_provider_code',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🔑 auth_key: {'✅ задан' if auth_key else 'не задан'}",
+        callback_data='admin_edit_happ_proxy_auth_key',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🔢 Лимит устройств по умолчанию: {get_happ_install_limit()}",
+        callback_data='admin_edit_happ_install_limit',
+    ))
+
+    if configured:
+        builder.row(InlineKeyboardButton(text="📡 HWID по ключу", callback_data='admin_happ_proxy_hwid_lookup'))
+        builder.row(InlineKeyboardButton(text="📢 Push всем", callback_data='admin_happ_proxy_push_all'))
+        builder.row(InlineKeyboardButton(text="📨 Push по ключу", callback_data='admin_happ_proxy_push_key'))
+        builder.row(InlineKeyboardButton(text="🔄 Обновить подписку у всех", callback_data='admin_happ_proxy_refresh_all'))
+        builder.row(InlineKeyboardButton(text="🔄 Обновить подписку у ключа", callback_data='admin_happ_proxy_refresh_key'))
+    else:
+        builder.row(InlineKeyboardButton(
+            text="ℹ️ Сначала задайте provider_code и auth_key",
+            callback_data='admin_happ_proxy_menu',
+        ))
+
+    builder.row(back_button('admin_integrations_happ'), home_button())
     return builder.as_markup()
 
 

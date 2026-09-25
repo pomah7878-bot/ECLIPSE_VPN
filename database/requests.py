@@ -31,3 +31,4 @@ from database.db_backup import *
 from database.db_customization_reset import *
 from database.db_support import *
 from database.db_promotions import *
+from database.db_happ_proxy import *

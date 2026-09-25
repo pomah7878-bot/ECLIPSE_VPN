@@ -22,6 +22,14 @@ class AdminStates(StatesGroup):
     edit_turnstile_site_key = State()    # Ввод Turnstile site key
     edit_panel_cleanup_days = State()    # Ввод задержки удаления неактивных ключей с панели
     edit_happ_provider_id = State()      # Ввод Happ Provider ID
+    edit_happ_proxy_provider_code = State()  # Ввод provider_code для API happ-proxy.com
+    edit_happ_proxy_auth_key = State()       # Ввод auth_key для API happ-proxy.com
+    edit_happ_install_limit = State()        # Ввод лимита устройств для новых лимитированных ссылок
+    happ_proxy_hwid_lookup = State()         # Ввод ID ключа для просмотра HWID по лимитированной ссылке
+    happ_proxy_push_all_text = State()       # Ввод текста push-уведомления для рассылки всем
+    happ_proxy_push_key_id = State()         # Ввод ID ключа для точечного push-уведомления
+    happ_proxy_push_key_text = State()       # Ввод текста push-уведомления для конкретного ключа
+    happ_proxy_refresh_key_id = State()      # Ввод ID ключа для принудительного обновления подписки
     edit_logo = State()                  # Загрузка логотипа (фото)
     edit_incy_update_interval = State()  # Ввод интервала автообновления INCY (часы)
     edit_zvonok_public_key = State()     # Ввод Zvonok API Public Key

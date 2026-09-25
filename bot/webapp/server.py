@@ -2811,18 +2811,63 @@ async def handle_index(request: web.Request) -> web.Response:
         title_format="💎{brand}💎",
         header_format="{brand}",
     )
+def _extract_sub_id_from_sub_url(sub_url: str) -> Optional[str]:
+    """Достаёт sub_id из ссылки вида '{webapp_url}/happ-sub/{sub_id}'."""
+    if not sub_url or "/happ-sub/" not in sub_url:
+        return None
+    tail = sub_url.rsplit("/happ-sub/", 1)[1]
+    # На случай query-параметров после sub_id (сейчас их не бывает, но на
+    # будущее — не должны попасть в install_code lookup).
+    return tail.split("?", 1)[0].split("#", 1)[0].strip() or None
+
+
 async def handle_import(request: web.Request) -> web.Response:
-    """GET /import — раздаёт страницу-редирект для импорта подписки в Happ/INCY."""
+    """GET /import — раздаёт страницу-редирект для импорта подписки в
+    Happ/INCY/Karing/ECLIPSE VPN.
+
+    Для scheme=happ, если в админке настроены provider_code/auth_key
+    happ-proxy.com (API лимитированных ссылок), дополнительно:
+      1) при необходимости регистрирует домен сайта в happ-proxy.com
+         (ensure_domain_registered — не чаще одного раза на смену домена);
+      2) получает/создаёт install_code для sub_id этого ключа (кэшируется
+         в БД — один install_code на подписку, не на каждый клик);
+      3) передаёт install_code странице через встроенный <script>, чтобы
+         клиентский JS добавил параметр InstallID к ссылке happ://add/...
+         (см. happ.su/main/dev-docs/limited-links).
+    Если API не настроено или запрос не удался — страница отдаётся как
+    раньше, без InstallID (импорт всё равно работает, просто без лимита
+    установок)."""
     from bot.services.license import is_feature_available
     if not is_feature_available("app_import"):
         return web.Response(text="<h1>Страница временно недоступна</h1>", status=503)
 
     import_path = os.path.join(_TEMPLATES_DIR, "import.html")
-    if os.path.exists(import_path):
-        return web.FileResponse(import_path)
-    return web.Response(
-        text="<h1>Import template not found</h1>", status=404
-    )
+    if not os.path.exists(import_path):
+        return web.Response(text="<h1>Import template not found</h1>", status=404)
+
+    install_code = ""
+    scheme = request.query.get("scheme", "")
+    if scheme == "happ":
+        try:
+            from bot.services.happ_proxy import is_configured, ensure_domain_registered, get_or_create_install_code_for_sub
+            if is_configured():
+                sub_url = request.query.get("url", "")
+                sub_id = _extract_sub_id_from_sub_url(sub_url)
+                if sub_id:
+                    from database.requests import get_effective_webapp_url
+                    webapp_url = get_effective_webapp_url()
+                    if webapp_url and await ensure_domain_registered(webapp_url):
+                        install_code = await get_or_create_install_code_for_sub(sub_id) or ""
+        except Exception as e:
+            # Никогда не должны ломать сам импорт из-за проблем с
+            # happ-proxy.com — в худшем случае просто без InstallID.
+            logger.warning(f"handle_import: не удалось подготовить InstallID для happ-proxy.com: {e}")
+
+    html = await asyncio.to_thread(lambda: open(import_path, encoding="utf-8").read())
+    if install_code:
+        injection = f'<script>window.__ECLIPSE_HAPP_INSTALLID__={json.dumps(install_code)};</script>'
+        html = html.replace("<script>", injection + "\n<script>", 1)
+    return web.Response(text=html, content_type="text/html")
 
 
 async def handle_app_page(request: web.Request) -> web.Response:

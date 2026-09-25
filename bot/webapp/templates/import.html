@@ -106,10 +106,16 @@ p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }
     copyBtn.onclick = function () { copyNow(); };
 
     // --- Happ: happ://add/<sub_url> — simple, no encryption, no base64 mangling ---
+    // Если сервер подготовил InstallID (лимитированная ссылка happ-proxy.com,
+    // см. handle_import в server.py) — добавляем его к ссылке в формате
+    // из документации happ.su: <url>#<TITLE>?installid=<code>. Без этого
+    // window.__ECLIPSE_HAPP_INSTALLID__ просто не определён — работаем как раньше.
     if (scheme === 'happ') {
         msgEl.innerHTML = 'Ссылка подписки скопирована в буфер.<br>' +
             'Сейчас откроется <b>Happ</b> с импортом подписки.';
-        var happLink = 'happ://add/' + subUrl;
+        var happInstallId = (typeof window.__ECLIPSE_HAPP_INSTALLID__ !== 'undefined') ? window.__ECLIPSE_HAPP_INSTALLID__ : '';
+        var happSubUrl = happInstallId ? (subUrl + '#ECLIPSE?installid=' + happInstallId) : subUrl;
+        var happLink = 'happ://add/' + happSubUrl;
 
         // Auto-launch Happ with subscription
         setTimeout(function () {
