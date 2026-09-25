@@ -30,6 +30,10 @@ class AdminStates(StatesGroup):
     happ_proxy_push_key_id = State()         # Ввод ID ключа для точечного push-уведомления
     happ_proxy_push_key_text = State()       # Ввод текста push-уведомления для конкретного ключа
     happ_proxy_refresh_key_id = State()      # Ввод ID ключа для принудительного обновления подписки
+    happ_proxy_edit_limit_key_id = State()   # Ввод ID ключа для изменения лимита его лимитированной ссылки
+    happ_proxy_edit_limit_value = State()    # Ввод нового значения лимита
+    happ_proxy_toggle_key_id = State()       # Ввод ID ключа для вкл/выкл его лимитированной ссылки
+    happ_proxy_change_domain_value = State()  # Ввод нового домена для remote-команды смены домена подписки
     edit_logo = State()                  # Загрузка логотипа (фото)
     edit_incy_update_interval = State()  # Ввод интервала автообновления INCY (часы)
     edit_zvonok_public_key = State()     # Ввод Zvonok API Public Key

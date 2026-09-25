@@ -2204,14 +2204,58 @@ async def happ_proxy_hwid_lookup_run(message: Message, state: FSMContext):
 
     if not hwids:
         text = f"📡 Ключ #{value} (install_code <code>{install_code}</code>): устройств пока нет."
-    else:
-        lines = [f"📡 Ключ #{value} (install_code <code>{install_code}</code>), устройств: {len(hwids)}:\n"]
-        for h in hwids:
-            lines.append(f"• <code>{h.get('hwid')}</code> — {h.get('device_name') or '?'} ({h.get('date')})")
-        text = "\n".join(lines)
-    await message.answer(text, parse_mode="HTML")
-    await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(text, parse_mode="HTML")
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        return
+
+    lines = [f"📡 Ключ #{value} (install_code <code>{install_code}</code>), устройств: {len(hwids)}:\n"]
+    for h in hwids:
+        lines.append(f"• <code>{h.get('hwid')}</code> — {h.get('device_name') or '?'} ({h.get('date')})")
+    text = "\n".join(lines)
+
+    # Кнопки удаления по индексу (не по самому HWID — строка HWID+install_code
+    # вместе легко превышают лимит Telegram в 64 байта на callback_data),
+    # список HWID хранится в FSM-состоянии до следующего действия.
+    await state.update_data(happ_hwid_install_code=install_code, happ_hwid_list=[h.get('hwid') for h in hwids])
+    builder = InlineKeyboardBuilder()
+    for i, h in enumerate(hwids):
+        short = (h.get('device_name') or h.get('hwid'))[:24]
+        builder.row(InlineKeyboardButton(text=f"🗑 {short}", callback_data=f"admin_happ_del_hwid:{i}"))
+    builder.row(InlineKeyboardButton(text="⬅ Назад", callback_data='admin_happ_proxy_menu'))
+    await message.answer(text, parse_mode="HTML", reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data.startswith("admin_happ_del_hwid:"))
+async def happ_proxy_delete_hwid_by_index(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    data = await state.get_data()
+    install_code = data.get('happ_hwid_install_code')
+    hwid_list = data.get('happ_hwid_list') or []
+    try:
+        index = int(callback.data.split(":", 1)[1])
+        hwid = hwid_list[index]
+    except (ValueError, IndexError):
+        await callback.answer("Список устарел, повторите поиск заново.", show_alert=True)
+        return
+    if not install_code:
+        await callback.answer("Список устарел, повторите поиск заново.", show_alert=True)
+        return
+
+    from bot.services.happ_proxy import delete_hwid
+    try:
+        remaining = await delete_hwid(hwid, install_code=install_code)
+    except Exception as e:
+        await callback.answer(_happ_proxy_error_text(e), show_alert=True)
+        return
+
+    await callback.answer(f"✅ Устройство удалено, осталось: {remaining}")
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data == "admin_happ_proxy_push_all")
@@ -2364,5 +2408,202 @@ async def happ_proxy_refresh_key_run(message: Message, state: FSMContext):
             await message.answer(f"✅ Команда «обновить подписку» отправлена на {len(hwids)} устройство(а) этого ключа.")
     except Exception as e:
         await message.answer(_happ_proxy_error_text(e))
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+
+
+@router.callback_query(F.data == "admin_happ_proxy_list_installs")
+async def happ_proxy_list_installs_run(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await callback.answer("Загружаю список...")
+    from bot.services.happ_proxy import list_installs
+    from database.requests import get_vpn_key_by_sub_id
+    try:
+        installs = await list_installs()
+    except Exception as e:
+        await callback.message.answer(_happ_proxy_error_text(e))
+        return
+
+    if not installs:
+        await callback.message.answer("📋 Лимитированных ссылок пока нет — они создаются автоматически при первом импорте клиента в Happ.")
+        return
+
+    from database.requests import list_happ_install_links
+    by_code = {row['install_code']: row for row in list_happ_install_links()}
+
+    lines = [f"📋 Лимитированные ссылки ({len(installs)}):\n"]
+    for item in installs[:50]:
+        code = item.get('install_code')
+        cached = by_code.get(code)
+        key_label = "?"
+        if cached:
+            key = get_vpn_key_by_sub_id(cached['sub_id'])
+            if key:
+                key_label = f"ключ #{key['id']}"
+        status = "🟢" if item.get('status') == 10 else "⚪"
+        lines.append(
+            f"{status} <code>{code}</code> — {key_label}, устройств {item.get('install_count')}/{item.get('install_limit')}"
+        )
+    if len(installs) > 50:
+        lines.append(f"\n… показаны первые 50 из {len(installs)}.")
+    await callback.message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_happ_proxy_edit_limit")
+async def happ_proxy_edit_limit_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.set_state(AdminStates.happ_proxy_edit_limit_key_id)
+    await safe_edit_or_send(
+        callback.message,
+        "🔢 <b>Изменить лимит ссылки ключа</b>\n\nОтправь ID ключа:",
+        reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.happ_proxy_edit_limit_key_id, F.text, ~F.text.startswith('/'))
+async def happ_proxy_edit_limit_key_id_entered(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    from bot.keyboards.admin_settings import happ_proxy_menu_kb
+    if not value.isdigit():
+        await message.answer("❌ Нужен числовой ID ключа. Попробуй ещё раз или нажми «Отмена».")
+        return
+
+    from database.requests import get_happ_install_link
+    key, _ = await _resolve_install_code_for_key(int(value))
+    if not key or not key.get('sub_id'):
+        await message.answer("❌ Ключ не найден или у него нет подписки.")
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        return
+    cached = get_happ_install_link(key['sub_id'])
+    if not cached or not cached.get('install_id'):
+        await message.answer("ℹ️ У этого ключа ещё нет лимитированной ссылки Happ (создаётся автоматически при первом импорте клиента).")
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        return
+
+    await state.update_data(happ_edit_limit_install_id=cached['install_id'], happ_edit_limit_sub_id=key['sub_id'])
+    await state.set_state(AdminStates.happ_proxy_edit_limit_value)
+    await message.answer(f"Текущий лимит: {cached.get('install_limit')}.\n\nОтправь новое значение (1-100):")
+
+
+@router.message(AdminStates.happ_proxy_edit_limit_value, F.text, ~F.text.startswith('/'))
+async def happ_proxy_edit_limit_value_entered(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    from bot.keyboards.admin_settings import happ_proxy_menu_kb
+    if not value.isdigit() or not (1 <= int(value) <= 100):
+        await message.answer("❌ Нужно целое число от 1 до 100. Попробуй ещё раз или нажми «Отмена».")
+        return
+
+    data = await state.get_data()
+    install_id = data.get('happ_edit_limit_install_id')
+    sub_id = data.get('happ_edit_limit_sub_id')
+    from bot.services.happ_proxy import update_install
+    try:
+        await update_install(install_id, install_limit=int(value))
+    except Exception as e:
+        await message.answer(_happ_proxy_error_text(e))
+    else:
+        from database.requests import get_happ_install_link, save_happ_install_link
+        cached = get_happ_install_link(sub_id)
+        if cached:
+            save_happ_install_link(sub_id, cached['install_code'], install_id, int(value))
+        await message.answer(f"✅ Лимит устройств обновлён: {value}.")
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+
+
+@router.callback_query(F.data == "admin_happ_proxy_toggle_link")
+async def happ_proxy_toggle_link_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.set_state(AdminStates.happ_proxy_toggle_key_id)
+    await safe_edit_or_send(
+        callback.message,
+        "⏯ <b>Вкл/выкл лимитированную ссылку ключа</b>\n\nОтключённая ссылка перестаёт пускать новые "
+        "устройства (уже установленные продолжают работать). Отправь ID ключа:",
+        reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.happ_proxy_toggle_key_id, F.text, ~F.text.startswith('/'))
+async def happ_proxy_toggle_link_run(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    from bot.keyboards.admin_settings import happ_proxy_menu_kb
+    if not value.isdigit():
+        await message.answer("❌ Нужен числовой ID ключа. Попробуй ещё раз или нажми «Отмена».")
+        return
+
+    from database.requests import get_happ_install_link
+    key, _ = await _resolve_install_code_for_key(int(value))
+    if not key or not key.get('sub_id'):
+        await message.answer("❌ Ключ не найден или у него нет подписки.")
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        return
+    cached = get_happ_install_link(key['sub_id'])
+    if not cached or not cached.get('install_id'):
+        await message.answer("ℹ️ У этого ключа ещё нет лимитированной ссылки Happ.")
+        await state.set_state(AdminStates.integrations_menu)
+        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        return
+
+    from bot.services.happ_proxy import list_installs, update_install
+    try:
+        current = await list_installs(install_id=cached['install_id'])
+        current_status = current[0]['status'] if current else 10
+        new_status = 5 if current_status == 10 else 10
+        await update_install(cached['install_id'], status=new_status)
+    except Exception as e:
+        await message.answer(_happ_proxy_error_text(e))
+    else:
+        await message.answer(f"✅ Ссылка теперь {'🟢 включена' if new_status == 10 else '⚪ отключена'}.")
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+
+
+@router.callback_query(F.data == "admin_happ_proxy_change_domain_all")
+async def happ_proxy_change_domain_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.set_state(AdminStates.happ_proxy_change_domain_value)
+    await safe_edit_or_send(
+        callback.message,
+        "🌐 <b>Сменить домен подписки у всех</b>\n\nRemote-команда (требует тариф Pro/Enterprise) — все "
+        "устройства с Happ получат команду сменить домен подписки на новый, БЕЗ переустановки. "
+        "Используй, если домен сайта сменился и старый вот-вот перестанет работать.\n\n"
+        "Отправь новый домен (например: <code>newdomain.com</code>):",
+        reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.happ_proxy_change_domain_value, F.text, ~F.text.startswith('/'))
+async def happ_proxy_change_domain_run(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    value = get_message_text_for_storage(message, "plain").strip()
+    from bot.keyboards.admin_settings import happ_proxy_menu_kb
+    from bot.services.happ_proxy import send_remote_command
+    try:
+        await send_remote_command("sub-change", os_list=["android", "ios"], change_type="domain", change_value=value)
+    except Exception as e:
+        await message.answer(_happ_proxy_error_text(e))
+    else:
+        await message.answer(f"✅ Команда смены домена на «{value}» отправлена всем устройствам.")
     await state.set_state(AdminStates.integrations_menu)
     await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())

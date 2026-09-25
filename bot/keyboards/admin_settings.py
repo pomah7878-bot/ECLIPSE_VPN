@@ -445,10 +445,14 @@ def happ_proxy_menu_kb() -> InlineKeyboardMarkup:
 
     if configured:
         builder.row(InlineKeyboardButton(text="📡 HWID по ключу", callback_data='admin_happ_proxy_hwid_lookup'))
+        builder.row(InlineKeyboardButton(text="📋 Список лимитированных ссылок", callback_data='admin_happ_proxy_list_installs'))
+        builder.row(InlineKeyboardButton(text="🔢 Изменить лимит ссылки ключа", callback_data='admin_happ_proxy_edit_limit'))
+        builder.row(InlineKeyboardButton(text="⏯ Вкл/выкл ссылку ключа", callback_data='admin_happ_proxy_toggle_link'))
         builder.row(InlineKeyboardButton(text="📢 Push всем", callback_data='admin_happ_proxy_push_all'))
         builder.row(InlineKeyboardButton(text="📨 Push по ключу", callback_data='admin_happ_proxy_push_key'))
         builder.row(InlineKeyboardButton(text="🔄 Обновить подписку у всех", callback_data='admin_happ_proxy_refresh_all'))
         builder.row(InlineKeyboardButton(text="🔄 Обновить подписку у ключа", callback_data='admin_happ_proxy_refresh_key'))
+        builder.row(InlineKeyboardButton(text="🌐 Сменить домен подписки у всех", callback_data='admin_happ_proxy_change_domain_all'))
     else:
         builder.row(InlineKeyboardButton(
             text="ℹ️ Сначала задайте provider_code и auth_key",
