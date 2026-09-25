@@ -2607,3 +2607,103 @@ async def happ_proxy_change_domain_run(message: Message, state: FSMContext):
         await message.answer(f"✅ Команда смены домена на «{value}» отправлена всем устройствам.")
     await state.set_state(AdminStates.integrations_menu)
     await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+
+
+# ============================================================
+# Маршрутизация Happ (заголовок 'routing' в подписке)
+# ============================================================
+
+_HAPP_ROUTING_EXAMPLE_PROFILE = """{
+  "Name": "China",
+  "GlobalProxy": "true",
+  "RemoteDNSType": "DoH",
+  "RemoteDNSDomain": "https://cloudflare-dns.com/dns-query",
+  "RemoteDNSIP": "1.1.1.1",
+  "DomesticDNSType": "DoU",
+  "DomesticDNSIP": "8.8.8.8",
+  "DirectSites": ["geosite:cn", "geosite:geolocation-cn"],
+  "DirectIp": ["geoip:cn"],
+  "ProxySites": ["geosite:geolocation-!cn"],
+  "BlockSites": ["geosite:category-ads-all"],
+  "DomainStrategy": "IPIfNonMatch"
+}"""
+
+
+@router.callback_query(F.data == "admin_happ_routing_menu")
+async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.clear()
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "🗺 <b>Маршрутизация (routing)</b>\n\n"
+        "Необязательный заголовок подписки Happ — задаёт профиль маршрутизации "
+        "(какие сайты/IP идут напрямую, через прокси или блокируются). Не требует "
+        "Provider ID. По умолчанию выключено — ничего не отправляется, поведение "
+        "клиентов не меняется.\n\n"
+        "«Добавить» (add) — профиль появится в списке у клиента, но не станет "
+        "активным автоматически, если уже есть другой активный. «Добавить и "
+        "активировать» (onadd) — станет активным сразу, даже поверх другого "
+        "активного профиля. «Отключить у клиента» (off) — выключает маршрутизацию "
+        "целиком (не подходит для постоянной отправки — обычно применяют один раз).",
+        reply_markup=happ_routing_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_set_happ_routing_mode:"))
+async def set_happ_routing_mode_run(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    mode = callback.data.split(":", 1)[1]
+    from database.requests import set_happ_routing_mode, get_happ_routing_profile_json
+    if mode in ("add", "onadd") and not get_happ_routing_profile_json():
+        await callback.answer("Сначала задайте JSON-профиль ниже.", show_alert=True)
+        return
+    set_happ_routing_mode(mode)
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    await safe_edit_or_send(callback.message, "🗺 <b>Маршрутизация (routing)</b>", reply_markup=happ_routing_menu_kb())
+    await callback.answer("✅ Режим обновлён")
+
+
+@router.callback_query(F.data == "admin_edit_happ_routing_profile")
+async def edit_happ_routing_profile_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.set_state(AdminStates.edit_happ_routing_profile)
+    await safe_edit_or_send(
+        callback.message,
+        "📝 <b>JSON-профиль маршрутизации</b>\n\n"
+        "Пришли JSON-профиль целиком (структура — см. документацию Happ, поле "
+        "<code>Name</code> обязательно). Пример:\n\n"
+        f"<pre>{_HAPP_ROUTING_EXAMPLE_PROFILE}</pre>",
+        reply_markup=integrations_edit_cancel_kb('admin_happ_routing_menu'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_happ_routing_profile, F.text, ~F.text.startswith('/'))
+async def edit_happ_routing_profile_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    import json
+    raw = get_message_text_for_storage(message, "plain").strip()
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    try:
+        parsed = json.loads(raw)
+    except Exception as e:
+        await message.answer(f"❌ Это не валидный JSON: {e}\n\nПопробуй ещё раз или нажми «Отмена».")
+        return
+    if not isinstance(parsed, dict) or not parsed.get('Name'):
+        await message.answer("❌ Профиль должен быть JSON-объектом с обязательным полем \"Name\". Попробуй ещё раз или нажми «Отмена».")
+        return
+
+    from database.requests import set_happ_routing_profile_json
+    set_happ_routing_profile_json(json.dumps(parsed, ensure_ascii=False))
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer(f"✅ Профиль «{parsed['Name']}» сохранён.")
+    await message.answer("🗺 Маршрутизация (routing):", reply_markup=happ_routing_menu_kb())

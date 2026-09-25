@@ -386,6 +386,10 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
             text="🌐 happ-proxy.com API (лимиты, HWID, push)",
             callback_data='admin_happ_proxy_menu',
         ))
+        builder.row(InlineKeyboardButton(
+            text="🗺 Маршрутизация (routing)",
+            callback_data='admin_happ_routing_menu',
+        ))
 
     _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒', 'hide_url': '🔗'}
     for toggle, label in CLIENT_TOGGLE_LABELS_BY_APP[app].items():
@@ -458,6 +462,43 @@ def happ_proxy_menu_kb() -> InlineKeyboardMarkup:
             text="ℹ️ Сначала задайте provider_code и auth_key",
             callback_data='admin_happ_proxy_menu',
         ))
+
+    builder.row(back_button('admin_integrations_happ'), home_button())
+    return builder.as_markup()
+
+
+def happ_routing_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Маршрутизация (routing)» — необязательный заголовок
+    'routing' в подписке Happ (happ.su/main/dev-docs → Геонастройки).
+    По умолчанию режим 'disabled' — ничего не отправляется и не меняется
+    для существующих клиентов."""
+    from database.requests import get_happ_routing_mode, get_happ_routing_profile_json
+
+    mode = get_happ_routing_mode()
+    profile_json = get_happ_routing_profile_json()
+    profile_name = None
+    if profile_json:
+        try:
+            import json
+            profile_name = json.loads(profile_json).get('Name')
+        except Exception:
+            profile_name = None
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"📝 JSON-профиль: {'✅ задан' + (f' ({profile_name})' if profile_name else '') if profile_json else 'не задан'}",
+        callback_data='admin_edit_happ_routing_profile',
+    ))
+
+    mode_labels = {
+        'disabled': '⚪ Выключено (заголовок не отправляется)',
+        'add': '➕ Добавить профиль (add)',
+        'onadd': '⚡ Добавить и активировать (onadd)',
+        'off': '🚫 Отключить маршрутизацию у клиента (off)',
+    }
+    for m, label in mode_labels.items():
+        text = f"✅ {label}" if m == mode else label
+        builder.row(InlineKeyboardButton(text=text, callback_data=f'admin_set_happ_routing_mode:{m}'))
 
     builder.row(back_button('admin_integrations_happ'), home_button())
     return builder.as_markup()
