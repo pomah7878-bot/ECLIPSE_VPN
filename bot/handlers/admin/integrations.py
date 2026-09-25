@@ -2011,7 +2011,6 @@ async def show_happ_proxy_menu(callback: CallbackQuery, state: FSMContext):
         "зарегистрирует домен сайта и создаст лимитированную ссылку (install_code) для его "
         "подписки — с лимитом устройств из настройки ниже. Push и «обновить подписку» требуют "
         "платного тарифа happ-proxy.com (Enterprise для push, Pro/Enterprise для remote-команд).",
-        parse_mode="HTML",
         reply_markup=happ_proxy_menu_kb(),
     )
     await callback.answer()
@@ -2030,7 +2029,6 @@ async def edit_happ_proxy_provider_code_start(callback: CallbackQuery, state: FS
         f"🔑 <b>provider_code (happ-proxy.com API)</b>\n\nТекущее значение: <code>{_mask_secret(current) if current else 'не задан'}</code>\n\n"
         "8 символов, буквы и цифры (например: <code>Ab12Cd34</code>). Личный кабинет happ-proxy.com → раздел API.\n\n"
         "Отправь provider_code:",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
@@ -2070,7 +2068,6 @@ async def edit_happ_proxy_auth_key_start(callback: CallbackQuery, state: FSMCont
         f"🔑 <b>auth_key (happ-proxy.com API)</b>\n\nТекущее значение: <code>{_mask_secret(current) if current else 'не задан'}</code>\n\n"
         "32 символа (буквы, цифры, «-» и «_»). Личный кабинет happ-proxy.com → раздел API.\n\n"
         "Отправь auth_key:",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
@@ -2111,7 +2108,6 @@ async def edit_happ_install_limit_start(callback: CallbackQuery, state: FSMConte
         "(install_limit, 1..100). Применяется к НОВЫМ лимитированным ссылкам — на уже "
         "созданные для существующих клиентов не влияет.\n\n"
         "Отправь число от 1 до 100:",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
@@ -2167,7 +2163,6 @@ async def happ_proxy_hwid_lookup_start(callback: CallbackQuery, state: FSMContex
         "📡 <b>HWID по ключу</b>\n\nОтправь ID ключа (число — видно в карточке ключа клиента "
         "в разделе «Ключи»), чтобы посмотреть список устройств (HWID), установивших его "
         "лимитированную ссылку Happ.",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
@@ -2229,7 +2224,6 @@ async def happ_proxy_push_all_start(callback: CallbackQuery, state: FSMContext):
         "приложением на Android и iOS (не только вашим клиентам — всем клиентам "
         "ЭТОГО provider_code). Не чаще одного раза в 5 минут.\n\n"
         "Отправь текст уведомления:",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
@@ -2262,7 +2256,6 @@ async def happ_proxy_push_key_start(callback: CallbackQuery, state: FSMContext):
         callback.message,
         "📨 <b>Push по ключу</b>\n\nТребует тариф Enterprise на happ-proxy.com.\n\n"
         "Отправь ID ключа:",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
@@ -2336,7 +2329,6 @@ async def happ_proxy_refresh_key_start(callback: CallbackQuery, state: FSMContex
         callback.message,
         "🔄 <b>Обновить подписку у ключа</b>\n\nТребует тариф Pro/Enterprise на happ-proxy.com.\n\n"
         "Отправь ID ключа:",
-        parse_mode="HTML",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
     await callback.answer()
