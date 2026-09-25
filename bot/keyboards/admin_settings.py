@@ -412,18 +412,26 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
 def happ_proxy_menu_kb() -> InlineKeyboardMarkup:
     """Подменю «happ-proxy.com API» — лимитированные ссылки (InstallID),
     привязка домена, просмотр HWID по ключу, push-уведомления и
-    remote-команды. Отдельная пара учётных данных (provider_code/auth_key)
-    от Provider ID выше — тот просто уходит в заголовок подписки, а этот
-    раздел про сам API happ-proxy.com."""
-    from database.requests import get_happ_proxy_provider_code, get_happ_proxy_auth_key, get_happ_install_limit
+    remote-команды. provider_code на практике совпадает с Happ Provider ID
+    (личный кабинет happ-proxy.com показывает один код и для заголовка
+    подписки, и для API) — если отдельно не задан, автоматически
+    используется уже сохранённый Provider ID."""
+    from database.requests import get_happ_proxy_provider_code, get_happ_proxy_auth_key, get_happ_install_limit, get_setting
     builder = InlineKeyboardBuilder()
 
     provider_code = get_happ_proxy_provider_code()
+    provider_code_own = get_setting('happ_proxy_provider_code', '')
     auth_key = get_happ_proxy_auth_key()
     configured = bool(provider_code and auth_key)
 
+    if provider_code and not provider_code_own:
+        provider_code_status = "✅ задан (= Provider ID)"
+    elif provider_code:
+        provider_code_status = "✅ задан"
+    else:
+        provider_code_status = "не задан"
     builder.row(InlineKeyboardButton(
-        text=f"🔑 provider_code: {'✅ задан' if provider_code else 'не задан'}",
+        text=f"🔑 provider_code: {provider_code_status}",
         callback_data='admin_edit_happ_proxy_provider_code',
     ))
     builder.row(InlineKeyboardButton(

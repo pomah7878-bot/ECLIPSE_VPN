@@ -607,13 +607,21 @@ def set_happ_provider_id(provider_id: str) -> None:
 
 
 def get_happ_proxy_provider_code() -> Optional[str]:
-    """provider_code для API happ-proxy.com (8 символов [A-Za-z0-9]{8}) —
-    ОТДЕЛЬНАЯ сущность от Provider ID (который просто уходит в заголовок
-    подписки). provider_code + auth_key нужны для вызовов API: add-install
-    (лимитированные ссылки), add-domain, list-hwid, push/remote-команды.
-    Берётся из личного кабинета happ-proxy.com (раздел API)."""
+    """provider_code для API happ-proxy.com (8 символов [A-Za-z0-9]{8}).
+
+    На практике это ТО ЖЕ САМОЕ значение, что и Happ Provider ID (личный
+    кабинет happ-proxy.com показывает его один раз, в шапке — "ID
+    провайдера" / "Provider ID" — и использует и как значение заголовка
+    подписки, и как provider_code для API). Раньше это было заведено как
+    две независимые настройки, что заставляло вводить один и тот же код
+    дважды — теперь, если happ_proxy_provider_code не задан отдельно,
+    используется уже сохранённый Happ Provider ID. Отдельное значение
+    можно всё же задать явно (например, если когда-нибудь понадобится
+    другой provider_code для API, отличный от того, что в подписке)."""
     value = get_setting('happ_proxy_provider_code', '')
-    return value if value else None
+    if value:
+        return value
+    return get_happ_provider_id()
 
 
 def set_happ_proxy_provider_code(provider_code: str) -> None:
