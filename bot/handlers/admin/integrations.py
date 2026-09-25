@@ -2027,7 +2027,10 @@ async def edit_happ_proxy_provider_code_start(callback: CallbackQuery, state: FS
     await safe_edit_or_send(
         callback.message,
         f"🔑 <b>provider_code (happ-proxy.com API)</b>\n\nТекущее значение: <code>{_mask_secret(current) if current else 'не задан'}</code>\n\n"
-        "8 символов, буквы и цифры (например: <code>Ab12Cd34</code>). Личный кабинет happ-proxy.com → раздел API.\n\n"
+        "8 символов, буквы и цифры. Это ТОТ ЖЕ КОД, что и Happ Provider ID — в личном кабинете "
+        "happ-proxy.com он показан в шапке как «ID провайдера» / «Provider ID». Если уже задавали "
+        "Provider ID для заголовка подписки — можно отправить то же самое значение (или просто "
+        "нажать «Отмена»: он и так будет использован автоматически, менять здесь не обязательно).\n\n"
         "Отправь provider_code:",
         reply_markup=integrations_edit_cancel_kb('admin_happ_proxy_menu'),
     )
