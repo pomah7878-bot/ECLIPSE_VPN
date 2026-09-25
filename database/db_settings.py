@@ -32,6 +32,10 @@ __all__ = [
     'set_happ_routing_mode',
     'get_happ_routing_profile_json',
     'set_happ_routing_profile_json',
+    'get_happ_routing_profile_name',
+    'set_happ_routing_profile_name',
+    'get_default_happ_routing_profile_json',
+    'get_effective_happ_routing_profile_json',
     'is_client_toggle_enabled',
     'set_client_toggle_enabled',
     'CLIENT_APPS',
@@ -707,6 +711,65 @@ def get_happ_routing_profile_json() -> Optional[str]:
 
 def set_happ_routing_profile_json(profile_json: str) -> None:
     set_setting('happ_routing_profile_json', profile_json.strip())
+
+
+def get_happ_routing_profile_name() -> str:
+    """Переопределение поля 'Name' дефолтного профиля ECLIPSE (см.
+    get_default_happ_routing_profile_json). Если не задано — используется
+    get_effective_brand_name(), чтобы у каждого белолейбл-админа профиль
+    назывался брендом его бота, а не жёстко 'ECLIPSE RU'."""
+    return get_setting('happ_routing_profile_name', '')
+
+
+def set_happ_routing_profile_name(name: str) -> None:
+    set_setting('happ_routing_profile_name', name.strip())
+
+
+_HAPP_ROUTING_DEFAULT_TEMPLATE = {
+    "GlobalProxy": "true",
+    "UseChunkFiles": "true",
+    "RemoteDNSType": "DoH",
+    "RemoteDNSDomain": "https://8.8.8.8/dns-query",
+    "RemoteDNSIP": "8.8.8.8",
+    "DomesticDNSType": "DoH",
+    "DomesticDNSDomain": "https://77.88.8.8/dns-query",
+    "DomesticDNSIP": "77.88.8.8",
+    "Geoipurl": "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/geo/geoip.dat",
+    "Geositeurl": "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/geo/geosite.dat",
+    "RouteOrder": "block-proxy-direct",
+    "DirectSites": ["geosite:private", "geosite:category-ru", "geosite:whitelist"],
+    "DirectIp": ["geoip:private", "geoip:direct"],
+    "ProxySites": [],
+    "ProxyIp": [],
+    "BlockSites": [],
+    "BlockIp": [],
+    "DomainStrategy": "IPIfNonMatch",
+    "FakeDNS": "false",
+}
+
+
+def get_default_happ_routing_profile_json() -> str:
+    """Профиль маршрутизации 'из коробки' — компактные geo-базы ECLIPSE
+    (форк mvrvntn/routing, проверено что не превышает лимит памяти туннеля
+    на слабых устройствах, в отличие от полного Loyalsoldier v2ray-rules-dat).
+    Используется автоматически, пока админ не задал свой JSON-профиль вручную
+    (см. set_happ_routing_profile_json). Название профиля (поле 'Name') —
+    happ_routing_profile_name, если задано, иначе бренд бота, чтобы у каждого
+    белолейбл-админа было своё название без ручной правки JSON."""
+    import json as _json
+    from database.db_settings import get_effective_brand_name
+    name = get_happ_routing_profile_name() or get_effective_brand_name()
+    profile = {'Name': name}
+    profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
+    return _json.dumps(profile, ensure_ascii=False)
+
+
+def get_effective_happ_routing_profile_json() -> str:
+    """JSON, который реально уходит клиенту в заголовке 'routing': свой,
+    если админ задал его целиком вручную, иначе — дефолтный ECLIPSE-профиль
+    (см. get_default_happ_routing_profile_json)."""
+    custom = get_happ_routing_profile_json()
+    return custom if custom else get_default_happ_routing_profile_json()
 
 
 CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}

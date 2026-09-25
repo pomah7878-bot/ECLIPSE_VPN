@@ -2636,6 +2636,17 @@ async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
         return
     await state.clear()
     from bot.keyboards.admin_settings import happ_routing_menu_kb
+    from database.requests import get_happ_routing_profile_json, get_effective_brand_name
+    has_custom = bool(get_happ_routing_profile_json())
+    default_note = (
+        "Свой JSON-профиль не задан — используется дефолтный профиль ECLIPSE "
+        "(лёгкие geo-базы, не превышающие лимит памяти туннеля на слабых "
+        f"устройствах), название — «{get_effective_brand_name()}» (бренд бота). "
+        "Название можно сменить отдельно ниже, не редактируя весь JSON."
+        if not has_custom else
+        "Задан свой JSON-профиль — используется он целиком, дефолтный профиль "
+        "ECLIPSE игнорируется."
+    )
     await safe_edit_or_send(
         callback.message,
         "🗺 <b>Маршрутизация (routing)</b>\n\n"
@@ -2643,6 +2654,7 @@ async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
         "(какие сайты/IP идут напрямую, через прокси или блокируются). Не требует "
         "Provider ID. По умолчанию выключено — ничего не отправляется, поведение "
         "клиентов не меняется.\n\n"
+        f"{default_note}\n\n"
         "«Добавить» (add) — профиль появится в списке у клиента, но не станет "
         "активным автоматически, если уже есть другой активный. «Добавить и "
         "активировать» (onadd) — станет активным сразу, даже поверх другого "
@@ -2659,14 +2671,49 @@ async def set_happ_routing_mode_run(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
     mode = callback.data.split(":", 1)[1]
-    from database.requests import set_happ_routing_mode, get_happ_routing_profile_json
-    if mode in ("add", "onadd") and not get_happ_routing_profile_json():
-        await callback.answer("Сначала задайте JSON-профиль ниже.", show_alert=True)
-        return
+    from database.requests import set_happ_routing_mode
     set_happ_routing_mode(mode)
     from bot.keyboards.admin_settings import happ_routing_menu_kb
     await safe_edit_or_send(callback.message, "🗺 <b>Маршрутизация (routing)</b>", reply_markup=happ_routing_menu_kb())
     await callback.answer("✅ Режим обновлён")
+
+
+@router.callback_query(F.data == "admin_edit_happ_routing_name")
+async def edit_happ_routing_name_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_effective_brand_name, get_happ_routing_profile_name
+    await state.set_state(AdminStates.edit_happ_routing_name)
+    current = get_happ_routing_profile_name()
+    current_note = f"«{current}» (задано вручную)" if current else f"«{get_effective_brand_name()}» (бренд бота, своё имя не задано)"
+    await safe_edit_or_send(
+        callback.message,
+        "📝 <b>Название профиля маршрутизации</b>\n\n"
+        "Это поле <code>Name</code> дефолтного профиля ECLIPSE (действует, только "
+        "пока НЕ задан свой JSON-профиль целиком — там имя внутри самого JSON).\n\n"
+        f"Сейчас: {current_note}.\n\n"
+        "Пришли новое название, или «-» чтобы вернуть по умолчанию (бренд бота).",
+        reply_markup=integrations_edit_cancel_kb('admin_happ_routing_menu'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_happ_routing_name, F.text, ~F.text.startswith('/'))
+async def edit_happ_routing_name_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    from database.requests import set_happ_routing_profile_name, get_effective_brand_name
+    raw = get_message_text_for_storage(message, "plain").strip()
+    if raw == "-":
+        set_happ_routing_profile_name("")
+        await message.answer(f"✅ Название сброшено — будет использоваться бренд бота: «{get_effective_brand_name()}».")
+    else:
+        set_happ_routing_profile_name(raw)
+        await message.answer(f"✅ Название профиля маршрутизации: «{raw}»")
+    await state.set_state(AdminStates.integrations_menu)
+    await message.answer("🗺 Маршрутизация (routing):", reply_markup=happ_routing_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_happ_routing_profile")

@@ -472,7 +472,10 @@ def happ_routing_menu_kb() -> InlineKeyboardMarkup:
     'routing' в подписке Happ (happ.su/main/dev-docs → Геонастройки).
     По умолчанию режим 'disabled' — ничего не отправляется и не меняется
     для существующих клиентов."""
-    from database.requests import get_happ_routing_mode, get_happ_routing_profile_json
+    from database.requests import (
+        get_happ_routing_mode, get_happ_routing_profile_json,
+        get_happ_routing_profile_name, get_effective_brand_name,
+    )
 
     mode = get_happ_routing_mode()
     profile_json = get_happ_routing_profile_json()
@@ -486,9 +489,15 @@ def happ_routing_menu_kb() -> InlineKeyboardMarkup:
 
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text=f"📝 JSON-профиль: {'✅ задан' + (f' ({profile_name})' if profile_name else '') if profile_json else 'не задан'}",
+        text=f"📝 JSON-профиль: {'✅ свой (' + profile_name + ')' if (profile_json and profile_name) else ('✅ свой задан' if profile_json else 'по умолчанию (ECLIPSE)')}",
         callback_data='admin_edit_happ_routing_profile',
     ))
+    if not profile_json:
+        default_name = get_happ_routing_profile_name() or get_effective_brand_name()
+        builder.row(InlineKeyboardButton(
+            text=f"✏️ Название профиля: {default_name}",
+            callback_data='admin_edit_happ_routing_name',
+        ))
 
     mode_labels = {
         'disabled': '⚪ Выключено (заголовок не отправляется)',
