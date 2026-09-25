@@ -1140,24 +1140,32 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         if update_interval:
             headers["profile-update-interval"] = str(update_interval)
 
-    if detected_app == "happ":
-        # Геонастройки / Routing (happ.su/main/dev-docs) — необязательный
-        # заголовок 'routing', отправляется, только если явно настроен
-        # (по умолчанию режим 'disabled' — заголовок не шлётся вообще,
-        # ничего не меняется для уже работающих клиентов). Если режим
-        # add/onadd включён, но админ не задал свой JSON-профиль вручную —
-        # используется дефолтный ECLIPSE-профиль (компактные geo-базы,
-        # название = бренд бота), см. get_effective_happ_routing_profile_json.
+    if detected_app in ("happ", "incy"):
+        # Геонастройки / Routing — необязательный заголовок 'routing',
+        # отправляется, только если явно настроен (по умолчанию режим
+        # 'disabled' — заголовок не шлётся вообще, ничего не меняется для
+        # уже работающих клиентов). Если режим add/onadd включён, но админ
+        # не задал свой JSON-профиль вручную — используется дефолтный
+        # ECLIPSE-профиль (компактные geo-базы, название = бренд бота),
+        # см. get_effective_happ_routing_profile_json. У Happ и INCY общий
+        # движок и одинаковая структура JSON-профиля (проверено по офиц.
+        # докам обоих — incy.gitbook.io/docs/.../marshrutizaciya-routing),
+        # но РАЗНЫЙ префикс схемы в значении заголовка ("happ://" / "incy://"),
+        # и у INCY официально НЕТ режима "off" (только add/onadd) — если
+        # выбран "off", INCY просто ничего не получает, чтобы не отправить
+        # клиенту неподдерживаемое значение.
         from database.requests import get_happ_routing_mode, get_effective_happ_routing_profile_json
         routing_mode = get_happ_routing_mode()
+        scheme = detected_app  # "happ" или "incy"
         if routing_mode == "off":
-            headers["routing"] = "happ://routing/off"
+            if detected_app == "happ":
+                headers["routing"] = "happ://routing/off"
         elif routing_mode in ("add", "onadd"):
             profile_json = get_effective_happ_routing_profile_json()
             if profile_json:
                 import base64 as _base64
                 profile_b64 = _base64.b64encode(profile_json.encode("utf-8")).decode("ascii")
-                headers["routing"] = f"happ://routing/{routing_mode}/{profile_b64}"
+                headers["routing"] = f"{scheme}://routing/{routing_mode}/{profile_b64}"
 
     if "subscription-userinfo" not in headers:
         expire_epoch = 0
