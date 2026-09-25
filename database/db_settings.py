@@ -27,6 +27,11 @@ __all__ = [
     'set_happ_install_limit',
     'get_happ_proxy_registered_domain_hash',
     'set_happ_proxy_registered_domain_hash',
+    'HAPP_ROUTING_MODES',
+    'get_happ_routing_mode',
+    'set_happ_routing_mode',
+    'get_happ_routing_profile_json',
+    'set_happ_routing_profile_json',
     'is_client_toggle_enabled',
     'set_client_toggle_enabled',
     'CLIENT_APPS',
@@ -666,6 +671,42 @@ def get_happ_proxy_registered_domain_hash() -> Optional[str]:
 
 def set_happ_proxy_registered_domain_hash(domain_hash: str) -> None:
     set_setting('happ_proxy_registered_domain_hash', domain_hash)
+
+
+HAPP_ROUTING_MODES = ('disabled', 'add', 'onadd', 'off')
+
+
+def get_happ_routing_mode() -> str:
+    """Режим заголовка 'routing' в подписке Happ (happ.su/main/dev-docs
+    → «Геонастройки / Routing»):
+      'disabled' — заголовок не отправляется вообще (по умолчанию)
+      'add'      — happ://routing/add/{base64} — добавляет профиль, но не
+                   активирует его автоматически (если он не единственный)
+      'onadd'    — happ://routing/onadd/{base64} — добавляет и сразу
+                   активирует профиль, даже если уже есть другой активный
+      'off'      — happ://routing/off — отключает маршрутизацию у клиента
+    'add'/'onadd' требуют заданного happ_routing_profile_json."""
+    value = get_setting('happ_routing_mode', 'disabled')
+    return value if value in HAPP_ROUTING_MODES else 'disabled'
+
+
+def set_happ_routing_mode(mode: str) -> None:
+    if mode not in HAPP_ROUTING_MODES:
+        raise ValueError(f"Недопустимый режим маршрутизации Happ: {mode}")
+    set_setting('happ_routing_mode', mode)
+
+
+def get_happ_routing_profile_json() -> Optional[str]:
+    """JSON-профиль маршрутизации Happ (см. структуру профиля в доках:
+    поля Name/GlobalProxy/RemoteDNS.../DirectSites/ProxySites/BlockSites
+    и т.д.) — хранится как есть, отправляется закодированным в base64 в
+    заголовке 'routing' подписки, когда happ_routing_mode = add/onadd."""
+    value = get_setting('happ_routing_profile_json', '')
+    return value if value else None
+
+
+def set_happ_routing_profile_json(profile_json: str) -> None:
+    set_setting('happ_routing_profile_json', profile_json.strip())
 
 
 CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}

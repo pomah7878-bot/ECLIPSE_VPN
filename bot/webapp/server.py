@@ -1140,6 +1140,22 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         if update_interval:
             headers["profile-update-interval"] = str(update_interval)
 
+    if detected_app == "happ":
+        # Геонастройки / Routing (happ.su/main/dev-docs) — необязательный
+        # заголовок 'routing', отправляется, только если явно настроен
+        # (по умолчанию режим 'disabled' — заголовок не шлётся вообще,
+        # ничего не меняется для уже работающих клиентов).
+        from database.requests import get_happ_routing_mode, get_happ_routing_profile_json
+        routing_mode = get_happ_routing_mode()
+        if routing_mode == "off":
+            headers["routing"] = "happ://routing/off"
+        elif routing_mode in ("add", "onadd"):
+            profile_json = get_happ_routing_profile_json()
+            if profile_json:
+                import base64 as _base64
+                profile_b64 = _base64.b64encode(profile_json.encode("utf-8")).decode("ascii")
+                headers["routing"] = f"happ://routing/{routing_mode}/{profile_b64}"
+
     if "subscription-userinfo" not in headers:
         expire_epoch = 0
         try:
