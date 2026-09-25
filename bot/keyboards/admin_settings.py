@@ -408,6 +408,10 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
             text=f"⏱ Интервал автообновления: {interval_status}",
             callback_data='admin_edit_incy_update_interval',
         ))
+        builder.row(InlineKeyboardButton(
+            text="🗺 Маршрутизация (routing)",
+            callback_data='admin_happ_routing_menu',
+        ))
 
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
