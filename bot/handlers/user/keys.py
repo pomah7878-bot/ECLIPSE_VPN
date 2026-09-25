@@ -2,6 +2,7 @@ import logging
 import uuid
 import asyncio
 from datetime import datetime
+from typing import Optional
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.filters import Command, CommandObject, StateFilter
@@ -926,21 +927,49 @@ async def _get_latest_active_key_with_sub(telegram_id: int):
     return candidates[0]
 
 
-async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name: str):
-    """Формирует и отправляет диплинк для импорта подписки в приложение (Happ/INCY)."""
+async def _get_specific_active_key_with_sub(telegram_id: int, key_id: int):
+    """Возвращает конкретный ключ пользователя (по id) с sub_id, если он
+    активен и принадлежит этому telegram_id, либо None."""
+    from database.db_keys import get_user_keys_for_display
+    keys = get_user_keys_for_display(telegram_id)
+    for k in keys:
+        if k.get('id') == key_id and k.get('is_active') and k.get('sub_id'):
+            return k
+    return None
+
+
+async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name: str, key_id: Optional[int] = None):
+    """Формирует и отправляет диплинк для импорта подписки в приложение
+    (Happ/INCY/Karing/ECLIPSE VPN).
+
+    Если известно, с карточки какого именно ключа была нажата кнопка
+    (key_id — из callback_data вида "import_happ:{key_id}"), используется
+    СТРОГО этот ключ, а не «последний активный ключ клиента» — иначе при
+    нескольких ключах импорт с карточки старого ключа мог незаметно
+    подставить подписку другого, более нового ключа."""
     from bot.services.license import is_feature_available
     if not is_feature_available("app_import"):
         await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
         return
 
     from bot.services.vpn_api import get_public_subscription_url_for_key
-    key = await _get_latest_active_key_with_sub(callback.from_user.id)
-    if not key:
-        await callback.answer(
-            "У вас нет активного ключа с подпиской для импорта. Сначала оформите подписку.",
-            show_alert=True,
-        )
-        return
+    if key_id is not None:
+        key = await _get_specific_active_key_with_sub(callback.from_user.id, key_id)
+        if not key:
+            await callback.answer(
+                "У этого ключа нет активной подписки для импорта — возможно, он истёк "
+                "или подписка ещё не настроена. Откройте карточку нужного ключа в «🔑 Мои ключи».",
+                show_alert=True,
+            )
+            return
+    else:
+        key = await _get_latest_active_key_with_sub(callback.from_user.id)
+        if not key:
+            await callback.answer(
+                "У вас нет активного ключа с подпиской для импорта. Сначала оформите подписку.",
+                show_alert=True,
+            )
+            return
     sub_url = await get_public_subscription_url_for_key(key)
     if not sub_url:
         await callback.answer(
@@ -963,21 +992,41 @@ async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name
     )
 
 
+def _parse_import_callback_key_id(callback_data: str, prefix: str) -> Optional[int]:
+    """Достаёт key_id из callback_data вида "import_happ:{key_id}", если он
+    там есть (кнопка была показана на карточке конкретного ключа)."""
+    if not callback_data.startswith(f"{prefix}:"):
+        return None
+    raw = callback_data[len(prefix) + 1:]
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 @router.callback_query(F.data == "import_happ")
+@router.callback_query(F.data.startswith("import_happ:"))
 async def import_happ_handler(callback: CallbackQuery):
-    await _handle_import_deeplink(callback, "happ", "Happ")
+    key_id = _parse_import_callback_key_id(callback.data, "import_happ")
+    await _handle_import_deeplink(callback, "happ", "Happ", key_id=key_id)
 
 
 @router.callback_query(F.data == "import_incy")
+@router.callback_query(F.data.startswith("import_incy:"))
 async def import_incy_handler(callback: CallbackQuery):
-    await _handle_import_deeplink(callback, "incy", "INCY")
+    key_id = _parse_import_callback_key_id(callback.data, "import_incy")
+    await _handle_import_deeplink(callback, "incy", "INCY", key_id=key_id)
 
 
 @router.callback_query(F.data == "import_karing")
+@router.callback_query(F.data.startswith("import_karing:"))
 async def import_karing_handler(callback: CallbackQuery):
-    await _handle_import_deeplink(callback, "karing", "Karing")
+    key_id = _parse_import_callback_key_id(callback.data, "import_karing")
+    await _handle_import_deeplink(callback, "karing", "Karing", key_id=key_id)
 
 
 @router.callback_query(F.data == "import_eclipse")
+@router.callback_query(F.data.startswith("import_eclipse:"))
 async def import_eclipse_handler(callback: CallbackQuery):
-    await _handle_import_deeplink(callback, "eclipse", "ECLIPSE VPN")
+    key_id = _parse_import_callback_key_id(callback.data, "import_eclipse")
+    await _handle_import_deeplink(callback, "eclipse", "ECLIPSE VPN", key_id=key_id)

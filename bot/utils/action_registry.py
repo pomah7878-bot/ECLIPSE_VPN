@@ -540,6 +540,18 @@ def _build_direct_import_deeplink(ctx: dict, scheme: str) -> Optional[str]:
     обращения к панели. Если домен не настроен — возвращает None, и
     вызывающий код падает обратно на старый способ через callback
     (там уже есть асинхронный путь через панель для этого случая).
+
+    Если в контексте есть key_id (кнопка показана на карточке конкретного
+    ключа — key_details/key_delivery), ссылка строится СТРОГО для этого
+    ключа. Раньше при нескольких ключах у клиента кнопка всегда молча брала
+    ПОСЛЕДНИЙ по id активный ключ независимо от того, чья карточка открыта —
+    из-за этого импорт с карточки старого ключа подставлял подписку
+    совсем другого (более нового) ключа. Если key_id есть, но у ЭТОГО
+    ключа нет активной подписки — не подменяем его чужим ключом молча,
+    возвращаем None (упадёт на callback-путь с понятным сообщением об
+    ошибке). key_id учитывается только когда явно передан — на главной
+    странице (там карточки нет) поведение "взять последний активный ключ"
+    сохраняется как раньше.
     """
     from bot.services.license import is_feature_available
     if not is_feature_available("app_import"):
@@ -556,12 +568,43 @@ def _build_direct_import_deeplink(ctx: dict, scheme: str) -> Optional[str]:
     candidates = [k for k in keys if k.get('is_active') and k.get('sub_id')]
     if not candidates:
         return None
+
+    ctx_key_id = ctx.get('key_id')
+    if ctx_key_id not in (None, ''):
+        try:
+            ctx_key_id_int = int(ctx_key_id)
+        except (TypeError, ValueError):
+            logger.warning("Некорректный key_id в контексте прямого импорта: %r", ctx_key_id)
+            ctx_key_id_int = None
+        if ctx_key_id_int is not None:
+            matching = [k for k in candidates if k.get('id') == ctx_key_id_int]
+            if not matching:
+                # У клиента есть другие активные ключи с подпиской, но НЕ у
+                # того, чья карточка сейчас открыта — не подсовываем чужой.
+                return None
+            candidates = matching
+
     candidates.sort(key=lambda k: k.get('id') or 0, reverse=True)
     sub_id = candidates[0]['sub_id']
     webapp_url = webapp_url.rstrip('/')
     sub_url = f"{webapp_url}/happ-sub/{sub_id}"
     import urllib.parse
     return f"{webapp_url}/import?scheme={scheme}&url=" + urllib.parse.quote(sub_url, safe='')
+
+
+def _import_fallback_callback(ctx: dict, base: str) -> dict:
+    """Callback-фолбэк для кнопок импорта, когда прямую ссылку построить
+    не удалось (домен сайта не настроен, либо конкретный ключ карточки без
+    активной подписки). Если key_id известен из контекста — кладём его в
+    callback_data ("import_happ:{id}"), чтобы обработчик в keys.py тоже
+    работал СТРОГО с этим ключом, а не с «последним активным» клиента."""
+    key_id = ctx.get('key_id')
+    if key_id not in (None, ''):
+        try:
+            return {"callback_data": f"{base}:{int(key_id)}"}
+        except (TypeError, ValueError):
+            pass
+    return {"callback_data": base}
 
 
 def _resolve_key_import_happ(ctx: dict) -> Optional[dict]:
@@ -576,7 +619,7 @@ def _resolve_key_import_happ(ctx: dict) -> Optional[dict]:
     deeplink = _build_direct_import_deeplink(ctx, "happ")
     if deeplink:
         return {"url": deeplink}
-    return {"callback_data": "import_happ"}
+    return _import_fallback_callback(ctx, "import_happ")
 
 
 
@@ -585,7 +628,7 @@ def _resolve_key_import_karing(ctx: dict) -> Optional[dict]:
     deeplink = _build_direct_import_deeplink(ctx, "karing")
     if deeplink:
         return {"url": deeplink}
-    return {"callback_data": "import_karing"}
+    return _import_fallback_callback(ctx, "import_karing")
 
 
 def _resolve_key_import_eclipse(ctx: dict) -> Optional[dict]:
@@ -594,7 +637,7 @@ def _resolve_key_import_eclipse(ctx: dict) -> Optional[dict]:
     deeplink = _build_direct_import_deeplink(ctx, "eclipse")
     if deeplink:
         return {"url": deeplink}
-    return {"callback_data": "import_eclipse"}
+    return _import_fallback_callback(ctx, "import_eclipse")
 
 def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение INCY.
@@ -607,7 +650,7 @@ def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     deeplink = _build_direct_import_deeplink(ctx, "incy")
     if deeplink:
         return {"url": deeplink}
-    return {"callback_data": "import_incy"}
+    return _import_fallback_callback(ctx, "import_incy")
 
 
 def _resolve_start_import_happ(ctx: dict) -> Optional[dict]:
