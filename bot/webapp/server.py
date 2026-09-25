@@ -1075,11 +1075,6 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if bot_username:
         headers["support-url"] = f"https://t.me/{bot_username}?start=support"
 
-    from database.requests import get_happ_provider_id
-    provider_id = get_happ_provider_id()
-    if provider_id:
-        headers["providerid"] = provider_id
-
     # Happ и INCY используют один движок, но по-разному трактуют одни и
     # те же "Advanced parameter" заголовки — обнаружено на практике:
     # настройка, нужная для нормальной работы Happ, ломала импорт в
@@ -1093,6 +1088,18 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         detected_app = "incy"
     else:
         detected_app = None
+
+    from database.requests import get_happ_provider_id
+    provider_id = get_happ_provider_id()
+    # providerid — механизм ИМЕННО Happ (happ.su/main/dev-docs/app-management).
+    # Раньше заголовок отправлялся ВСЕМ клиентам без разбора, включая INCY,
+    # Karing и ECLIPSE VPN, у которых нет такого понятия и которые этот
+    # заголовок просто не поймут — не критично, но не по документации.
+    # Не шлём его только опознанному НЕ-Happ клиенту (INCY); для Karing/
+    # ECLIPSE VPN и неопознанных User-Agent (в т.ч. старых версий Happ,
+    # не попадающих под текущую проверку) поведение сохранено как раньше.
+    if provider_id and detected_app != "incy":
+        headers["providerid"] = provider_id
 
     if provider_id and detected_app == "happ":
         from database.requests import is_client_toggle_enabled
