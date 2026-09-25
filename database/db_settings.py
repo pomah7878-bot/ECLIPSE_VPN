@@ -19,6 +19,14 @@ __all__ = [
     'set_marketing_channel_id',
     'get_happ_provider_id',
     'set_happ_provider_id',
+    'get_happ_proxy_provider_code',
+    'set_happ_proxy_provider_code',
+    'get_happ_proxy_auth_key',
+    'set_happ_proxy_auth_key',
+    'get_happ_install_limit',
+    'set_happ_install_limit',
+    'get_happ_proxy_registered_domain_hash',
+    'set_happ_proxy_registered_domain_hash',
     'is_client_toggle_enabled',
     'set_client_toggle_enabled',
     'CLIENT_APPS',
@@ -596,6 +604,60 @@ def get_happ_provider_id() -> Optional[str]:
 def set_happ_provider_id(provider_id: str) -> None:
     """Задаёт Happ Provider ID."""
     set_setting('happ_provider_id', provider_id.strip())
+
+
+def get_happ_proxy_provider_code() -> Optional[str]:
+    """provider_code для API happ-proxy.com (8 символов [A-Za-z0-9]{8}) —
+    ОТДЕЛЬНАЯ сущность от Provider ID (который просто уходит в заголовок
+    подписки). provider_code + auth_key нужны для вызовов API: add-install
+    (лимитированные ссылки), add-domain, list-hwid, push/remote-команды.
+    Берётся из личного кабинета happ-proxy.com (раздел API)."""
+    value = get_setting('happ_proxy_provider_code', '')
+    return value if value else None
+
+
+def set_happ_proxy_provider_code(provider_code: str) -> None:
+    set_setting('happ_proxy_provider_code', provider_code.strip())
+
+
+def get_happ_proxy_auth_key() -> Optional[str]:
+    """auth_key для API happ-proxy.com (32 символа [-_A-Za-z0-9]{32})."""
+    value = get_setting('happ_proxy_auth_key', '')
+    return value if value else None
+
+
+def set_happ_proxy_auth_key(auth_key: str) -> None:
+    set_setting('happ_proxy_auth_key', auth_key.strip())
+
+
+def get_happ_install_limit() -> int:
+    """Лимит устройств по умолчанию для новых лимитированных ссылок
+    (install_limit, 1..100 по докам happ-proxy.com API). 1 по умолчанию —
+    самый строгий вариант (ссылку/подписку можно поставить ровно на одно
+    устройство), соответствует тому, как продаются наши ключи (один
+    ключ = один клиент)."""
+    value = get_setting('happ_install_limit', '1')
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return limit if 1 <= limit <= 100 else 1
+
+
+def set_happ_install_limit(limit: int) -> None:
+    set_setting('happ_install_limit', str(max(1, min(100, int(limit)))))
+
+
+def get_happ_proxy_registered_domain_hash() -> Optional[str]:
+    """SHA-256 домена, который мы последним успешно зарегистрировали в
+    happ-proxy.com через add-domain. Используется, чтобы не дёргать API
+    повторно на каждый импорт, если домен сайта не менялся."""
+    value = get_setting('happ_proxy_registered_domain_hash', '')
+    return value if value else None
+
+
+def set_happ_proxy_registered_domain_hash(domain_hash: str) -> None:
+    set_setting('happ_proxy_registered_domain_hash', domain_hash)
 
 
 CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}

@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 128
+LATEST_VERSION = 129
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -2877,6 +2877,27 @@ def migration_128(conn: sqlite3.Connection) -> None:
     logger.info("Migration v128 applied: btn_key_delivery_back переключена на system-обработчик (шаг назад к карточке ключа)")
 
 
+def migration_129(conn: sqlite3.Connection) -> None:
+    """Версия 1.110: таблица кэша лимитированных ссылок Happ (happ-proxy.com
+    API) — install_code создаётся ОДИН РАЗ на sub_id ключа (чтобы не плодить
+    новые install-записи в happ-proxy.com при каждом повторном импорте одной
+    и той же подписки) и переиспользуется при последующих открытиях кнопки
+    импорта в Happ. install_id — числовой id записи на стороне happ-proxy.com
+    (нужен для update-install/list-hwid)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS happ_install_links (
+            sub_id TEXT PRIMARY KEY,
+            install_code TEXT NOT NULL,
+            install_id INTEGER,
+            install_limit INTEGER,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+        """
+    )
+    logger.info("Migration v129 applied: создана таблица happ_install_links (кэш лимитированных ссылок Happ)")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2932,6 +2953,7 @@ MIGRATIONS = {
     126: migration_126,
     127: migration_127,
     128: migration_128,
+    129: migration_129,
 }
 
 
