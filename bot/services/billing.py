@@ -1500,6 +1500,7 @@ async def process_payment_order(
                 await renew_key_access(vpn_key_id, days, reset_traffic=True, tariff_id=tariff_id)
             except Exception as e:
                 logger.error(f"Не удалось продлить ключ {vpn_key_id} для заказа {order_id}: {e}")
+        order["_payment_action"] = "renewal"
         text = f"✅ Подписка продлена на {days} дней!"
     else:
         # Новая покупка — черновой ключ, сервер выбирается пользователем позже
@@ -1510,6 +1511,7 @@ async def process_payment_order(
             new_key_id = create_initial_vpn_key(order['user_id'], tariff_id, days, traffic_limit)
             update_payment_key_id(order_id, new_key_id)
             order['vpn_key_id'] = new_key_id
+        order["_payment_action"] = "new_key"
         text = "✅ Оплата прошла успешно! Выберите сервер для подключения."
 
     if process_referrals and order['_payment_processed_now']:
