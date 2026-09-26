@@ -1,4 +1,4 @@
-from aiogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAnimation, LinkPreviewOptions
+from aiogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAnimation, LinkPreviewOptions, InaccessibleMessage
 from aiogram.exceptions import TelegramBadRequest
 from typing import Literal, Optional, Union
 from html import escape as escape_attr
@@ -260,7 +260,7 @@ async def send_media_or_text(
 
 
 async def safe_edit_or_send(
-    message: Message,
+    message: Union[Message, InaccessibleMessage],
     text: str = None,
     reply_markup=None,
     photo: Optional[Union[str, object]] = None,
@@ -298,12 +298,22 @@ async def safe_edit_or_send(
         media_type = media_type or 'photo'
 
     normalized_media_type = normalize_media_type(media_type, media=media)
-    is_current_media = bool(message.photo or message.video or message.document or message.animation)
     want_media = media is not None
     text = prepare_telegram_text(text, has_media=want_media)
-    
-    # Disable link previews by default. Enable only if show_web_page_preview=True
     link_preview = LinkPreviewOptions(is_disabled=not show_web_page_preview)
+
+    if isinstance(message, InaccessibleMessage):
+        # Сообщение недоступно (например, старое/удалённое) — у InaccessibleMessage
+        # нет edit_text/edit_media/delete, есть только answer/reply. Просто отправляем
+        # новое сообщение, ничего не редактируя и не удаляя.
+        if want_media:
+            return await _answer_media(message, media, normalized_media_type, text, reply_markup)
+        return await message.answer(
+            text=text, reply_markup=reply_markup, parse_mode='HTML',
+            link_preview_options=link_preview
+        )
+
+    is_current_media = bool(message.photo or message.video or message.document or message.animation)
     
     # If requested force_new, we simply send a new message without deleting the old one
     if force_new:
