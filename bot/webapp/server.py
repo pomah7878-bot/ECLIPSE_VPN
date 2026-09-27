@@ -2377,6 +2377,18 @@ async def handle_public_key_inbounds(request: web.Request) -> web.Response:
         return web.json_response({"error": "internal_error"}, status=500)
 
 
+def _resolve_site_account_internal_user_id(account: dict) -> Optional[int]:
+    """Внутренний user_id (бот) для этого сайт-аккаунта — та же служебная
+    личность, на которой лежит баланс (см. handle_public_account_referral):
+    для аккаунтов, привязанных к Telegram — обычный user по telegram_id,
+    для чисто сайтовых (OAuth/телефон) — их постоянный placeholder_user_id."""
+    if account.get("telegram_id"):
+        from database.requests import get_user_internal_id
+        return get_user_internal_id(account["telegram_id"])
+    from database.db_accounts import get_or_create_placeholder_user_for_site_account
+    return get_or_create_placeholder_user_for_site_account(account["id"])
+
+
 async def handle_public_account_key_renew_create(request: web.Request) -> web.Response:
     """POST /api/public/account/key/renew/create — продление КОНКРЕТНОГО
     ключа для текущей сессии (работает и при нескольких ключах у клиента).
@@ -2514,6 +2526,92 @@ async def handle_public_account_key_renew_check(request: web.Request) -> web.Res
     from bot.services.anonymous_purchase import renew_anonymous_vpn_key
     result = await renew_anonymous_vpn_key(purchase["renewal_of_key_id"], purchase["tariff_id"])
     return web.json_response({"status": "paid" if result.get("ok") else "failed", "message": result.get("message")})
+
+
+async def handle_public_account_key_renew_balance(request: web.Request) -> web.Response:
+    """POST /api/public/account/key/renew/balance — продление КОНКРЕТНОГО
+    ключа личного кабинета оплатой с личного баланса, без QR/ЮKassa —
+    завершается сразу, синхронно, в один запрос (в отличие от
+    /create + /check для ЮKassa).
+    Body JSON: {"key_id": int, "tariff_id": int | null}"""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    key_id = data.get("key_id")
+    tariff_id = data.get("tariff_id")
+    if not key_id:
+        return web.json_response({"error": "key_id_required"}, status=400)
+
+    from database.requests import get_site_account_by_id
+    account = get_site_account_by_id(account_id)
+    if not account or not _verify_key_belongs_to_account(int(key_id), account):
+        return web.json_response({"error": "key_not_found"}, status=404)
+
+    if not tariff_id:
+        # Тот же автовыбор текущего тарифа, что и в .../key/renew/create.
+        from database.requests import get_vpn_key_by_id
+        current_key = get_vpn_key_by_id(int(key_id))
+        if not current_key or not current_key.get("tariff_id"):
+            return web.json_response({"error": "current_tariff_not_found"}, status=404)
+        tariff_id = current_key["tariff_id"]
+
+    from database.db_tariffs import get_tariff_by_id
+    tariff = get_tariff_by_id(int(tariff_id))
+    if not tariff:
+        return web.json_response({"error": "tariff_not_found"}, status=404)
+
+    price_cents = int(round(float(tariff.get("price_rub") or 0) * 100))
+    if price_cents <= 0:
+        return web.json_response({"error": "invalid_price"}, status=400)
+
+    internal_user_id = _resolve_site_account_internal_user_id(account)
+    if not internal_user_id:
+        return web.json_response({"error": "account_not_linked"}, status=400)
+
+    import time as _time
+    from bot.services.balance import debit_user_balance, credit_user_balance
+
+    order_reference = f"site-key-renew-{key_id}-{int(_time.time() * 1000)}"
+    debit_result = await debit_user_balance(
+        internal_user_id, price_cents,
+        source="payment_balance", reason="Продление ключа с сайта (оплата балансом)",
+        reference_type="site_key_renewal", reference_id=order_reference,
+        metadata={"key_id": int(key_id), "tariff_id": int(tariff_id)},
+    )
+    if not debit_result.get("ok"):
+        if debit_result.get("status") == "insufficient_funds":
+            return web.json_response({
+                "error": "insufficient_balance",
+                "message": "Недостаточно средств на балансе для этого тарифа.",
+                "balance_cents": debit_result.get("balance_before", 0),
+                "required_cents": price_cents,
+            }, status=400)
+        return web.json_response({"error": "debit_failed", "message": "Не удалось списать баланс."}, status=502)
+
+    from bot.services.anonymous_purchase import renew_anonymous_vpn_key
+    try:
+        result = await renew_anonymous_vpn_key(int(key_id), int(tariff_id))
+    except Exception as e:
+        result = {"ok": False, "message": str(e)}
+
+    if not result.get("ok"):
+        # Продление не удалось уже ПОСЛЕ списания — возвращаем деньги,
+        # чтобы клиент не остался без ключа и без баланса одновременно.
+        await credit_user_balance(
+            internal_user_id, price_cents,
+            source="refund", reason="Возврат за неудавшееся продление ключа с сайта (баланс)",
+            reference_type="site_key_renewal", reference_id=order_reference,
+            metadata={"key_id": int(key_id), "tariff_id": int(tariff_id)},
+        )
+        return web.json_response({"error": "renew_failed", "message": result.get("message")}, status=502)
+
+    return web.json_response({"status": "paid", "message": result.get("message")})
 
 
 async def handle_public_account_lookup(request: web.Request) -> web.Response:
@@ -3065,6 +3163,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)
+    app.router.add_post("/api/public/account/key/renew/balance", handle_public_account_key_renew_balance)
     app.router.add_post("/api/rename", handle_rename)
     app.router.add_post("/api/delete", handle_delete)
     app.router.add_get("/api/referral", handle_referral)

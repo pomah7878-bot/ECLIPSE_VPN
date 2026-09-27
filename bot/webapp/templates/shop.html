@@ -939,6 +939,7 @@
         // ==================== ЛИЧНЫЙ КАБИНЕТ ====================
 
         let _sessionKeys = []; // ключи текущей сессии (может быть несколько)
+        let _sessionBalanceCents = 0; // личный баланс сайт-аккаунта, для кнопки "оплатить балансом" в продлении
 
         async function initOAuthButtons() {
             try {
@@ -1466,6 +1467,7 @@
             box.classList.remove('hidden');
 
             _sessionKeys = session.keys || [];
+            _sessionBalanceCents = session.balance_cents || 0;
 
             if (_sessionKeys.length === 0) {
                 box.innerHTML = `
@@ -1555,17 +1557,39 @@
                 box.innerHTML = `
                     <h3 class="font-display text-base font-bold mb-3">Продлить на</h3>
                     <div class="space-y-2 mb-2">
-                        ${tariffs.map(t => `
-                            <button onclick="selectTariffAndRenewKey(${t.id})" class="w-full bg-panel-2 border ${t.is_current ? 'border-teal ring-2 ring-teal' : 'border-[color:var(--hairline)]'} rounded-xl p-3 flex justify-between items-center transition active:scale-[0.98]">
-                                <span class="text-sm font-semibold">${escapeHtml(t.name)}${t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : ''}</span>
-                                <span class="text-gold font-display font-bold text-sm">${t.price_rub.toFixed(0)} ₽</span>
-                            </button>
-                        `).join('')}
+                        ${tariffs.map(t => {
+                            const priceCents = Math.round(t.price_rub * 100);
+                            const canPayBalance = _sessionBalanceCents >= priceCents;
+                            return `
+                            <div class="bg-panel-2 border ${t.is_current ? 'border-teal ring-2 ring-teal' : 'border-[color:var(--hairline)]'} rounded-xl p-3">
+                                <button onclick="selectTariffAndRenewKey(${t.id})" class="w-full flex justify-between items-center transition active:scale-[0.98]">
+                                    <span class="text-sm font-semibold">${escapeHtml(t.name)}${t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : ''}</span>
+                                    <span class="text-gold font-display font-bold text-sm">${t.price_rub.toFixed(0)} ₽</span>
+                                </button>
+                                ${canPayBalance ? `<button onclick="payRenewKeyWithBalance(${t.id})" class="w-full mt-2 py-2 btn-secondary rounded-lg text-xs font-semibold transition active:scale-[0.98]">💎 Списать ${t.price_rub.toFixed(0)} ₽ с баланса</button>` : ''}
+                            </div>
+                        `;}).join('')}
                     </div>
                     <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Отмена</button>
                 `;
             } catch(e) {
                 box.innerHTML = '<p class="text-sm text-alert py-6">Не удалось загрузить тарифы.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        async function payRenewKeyWithBalance(tariffId) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Списываем с баланса…</p>';
+            try {
+                const res = await postAPI('account/key/renew/balance', { key_id: _renewKeyId, tariff_id: tariffId });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось оплатить балансом.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
+                    return;
+                }
+                showRenewSuccess(res.message);
+                refreshAccountDashboard();
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при оплате балансом. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
             }
         }
 
