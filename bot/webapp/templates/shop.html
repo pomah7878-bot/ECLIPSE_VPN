@@ -366,6 +366,14 @@
             <div class="max-w-md mx-auto">
                 <div id="trialBanner"></div>
             </div>
+            <div class="max-w-md mx-auto">
+                <div id="buyPayMethodToggle" class="hidden mb-3">
+                    <div class="flex gap-2 p-1 bg-panel-2 rounded-xl">
+                        <button onclick="setBuyPayMethod('card')" id="buyPayMethodCardBtn" class="flex-1 py-2 rounded-lg text-xs font-semibold transition btn-primary">💳 Банк / СБП</button>
+                        <button onclick="setBuyPayMethod('balance')" id="buyPayMethodBalanceBtn" class="flex-1 py-2 rounded-lg text-xs font-semibold transition btn-secondary">💎 Баланс</button>
+                    </div>
+                </div>
+            </div>
             <div id="tariffList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
                 <div class="flex justify-center py-10 sm:col-span-2 lg:col-span-3"><div class="spinner"></div></div>
             </div>
@@ -685,59 +693,78 @@
 
         // ==================== ПОКУПКА ====================
 
+        let _buyPayMethod = 'card'; // выбранный способ оплаты для покупки нового ключа
+
+        function setBuyPayMethod(method) {
+            _buyPayMethod = method;
+            document.getElementById('buyPayMethodCardBtn').className = 'flex-1 py-2 rounded-lg text-xs font-semibold transition ' + (method === 'card' ? 'btn-primary' : 'btn-secondary');
+            document.getElementById('buyPayMethodBalanceBtn').className = 'flex-1 py-2 rounded-lg text-xs font-semibold transition ' + (method === 'balance' ? 'btn-primary' : 'btn-secondary');
+            renderTariffCards();
+        }
+
+        function selectTariffCard(tariffId) {
+            if (_buyPayMethod === 'balance') {
+                return buyTariffWithBalance(tariffId);
+            }
+            return selectTariffAndPay(tariffId);
+        }
+
+        let _lastLoadedTariffs = [];
+
         async function loadTariffs() {
             const box = document.getElementById('tariffList');
             try {
                 const res = await fetchAPI('tariffs');
-                const tariffs = res.tariffs || [];
+                _lastLoadedTariffs = res.tariffs || [];
                 renderTrialBanner(res.trial_available);
-                if (tariffs.length === 0) {
-                    box.innerHTML = '<p class="text-sm text-mist text-center py-6">Тарифы сейчас недоступны. Загляните позже.</p>';
-                    return;
-                }
-                // Цена в день — понятнее, чем большая сумма разом, особенно для
-                // длинных тарифов. "Выгоднее на X%" считается относительно
-                // цены/дня САМОГО КОРОТКОГО ПО СРОКУ тарифа В ТОЙ ЖЕ ГРУППЕ (по
-                // объёму трафика) — это и есть "цена без скидки за долгий срок",
-                // с которой сравнивают более длинные планы. Группировка по
-                // трафику нужна, чтобы не сравнивать между собой безлимитный
-                // тариф и тариф с ограничением — это разные продукты.
-                const shortestByGroup = {};
-                tariffs.forEach(t => {
-                    const key = t.traffic_limit_gb || 'unlimited';
-                    if (!(key in shortestByGroup) || t.duration_days < shortestByGroup[key].duration_days) {
-                        shortestByGroup[key] = t;
-                    }
-                });
-                box.innerHTML = tariffs.map((t, i) => {
-                    const dailyPrice = t.price_rub / t.duration_days;
-                    const baselineTariff = shortestByGroup[t.traffic_limit_gb || 'unlimited'];
-                    const baselineDaily = baselineTariff.price_rub / baselineTariff.duration_days;
-                    const savingsPct = Math.round((1 - dailyPrice / baselineDaily) * 100);
-                    const savingsBadge = t.id !== baselineTariff.id && savingsPct >= 5
-                        ? `<div class="tariff-savings-badge">Выгоднее на ${savingsPct}%</div>`
-                        : '';
-                    const priceCents = Math.round(t.price_rub * 100);
-                    const canPayBalance = _sessionBalanceCents >= priceCents;
-                    const balanceBtn = canPayBalance
-                        ? `<button onclick="event.stopPropagation();buyTariffWithBalance(${t.id})" class="w-full mt-2 py-1.5 btn-secondary rounded-lg text-[11px] font-semibold transition active:scale-[0.98]">💎 Списать с баланса</button>`
-                        : '';
-                    return `
-                    <div class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center" style="animation-delay:${i * 0.07}s">
-                        <button onclick="selectTariffAndPay(${t.id})" class="w-full flex-1 flex flex-col items-center transition active:scale-[0.98]">
-                            <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
-                            <div class="text-xs text-mist mb-4">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
-                            <div class="text-gold font-display font-bold text-2xl mt-auto">${t.price_rub.toFixed(0)} ₽</div>
-                            <div class="text-[11px] text-mist-dim mt-1">≈ ${dailyPrice.toFixed(dailyPrice < 10 ? 1 : 0)} ₽/день</div>
-                            ${savingsBadge}
-                        </button>
-                        ${balanceBtn}
-                    </div>
-                `;
-                }).join('');
+                document.getElementById('buyPayMethodToggle').classList.toggle('hidden', _sessionBalanceCents <= 0);
+                renderTariffCards();
             } catch(e) {
                 box.innerHTML = '<p class="text-sm text-alert text-center py-6">Не удалось загрузить тарифы. Обновите страницу.</p>';
             }
+        }
+
+        function renderTariffCards() {
+            const box = document.getElementById('tariffList');
+            const tariffs = _lastLoadedTariffs;
+            if (tariffs.length === 0) {
+                box.innerHTML = '<p class="text-sm text-mist text-center py-6">Тарифы сейчас недоступны. Загляните позже.</p>';
+                return;
+            }
+            // Цена в день — понятнее, чем большая сумма разом, особенно для
+            // длинных тарифов. "Выгоднее на X%" считается относительно
+            // цены/дня САМОГО КОРОТКОГО ПО СРОКУ тарифа В ТОЙ ЖЕ ГРУППЕ (по
+            // объёму трафика) — это и есть "цена без скидки за долгий срок",
+            // с которой сравнивают более длинные планы. Группировка по
+            // трафику нужна, чтобы не сравнивать между собой безлимитный
+            // тариф и тариф с ограничением — это разные продукты.
+            const shortestByGroup = {};
+            tariffs.forEach(t => {
+                const key = t.traffic_limit_gb || 'unlimited';
+                if (!(key in shortestByGroup) || t.duration_days < shortestByGroup[key].duration_days) {
+                    shortestByGroup[key] = t;
+                }
+            });
+            box.innerHTML = tariffs.map((t, i) => {
+                const dailyPrice = t.price_rub / t.duration_days;
+                const baselineTariff = shortestByGroup[t.traffic_limit_gb || 'unlimited'];
+                const baselineDaily = baselineTariff.price_rub / baselineTariff.duration_days;
+                const savingsPct = Math.round((1 - dailyPrice / baselineDaily) * 100);
+                const savingsBadge = t.id !== baselineTariff.id && savingsPct >= 5
+                    ? `<div class="tariff-savings-badge">Выгоднее на ${savingsPct}%</div>`
+                    : '';
+                const priceCents = Math.round(t.price_rub * 100);
+                const disabled = _buyPayMethod === 'balance' && priceCents > _sessionBalanceCents;
+                return `
+                <button onclick="${disabled ? '' : `selectTariffCard(${t.id})`}" ${disabled ? 'disabled' : ''} class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center transition active:scale-[0.98]${disabled ? ' opacity-40' : ''}" style="animation-delay:${i * 0.07}s">
+                    <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
+                    <div class="text-xs text-mist mb-4">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
+                    <div class="text-gold font-display font-bold text-2xl mt-auto">${t.price_rub.toFixed(0)} ₽</div>
+                    <div class="text-[11px] text-mist-dim mt-1">≈ ${dailyPrice.toFixed(dailyPrice < 10 ? 1 : 0)} ₽/день</div>
+                    ${savingsBadge}
+                </button>
+            `;
+            }).join('');
         }
 
         const TURNSTILE_SITE_KEY = '{{TURNSTILE_SITE_KEY}}';
@@ -1565,9 +1592,11 @@
         }
 
         let _renewKeyId = null;
+        let _renewPayMethod = 'card';
 
         function openRenewForKey(keyId) {
             _renewKeyId = keyId;
+            _renewPayMethod = 'card';
             _payMode = 'renew';
             document.getElementById('payOverlay').classList.add('active');
             const box = document.getElementById('payContent');
@@ -1575,25 +1604,53 @@
             loadRenewTariffsForOverlay();
         }
 
+        function setRenewPayMethod(method) {
+            _renewPayMethod = method;
+            renderRenewTariffCards();
+        }
+
+        function selectRenewTariff(tariffId) {
+            if (_renewPayMethod === 'balance') {
+                return payRenewKeyWithBalance(tariffId);
+            }
+            return selectTariffAndRenewKey(tariffId);
+        }
+
+        let _lastRenewTariffs = [];
+
         async function loadRenewTariffsForOverlay() {
             const box = document.getElementById('payContent');
             try {
                 const res = await fetchAPI(`tariffs?vpn_key_id=${_renewKeyId}`);
-                const tariffs = res.tariffs || [];
+                _lastRenewTariffs = res.tariffs || [];
+                renderRenewTariffCards();
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Не удалось загрузить тарифы.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
+            }
+        }
+
+        function renderRenewTariffCards() {
+            const box = document.getElementById('payContent');
+            const tariffs = _lastRenewTariffs;
+            try {
+                const methodToggle = _sessionBalanceCents > 0 ? `
+                    <div class="flex gap-2 mb-3 p-1 bg-panel-2 rounded-xl">
+                        <button onclick="setRenewPayMethod('card')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition ${_renewPayMethod === 'card' ? 'btn-primary' : 'btn-secondary'}">💳 Банк / СБП</button>
+                        <button onclick="setRenewPayMethod('balance')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition ${_renewPayMethod === 'balance' ? 'btn-primary' : 'btn-secondary'}">💎 Баланс: ${(_sessionBalanceCents / 100).toFixed(0)} ₽</button>
+                    </div>
+                ` : '';
                 box.innerHTML = `
                     <h3 class="font-display text-base font-bold mb-3">Продлить на</h3>
+                    ${methodToggle}
                     <div class="space-y-2 mb-2">
                         ${tariffs.map(t => {
                             const priceCents = Math.round(t.price_rub * 100);
-                            const canPayBalance = _sessionBalanceCents >= priceCents;
+                            const disabled = _renewPayMethod === 'balance' && priceCents > _sessionBalanceCents;
                             return `
-                            <div class="bg-panel-2 border ${t.is_current ? 'border-teal ring-2 ring-teal' : 'border-[color:var(--hairline)]'} rounded-xl p-3">
-                                <button onclick="selectTariffAndRenewKey(${t.id})" class="w-full flex justify-between items-center transition active:scale-[0.98]">
-                                    <span class="text-sm font-semibold">${escapeHtml(t.name)}${t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : ''}</span>
-                                    <span class="text-gold font-display font-bold text-sm">${t.price_rub.toFixed(0)} ₽</span>
-                                </button>
-                                ${canPayBalance ? `<button onclick="payRenewKeyWithBalance(${t.id})" class="w-full mt-2 py-2 btn-secondary rounded-lg text-xs font-semibold transition active:scale-[0.98]">💎 Списать ${t.price_rub.toFixed(0)} ₽ с баланса</button>` : ''}
-                            </div>
+                            <button onclick="${disabled ? '' : `selectRenewTariff(${t.id})`}" ${disabled ? 'disabled' : ''} class="w-full bg-panel-2 border ${t.is_current ? 'border-teal ring-2 ring-teal' : 'border-[color:var(--hairline)]'} rounded-xl p-3 flex justify-between items-center transition active:scale-[0.98]${disabled ? ' opacity-40' : ''}">
+                                <span class="text-sm font-semibold">${escapeHtml(t.name)}${t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : ''}</span>
+                                <span class="text-gold font-display font-bold text-sm">${t.price_rub.toFixed(0)} ₽</span>
+                            </button>
                         `;}).join('')}
                     </div>
                     <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Отмена</button>
