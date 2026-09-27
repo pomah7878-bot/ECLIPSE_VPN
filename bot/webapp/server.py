@@ -551,9 +551,11 @@ async def handle_tariffs_list(request: web.Request) -> web.Response:
 
 
 async def handle_pay_create(request: web.Request) -> web.Response:
-    """POST /api/pay/create — создаёт заказ и QR-платёж YooKassa для покупки
-    нового ключа или продления существующего.
-    Body JSON: {"tariff_id": int, "vpn_key_id": int | null}
+    """POST /api/pay/create — создаёт заказ на покупку нового ключа или
+    продление существующего. По умолчанию — QR-платёж YooKassa; если
+    передан payment_method="balance", списывает стоимость с личного
+    баланса и завершает заказ сразу, без QR.
+    Body JSON: {"tariff_id": int, "vpn_key_id": int | null, "payment_method": "yookassa_qr" | "balance"}
     """
     telegram_id = _get_telegram_id(request)
     if not telegram_id:
@@ -565,8 +567,11 @@ async def handle_pay_create(request: web.Request) -> web.Response:
 
     tariff_id = data.get("tariff_id")
     vpn_key_id = data.get("vpn_key_id")
+    payment_method = data.get("payment_method") or "yookassa_qr"
     if not tariff_id:
         return web.json_response({"error": "tariff_id_required"}, status=400)
+    if payment_method not in ("yookassa_qr", "balance"):
+        return web.json_response({"error": "invalid_payment_method"}, status=400)
 
     from database.requests import get_tariff_by_id, get_user_internal_id, create_pending_order, save_yookassa_payment_id
     from bot.services.promotions import prepare_order_pricing
@@ -581,6 +586,46 @@ async def handle_pay_create(request: web.Request) -> web.Response:
         return web.json_response({"error": "user_not_found"}, status=404)
 
     action = "renewal" if vpn_key_id else "new_key"
+
+    if payment_method == "balance":
+        try:
+            (_, order_id) = create_pending_order(
+                user_id=user_id, tariff_id=tariff["id"], payment_type="balance",
+                vpn_key_id=int(vpn_key_id) if vpn_key_id else None,
+            )
+
+            quote = prepare_order_pricing(
+                order_id=order_id, user_id=user_id, tariff=tariff,
+                payment_type="balance", action=action,
+            )
+            if not quote.get("ok"):
+                return web.json_response(
+                    {"error": "pricing_unavailable", "message": quote.get("unavailable_reason", "Оплата сейчас недоступна.")},
+                    status=400,
+                )
+
+            if quote.get("is_free"):
+                result = await _complete_webapp_order(order_id, quote_final_amount_cents=0, telegram_id=telegram_id)
+                return web.json_response(result)
+
+            from database.requests import get_user_balance
+            current_balance = get_user_balance(user_id)
+            if current_balance < quote["final_amount"]:
+                return web.json_response({
+                    "error": "insufficient_balance",
+                    "message": "Недостаточно средств на балансе для этого тарифа.",
+                    "balance_cents": current_balance,
+                    "required_cents": quote["final_amount"],
+                }, status=400)
+
+            result = await _complete_webapp_order(
+                order_id, quote_final_amount_cents=quote["final_amount"], telegram_id=telegram_id,
+            )
+            return web.json_response(result)
+        except Exception as e:
+            logger.error(f"WebApp pay/create (balance) error: {e}")
+            return web.json_response({"error": "payment_creation_failed"}, status=502)
+
     try:
         (_, order_id) = create_pending_order(
             user_id=user_id, tariff_id=tariff["id"], payment_type="yookassa_qr",
@@ -2614,6 +2659,48 @@ async def handle_public_account_key_renew_balance(request: web.Request) -> web.R
     return web.json_response({"status": "paid", "message": result.get("message")})
 
 
+async def handle_public_account_buy_balance(request: web.Request) -> web.Response:
+    """POST /api/public/account/buy/balance — покупка НОВОГО ключа для
+    залогиненного личного кабинета сайта, оплата с личного баланса, без
+    QR/ЮKassa — завершается сразу, синхронно, в один запрос.
+    Body JSON: {"tariff_id": int}"""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    tariff_id = data.get("tariff_id")
+    if not tariff_id:
+        return web.json_response({"error": "tariff_id_required"}, status=400)
+
+    from bot.services.anonymous_purchase import complete_anonymous_purchase_via_balance
+    try:
+        result = await complete_anonymous_purchase_via_balance(account_id, int(tariff_id))
+    except Exception as e:
+        logger.error(f"Public account buy/balance error: {e}")
+        return web.json_response({"error": "payment_creation_failed"}, status=502)
+
+    if not result.get("ok"):
+        if result.get("insufficient"):
+            return web.json_response({
+                "error": "insufficient_balance",
+                "message": result.get("message"),
+                "balance_cents": result.get("balance_cents", 0),
+                "required_cents": result.get("required_cents", 0),
+            }, status=400)
+        return web.json_response({"error": "purchase_failed", "message": result.get("message")}, status=502)
+
+    return web.json_response({
+        "status": "paid",
+        "claim_code": result.get("claim_code"),
+        "sub_url": result.get("sub_url"),
+    })
+
+
 async def handle_public_account_lookup(request: web.Request) -> web.Response:
     """POST /api/public/account/lookup — вход в личный кабинет по коду,
     без Telegram. Body JSON: {"code": "XXXX-XXXX"}"""
@@ -3164,6 +3251,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)
     app.router.add_post("/api/public/account/key/renew/balance", handle_public_account_key_renew_balance)
+    app.router.add_post("/api/public/account/buy/balance", handle_public_account_buy_balance)
     app.router.add_post("/api/rename", handle_rename)
     app.router.add_post("/api/delete", handle_delete)
     app.router.add_get("/api/referral", handle_referral)

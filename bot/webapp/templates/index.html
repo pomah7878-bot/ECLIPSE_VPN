@@ -747,6 +747,7 @@
                     return;
                 }
                 let html = '<h3 class="font-display text-base font-bold mb-1">Выберите тариф</h3><p class="text-xs text-mist mb-4">Оплата 💳 или через СБП <img src="/static/sbp.svg" class="inline-block h-3 align-text-bottom" alt="СБП"></p><div class="space-y-2">';
+                const userBalanceCents = window._userBalanceCents || 0;
                 tariffs.forEach(t => {
                     const currentBadge = t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : '';
                     const currentClass = t.is_current ? ' ring-2 ring-teal' : '';
@@ -754,6 +755,10 @@
                         <span>${escapeHtml(t.name)}${currentBadge}</span>
                         <span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>
                     </button>`;
+                    const priceCents = Math.round(t.price_rub * 100);
+                    if (userBalanceCents >= priceCents) {
+                        html += `<button onclick="selectTariffAndPayWithBalance(${t.id})" class="w-full py-2 btn-secondary rounded-xl text-xs font-semibold transition -mt-1 mb-1">💎 Списать ${t.price_rub.toFixed(0)} ₽ с баланса</button>`;
+                    }
                 });
                 html += '</div><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-3">Отмена</button>';
                 html += `<button onclick="closePay();goRenewInBot(${_payVpnKeyId || 'null'})" class="w-full text-[11px] text-mist-dim underline transition mt-3">Оплатить в чате бота</button>`;
@@ -779,6 +784,21 @@
                 renderPayQR(res);
             } catch(e) {
                 box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>';
+            }
+        }
+
+        async function selectTariffAndPayWithBalance(tariffId) {
+            const box = document.getElementById('payContent');
+            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center">Списываем с баланса…</p>';
+            try {
+                const res = await postAPI('pay/create', { tariff_id: tariffId, vpn_key_id: _payVpnKeyId, payment_method: 'balance' });
+                if (res.error) {
+                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось оплатить балансом.')}</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>`;
+                    return;
+                }
+                showPaySuccess(res.message, res.is_draft);
+            } catch(e) {
+                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при оплате балансом. Попробуйте ещё раз.</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>';
             }
         }
 
@@ -1561,6 +1581,7 @@
                 }
 
                 if (refRes.status === 'fulfilled') {
+                    window._userBalanceCents = refRes.value.balance_cents || 0;
                     html += renderReferral(refRes.value);
                 }
 

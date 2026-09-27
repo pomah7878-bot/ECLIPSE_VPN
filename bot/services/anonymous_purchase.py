@@ -354,6 +354,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
             "order_id": order_id,
             "user_id": None,
             "_site_buyer_label": buyer_label,
+            "_payment_action": "new_key",
             "tariff_id": purchase["tariff_id"],
             "tariff_name": tariff.get("name") if tariff else "—",
             "vpn_key_id": provisioned_key_id,
@@ -369,3 +370,141 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
 
     purchase = get_anonymous_purchase_by_order_id(order_id)
     return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
+
+
+async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int) -> dict:
+    """Оформляет НОВУЮ покупку с сайта (личный кабинет, залогинен) сразу за
+    счёт личного баланса — без ЮKassa/QR, синхронно в один вызов.
+
+    Использует ту же схему учёта (anonymous_purchases +
+    provision_anonymous_vpn_key), что и обычная сайтовая покупка через
+    ЮKassa (см. check_and_complete_anonymous_payment) — это важно для
+    чисто сайтовых аккаунтов без Telegram: их кабинет (handle_public_
+    account_session, ветка oauth_new) находит ключ именно через
+    get_latest_purchase_for_account(account_id), а не напрямую по
+    владельцу ключа.
+
+    Returns: {"ok": bool, "message"?: str, "claim_code"?: str,
+              "sub_url"?: str, "key_id"?: int,
+              "insufficient"?: bool, "balance_cents"?: int, "required_cents"?: int}
+    """
+    import time as _time
+    from database.requests import get_tariff_by_id, get_site_account_by_id
+    from database.db_payments import (
+        create_anonymous_purchase, mark_anonymous_purchase_paid,
+        save_anonymous_purchase_provisioning, get_anonymous_purchase_by_order_id,
+    )
+    from database.db_accounts import link_purchase_to_account
+    from bot.services.balance import debit_user_balance, credit_user_balance
+
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return {"ok": False, "message": "Аккаунт не найден."}
+
+    tariff = get_tariff_by_id(tariff_id)
+    if not tariff:
+        return {"ok": False, "message": "Тариф не найден."}
+
+    price_cents = int(round(float(tariff.get("price_rub") or 0) * 100))
+    if price_cents <= 0:
+        return {"ok": False, "message": "Некорректная цена тарифа."}
+
+    if account.get("telegram_id"):
+        from database.requests import get_user_internal_id
+        internal_user_id = get_user_internal_id(account["telegram_id"])
+    else:
+        from database.db_accounts import get_or_create_placeholder_user_for_site_account
+        internal_user_id = get_or_create_placeholder_user_for_site_account(account_id)
+
+    if not internal_user_id:
+        return {"ok": False, "message": "Не удалось определить владельца аккаунта."}
+
+    order_reference = f"site-buy-{account_id}-{int(_time.time() * 1000)}"
+    debit_result = await debit_user_balance(
+        internal_user_id, price_cents,
+        source="payment_balance", reason="Покупка нового ключа с сайта (оплата балансом)",
+        reference_type="site_purchase", reference_id=order_reference,
+        metadata={"tariff_id": tariff_id},
+    )
+    if not debit_result.get("ok"):
+        if debit_result.get("status") == "insufficient_funds":
+            return {
+                "ok": False, "insufficient": True,
+                "message": "Недостаточно средств на балансе для этого тарифа.",
+                "balance_cents": debit_result.get("balance_before", 0),
+                "required_cents": price_cents,
+            }
+        return {"ok": False, "message": "Не удалось списать баланс."}
+
+    order_id = f"SITEBAL{int(_time.time() * 1000)}{account_id}"
+    claim_code = create_anonymous_purchase(order_id, tariff_id)
+    link_purchase_to_account(order_id, account_id)
+    # yookassa_payment_id тут не платёж ЮKassa, а просто метка источника —
+    # колонка текстовая и повторно не используется после статуса 'paid'.
+    mark_anonymous_purchase_paid(order_id, f"balance:{account_id}")
+
+    sub_url = None
+    provisioned_key_id = None
+    try:
+        result = await provision_anonymous_vpn_key(tariff_id, order_id, site_account_id=account_id)
+        save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
+        sub_url = result["sub_url"]
+        provisioned_key_id = result["key_id"]
+    except Exception as e:
+        logger.error(f"Оплата балансом (сайт, покупка) account={account_id}: провижининг не удался для {order_id}: {e}")
+        # В отличие от ЮKassa здесь нет отдельного окна "оплата прошла, ключ
+        # довыдадим вручную" — деньги уже списаны прямо сейчас, поэтому
+        # при сбое провижининга сразу возвращаем их клиенту.
+        await credit_user_balance(
+            internal_user_id, price_cents,
+            source="refund", reason="Возврат за неудавшуюся покупку ключа с сайта (баланс)",
+            reference_type="site_purchase", reference_id=order_reference,
+            metadata={"tariff_id": tariff_id},
+        )
+        return {"ok": False, "message": "Не удалось выпустить ключ. Средства возвращены на баланс."}
+
+    days = tariff.get("duration_days") or 30
+    try:
+        from database.requests import get_site_referrer_code_for_order, get_user_by_referral_code
+        from bot.services.billing import process_site_referral_reward
+
+        site_ref_code = get_site_referrer_code_for_order(order_id)
+        if site_ref_code:
+            referrer = get_user_by_referral_code(site_ref_code)
+            if referrer:
+                await process_site_referral_reward(
+                    referrer["id"], days, price_cents, "balance", bot=None, order={"order_id": order_id},
+                )
+    except Exception as site_ref_err:
+        logger.warning(f"Ошибка начисления сайтового реферального вознаграждения для order={order_id} (баланс): {site_ref_err}")
+
+    try:
+        from bot.services.notifications import notify_admins_payment
+        from bot.utils.runtime_state import get_bot_instance
+
+        buyer_label = f"🌐 сайт ({account_id}, баланс)"
+        if account.get("email"):
+            buyer_label = f"🌐 {account['email']} (баланс)"
+        elif account.get("provider"):
+            buyer_label = f"🌐 сайт ({account['provider']}, баланс)"
+
+        notify_order = {
+            "order_id": order_id, "user_id": None, "_site_buyer_label": buyer_label,
+            "_payment_action": "new_key",
+            "tariff_id": tariff_id, "tariff_name": tariff.get("name") or "—",
+            "vpn_key_id": provisioned_key_id, "payment_type": "balance",
+            "final_amount_cents": price_cents, "price_rub": tariff.get("price_rub") or 0,
+        }
+        bot_instance = get_bot_instance()
+        if bot_instance:
+            await notify_admins_payment(bot_instance, notify_order)
+    except Exception as notify_err:
+        logger.warning(f"Ошибка отправки уведомления админам о сайтовой покупке order={order_id} (баланс): {notify_err}")
+
+    purchase = get_anonymous_purchase_by_order_id(order_id)
+    return {
+        "ok": True,
+        "claim_code": purchase["claim_code"] if purchase else claim_code,
+        "sub_url": sub_url,
+        "key_id": provisioned_key_id,
+    }
