@@ -206,52 +206,16 @@ def save_message_translation(key: str, language: str, message: Message) -> dict:
     logger.info(f"Перевод сохранён: {key} [{language}]")
     return {'text': text}
 
-_TYPED_SIMPLE_TAGS = ("b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
-                      "code", "pre", "tg-spoiler", "blockquote")
-
-
 def get_editor_text_for_storage(message: Message) -> str:
     """Текст из сообщения админа для сохранения в редакторе текстов.
 
-    Если админ отформатировал текст средствами Telegram (есть entities) —
-    берём html_text как раньше. Если же он набрал HTML-теги руками
-    (<b>жирный</b>, <a href="...">ссылка</a>) — Telegram не считает это
-    форматированием, html_text экранирует теги, и они потом показывались
-    обычным текстом. Здесь такие теги распознаются и сохраняются как
-    настоящая разметка; всё остальное (< > & вне тегов) остаётся
-    экранированным. При несбалансированных тегах — безопасный откат к
-    прежнему поведению, чтобы не ломать отправку."""
-    import html as _html
-    import re as _re
+    Реальное форматирование Telegram (включая премиум-эмодзи) сохраняется через
+    html_text, а набранные вручную теги (<b>, <a href="...">) восстанавливаются
+    как разметка — см. get_message_text_for_storage(..., admin_raw_html=True).
+    """
     from bot.utils.text import get_message_text_for_storage
 
-    fallback = get_message_text_for_storage(message, 'html', admin_raw_html=True)
-    from bot.utils.text import _has_manual_entities
-    if _has_manual_entities(message.entities) or _has_manual_entities(message.caption_entities):
-        return fallback
-    raw = (message.text or message.caption or "").strip()
-    if "<" not in raw:
-        return fallback
-
-    escaped = _html.escape(raw, quote=False)
-    names = "|".join(_re.escape(t) for t in _TYPED_SIMPLE_TAGS)
-    restored = _re.sub(rf"&lt;(/?)({names})&gt;", r"<\1\2>", escaped, flags=_re.IGNORECASE)
-    restored = _re.sub(r'&lt;a href="([^"<>\s]+)"&gt;', r'<a href="\1">', restored)
-    restored = restored.replace("&lt;/a&gt;", "</a>")
-
-    # Проверка баланса открывающих/закрывающих тегов.
-    stack = []
-    for m in _re.finditer(r"<(/?)([a-zA-Z-]+)[^>]*>", restored):
-        closing, name = m.group(1), m.group(2).lower()
-        if closing:
-            if not stack or stack.pop() != name:
-                return fallback
-        else:
-            stack.append(name)
-    if stack:
-        return fallback
-    return restored
-
+    return get_message_text_for_storage(message, 'html', admin_raw_html=True)
 
 
 def save_message_data(key: str, message: Message, allowed_types: Optional[List[str]] = None) -> dict:

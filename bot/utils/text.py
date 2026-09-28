@@ -160,6 +160,34 @@ def _has_manual_entities(entities) -> bool:
     return any(getattr(e, 'type', None) not in _AUTO_ENTITY_TYPES for e in (entities or []))
 
 
+_TYPED_TAG_NAMES = "b|strong|i|em|u|ins|s|strike|del|code|pre|tg-spoiler|blockquote"
+
+
+def _restore_typed_html_tags(escaped_html: str) -> str:
+    """Возвращает набранные вручную теги из экранированного вида (&lt;b&gt; -> <b>).
+
+    Работает поверх html_text. Если теги не сбалансированы — возвращает исходный
+    экранированный текст, чтобы не сломать отправку.
+    """
+    restored = re.sub(
+        rf"&lt;(/?)({_TYPED_TAG_NAMES})&gt;", r"<\1\2>", escaped_html, flags=re.IGNORECASE
+    )
+    restored = re.sub(r'&lt;a href="([^"<>\s]+)"&gt;', r'<a href="\1">', restored)
+    restored = restored.replace("&lt;/a&gt;", "</a>")
+
+    stack = []
+    for m in re.finditer(r"<(/?)([a-zA-Z-]+)[^>]*>", restored):
+        closing, name = m.group(1), m.group(2).lower()
+        if closing:
+            if not stack or stack.pop() != name:
+                return escaped_html
+        else:
+            stack.append(name)
+    if stack:
+        return escaped_html
+    return restored
+
+
 def get_message_text_for_storage(
     message: Message,
     text_type: Literal['html', 'plain'] = 'html',
@@ -178,10 +206,11 @@ def get_message_text_for_storage(
         # Админ вставил текст с литеральными HTML-тегами (без entities) —
         # сохраняем как есть, иначе html_text превратит <b> в &lt;b&gt;.
         if admin_raw_html:
-            raw = message.text or message.caption or ''
-            raw_entities = message.entities if message.text else message.caption_entities
-            if raw and not _has_manual_entities(raw_entities) and _TG_HTML_TAG_RE.search(raw):
-                return raw.strip()
+            _entities = (message.entities if message.text else message.caption_entities) or []
+            _base = (message.html_text or '').strip()
+            if (_base and '&lt;' in _base
+                    and not any(getattr(e, 'type', None) in ('code', 'pre') for e in _entities)):
+                return _restore_typed_html_tags(_base)
         # html_text preserves user formatting in HTML tags
         if message.html_text:
             return message.html_text.strip()
