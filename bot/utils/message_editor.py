@@ -226,7 +226,8 @@ def get_editor_text_for_storage(message: Message) -> str:
     from bot.utils.text import get_message_text_for_storage
 
     fallback = get_message_text_for_storage(message, 'html', admin_raw_html=True)
-    if message.entities or message.caption_entities:
+    from bot.utils.text import _has_manual_entities
+    if _has_manual_entities(message.entities) or _has_manual_entities(message.caption_entities):
         return fallback
     raw = (message.text or message.caption or "").strip()
     if "<" not in raw:

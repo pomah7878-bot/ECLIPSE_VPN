@@ -149,6 +149,17 @@ _TG_HTML_TAG_RE = re.compile(
 )
 
 
+# Entities, которые Telegram добавляет автоматически. Это не форматирование.
+_AUTO_ENTITY_TYPES = frozenset({
+    'url', 'mention', 'hashtag', 'cashtag', 'bot_command', 'email', 'phone_number',
+})
+
+
+def _has_manual_entities(entities) -> bool:
+    """True, если среди entities есть настоящее форматирование (bold, text_link и т.д.)."""
+    return any(getattr(e, 'type', None) not in _AUTO_ENTITY_TYPES for e in (entities or []))
+
+
 def get_message_text_for_storage(
     message: Message,
     text_type: Literal['html', 'plain'] = 'html',
@@ -169,7 +180,7 @@ def get_message_text_for_storage(
         if admin_raw_html:
             raw = message.text or message.caption or ''
             raw_entities = message.entities if message.text else message.caption_entities
-            if raw and not raw_entities and _TG_HTML_TAG_RE.search(raw):
+            if raw and not _has_manual_entities(raw_entities) and _TG_HTML_TAG_RE.search(raw):
                 return raw.strip()
         # html_text preserves user formatting in HTML tags
         if message.html_text:
