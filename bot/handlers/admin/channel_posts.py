@@ -175,7 +175,7 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     """Сохраняет текст поста, запрашивает дату публикации."""
     if not is_admin(message.from_user.id):
         return
-    text = get_message_text_for_storage(message, 'html')
+    text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
     from database.requests import is_post_footer_enabled
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
     await state.update_data(post_text=text_with_footer)
@@ -398,7 +398,7 @@ async def process_edit_post_text(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    text = get_message_text_for_storage(message, 'html')
+    text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
     from database.requests import is_post_footer_enabled
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
 

@@ -4,6 +4,7 @@ from typing import Literal, Optional, Union
 from html import escape as escape_attr
 from html.parser import HTMLParser
 import asyncio
+import re
 import logging
 
 logger = logging.getLogger(__name__)
@@ -141,9 +142,17 @@ def prepare_telegram_method(method):
     return method.model_copy(update=updates)
 
 
+_TG_HTML_TAG_RE = re.compile(
+    r'</?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|tg-spoiler|blockquote)\s*>'
+    r'|<a\s+href="[^"]+"\s*>|<tg-emoji\s+emoji-id="\d+"\s*>|<span\s+class="tg-spoiler"\s*>',
+    re.IGNORECASE,
+)
+
+
 def get_message_text_for_storage(
     message: Message,
-    text_type: Literal['html', 'plain'] = 'html'
+    text_type: Literal['html', 'plain'] = 'html',
+    admin_raw_html: bool = False,
 ) -> str:
     """Extracts text from a message to be stored in the database.
     
@@ -155,6 +164,13 @@ def get_message_text_for_storage(
                    'plain' - technical values (URL, secrets, numbers).
     """
     if text_type == 'html':
+        # Админ вставил текст с литеральными HTML-тегами (без entities) —
+        # сохраняем как есть, иначе html_text превратит <b> в &lt;b&gt;.
+        if admin_raw_html:
+            raw = message.text or message.caption or ''
+            raw_entities = message.entities if message.text else message.caption_entities
+            if raw and not raw_entities and _TG_HTML_TAG_RE.search(raw):
+                return raw.strip()
         # html_text preserves user formatting in HTML tags
         if message.html_text:
             return message.html_text.strip()

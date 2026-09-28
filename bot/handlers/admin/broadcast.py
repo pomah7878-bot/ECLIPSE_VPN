@@ -376,9 +376,9 @@ async def broadcast_save_message(message: Message, state: FSMContext, bot: Bot):
 
     if message.photo:
         photo_file_id = message.photo[-1].file_id
-        text = get_message_text_for_storage(message, 'html')
+        text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
     elif message.text:
-        text = get_message_text_for_storage(message, 'html')
+        text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
     else:
         await safe_edit_or_send(message,
             "❌ <b>Материал не поддерживается</b>\n\n"
