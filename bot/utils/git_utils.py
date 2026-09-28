@@ -358,6 +358,9 @@ def pull_updates() -> Tuple[bool, str]:
     return True, f"✅ Обновление успешно!\n\n🔹 Последний коммит:\n<pre>{escape_html(commit_info)}</pre>"
 
 
+IMPORT_CHECK_TIMEOUT = 120  # секунд на один запуск проверки импорта
+
+
 def _validate_pulled_code() -> Tuple[bool, str]:
     """
     Пробует реально импортировать основные модули бота в отдельном
@@ -369,19 +372,30 @@ def _validate_pulled_code() -> Tuple[bool, str]:
     python_bin = os.path.join(project_root, 'venv', 'bin', 'python3')
     if not os.path.exists(python_bin):
         python_bin = 'python3'
-    try:
-        result = _subprocess.run(
-            [python_bin, '-c', 'import bot.handlers.admin; import bot.handlers.user.start'],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+    for attempt in (1, 2):
+        try:
+            result = _subprocess.run(
+                [python_bin, '-c', 'import bot.handlers.admin; import bot.handlers.user.start'],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=IMPORT_CHECK_TIMEOUT,
+            )
+        except _subprocess.TimeoutExpired:
+            # Холодный старт после обновления на слабом сервере: кэш .pyc уже
+            # частично прогрет, второй запуск обычно проходит быстрее.
+            if attempt == 1:
+                continue
+            return False, (
+                f'Проверка импорта не уложилась в {IMPORT_CHECK_TIMEOUT} с дважды подряд. '
+                'Вероятно, сервер перегружен — повторите обновление позже.'
+            )
+        except Exception as e:
+            return False, f'Ошибка запуска проверки импорта: {e}'
         if result.returncode != 0:
             return False, (result.stderr or result.stdout or 'Неизвестная ошибка импорта')[-800:]
         return True, ''
-    except Exception as e:
-        return False, f'Ошибка запуска проверки импорта: {e}'
+    return False, 'Проверка импорта не выполнена'
 
 
 def force_pull_updates() -> Tuple[bool, str]:
