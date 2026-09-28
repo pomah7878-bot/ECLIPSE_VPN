@@ -137,6 +137,8 @@ async def on_startup(bot: Bot):
     except Exception as e:
         logger.warning(f"Не удалось отправить уведомление о завершении перезапуска: {e}")
 
+    await _notify_admins_about_deploy(bot)
+
     try:
         from bot.services.bot_commands import sync_bot_commands, sync_menu_button
         await sync_bot_commands(bot)
@@ -166,6 +168,68 @@ async def on_startup(bot: Bot):
                 )
             except Exception as e:
                 logger.warning(f"Не удалось отправить уведомление о блокировке админу {admin_id}: {e}")
+
+
+async def _notify_admins_about_deploy(bot: Bot) -> None:
+    """Если бот запустился на коммите, отличном от последнего замеченного —
+    значит код обновился (auto_deploy.sh подтянул с GitHub и перезапустил
+    сервис, или админ обновил вручную по SSH) — присылает админам changelog:
+    что изменилось с прошлого запуска.
+
+    Работает при ЛЮБОМ способе обновления кода, в отличие от кнопки
+    "Обновить бота" в самом боте (она уведомляет только того админа, кто её
+    нажал) и планировщика проверки обновлений (он уведомляет ДО обновления,
+    о коммитах на GitHub, которые ещё не подтянуты) — а auto_deploy.sh
+    вообще никого не уведомляет, просто тихо перезапускает сервис по cron.
+    """
+    try:
+        from database.requests import get_setting, set_setting
+        from bot.utils.git_utils import get_current_commit, run_git_command
+        from bot.utils.text import escape_html
+        from config import ADMIN_IDS
+
+        current_commit = get_current_commit()
+        if not current_commit:
+            return
+
+        last_notified = get_setting('last_notified_deploy_commit', '')
+
+        if not last_notified:
+            # Первый запуск с этой фичей (или совсем новая установка) — просто
+            # запоминаем текущий коммит, без рассылки. Иначе при первом же
+            # старте после обновления бота админы получат "changelog" длиной
+            # во всю историю репозитория.
+            set_setting('last_notified_deploy_commit', current_commit)
+            return
+
+        if last_notified == current_commit:
+            return
+
+        success, log_output = run_git_command([
+            'log', '--format=%h %B', f'{last_notified}..HEAD', '-n', '30',
+        ])
+        set_setting('last_notified_deploy_commit', current_commit)
+
+        if not success or not log_output.strip():
+            # Коммит изменился, но получить лог не удалось (например,
+            # last_notified больше не существует в истории после
+            # git reset --hard/force-push) — просто фиксируем текущий
+            # коммит без рассылки, чем слать админам бесполезное сообщение.
+            return
+
+        text = (
+            "🔄 <b>Бот обновился и перезапустился</b>\n"
+            f"<code>{last_notified}</code> → <code>{current_commit}</code>\n\n"
+            f"<b>Что изменилось:</b>\n<pre>{escape_html(log_output)}</pre>"
+        )
+
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, text, parse_mode="HTML")
+            except Exception as e:
+                logger.warning(f"Не удалось отправить changelog обновления админу {admin_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Ошибка при уведомлении админов об обновлении: {e}")
 
 
 async def on_shutdown(bot: Bot):

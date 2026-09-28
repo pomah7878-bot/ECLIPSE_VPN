@@ -199,12 +199,59 @@ def save_message_translation(key: str, language: str, message: Message) -> dict:
     from database.requests import set_page_translation
 
     if message.text:
-        text = get_message_text_for_storage(message, 'html')
+        text = get_editor_text_for_storage(message)
     else:
         text = ''
     set_page_translation(key, language, text)
     logger.info(f"Перевод сохранён: {key} [{language}]")
     return {'text': text}
+
+_TYPED_SIMPLE_TAGS = ("b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+                      "code", "pre", "tg-spoiler", "blockquote")
+
+
+def get_editor_text_for_storage(message: Message) -> str:
+    """Текст из сообщения админа для сохранения в редакторе текстов.
+
+    Если админ отформатировал текст средствами Telegram (есть entities) —
+    берём html_text как раньше. Если же он набрал HTML-теги руками
+    (<b>жирный</b>, <a href="...">ссылка</a>) — Telegram не считает это
+    форматированием, html_text экранирует теги, и они потом показывались
+    обычным текстом. Здесь такие теги распознаются и сохраняются как
+    настоящая разметка; всё остальное (< > & вне тегов) остаётся
+    экранированным. При несбалансированных тегах — безопасный откат к
+    прежнему поведению, чтобы не ломать отправку."""
+    import html as _html
+    import re as _re
+    from bot.utils.text import get_message_text_for_storage
+
+    fallback = get_message_text_for_storage(message, 'html')
+    if message.entities or message.caption_entities:
+        return fallback
+    raw = (message.text or message.caption or "").strip()
+    if "<" not in raw:
+        return fallback
+
+    escaped = _html.escape(raw, quote=False)
+    names = "|".join(_re.escape(t) for t in _TYPED_SIMPLE_TAGS)
+    restored = _re.sub(rf"&lt;(/?)({names})&gt;", r"<\1\2>", escaped, flags=_re.IGNORECASE)
+    restored = _re.sub(r'&lt;a href="([^"<>\s]+)"&gt;', r'<a href="\1">', restored)
+    restored = restored.replace("&lt;/a&gt;", "</a>")
+
+    # Проверка баланса открывающих/закрывающих тегов.
+    stack = []
+    for m in _re.finditer(r"<(/?)([a-zA-Z-]+)[^>]*>", restored):
+        closing, name = m.group(1), m.group(2).lower()
+        if closing:
+            if not stack or stack.pop() != name:
+                return fallback
+        else:
+            stack.append(name)
+    if stack:
+        return fallback
+    return restored
+
+
 
 def save_message_data(key: str, message: Message, allowed_types: Optional[List[str]] = None) -> dict:
     """
@@ -239,15 +286,15 @@ def save_message_data(key: str, message: Message, allowed_types: Optional[List[s
     if message.animation:
         data.update(_with_media_fields(data.get('text', ''), message.animation.file_id, 'animation'))
         # For media we use caption
-        data['text'] = get_message_text_for_storage(message, 'html') if message.caption else ''
+        data['text'] = get_editor_text_for_storage(message) if message.caption else ''
     elif message.video:
         data.update(_with_media_fields(data.get('text', ''), message.video.file_id, 'video'))
-        data['text'] = get_message_text_for_storage(message, 'html') if message.caption else ''
+        data['text'] = get_editor_text_for_storage(message) if message.caption else ''
     elif message.photo:
         data.update(_with_media_fields(data.get('text', ''), message.photo[-1].file_id, 'photo'))
-        data['text'] = get_message_text_for_storage(message, 'html') if message.caption else ''
+        data['text'] = get_editor_text_for_storage(message) if message.caption else ''
     elif message.text:
-        data['text'] = get_message_text_for_storage(message, 'html')
+        data['text'] = get_editor_text_for_storage(message)
     
     # Checking whether the key belongs to the pages table
     if _is_page_key(key):
