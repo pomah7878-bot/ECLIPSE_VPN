@@ -528,6 +528,21 @@ def _resolve_key_auto_renew_toggle(ctx: dict) -> Optional[dict]:
     return {"callback_data": f"key_auto_renew_toggle:{key_id}"}
 
 
+def _resolve_key_devices(ctx: dict) -> Optional[dict]:
+    """Кнопка списка устройств ключа — доступна, только пока ключ настроен
+    на сервере (не is_unconfigured) и у него есть panel_email (иначе на
+    панели ещё нечего показывать по устройствам)."""
+    key_id = _get_key_details_id(ctx)
+    if not key_id:
+        return None
+    if _key_details_is_unconfigured(ctx):
+        return None
+    if not ctx.get('has_panel_email'):
+        return None
+
+    return {"callback_data": f"key_devices:{key_id}"}
+
+
 def _resolve_balance_topup(ctx: dict) -> Optional[dict]:
     """Кнопка пополнения личного баланса."""
     return {"callback_data": "balance_topup_menu"}
@@ -739,6 +754,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_delete": _resolve_key_delete,
     "btn_key_rename": _resolve_key_rename,
     "btn_key_auto_renew_toggle": _resolve_key_auto_renew_toggle,
+    "btn_key_devices": _resolve_key_devices,
     "btn_balance_topup": _resolve_balance_topup,
     "btn_key_traffic_chart": _resolve_key_traffic_chart,
     "btn_key_import_happ": _resolve_key_import_happ,

@@ -269,10 +269,6 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         protocol=protocol,
         prepend_html=prepend_text,
     )
-    devices_append_buttons = None
-    if not is_unconfigured and key.get('panel_email'):
-        devices_append_buttons = [[InlineKeyboardButton(text='📱 Устройства', callback_data=f'key_devices:{key_id}')]]
-
     await render_page(
         message,
         page_key='key_details',
@@ -283,9 +279,9 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
             'is_unconfigured': is_unconfigured,
             'traffic_exhausted': traffic_exhausted,
             'has_sub_id': bool(key.get('sub_id')),
+            'has_panel_email': bool(key.get('panel_email')),
         },
         text_replacements=replacements,
-        append_buttons=devices_append_buttons,
         force_new=not is_callback,
         # «Назад» и «На главную» — всегда последней строкой, ниже
         # «Устройства» и любых других добавляемых кнопок, независимо от

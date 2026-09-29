@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 130
+LATEST_VERSION = 131
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -334,6 +334,7 @@ def _key_details_page_buttons() -> str:
         {"id": "btn_key_delete",            "label": "🗑 Удалить",           "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system",   "action_value": None},
         {"id": "btn_key_rename",            "label": "✏️ Переименовать",    "color": "secondary", "row": 1, "col": 1, "is_hidden": False, "action_type": "system",   "action_value": None},
         {"id": "btn_key_auto_renew_toggle",  "label": "🔄 Автопродление",     "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "system",   "action_value": None},
+        {"id": "btn_key_devices",           "label": "📱 Устройства",        "color": "secondary", "row": 2, "col": 1, "is_hidden": False, "action_type": "system",   "action_value": None},
         {"id": "btn_my_keys",               "label": "⬅️ Назад",             "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
         {"id": "btn_back_main",             "label": "🈴 На главную",        "color": "secondary", "row": 3, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
     ], ensure_ascii=False)
@@ -2969,6 +2970,46 @@ def migration_130(conn: sqlite3.Connection) -> None:
     logger.info("Migration v130 applied: Статистика перенесена с key_details на key_delivery")
 
 
+def migration_131(conn: sqlite3.Connection) -> None:
+    """Версия 1.138: кнопка "📱 Устройства" на карточке ключа (key_details)
+    переведена из append_buttons (отдельная строка ниже "Автопродление")
+    в обычную кнопку страницы (btn_key_devices, row=2, col=1) — теперь
+    рендерится в ОДНОЙ строке с "🔄 Автопродление" (row=2, col=0), а не
+    отдельной строкой под ней.
+
+    Правит и buttons_default, и buttons_custom (если задан), если такой
+    кнопки там ещё нет — не трогает остальные кнопки/их порядок."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v131: страница 'key_details' не найдена, пропускаю")
+        return
+
+    devices_button = {
+        "id": "btn_key_devices", "label": "📱 Устройства", "color": "secondary",
+        "row": 2, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None,
+    }
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if any(b.get("id") == "btn_key_devices" for b in buttons):
+            continue
+        buttons.append(devices_button)
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+
+    logger.info("Migration v131 applied: btn_key_devices добавлена на key_details (в одну строку с Автопродление)")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3026,6 +3067,7 @@ MIGRATIONS = {
     128: migration_128,
     129: migration_129,
     130: migration_130,
+    131: migration_131,
 }
 
 
