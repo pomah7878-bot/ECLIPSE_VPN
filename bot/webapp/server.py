@@ -3068,9 +3068,46 @@ def _extract_sub_id_from_sub_url(sub_url: str) -> Optional[str]:
     return tail.split("?", 1)[0].split("#", 1)[0].strip() or None
 
 
+def _import_error_page(title: str, message: str) -> web.Response:
+    """Небольшая страница-заглушка в том же стиле, что и import.html —
+    показывается вместо голого 404/503, когда ссылка на импорт оказалась
+    нештатной (устарела, была подделана или тариф не позволяет импорт)."""
+    page_html = f"""<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{_html_module.escape(title)}</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       background: #0f172a; color: #e2e8f0; display: flex; align-items: center;
+       justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
+.card {{ background: #1e293b; border-radius: 16px; padding: 32px 24px; max-width: 380px;
+        width: 100%; text-align: center; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }}
+.icon {{ font-size: 48px; margin-bottom: 12px; }}
+h1 {{ font-size: 20px; margin: 0 0 12px; font-weight: 700; }}
+p {{ font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }}
+</style></head><body>
+<div class="card"><div class="icon">⚠️</div>
+<h1>{_html_module.escape(title)}</h1>
+<p>{_html_module.escape(message)}</p>
+</div></body></html>"""
+    return web.Response(text=page_html, content_type="text/html", status=400)
+
+
 async def handle_import(request: web.Request) -> web.Response:
     """GET /import — раздаёт страницу-редирект для импорта подписки в
     Happ/INCY/Karing/ECLIPSE VPN.
+
+    ВАЖНО: `url` из query-параметров — это ссылка, которую приложение
+    клиента добавит себе как VPN-подписку, поэтому она принимается
+    ТОЛЬКО если это настоящая ссылка-подписка этого же сайта (вида
+    "{webapp_url}/happ-sub/{sub_id}", см. get_public_subscription_url_for_key
+    в vpn_api.py — все ссылки на импорт, которые бот/сайт показывают
+    пользователю, всегда именно такие). Так исключается подстановка
+    произвольного чужого адреса в диплинк (иначе ссылку с ДОВЕРЕННОГО
+    домена можно было бы использовать, чтобы подсунуть пользователю чужой
+    VPN-сервер). sub_id дополнительно сверяется с БД — так гарантированно
+    импортируется именно та подписка, на которую указывает ссылка, а не
+    произвольный текст.
 
     Для scheme=happ, если в админке настроены provider_code/auth_key
     happ-proxy.com (API лимитированных ссылок), дополнительно:
@@ -3086,25 +3123,60 @@ async def handle_import(request: web.Request) -> web.Response:
     установок)."""
     from bot.services.license import is_feature_available
     if not is_feature_available("app_import"):
-        return web.Response(text="<h1>Страница временно недоступна</h1>", status=503)
+        return _import_error_page(
+            "Функция недоступна",
+            "Импорт подписки в приложение сейчас недоступен на этом тарифе.",
+        )
 
     import_path = os.path.join(_TEMPLATES_DIR, "import.html")
     if not os.path.exists(import_path):
         return web.Response(text="<h1>Import template not found</h1>", status=404)
 
+    scheme = request.query.get("scheme", "").strip().lower()
+    raw_url = request.query.get("url", "").strip()
+    if not raw_url:
+        return _import_error_page(
+            "Ссылка не передана",
+            "Откройте карточку ключа в боте или в личном кабинете и запустите импорт ещё раз.",
+        )
+
+    from database.requests import get_effective_webapp_url, get_vpn_key_by_sub_id
+    webapp_url = (get_effective_webapp_url() or "").rstrip("/")
+    expected_prefix = f"{webapp_url}/happ-sub/" if webapp_url else None
+
+    sub_id = None
+    if expected_prefix and raw_url.startswith(expected_prefix):
+        sub_id = _extract_sub_id_from_sub_url(raw_url)
+
+    if not sub_id:
+        logger.warning(
+            "handle_import: url не является собственной ссылкой-подпиской "
+            "этого сайта (scheme=%s) — запрос отклонён", scheme,
+        )
+        return _import_error_page(
+            "Ссылка недействительна",
+            "Эта ссылка на импорт не похожа на настоящую ссылку-подписку этого "
+            "сервиса — возможно, она устарела или повреждена. Откройте карточку "
+            "ключа в боте или в личном кабинете и запустите импорт оттуда ещё раз.",
+        )
+
+    key = get_vpn_key_by_sub_id(sub_id)
+    if not key:
+        return _import_error_page(
+            "Ключ не найден",
+            "Похоже, эта подписка была удалена или ссылка устарела. Откройте "
+            "«🔑 Мои ключи» в боте, чтобы получить актуальную ссылку на импорт.",
+        )
+
+    sub_url = raw_url
+
     install_code = ""
-    scheme = request.query.get("scheme", "")
     if scheme == "happ":
         try:
             from bot.services.happ_proxy import is_configured, ensure_domain_registered, get_or_create_install_code_for_sub
             if is_configured():
-                sub_url = request.query.get("url", "")
-                sub_id = _extract_sub_id_from_sub_url(sub_url)
-                if sub_id:
-                    from database.requests import get_effective_webapp_url
-                    webapp_url = get_effective_webapp_url()
-                    if webapp_url and await ensure_domain_registered(webapp_url):
-                        install_code = await get_or_create_install_code_for_sub(sub_id) or ""
+                if webapp_url and await ensure_domain_registered(webapp_url):
+                    install_code = await get_or_create_install_code_for_sub(sub_id) or ""
         except Exception as e:
             # Никогда не должны ломать сам импорт из-за проблем с
             # happ-proxy.com — в худшем случае просто без InstallID.

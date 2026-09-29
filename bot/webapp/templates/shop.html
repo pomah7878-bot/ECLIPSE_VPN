@@ -1366,9 +1366,9 @@
                             <button onclick="showKeyQR(this)" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">▦ Показать QR</button>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="location.href='/import?scheme=happ&url='+encodeURIComponent('${escapeHtml(key.sub_url)}')" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>
-                            <button onclick="location.href='/import?scheme=incy&url='+encodeURIComponent('${escapeHtml(key.sub_url)}')" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>
-                            <button onclick="location.href='/import?scheme=karing&url='+encodeURIComponent('${escapeHtml(key.sub_url)}')" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>
+                            <button data-scheme="happ" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>
+                            <button data-scheme="incy" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>
+                            <button data-scheme="karing" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>
                         </div>
                     </div>
                 `;
@@ -1768,6 +1768,16 @@
                 <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
             `;
             document.getElementById('payOverlay').classList.add('active');
+        }
+
+        function goImport(btn) {
+            const url = btn.getAttribute('data-url');
+            const scheme = btn.getAttribute('data-scheme');
+            if (!url) {
+                showToast('Ссылка подписки пока недоступна, попробуйте позже');
+                return;
+            }
+            location.href = '/import?scheme=' + encodeURIComponent(scheme) + '&url=' + encodeURIComponent(url);
         }
 
         async function logoutAccount() {

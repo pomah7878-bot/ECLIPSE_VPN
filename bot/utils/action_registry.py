@@ -37,6 +37,7 @@ ACTION_REGISTRY: Dict[str, str] = {
     "cmd_ai_support":     "ai_support_open",
     "cmd_import_happ":    "import_happ",
     "cmd_import_incy":    "import_incy",
+    "cmd_import_karing":  "import_karing",
     "cmd_import_eclipse": "import_eclipse",
 }
 

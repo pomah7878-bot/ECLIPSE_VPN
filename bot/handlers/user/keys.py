@@ -977,9 +977,20 @@ async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name
             show_alert=True,
         )
         return
-    import urllib.parse
     from database.requests import get_effective_webapp_url
-    deeplink = f"{get_effective_webapp_url()}/import?scheme={scheme}&url=" + urllib.parse.quote(sub_url, safe='')
+    webapp_url = get_effective_webapp_url()
+    if not webapp_url:
+        # Страница /import живёт на сайте — без настроенного домена сайта
+        # ссылка на неё была бы нерабочей (см. handle_import в server.py:
+        # там она в этом случае всё равно будет отклонена как "чужая").
+        await callback.answer(
+            "Импорт в приложение по ссылке доступен только если у сервиса "
+            "настроен свой сайт. Обратитесь в поддержку.",
+            show_alert=True,
+        )
+        return
+    import urllib.parse
+    deeplink = f"{webapp_url}/import?scheme={scheme}&url=" + urllib.parse.quote(sub_url, safe='')
     await callback.answer()
     from bot.keyboards.admin_misc import home_button
     markup = InlineKeyboardMarkup(inline_keyboard=[
