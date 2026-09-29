@@ -440,6 +440,17 @@ def _resolve_key_delivery_back(ctx: dict) -> Optional[dict]:
     return {"callback_data": "my_keys"}
 
 
+def _resolve_key_traffic_chart(ctx: dict) -> Optional[dict]:
+    """Кнопка графика трафика ключа (14 дней) — на экране выдачи ключа/
+    подписки (key_delivery), рядом с «Мои ключи». Доступна всегда, пока
+    известен key_id (график сам по себе полезен и для истёкшего, и для
+    исчерпавшего трафик ключа — история за прошлые дни не пропадает)."""
+    key_id = _get_renew_key_id(ctx)
+    if not key_id:
+        return None
+    return {"callback_data": f"key_traffic_chart:{key_id}"}
+
+
 def _resolve_key_show_subscription(ctx: dict) -> Optional[dict]:
     """Button to show subscription link."""
     key_id = _get_key_details_id(ctx)
@@ -721,6 +732,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_show_key": _resolve_key_show_key,
     "btn_key_show_subscription": _resolve_key_show_subscription,
     "btn_key_delivery_back": _resolve_key_delivery_back,
+    "btn_key_traffic_chart": _resolve_key_traffic_chart,
     "btn_key_configure": _resolve_key_configure,
     "btn_key_renew": _resolve_key_renew,
     "btn_key_replace": _resolve_key_replace,

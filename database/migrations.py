@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 129
+LATEST_VERSION = 130
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -1172,6 +1172,7 @@ def migration_initial(conn: sqlite3.Connection) -> None:
                 {"id": "btn_key_import_karing", "label": "🎯 Импорт в Karing", "color": "secondary", "row": 1, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_help",      "label": "📄 Инструкция",  "color": "secondary", "row": 1, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_help"},
                 {"id": "btn_my_keys",   "label": "🔑 Мои ключи",  "color": "secondary", "row": 2, "col": 0, "is_hidden": False, "action_type": "internal", "action_value": "cmd_my_keys"},
+                {"id": "btn_key_traffic_chart", "label": "📈 Статистика", "color": "secondary", "row": 2, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_key_delivery_back", "label": "⬅️ Назад",   "color": "secondary", "row": 3, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None},
                 {"id": "btn_back_main", "label": "🈴 На главную",  "color": "secondary", "row": 3, "col": 1, "is_hidden": False, "action_type": "internal", "action_value": "cmd_back_main"},
             ], ensure_ascii=False),
@@ -2898,6 +2899,76 @@ def migration_129(conn: sqlite3.Connection) -> None:
     logger.info("Migration v129 applied: создана таблица happ_install_links (кэш лимитированных ссылок Happ)")
 
 
+def migration_130(conn: sqlite3.Connection) -> None:
+    """Версия 1.137: кнопка "📈 Статистика" (график трафика за 14 дней)
+    переносится с карточки ключа (key_details) на экран выдачи ключа/
+    подписки (key_delivery, рядом с "🔑 Мои ключи") — там она логичнее
+    смотрится вместе с самой ссылкой/QR, а не среди действий с ключом.
+
+    1. Добавляет btn_key_traffic_chart в key_delivery (buttons_default и
+       buttons_custom, если задан) — если такой кнопки там ещё нет.
+    2. Убирает с key_details любую кнопку с меткой "Статистика" (без
+       учёта регистра/эмодзи) — это была ручная кастомизация через
+       редактор кнопок (buttons_custom), которой нет в buttons_default,
+       поэтому предсказать её id заранее нельзя; сопоставление по тексту
+       метки — единственный надёжный способ найти именно её."""
+    import re as _re
+
+    def _label_is_stats(label) -> bool:
+        if not isinstance(label, str):
+            return False
+        stripped = _re.sub(r'[^\w]', '', label, flags=_re.UNICODE).lower()
+        return 'статистика' in stripped
+
+    # 1. key_delivery: добавляем btn_key_traffic_chart рядом с btn_my_keys
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if row:
+        chart_button = {
+            "id": "btn_key_traffic_chart", "label": "📈 Статистика", "color": "secondary",
+            "row": 2, "col": 1, "is_hidden": False, "action_type": "system", "action_value": None,
+        }
+        for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+            raw = row[column_index]
+            if not raw:
+                continue
+            try:
+                buttons = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if any(b.get("id") == "btn_key_traffic_chart" for b in buttons):
+                continue
+            buttons.append(chart_button)
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+        logger.info("Migration v130: btn_key_traffic_chart добавлена на key_delivery")
+    else:
+        logger.info("Migration v130: страница 'key_delivery' не найдена, пропускаю добавление кнопки")
+
+    # 2. key_details: убираем старую ручную кнопку "Статистика"
+    row = conn.execute(
+        "SELECT buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if row and row[0]:
+        try:
+            buttons = json.loads(row[0])
+        except (TypeError, ValueError):
+            buttons = None
+        if buttons is not None:
+            filtered = [b for b in buttons if not _label_is_stats(b.get('label'))]
+            if len(filtered) != len(buttons):
+                conn.execute(
+                    "UPDATE pages SET buttons_custom = ? WHERE page_key = 'key_details'",
+                    (json.dumps(filtered, ensure_ascii=False),)
+                )
+                logger.info("Migration v130: кнопка 'Статистика' убрана с key_details (buttons_custom)")
+
+    logger.info("Migration v130 applied: Статистика перенесена с key_details на key_delivery")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -2954,6 +3025,7 @@ MIGRATIONS = {
     127: migration_127,
     128: migration_128,
     129: migration_129,
+    130: migration_130,
 }
 
 
