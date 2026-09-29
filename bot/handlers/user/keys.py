@@ -269,6 +269,10 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         protocol=protocol,
         prepend_html=prepend_text,
     )
+    devices_append_buttons = None
+    if not is_unconfigured and key.get('panel_email'):
+        devices_append_buttons = [[InlineKeyboardButton(text='📱 Устройства', callback_data=f'key_devices:{key_id}')]]
+
     await render_page(
         message,
         page_key='key_details',
@@ -281,6 +285,7 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
             'has_sub_id': bool(key.get('sub_id')),
         },
         text_replacements=replacements,
+        append_buttons=devices_append_buttons,
         force_new=not is_callback,
     )
 
@@ -330,6 +335,131 @@ async def key_details_handler(callback: CallbackQuery):
     telegram_id = callback.from_user.id
     await show_key_details(telegram_id, key_id, callback.message)
     await callback.answer()
+
+def _build_devices_message(key_id: int, key_name: str, result: dict) -> tuple:
+    """Собирает текст и клавиатуру экрана «Устройства» из результата
+    device_management.get_devices_for_key. Возвращает (text, keyboard)."""
+    from bot.services.device_management import format_device_line
+    from bot.utils.text import escape_html
+
+    max_devices = result.get('max_devices') or '—'
+    devices = result.get('devices') or []
+    limit_type = result.get('limit_type')
+
+    lines = [
+        f"📱 <b>Устройства ключа «{escape_html(key_name)}»</b>\n",
+        f"Подключено: {result['current_count']} из {max_devices}",
+    ]
+    if limit_type != 'hwid':
+        lines.append("ℹ️ Режим ограничения — по IP: тип/модель устройства панель не хранит, "
+                      "отключить можно только все устройства сразу.")
+    lines.append("")
+
+    if not devices:
+        lines.append("Сейчас не подключено ни одного устройства.")
+    else:
+        for i, d in enumerate(devices):
+            lines.append(escape_html(format_device_line(d, i + 1)))
+
+    builder = InlineKeyboardMarkup(inline_keyboard=[])
+    rows = []
+    if limit_type == 'hwid':
+        for i, d in enumerate(devices):
+            if d.get('device_id') is None:
+                continue
+            label = d.get('model') or d.get('os') or f'Устройство {i + 1}'
+            rows.append([InlineKeyboardButton(
+                text=f'❌ Отключить «{label}»'[:64],
+                callback_data=f'key_device_disconnect:{key_id}:{d["device_id"]}',
+            )])
+    rows.append([InlineKeyboardButton(text='🔄 Обновить', callback_data=f'key_devices:{key_id}')])
+    rows.append([InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')])
+    builder.inline_keyboard = rows
+
+    return "\n".join(lines), builder
+
+
+async def _render_devices_screen(callback: CallbackQuery, key_id: int) -> None:
+    """Рисует/обновляет экран «Устройства» поверх уже отвеченного callback
+    (сам callback.answer НЕ вызывает — это забота вызывающего хендлера,
+    чтобы не пытаться ответить на один и тот же callback дважды)."""
+    telegram_id = callback.from_user.id
+
+    from database.requests import get_key_details_for_user
+    key = get_key_details_for_user(key_id, telegram_id)
+    if not key:
+        await callback.message.edit_text("❌ Ключ не найден или вы не являетесь его владельцем.")
+        return
+    if not key.get('panel_email'):
+        await callback.message.edit_text(
+            "Ключ ещё не настроен на сервере.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')
+            ]]),
+        )
+        return
+
+    from bot.services.device_management import get_devices_for_key, DeviceManagementError
+
+    key_name = key.get('display_name') or f"ключ #{key_id}"
+    try:
+        result = await get_devices_for_key(key)
+    except DeviceManagementError as e:
+        await callback.message.edit_text(
+            f"❌ {e}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')
+            ]]),
+        )
+        return
+    except Exception as e:
+        logger.warning(f"Ошибка получения списка устройств ключа {key_id}: {e}")
+        await callback.message.edit_text(
+            "Не удалось получить список устройств. Попробуйте ещё раз чуть позже.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text='🔄 Обновить', callback_data=f'key_devices:{key_id}'),
+                InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}'),
+            ]]),
+        )
+        return
+
+    text, keyboard = _build_devices_message(key_id, key_name, result)
+    await callback.message.edit_text(text, parse_mode='HTML', reply_markup=keyboard)
+
+
+@router.callback_query(F.data.startswith('key_devices:'))
+async def key_devices_handler(callback: CallbackQuery):
+    """Список подключённых устройств ключа (тип/модель в режиме HWID, или
+    список IP в режиме IP) с кнопками точечного отключения."""
+    key_id = int(callback.data.split(':')[1])
+    await callback.answer('Проверяю устройства…')
+    await _render_devices_screen(callback, key_id)
+
+
+@router.callback_query(F.data.startswith('key_device_disconnect:'))
+async def key_device_disconnect_handler(callback: CallbackQuery):
+    """Отключает одно конкретное устройство (только режим HWID)."""
+    parts = callback.data.split(':')
+    key_id = int(parts[1])
+    device_id = int(parts[2])
+    telegram_id = callback.from_user.id
+
+    from database.requests import get_key_details_for_user
+    key = get_key_details_for_user(key_id, telegram_id)
+    if not key:
+        await callback.answer('❌ Ключ не найден или вы не являетесь его владельцем.', show_alert=True)
+        return
+
+    from bot.services.device_management import disconnect_device as _disconnect_device
+
+    outcome = await _disconnect_device(key, device_id)
+    if not outcome.get('ok'):
+        await callback.answer(outcome.get('message') or 'Не удалось отключить устройство.', show_alert=True)
+        return
+
+    await callback.answer('✅ Устройство отключено')
+    await _render_devices_screen(callback, key_id)
+
 
 @router.callback_query(F.data.startswith('key_show:'))
 async def key_show_handler(callback: CallbackQuery):

@@ -1417,6 +1417,8 @@
                     ${claimBlock}
                     <button onclick="toggleInbounds(${key.key_id})" class="w-full py-2 mt-2 text-xs text-mist-dim hover:text-ink transition text-center">🔌 Все подключения</button>
                     <div id="inbounds-${key.key_id}" style="display:none;"></div>
+                    <button onclick="toggleDevices(${key.key_id})" class="w-full py-2 text-xs text-mist-dim hover:text-ink transition text-center">📱 Устройства</button>
+                    <div id="devices-${key.key_id}" style="display:none;"></div>
                     <button onclick="openRenewForKey(${key.key_id})" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mt-4">Продлить</button>
                 </div>
             `;
@@ -1447,6 +1449,77 @@
                 measureClientPings(keyId, groups);
             } catch (e) {
                 box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить подключения</p>';
+            }
+        }
+
+        function formatDeviceTimestamp(ts) {
+            if (!ts) return '';
+            try {
+                return new Date(ts * 1000).toLocaleString();
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function renderDevicesList(keyId, data) {
+            const devices = data.devices || [];
+            const maxDevices = data.max_devices != null ? data.max_devices : '—';
+            let html = `<div class="card rounded-xl p-3 mt-2" style="background:var(--panel-2);">`;
+            html += `<div class="text-xs text-mist mb-2">Подключено: <span class="text-ink font-semibold">${devices.length} из ${maxDevices}</span></div>`;
+            if (data.limit_type !== 'hwid') {
+                html += `<div class="text-[11px] text-mist mb-2">ℹ️ Режим ограничения — по IP: тип/модель устройства панель не хранит, отключить можно только все устройства сразу (обратитесь в поддержку).</div>`;
+            }
+            if (!devices.length) {
+                html += `<div class="text-xs text-mist">Сейчас не подключено ни одного устройства.</div>`;
+            } else {
+                devices.forEach((d, i) => {
+                    const label = d.model || d.os
+                        ? escapeHtml((d.model || 'неизвестная модель') + (d.os ? ` (${d.os}${d.os_version ? ' ' + d.os_version : ''})` : ''))
+                        : (d.ip ? `IP ${escapeHtml(d.ip)}` : 'Устройство');
+                    const lastSeen = formatDeviceTimestamp(d.last_seen);
+                    html += `<div class="flex justify-between items-center py-1.5 border-t border-[color:var(--hairline)] first:border-t-0">`;
+                    html += `<div class="text-xs"><div class="text-ink">${i + 1}. ${label}</div>${lastSeen ? `<div class="text-mist text-[10px] mt-0.5">был(а) активен(на): ${lastSeen}</div>` : ''}</div>`;
+                    if (data.limit_type === 'hwid' && d.device_id != null) {
+                        html += `<button onclick="disconnectDevice(${keyId}, ${d.device_id})" class="text-[11px] btn-secondary rounded-lg px-2 py-1 flex-shrink-0 ml-2">❌ Отключить</button>`;
+                    }
+                    html += `</div>`;
+                });
+            }
+            html += `</div>`;
+            return html;
+        }
+
+        async function toggleDevices(keyId) {
+            const box = document.getElementById('devices-' + keyId);
+            const isHidden = box.style.display === 'none' || !box.style.display;
+            if (!isHidden) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
+            try {
+                const data = await postAPISafe('account/key/devices', { key_id: keyId });
+                if (data.error) {
+                    box.innerHTML = `<p class="text-xs text-alert py-3 text-center">${escapeHtml(data.message || 'Не удалось загрузить устройства')}</p>`;
+                    return;
+                }
+                box.innerHTML = renderDevicesList(keyId, data);
+            } catch (e) {
+                box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить устройства</p>';
+            }
+        }
+
+        async function disconnectDevice(keyId, deviceId) {
+            const box = document.getElementById('devices-' + keyId);
+            try {
+                const data = await postAPISafe('account/key/device_disconnect', { key_id: keyId, device_id: deviceId });
+                if (data.error) {
+                    showToast(data.message || 'Не удалось отключить устройство');
+                    return;
+                }
+                showToast('Устройство отключено');
+                const refreshed = await postAPISafe('account/key/devices', { key_id: keyId });
+                if (!refreshed.error) box.innerHTML = renderDevicesList(keyId, refreshed);
+            } catch (e) {
+                showToast('Не удалось отключить устройство');
             }
         }
 

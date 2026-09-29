@@ -2745,6 +2745,103 @@ async def handle_public_account_key_renew_balance(request: web.Request) -> web.R
     return web.json_response({"status": "paid", "message": result.get("message")})
 
 
+def _serialize_device(d: dict) -> dict:
+    """Готовит одну запись устройства для отдачи фронтенду сайта."""
+    return {
+        "device_id": d.get("device_id"),
+        "ip": d.get("ip"),
+        "os": d.get("os"),
+        "os_version": d.get("os_version"),
+        "model": d.get("model"),
+        "first_seen": d.get("first_seen"),
+        "last_seen": d.get("last_seen"),
+    }
+
+
+async def handle_public_account_key_devices(request: web.Request) -> web.Response:
+    """POST /api/public/account/key/devices — список подключённых устройств
+    ключа личного кабинета: с типом/моделью (режим HWID) или списком IP
+    (режим IP, без типа устройства — панель их не хранит в этом режиме).
+    Body JSON: {"key_id": int}"""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    key_id = data.get("key_id")
+    if not key_id:
+        return web.json_response({"error": "key_id_required"}, status=400)
+
+    from database.requests import get_site_account_by_id, get_key_details_by_id
+    account = get_site_account_by_id(account_id)
+    if not account or not _verify_key_belongs_to_account(int(key_id), account):
+        return web.json_response({"error": "key_not_found"}, status=404)
+
+    key = get_key_details_by_id(int(key_id))
+    if not key or not key.get("panel_email"):
+        return web.json_response({"error": "key_not_configured"}, status=400)
+
+    from bot.services.device_management import get_devices_for_key, DeviceManagementError
+    try:
+        result = await get_devices_for_key(key)
+    except DeviceManagementError as e:
+        return web.json_response({"error": "panel_error", "message": str(e)}, status=502)
+    except Exception as e:
+        logger.warning(f"Public account key/devices error для ключа {key_id}: {e}")
+        return web.json_response({"error": "internal_error"}, status=502)
+
+    return web.json_response({
+        "limit_type": result["limit_type"],
+        "max_devices": result.get("max_devices"),
+        "current_count": result["current_count"],
+        "devices": [_serialize_device(d) for d in result.get("devices") or []],
+    })
+
+
+async def handle_public_account_key_device_disconnect(request: web.Request) -> web.Response:
+    """POST /api/public/account/key/device_disconnect — отключает ОДНО
+    устройство ключа личного кабинета (доступно только в режиме HWID).
+    Body JSON: {"key_id": int, "device_id": int}"""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    key_id = data.get("key_id")
+    device_id = data.get("device_id")
+    if not key_id or device_id is None:
+        return web.json_response({"error": "key_id_and_device_id_required"}, status=400)
+
+    from database.requests import get_site_account_by_id, get_key_details_by_id
+    account = get_site_account_by_id(account_id)
+    if not account or not _verify_key_belongs_to_account(int(key_id), account):
+        return web.json_response({"error": "key_not_found"}, status=404)
+
+    key = get_key_details_by_id(int(key_id))
+    if not key or not key.get("panel_email"):
+        return web.json_response({"error": "key_not_configured"}, status=400)
+
+    from bot.services.device_management import disconnect_device as _disconnect_device
+    try:
+        result = await _disconnect_device(key, int(device_id))
+    except Exception as e:
+        logger.warning(f"Public account key/device_disconnect error для ключа {key_id}: {e}")
+        return web.json_response({"error": "internal_error"}, status=502)
+
+    if not result.get("ok"):
+        return web.json_response({"error": "disconnect_failed", "message": result.get("message")}, status=502)
+
+    return web.json_response({"status": "ok", "message": result.get("message")})
+
+
 async def handle_public_account_buy_balance(request: web.Request) -> web.Response:
     """POST /api/public/account/buy/balance — покупка НОВОГО ключа для
     залогиненного личного кабинета сайта, оплата с личного баланса, без
@@ -3422,6 +3519,8 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)
     app.router.add_post("/api/public/account/key/renew/balance", handle_public_account_key_renew_balance)
+    app.router.add_post("/api/public/account/key/devices", handle_public_account_key_devices)
+    app.router.add_post("/api/public/account/key/device_disconnect", handle_public_account_key_device_disconnect)
     app.router.add_post("/api/public/account/buy/balance", handle_public_account_buy_balance)
     app.router.add_post("/api/rename", handle_rename)
     app.router.add_post("/api/delete", handle_delete)

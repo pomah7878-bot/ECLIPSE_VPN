@@ -678,6 +678,59 @@ CLEAR_DEVICE_IPS_TOOL = {
 }
 
 
+LIST_DEVICES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "list_devices",
+        "description": (
+            "Показывает подробный список подключённых устройств клиента (не "
+            "просто число, а КАЖДОЕ устройство отдельно с его типом/моделью и "
+            "ОС — если у админа включён режим ограничения по HWID, либо "
+            "список IP-адресов без типа устройства — если режим по IP), плюс "
+            "сколько ещё устройств можно подключить. Используй, когда клиент "
+            "просит 'покажи мои устройства', 'что подключено', 'какие "
+            "телефоны/компьютеры используют мой ключ' — в отличие от "
+            "check_active_devices, даёт список по каждому устройству, а не "
+            "просто число."
+        ),
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
+    },
+}
+
+
+DISCONNECT_DEVICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "disconnect_device",
+        "description": (
+            "Реально отключает ОДНО конкретное устройство клиента (не весь "
+            "список разом) — используй ТОЛЬКО после того, как уже показал "
+            "клиенту список инструментом list_devices и он назвал номер "
+            "устройства из этого списка (1, 2, 3...). Доступно только в "
+            "режиме ограничения по HWID — в режиме по IP панель не умеет "
+            "отключать одно устройство, там нужен clear_device_ips (сброс "
+            "всех сразу). Безопасно и обратимо — устройство просто "
+            "переподключится и снова займёт слот при следующем подключении."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                **_KEY_IDENTIFIER_PARAM,
+                "device_number": {
+                    "type": "integer",
+                    "description": (
+                        "Номер устройства из списка, который показал list_devices "
+                        "(1, 2, 3...). ОБЯЗАТЕЛЬНОЕ поле — без него нельзя понять, "
+                        "какое устройство отключать."
+                    ),
+                },
+            },
+            "required": ["device_number"],
+        },
+    },
+}
+
+
 SUGGEST_KEY_REPLACEMENT_TOOL = {
     "type": "function",
     "function": {
@@ -921,49 +974,27 @@ async def check_active_devices(telegram_id: int) -> str:
     if not key_rows:
         return "У клиента нет активных ключей с настроенным сервером — проверять нечего."
 
-    from database.db_servers import get_server_by_id
-    from bot.services.vpn_api import get_client_from_server_data
-    import time as _time
-
-    RECENT_WINDOW_SECONDS = 600  # считаем "подключён сейчас", если IP виден за последние 10 минут
-
-    # Один и тот же мастер-сервер может обслуживать сразу несколько ключей клиента
-    # (как правило, все на одном server_id) — кэшируем ответ панели на server_id,
-    # чтобы не дублировать сетевые запросы.
-    guid_cache: dict = {}
+    # Раньше здесь всегда считались уникальные IP за clientIpsByGuid — верно
+    # только в режиме ограничения по IP. В режиме по HWID это считало не то
+    # (список IP, а не привязанные устройства), поэтому теперь используется
+    # общая функция, которая сама выбирает нужный панельный endpoint по
+    # текущему device_limit_type (см. bot/services/device_management.py —
+    # тот же модуль стоит за list_devices/disconnect_device).
+    from bot.services.device_management import get_devices_for_key, DeviceManagementError
 
     parts = []
     for row in key_rows:
-        server_data = get_server_by_id(row["server_id"])
         name = row["custom_name"] or f"ключ #{row['id']}"
-        if not server_data:
+        if not row.get("server_id"):
             parts.append(f"— {name}: сервер не найден")
             continue
         try:
-            if row["server_id"] not in guid_cache:
-                client = get_client_from_server_data(server_data)
-                guid_cache[row["server_id"]] = await asyncio.wait_for(
-                    client._request('POST', '/panel/api/clients/clientIpsByGuid'),
-                    timeout=8.0,
-                )
-            result = guid_cache[row["server_id"]]
-            by_guid = (result.get('obj') or {}) if isinstance(result, dict) else {}
-
-            # Мастер-панель может управлять несколькими нодами — собираем IP
-            # адреса этого клиента со ВСЕХ нод, не только с самой мастер-панели.
-            now = _time.time()
-            unique_ips = set()
-            for node_entries in by_guid.values():
-                for ip_entry in node_entries.get(row['panel_email'], []):
-                    ts = ip_entry.get('timestamp') or 0
-                    if now - ts <= RECENT_WINDOW_SECONDS:
-                        unique_ips.add(ip_entry.get('ip'))
-
-            connected = len(unique_ips)
-            limit = row.get('max_ips') or '—'
+            result = await get_devices_for_key(row)
+            connected = result["current_count"]
+            limit = result.get("max_devices") or row.get('max_ips') or '—'
             parts.append(f"— {name}: подключено устройств {connected} из {limit}")
-        except asyncio.TimeoutError:
-            parts.append(f"— {name}: сервер не ответил вовремя, данные недоступны")
+        except DeviceManagementError as e:
+            parts.append(f"— {name}: не удалось проверить ({e})")
         except Exception as e:
             logger.warning(f"Ошибка проверки устройств для ключа {row['id']}: {e}")
             parts.append(f"— {name}: не удалось проверить (ошибка запроса к панели)")
@@ -1168,6 +1199,153 @@ async def clear_device_ips(telegram_id: int, key_identifier: Optional[str] = Non
         f"Готово. {what_cap} для «{key_name}» сброшен. "
         f"Лимит устройств теперь свободен — первые новые подключения снова его займут."
     )
+
+
+def _find_active_keys_for_device_mgmt(telegram_id: int) -> Optional[list]:
+    """Общий поиск активных, настроенных на сервере ключей клиента — ровно
+    тот же запрос, что в clear_device_ips/check_active_devices, вынесен
+    сюда, чтобы list_devices/disconnect_device не дублировали SQL. Возвращает
+    None при ошибке БД (вызывающий код сам решает текст сообщения об ошибке)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return None
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.server_id, vk.panel_email, t.max_ips
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               LEFT JOIN tariffs t ON t.id = vk.tariff_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')
+                 AND vk.server_id IS NOT NULL AND vk.panel_email IS NOT NULL""",
+            (telegram_id,),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для управления устройствами: {e}")
+        return None
+
+
+def _resolve_single_key_for_device_mgmt(telegram_id: int, key_identifier: Optional[str]):
+    """Возвращает (key_dict, None) при успехе или (None, error_message_str)
+    при любой проблеме — общая логика "один ключ / несколько ключей,
+    уточни" для list_devices и disconnect_device."""
+    key_rows = _find_active_keys_for_device_mgmt(telegram_id)
+    if key_rows is None:
+        return None, "Не удалось выполнить действие из-за ошибки БД."
+    if not key_rows:
+        return None, "У клиента нет активных настроенных ключей."
+
+    if len(key_rows) == 1:
+        return key_rows[0], None
+
+    resolved = _resolve_ambiguous_key(key_rows, key_identifier)
+    if resolved is None:
+        lines = [f"— {k.get('custom_name') or ('ключ #' + str(k['id']))}" for k in key_rows]
+        listing = "\n".join(lines)
+        return None, (
+            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+            f"именно показать устройства:\n{listing}\n"
+            f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду, "
+            f"а затем вызови этот инструмент ещё раз, передав key_identifier с названием/номером "
+            f"ключа, который назвал клиент."
+        )
+    return resolved, None
+
+
+async def list_devices(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Подробный список подключённых устройств активного ключа клиента —
+    с типом/моделью и ОС в режиме HWID, либо списком IP в режиме IP."""
+    key, error = _resolve_single_key_for_device_mgmt(telegram_id, key_identifier)
+    if error:
+        return error
+
+    from bot.services.device_management import get_devices_for_key, format_device_line, DeviceManagementError
+
+    key_name = key.get("custom_name") or f"ключ #{key['id']}"
+    try:
+        result = await get_devices_for_key(key)
+    except DeviceManagementError as e:
+        return str(e)
+    except Exception as e:
+        logger.error(f"Ошибка получения списка устройств для ключа {key['id']}: {e}")
+        return "Не удалось получить список устройств из-за технической ошибки."
+
+    max_devices = result.get("max_devices") or "—"
+    devices = result.get("devices") or []
+    if not devices:
+        return (
+            f"«{key_name}»: сейчас не подключено ни одного устройства (лимит {max_devices}). "
+            f"Слоты свободны."
+        )
+
+    lines = [format_device_line(d, i + 1) for i, d in enumerate(devices)]
+    listing = "\n".join(lines)
+    mode_note = (
+        "" if result.get("limit_type") == "hwid"
+        else "\n(режим ограничения — по IP, тип/модель устройства панель не показывает)"
+    )
+    return (
+        f"«{key_name}»: подключено {result['current_count']} из {max_devices}.{mode_note}\n{listing}\n\n"
+        f"Если клиент попросит отключить одно из этих устройств — вызови disconnect_device "
+        f"с номером устройства из этого списка."
+    )
+
+
+async def disconnect_device(telegram_id: int, device_number: int, key_identifier: Optional[str] = None) -> str:
+    """Отключает ОДНО устройство активного ключа клиента по его порядковому
+    номеру из списка, который вернул list_devices (нужно вызывать list_devices
+    непосредственно перед этим, чтобы номера совпадали — порядок стабильный,
+    но список мог измениться между вызовами)."""
+    key, error = _resolve_single_key_for_device_mgmt(telegram_id, key_identifier)
+    if error:
+        return error
+
+    from bot.services.device_management import get_devices_for_key, disconnect_device as _disconnect, DeviceManagementError
+
+    key_name = key.get("custom_name") or f"ключ #{key['id']}"
+    try:
+        result = await get_devices_for_key(key)
+    except DeviceManagementError as e:
+        return str(e)
+    except Exception as e:
+        logger.error(f"Ошибка получения списка устройств для ключа {key['id']}: {e}")
+        return "Не удалось получить список устройств из-за технической ошибки."
+
+    if result.get("limit_type") != "hwid":
+        return (
+            "В текущем режиме ограничения (по IP) нельзя отключить одно конкретное устройство — "
+            "только сбросить весь список сразу (инструмент clear_device_ips)."
+        )
+
+    devices = result.get("devices") or []
+    if not device_number or device_number < 1 or device_number > len(devices):
+        return (
+            f"Неверный номер устройства ({device_number}). Сначала вызови list_devices, "
+            f"чтобы получить актуальный список и номера (сейчас в списке {len(devices)} устройств)."
+        )
+
+    target = devices[device_number - 1]
+    device_id = target.get("device_id")
+    if device_id is None:
+        return "Не удалось определить устройство для отключения — попробуй заново вызвать list_devices."
+
+    try:
+        outcome = await _disconnect(key, device_id)
+    except Exception as e:
+        logger.error(f"Ошибка отключения устройства {device_id} для ключа {key['id']}: {e}")
+        return "Не удалось отключить устройство из-за технической ошибки."
+
+    if not outcome.get("ok"):
+        return outcome.get("message") or "Не удалось отключить устройство."
+
+    logger.info(f"AI отключил устройство {device_id} ключа {key['id']} (user {telegram_id})")
+    device_desc = target.get("model") or target.get("os") or f"устройство #{device_number}"
+    return f"Готово. Устройство «{device_desc}» отключено от «{key_name}» — слот освобождён."
 
 
 async def suggest_key_replacement(telegram_id: int, key_identifier: Optional[str] = None) -> str:
@@ -2173,7 +2351,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     try:
         response = await _chat_completion_with_fallback(
             messages, max_tokens=1200, temperature=0.7,
-            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="auto", timeout=15.0,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="auto", timeout=15.0,
         )
         assistant_msg = response.choices[0].message
 
@@ -2181,7 +2359,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
@@ -2298,6 +2476,40 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                         "tool_call_id": tool_call.id,
                         "content": clear_result,
                     })
+                elif tool_call.function.name == "list_devices":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"📱 AI показывает список устройств (user {req.user_id}, key={key_identifier})")
+                    devices_list_result = await list_devices(req.user_id, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": devices_list_result,
+                    })
+                elif tool_call.function.name == "disconnect_device":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    device_number = args.get("device_number")
+                    try:
+                        device_number = int(device_number)
+                    except (TypeError, ValueError):
+                        device_number = None
+                    logger.info(f"🔌 AI отключает устройство #{device_number} (user {req.user_id}, key={key_identifier})")
+                    if device_number is None:
+                        disconnect_result = "Не указан номер устройства — сначала вызови list_devices."
+                    else:
+                        disconnect_result = await disconnect_device(req.user_id, device_number, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": disconnect_result,
+                    })
                 elif tool_call.function.name == "suggest_key_replacement":
                     try:
                         args = json.loads(tool_call.function.arguments)
@@ -2345,7 +2557,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             # финальный текстовый ответ на основе того, что уже нашла.
             response = await _chat_completion_with_fallback(
                 messages, max_tokens=1200, temperature=0.7, timeout=15.0,
-                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
             )
             assistant_msg = response.choices[0].message
 
