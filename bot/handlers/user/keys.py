@@ -952,6 +952,15 @@ async def _handle_import_deeplink(callback: CallbackQuery, scheme: str, app_name
         await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
         return
 
+    # Помимо общей лицензионной фичи выше, админ конкретной установки может
+    # независимо скрыть кнопку под каждое отдельное приложение (например,
+    # оставить Happ и INCY, но выключить Karing) — см.
+    # database/db_settings.py, is_cabinet_import_app_enabled().
+    from database.requests import is_cabinet_import_app_enabled, CABINET_IMPORT_APPS
+    if scheme in CABINET_IMPORT_APPS and not is_cabinet_import_app_enabled(scheme):
+        await callback.answer("Импорт в это приложение сейчас отключён администратором", show_alert=True)
+        return
+
     from bot.services.vpn_api import get_public_subscription_url_for_key
     if key_id is not None:
         key = await _get_specific_active_key_with_sub(callback.from_user.id, key_id)

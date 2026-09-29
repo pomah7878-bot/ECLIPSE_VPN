@@ -1147,12 +1147,21 @@
                 // упирались в страницу "функция недоступна" — теперь ещё
                 // сверяемся с window._appImportEnabled, выставленным в init().
                 //
-                // 2 кнопки (QR, Копия) всегда + 3 кнопки импорта, если фича
-                // куплена и есть sub_url — итого 5, а не 4 (раньше колонки не
-                // обновили, когда добавили кнопку Karing, и пятая кнопка
-                // переносилась на отдельную строку одна слева).
-                const showImport = !!(key.sub_url && window._appImportEnabled);
-                const cols = showImport ? 'grid-cols-5' : 'grid-cols-2';
+                // Дополнительно к общей лицензионной фиче, у админа
+                // установки есть отдельный переключатель на КАЖДОЕ из трёх
+                // приложений (window._cabinetImportEnabled, тоже из
+                // init()) — можно скрыть, например, только Karing, не
+                // трогая Happ/INCY.
+                const importBase = !!(key.sub_url && window._appImportEnabled);
+                const showHapp = importBase && window._cabinetImportEnabled.happ;
+                const showIncy = importBase && window._cabinetImportEnabled.incy;
+                const showKaring = importBase && window._cabinetImportEnabled.karing;
+                const importCount = [showHapp, showIncy, showKaring].filter(Boolean).length;
+                // 2 кнопки (QR, Копия) всегда + от 0 до 3 кнопок импорта —
+                // сетка подстраивается под фактическое число кнопок (раньше
+                // колонки не обновили, когда добавили кнопку Karing, и
+                // пятая кнопка переносилась на отдельную строку одна слева).
+                const cols = 'grid-cols-' + (2 + importCount);
                 iconRow = `<div class="grid ${cols} gap-2 mt-2">
                     <button onclick="showQR(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">▦</span>QR
@@ -1160,14 +1169,20 @@
                     <button onclick="copySubLink(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">⧉</span>Копия
                     </button>`;
-                if (showImport) {
+                if (showHapp) {
                     iconRow += `
                     <button onclick="importToApp('happ', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">↗</span>Happ
-                    </button>
+                    </button>`;
+                }
+                if (showIncy) {
+                    iconRow += `
                     <button onclick="importToApp('incy', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">↗</span>INCY
-                    </button>
+                    </button>`;
+                }
+                if (showKaring) {
+                    iconRow += `
                     <button onclick="importToApp('karing', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">↗</span>Karing
                     </button>`;
@@ -1619,6 +1634,15 @@
                 // false: если site-info не удалось получить, лучше молча
                 // скрыть кнопки, чем показать нерабочие.
                 window._appImportEnabled = (siteInfo.status === 'fulfilled' && siteInfo.value.app_import_enabled === true);
+                // Отдельный переключатель на каждое приложение (админ конкретной
+                // установки может скрыть, скажем, только Karing). Тоже безопасный
+                // дефолт false при неудаче запроса.
+                const _siteInfoVal = (siteInfo.status === 'fulfilled') ? siteInfo.value : {};
+                window._cabinetImportEnabled = {
+                    happ: _siteInfoVal.happ_import_enabled === true,
+                    incy: _siteInfoVal.incy_import_enabled === true,
+                    karing: _siteInfoVal.karing_import_enabled === true,
+                };
                 window._userLanguage = (langRes.status === 'fulfilled' && langRes.value.language) || 'ru';
 
                 let html = '';

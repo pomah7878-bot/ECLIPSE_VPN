@@ -922,6 +922,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     from database.requests import (
         get_effective_brand_name, get_cabinet_theme_id, get_shop_theme_id, get_marketing_channel_id,
         is_site_auth_method_enabled, get_zvonok_public_key, get_zvonok_campaign_id,
+        is_cabinet_import_app_enabled,
     )
     from bot.services.license import is_feature_available
 
@@ -952,6 +953,13 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         # Явно передаём статус фичи, чтобы фронтенд не показывал нерабочие
         # кнопки вообще, если она не куплена/выключена админом.
         "app_import_enabled": is_feature_available("app_import"),
+        # Помимо общей лицензионной фичи выше, админ КОНКРЕТНОЙ установки
+        # может независимо скрыть кнопку под каждое отдельное приложение
+        # (например, показывать Happ и INCY, но не Karing) — см.
+        # database/db_settings.py, is_cabinet_import_app_enabled().
+        "happ_import_enabled": is_cabinet_import_app_enabled("happ"),
+        "incy_import_enabled": is_cabinet_import_app_enabled("incy"),
+        "karing_import_enabled": is_cabinet_import_app_enabled("karing"),
     })
     resp.headers['Cache-Control'] = 'no-store'
     return resp
@@ -3160,6 +3168,19 @@ async def handle_import(request: web.Request) -> web.Response:
         return web.Response(text="<h1>Import template not found</h1>", status=404)
 
     scheme = request.query.get("scheme", "").strip().lower()
+
+    # Помимо общей лицензионной фичи выше, админ конкретной установки может
+    # независимо скрыть кнопку под каждое отдельное приложение (см.
+    # database/db_settings.py, is_cabinet_import_app_enabled) — если так,
+    # прямой запрос к /import с этим scheme тоже должен быть отклонён, а
+    # не только скрыта сама кнопка на фронтенде.
+    from database.requests import is_cabinet_import_app_enabled, CABINET_IMPORT_APPS
+    if scheme in CABINET_IMPORT_APPS and not is_cabinet_import_app_enabled(scheme):
+        return _import_error_page(
+            "Функция недоступна",
+            "Импорт подписки в это приложение сейчас отключён администратором.",
+        )
+
     raw_url = request.query.get("url", "").strip()
     if not raw_url:
         return _import_error_page(

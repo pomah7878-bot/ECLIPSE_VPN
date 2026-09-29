@@ -1372,12 +1372,19 @@
                             <button onclick="copySubUrl(this, '${subUrlId}')" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">📋 Копировать</button>
                             <button onclick="showKeyQR(this)" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">▦ Показать QR</button>
                         </div>
-                        ${window._appImportEnabled ? `
-                        <div class="flex gap-2">
-                            <button data-scheme="happ" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>
-                            <button data-scheme="incy" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>
-                            <button data-scheme="karing" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>
-                        </div>` : ''}
+                        ${(() => {
+                            // Помимо общей лицензионной фичи app_import, у админа
+                            // установки есть отдельный переключатель на каждое из
+                            // трёх приложений (window._cabinetImportEnabled) —
+                            // можно скрыть, например, только Karing.
+                            if (!window._appImportEnabled) return '';
+                            const ie = window._cabinetImportEnabled || {};
+                            let btns = '';
+                            if (ie.happ) btns += `<button data-scheme="happ" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>`;
+                            if (ie.incy) btns += `<button data-scheme="incy" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>`;
+                            if (ie.karing) btns += `<button data-scheme="karing" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>`;
+                            return btns ? `<div class="flex gap-2">${btns}</div>` : '';
+                        })()}
                     </div>
                 `;
             }
@@ -1533,6 +1540,13 @@
             // показать нерабочие (ведущие на страницу "функция недоступна").
             const siteInfo = await siteInfoPromise;
             window._appImportEnabled = siteInfo.app_import_enabled === true;
+            // Отдельный переключатель на каждое приложение (админ конкретной
+            // установки может скрыть, скажем, только Karing).
+            window._cabinetImportEnabled = {
+                happ: siteInfo.happ_import_enabled === true,
+                incy: siteInfo.incy_import_enabled === true,
+                karing: siteInfo.karing_import_enabled === true,
+            };
 
             _sessionKeys = session.keys || [];
             _sessionBalanceCents = session.balance_cents || 0;

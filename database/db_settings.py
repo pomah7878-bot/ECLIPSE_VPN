@@ -66,6 +66,9 @@ __all__ = [
     'SITE_AUTH_METHODS',
     'is_site_auth_method_enabled',
     'set_site_auth_method_enabled',
+    'CABINET_IMPORT_APPS',
+    'is_cabinet_import_app_enabled',
+    'set_cabinet_import_app_enabled',
     'get_effective_brand_name',
     'set_brand_name',
     'get_effective_turnstile_site_key',
@@ -1017,6 +1020,32 @@ def set_site_auth_method_enabled(method: str, enabled: bool) -> None:
     if method not in SITE_AUTH_METHODS:
         raise ValueError(f"Неизвестный способ входа: {method}")
     set_setting(f'site_auth_{method}_enabled', '1' if enabled else '0')
+
+
+CABINET_IMPORT_APPS = {
+    'happ': '🚀 Happ',
+    'incy': '⚡️ INCY',
+    'karing': '🎯 Karing',
+}
+
+
+def is_cabinet_import_app_enabled(app: str) -> bool:
+    """Показывать ли в личном кабинете (веб-кабинет /, сайт /shop) кнопку
+    импорта подписки в конкретное приложение (Happ/INCY/Karing). Это
+    ОТДЕЛЬНЫЙ переключатель от лицензионной фичи app_import — сама функция
+    импорта может быть куплена в лицензии, но админ конкретной установки
+    вправе показывать не все три кнопки, а только часть из них. По
+    умолчанию включены все три — не меняет поведение для тех, кто уже
+    пользуется импортом."""
+    if app not in CABINET_IMPORT_APPS:
+        return False
+    return get_setting(f'cabinet_import_{app}_enabled', '1') != '0'
+
+
+def set_cabinet_import_app_enabled(app: str, enabled: bool) -> None:
+    if app not in CABINET_IMPORT_APPS:
+        raise ValueError(f"Неизвестное приложение импорта: {app}")
+    set_setting(f'cabinet_import_{app}_enabled', '1' if enabled else '0')
 
 
 def is_demo_payment_enabled() -> bool:

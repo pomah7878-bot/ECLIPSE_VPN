@@ -557,6 +557,12 @@ def _build_direct_import_deeplink(ctx: dict, scheme: str) -> Optional[str]:
     from bot.services.license import is_feature_available
     if not is_feature_available("app_import"):
         return None
+    # Помимо общей лицензионной фичи выше, админ конкретной установки может
+    # независимо скрыть кнопку под каждое отдельное приложение (см.
+    # database/db_settings.py, is_cabinet_import_app_enabled()).
+    from database.requests import is_cabinet_import_app_enabled, CABINET_IMPORT_APPS
+    if scheme in CABINET_IMPORT_APPS and not is_cabinet_import_app_enabled(scheme):
+        return None
     telegram_id = ctx.get('telegram_id')
     if not telegram_id:
         return None

@@ -98,6 +98,60 @@ async def show_integrations_auth_menu(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin_integrations_cabinet_import")
+async def show_integrations_cabinet_import_menu(callback: CallbackQuery):
+    """Подменю «Кнопки импорта в кабинете» — Happ/INCY/Karing по отдельности."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import integrations_cabinet_import_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "📲 <b>Кнопки импорта в кабинете</b>\n\n"
+        "Показывать ли в личном кабинете (в боте и на сайте) кнопку импорта "
+        "подписки в конкретное приложение. Это независимо от того, куплена "
+        "ли сама функция импорта в лицензии — если функция недоступна на "
+        "тарифе, кнопки скрыты в любом случае.",
+        reply_markup=integrations_cabinet_import_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_toggle_cabinet_import:"))
+async def toggle_cabinet_import(callback: CallbackQuery):
+    """Включает/выключает кнопку импорта в кабинете для конкретного
+    приложения (Happ/INCY/Karing) — независимо от лицензионной фичи
+    app_import, которая решает, доступен ли импорт вообще."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import (
+        CABINET_IMPORT_APPS, is_cabinet_import_app_enabled, set_cabinet_import_app_enabled,
+    )
+
+    app = callback.data.split(":", 1)[1]
+    if app not in CABINET_IMPORT_APPS:
+        await callback.answer("Неизвестное приложение", show_alert=True)
+        return
+
+    new_value = not is_cabinet_import_app_enabled(app)
+    set_cabinet_import_app_enabled(app, new_value)
+
+    label = CABINET_IMPORT_APPS[app]
+    await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: {label}")
+    from bot.keyboards.admin_settings import integrations_cabinet_import_menu_kb
+    await safe_edit_or_send(
+        callback.message,
+        "📲 <b>Кнопки импорта в кабинете</b>\n\n"
+        "Показывать ли в личном кабинете (в боте и на сайте) кнопку импорта "
+        "подписки в конкретное приложение. Это независимо от того, куплена "
+        "ли сама функция импорта в лицензии — если функция недоступна на "
+        "тарифе, кнопки скрыты в любом случае.",
+        reply_markup=integrations_cabinet_import_menu_kb(),
+    )
+
+
 @router.callback_query(F.data == "admin_integrations_zvonok")
 async def show_integrations_zvonok_menu(callback: CallbackQuery):
     """Подменю «Верификация телефона (Zvonok)»."""

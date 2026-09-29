@@ -236,6 +236,10 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
         callback_data='admin_toggle_start_import_buttons',
     ))
     builder.row(InlineKeyboardButton(
+        text='📲 Кнопки импорта в кабинете (Happ/INCY/Karing)',
+        callback_data='admin_integrations_cabinet_import',
+    ))
+    builder.row(InlineKeyboardButton(
         text='💰 Кнопка пополнения баланса: ✅' if is_start_balance_button_enabled() else '💰 Кнопка пополнения баланса: ❌',
         callback_data='admin_toggle_start_balance_button',
     ))
@@ -299,6 +303,26 @@ def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
         ),
     )
     builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def integrations_cabinet_import_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Кнопки импорта в кабинете» — независимый переключатель на
+    каждое приложение (Happ/INCY/Karing) в веб-кабинете (/) и на сайте
+    (/shop). Это ОТДЕЛЬНАЯ настройка от лицензионной фичи app_import —
+    та решает, доступен ли импорт вообще, а эта — какие именно из трёх
+    кнопок показывать, если он доступен."""
+    from database.requests import CABINET_IMPORT_APPS, is_cabinet_import_app_enabled
+    builder = InlineKeyboardBuilder()
+    for app, label in CABINET_IMPORT_APPS.items():
+        builder.row(
+            InlineKeyboardButton(text=label, callback_data='admin_noop'),
+            InlineKeyboardButton(
+                text='✅ Вкл' if is_cabinet_import_app_enabled(app) else '❌ Выкл',
+                callback_data=f'admin_toggle_cabinet_import:{app}',
+            ),
+        )
+    builder.row(back_button('admin_integrations_site'), home_button())
     return builder.as_markup()
 
 
