@@ -436,7 +436,7 @@
             </div>
         </div>
         <div class="flex items-center gap-2 flex-shrink-0">
-            <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
+            <a id="newsChannelLink" href="#" target="_blank" rel="noopener noreferrer" title="Новости канала"
                 class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2 py-1 rounded-full transition hover:bg-[color:var(--panel-2)]"
                 style="text-decoration:none;display:none;">📰</a>
             <button onclick="openPersonalCabinet()" title="Личный кабинет"
@@ -846,7 +846,7 @@
                 <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[244px] h-[244px] flex items-center justify-center">
                     <img src="${pay.qr_image_url}" alt="QR" class="w-[218px] h-[218px] rounded-lg">
                 </div>
-                <a href="${pay.qr_url}" target="_blank" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-2">Открыть страницу оплаты</a>
+                <a href="${pay.qr_url}" target="_blank" rel="noopener noreferrer" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-2">Открыть страницу оплаты</a>
                 <div id="payStatusNote" class="text-xs text-mist mb-2">Ожидаем оплату…</div>
                 <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
             `;
@@ -1063,12 +1063,12 @@
                 <div class="mb-3">
                     <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)}</div>
                     ${g.inbounds.map((ib, ii) => {
-                        const ping = ib.protocol === 'hysteria2' ? '…' : '…';
+                        const ping = '…'; // измеряется асинхронно в measureClientPings()
                         return `
                         <div class="flex items-center gap-1.5 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-2.5 py-2 mb-1.5 text-[11px]">
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('protocol', ib.protocol_label)}">${ib.protocol_label}</span>
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('transport', ib.transport_label)}">${ib.transport_label}</span>
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('security', ib.security_label)}">${ib.security_label}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('protocol', ib.protocol_label)}">${escapeHtml(ib.protocol_label)}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('transport', ib.transport_label)}">${escapeHtml(ib.transport_label)}</span>
+                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('security', ib.security_label)}">${escapeHtml(ib.security_label)}</span>
                             <span class="text-mist-dim flex-1"></span>
                             <span class="text-mist-dim" id="ping-${keyId}-${gi}-${ii}">${ping}</span>
                             <button onclick="copyInboundLink(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">⧉</button>
@@ -1131,7 +1131,11 @@
 
             let iconRow = '';
             if (isActive) {
-                const cols = key.sub_url ? 'grid-cols-4' : 'grid-cols-2';
+                // 2 кнопки (QR, Копия) всегда + 3 кнопки импорта (Happ/INCY/Karing),
+                // если есть sub_url — итого 5, а не 4 (раньше колонки не обновили,
+                // когда добавили кнопку Karing, и пятая кнопка переносилась на
+                // отдельную строку одна слева).
+                const cols = key.sub_url ? 'grid-cols-5' : 'grid-cols-2';
                 iconRow = `<div class="grid ${cols} gap-2 mt-2">
                     <button onclick="showQR(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">▦</span>QR
