@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 131
+LATEST_VERSION = 132
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3010,6 +3010,67 @@ def migration_131(conn: sqlite3.Connection) -> None:
     logger.info("Migration v131 applied: btn_key_devices добавлена на key_details (в одну строку с Автопродление)")
 
 
+def migration_132(conn: sqlite3.Connection) -> None:
+    """Версия 1.139: исправляет строку кнопки "📱 Устройства" на карточке
+    ключа (key_details) — migration_131 ставила её в ЖЁСТКО заданный
+    row=2, но у части установок (например, после ручных customizations
+    через редактор кнопок — добавления/удаления своих кнопок, менявших
+    нумерацию строк) "🔄 Автопродление" оказалась не в row=2, а в другой
+    строке — из-за чего "Устройства" осталась отдельной строкой НИЖЕ,
+    а не рядом с "Автопродление", как задумано.
+
+    Вместо жёсткого номера строки — теперь ищет ФАКТИЧЕСКИЙ row кнопки
+    btn_key_auto_renew_toggle в каждом наборе кнопок key_details и
+    переставляет btn_key_devices в ту же строку (col — свободная из
+    0/1, если col автопродления не 0). Если автопродления в наборе нет
+    вообще — строку не трогает (оставляет как есть)."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v132: страница 'key_details' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+
+        auto_renew_row = None
+        auto_renew_col = 0
+        devices_btn = None
+        for b in buttons:
+            if b.get("id") == "btn_key_auto_renew_toggle":
+                auto_renew_row = b.get("row")
+                auto_renew_col = b.get("col", 0)
+            elif b.get("id") == "btn_key_devices":
+                devices_btn = b
+
+        if auto_renew_row is None or devices_btn is None:
+            continue
+
+        target_col = 1 if auto_renew_col == 0 else 0
+        if devices_btn.get("row") == auto_renew_row and devices_btn.get("col") == target_col:
+            continue
+
+        devices_btn["row"] = auto_renew_row
+        devices_btn["col"] = target_col
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+        logger.info(
+            "Migration v132: btn_key_devices переставлена в row=%s col=%s (%s)",
+            auto_renew_row, target_col, column_name,
+        )
+
+    logger.info("Migration v132 applied: строка btn_key_devices выровнена по фактическому row Автопродления")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3068,6 +3129,7 @@ MIGRATIONS = {
     129: migration_129,
     130: migration_130,
     131: migration_131,
+    132: migration_132,
 }
 
 
