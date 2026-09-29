@@ -614,6 +614,22 @@ def _import_fallback_callback(ctx: dict, base: str) -> dict:
     return {"callback_data": base}
 
 
+def _import_scheme_allowed(scheme: str) -> bool:
+    """Разрешён ли показ кнопки быстрого импорта для конкретного приложения
+    (Happ/INCY/Karing) — И лицензионная фича app_import куплена, И админ
+    КОНКРЕТНОЙ установки не выключил именно это приложение (см.
+    database/db_settings.py, is_cabinet_import_app_enabled). Если что-то
+    из этого не так — кнопку нужно СКРЫТЬ целиком (return None у
+    резолвера), а не показывать её с последующей ошибкой по клику."""
+    from bot.services.license import is_feature_available
+    if not is_feature_available("app_import"):
+        return False
+    from database.requests import is_cabinet_import_app_enabled, CABINET_IMPORT_APPS
+    if scheme in CABINET_IMPORT_APPS and not is_cabinet_import_app_enabled(scheme):
+        return False
+    return True
+
+
 def _resolve_key_import_happ(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение Happ.
 
@@ -623,6 +639,8 @@ def _resolve_key_import_happ(ctx: dict) -> Optional[dict]:
     и мягко сообщает об ошибке, если его нет — там нужен запрос к панели,
     поэтому остаётся отдельным шагом.
     """
+    if not _import_scheme_allowed("happ"):
+        return None
     deeplink = _build_direct_import_deeplink(ctx, "happ")
     if deeplink:
         return {"url": deeplink}
@@ -632,6 +650,8 @@ def _resolve_key_import_happ(ctx: dict) -> Optional[dict]:
 
 def _resolve_key_import_karing(ctx: dict) -> Optional[dict]:
     """Кнопка быстрого импорта подписки в приложение Karing."""
+    if not _import_scheme_allowed("karing"):
+        return None
     deeplink = _build_direct_import_deeplink(ctx, "karing")
     if deeplink:
         return {"url": deeplink}
@@ -654,6 +674,8 @@ def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     keys.py), который сам проверяет наличие активного ключа с подпиской
     и мягко сообщает об ошибке, если его нет.
     """
+    if not _import_scheme_allowed("incy"):
+        return None
     deeplink = _build_direct_import_deeplink(ctx, "incy")
     if deeplink:
         return {"url": deeplink}
