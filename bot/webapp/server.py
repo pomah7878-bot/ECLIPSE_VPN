@@ -1874,6 +1874,14 @@ async def handle_zvonok_postback(request: web.Request) -> web.Response:
     Не критичен для работы верификации — опрос API остаётся резервным
     вариантом, если постбек не настроен или не дошёл (см.
     check_phone_confirmation)."""
+    from database.requests import get_zvonok_postback_token
+
+    token = request.query.get("token", "").strip()
+    expected_token = get_zvonok_postback_token()
+    if not token or not hmac.compare_digest(token, expected_token):
+        logger.warning("Zvonok postback: отклонён запрос с неверным/отсутствующим token")
+        return web.Response(text="forbidden", status=403)
+
     call_id = request.query.get("call_id", "").strip()
     result = request.query.get("result", "").strip()
     if not call_id or result not in ("ok", "no_answer"):

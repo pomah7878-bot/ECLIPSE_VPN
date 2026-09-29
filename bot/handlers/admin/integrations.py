@@ -130,7 +130,7 @@ async def show_zvonok_postback_info(callback: CallbackQuery):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    from database.requests import get_effective_webapp_url
+    from database.requests import get_effective_webapp_url, get_zvonok_postback_token
     webapp_url = (get_effective_webapp_url() or "").rstrip("/")
 
     if not webapp_url:
@@ -140,8 +140,9 @@ async def show_zvonok_postback_info(callback: CallbackQuery):
             "Домен сайта) — без него нельзя построить рабочие ссылки."
         )
     else:
-        success_url = f"{webapp_url}/api/public/zvonok/postback?call_id={{ct_call_id}}&amp;result=ok"
-        no_answer_url = f"{webapp_url}/api/public/zvonok/postback?call_id={{ct_call_id}}&amp;result=no_answer"
+        postback_token = get_zvonok_postback_token()
+        success_url = f"{webapp_url}/api/public/zvonok/postback?call_id={{ct_call_id}}&amp;result=ok&amp;token={postback_token}"
+        no_answer_url = f"{webapp_url}/api/public/zvonok/postback?call_id={{ct_call_id}}&amp;result=no_answer&amp;token={postback_token}"
         text = (
             "📡 <b>Постбек (мгновенное подтверждение)</b>\n\n"
             "Без постбека подтверждение звонка приходит с задержкой (мы "

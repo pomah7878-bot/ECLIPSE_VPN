@@ -94,6 +94,7 @@ __all__ = [
     'set_shop_theme_id',
     'delete_setting',
     'get_site_session_secret',
+    'get_zvonok_postback_token',
     'is_update_notifications_enabled',
     'get_display_timezone',
     'set_display_timezone',
@@ -205,6 +206,23 @@ def get_site_session_secret() -> str:
     if not value:
         value = secrets.token_hex(32)
         set_setting('site_session_secret', value)
+    return value
+
+
+def get_zvonok_postback_token() -> str:
+    """Секретный токен для постбека (вебхука) от zvonok.com. Постбек —
+    это ПУБЛИЧНЫЙ GET-эндпоинт (/api/public/zvonok/postback), а call_id
+    при этом отдаётся САМОМУ БРАУЗЕРУ в ответе на запрос верификации —
+    то есть без этого токена любой пользователь мог сам дёрнуть постбек
+    с result=ok и подтвердить свой номер телефона, ни разу не позвонив
+    (полный обход анти-фрод защиты). Генерируется один раз при первом
+    обращении и хранится в БД — админу нужно один раз скопировать его в
+    ссылки постбека в личном кабинете zvonok.com (см. Интеграции →
+    Zvonok → постбек), дальше ничего делать не нужно."""
+    value = get_setting('zvonok_postback_token')
+    if not value:
+        value = secrets.token_hex(16)
+        set_setting('zvonok_postback_token', value)
     return value
 
 def delete_setting(key: str) -> bool:
