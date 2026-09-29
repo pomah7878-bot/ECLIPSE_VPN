@@ -218,7 +218,7 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
 
 def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     """Подменю «Сайт и витрина» — домен, бренд, приложение, витрина."""
-    from database.requests import is_start_import_buttons_enabled, is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_shop_theme_id, SHOP_THEMES, get_webapp_url_backup, get_cloudflare_api_token
+    from database.requests import is_start_balance_button_enabled, is_welcome_page_enabled, get_welcome_template_id, WELCOME_TEMPLATES, get_cabinet_theme_id, CABINET_THEMES, get_shop_theme_id, SHOP_THEMES, get_webapp_url_backup, get_cloudflare_api_token
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🌐 Домен сайта', callback_data='admin_edit_webapp_url'))
     cf_label = '☁️ Cloudflare API-токен' + (': настроен ✅' if get_cloudflare_api_token() else ' (не задан)')
@@ -231,10 +231,11 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🏷 Название бренда', callback_data='admin_edit_brand_name'))
     builder.row(InlineKeyboardButton(text='🖼 Логотип (сайт + бот)', callback_data='admin_edit_logo'))
     builder.row(InlineKeyboardButton(text='📱 Своё приложение', callback_data='admin_edit_own_app'))
-    builder.row(InlineKeyboardButton(
-        text='📥 Кнопки импорта на главной: ✅' if is_start_import_buttons_enabled() else '📥 Кнопки импорта на главной: ❌',
-        callback_data='admin_toggle_start_import_buttons',
-    ))
+    # Раньше здесь была отдельная общая кнопка «📥 Кнопки импорта на
+    # главной» (включала/выключала все три сразу, без учёта лицензии) —
+    # убрана как избыточная и вводившая в заблуждение: показ каждой
+    # кнопки (Happ/INCY/Karing, включая на главном экране) теперь решает
+    # ТОЛЬКО переключатель ниже + лицензионная фича app_import.
     builder.row(InlineKeyboardButton(
         text='📲 Кнопки импорта в кабинете (Happ/INCY/Karing)',
         callback_data='admin_integrations_cabinet_import',

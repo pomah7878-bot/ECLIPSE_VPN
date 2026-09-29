@@ -21,7 +21,6 @@ from database.requests import (
     get_effective_turnstile_site_key, set_turnstile_site_key,
     get_effective_own_app_name, set_own_app_name,
     get_effective_own_app_url, set_own_app_url,
-    is_start_import_buttons_enabled, set_start_import_buttons_enabled,
     is_start_balance_button_enabled, set_start_balance_button_enabled,
     is_welcome_page_enabled, set_welcome_page_enabled,
     WELCOME_TEMPLATES, get_welcome_template_id, set_welcome_template_id,
@@ -1261,17 +1260,11 @@ async def set_zvonok_method(callback: CallbackQuery):
 
 
 
-@router.callback_query(F.data == "admin_toggle_start_import_buttons")
-async def toggle_start_import_buttons(callback: CallbackQuery, state: FSMContext):
-    """Включает/выключает кнопки быстрого импорта (Happ/INCY) на главной странице."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
-        return
-
-    current = is_start_import_buttons_enabled()
-    set_start_import_buttons_enabled(not current)
-    await callback.answer("✅ Кнопки включены" if not current else "⚪ Кнопки выключены")
-    await show_integrations_site_menu(callback)
+# Кнопка «📥 Кнопки импорта на главной» (общий переключатель на все три
+# приложения разом, без учёта лицензии) убрана как избыточная — теперь
+# видимость каждой кнопки (в т.ч. на главном экране) решает переключатель
+# «📲 Кнопки импорта в кабинете» (admin_toggle_cabinet_import) вместе с
+# лицензионной фичей app_import. См. bot/utils/action_registry.py.
 
 
 @router.callback_query(F.data == "admin_toggle_start_balance_button")
