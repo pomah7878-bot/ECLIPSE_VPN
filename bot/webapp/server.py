@@ -1230,11 +1230,21 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 headers["routing"] = f"{scheme}://routing/{routing_mode}/{profile_b64}"
 
     if "subscription-userinfo" not in headers:
+        # Далёкая дата (условно "безлимитный срок") в expires_at — тот же
+        # служебный маркер, что уже обрабатывается при синхронизации с
+        # панелью (см. _key_expiry_time_ms в bot/services/vpn_api.py,
+        # порог тоже 90000 дней): такую дату нужно отдавать Happ/INCY как
+        # expire=0 ("никогда не истекает"), а не буквальным epoch —
+        # иначе вместо "∞" клиент показывает саму дату (обнаружено на
+        # практике на одной из white-label инсталляций).
+        from datetime import timedelta as _timedelta
         expire_epoch = 0
         try:
             expires_at = key.get("expires_at")
             if expires_at:
-                expire_epoch = int(datetime.fromisoformat(expires_at).timestamp())
+                expires_dt = datetime.fromisoformat(expires_at)
+                if expires_dt <= datetime.now() + _timedelta(days=90000):
+                    expire_epoch = int(expires_dt.timestamp())
         except Exception:
             expire_epoch = 0
         traffic_used = key.get("traffic_used") or 0
