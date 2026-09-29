@@ -290,12 +290,19 @@ def _build_keyboard(
     text_replacements: Optional[Dict[str, str]],
     prepend_buttons: Optional[List[List[InlineKeyboardButton]]],
     append_buttons: Optional[List[List[InlineKeyboardButton]]],
+    bottom_button_ids: Optional[set] = None,
 ) -> InlineKeyboardMarkup:
     """
     Collects InlineKeyboardMarkup from a list of buttons.
 
     Applies layer 3 (runtime): visibility dict and system handlers.
     Placement rules: by row, max 2 buttons in a row, fallback in case of collisions.
+
+    bottom_button_ids: ids of DB-driven buttons (e.g. "Назад"/"На главную")
+    that must always render as the LAST row(s), after append_buttons too —
+    regardless of the row/col the admin set for them in the page editor.
+    Buttons are still grouped by their own row/col among themselves, just
+    moved to the very end of the keyboard as a whole.
     """
     from bot.utils.action_registry import (
         ACTION_REGISTRY,
@@ -499,6 +506,7 @@ def _build_keyboard(
             continue
 
         resolved_buttons.append({
+            'id': btn_id,
             'label': rendered_label,
             'icon_custom_emoji_id': icon_custom_emoji_id,
             'callback_data': callback_data,
@@ -509,18 +517,10 @@ def _build_keyboard(
             'col': col,
         })
 
-    # Group by row and build a keyboard
-    builder = InlineKeyboardBuilder()
-
-    # Add prepend_buttons before the page buttons.
-    if prepend_buttons:
-        for row_btns in prepend_buttons:
-            builder.row(*row_btns)
-
-    if resolved_buttons:
+    def _render_grouped_rows(builder_: InlineKeyboardBuilder, buttons_: List[Dict]) -> None:
         # Grouping buttons by row
         rows_map: Dict[int, List[Dict]] = {}
-        for btn in resolved_buttons:
+        for btn in buttons_:
             r = btn['row']
             if r not in rows_map:
                 rows_map[r] = []
@@ -567,12 +567,35 @@ def _build_keyboard(
             # Fallback: MAX_BUTTONS_PER_ROW in a row
             for i in range(0, len(kb_buttons), MAX_BUTTONS_PER_ROW):
                 chunk = kb_buttons[i:i + MAX_BUTTONS_PER_ROW]
-                builder.row(*chunk)
+                builder_.row(*chunk)
+
+    # Buttons pinned to the very bottom (e.g. "Назад"/"На главную") are
+    # rendered last, after append_buttons — no matter what row/col the
+    # admin set for them in the page editor.
+    main_buttons = resolved_buttons
+    pinned_buttons: List[Dict] = []
+    if bottom_button_ids:
+        main_buttons = [b for b in resolved_buttons if b['id'] not in bottom_button_ids]
+        pinned_buttons = [b for b in resolved_buttons if b['id'] in bottom_button_ids]
+
+    # Group by row and build a keyboard
+    builder = InlineKeyboardBuilder()
+
+    # Add prepend_buttons before the page buttons.
+    if prepend_buttons:
+        for row_btns in prepend_buttons:
+            builder.row(*row_btns)
+
+    if main_buttons:
+        _render_grouped_rows(builder, main_buttons)
 
     # Add append_buttons (buttons outside the database, for example “Admin Panel”)
     if append_buttons:
         for row_btns in append_buttons:
             builder.row(*row_btns)
+
+    if pinned_buttons:
+        _render_grouped_rows(builder, pinned_buttons)
 
     return builder.as_markup()
 
@@ -920,6 +943,7 @@ async def render_page(
     media_policy: str = 'page',
     runtime_media: Any = None,
     runtime_media_type: Optional[str] = None,
+    bottom_button_ids: Optional[set] = None,
 ) -> Optional[Message]:
     """
     Retrieves a page from the database and sends/edits a message.
@@ -936,6 +960,10 @@ async def render_page(
                        List of lists InlineKeyboardButton
         append_buttons: Add. rows of buttons outside the database (for example, “Admin panel”)
                        List of lists InlineKeyboardButton
+        bottom_button_ids: ids of DB-driven buttons (e.g. "Назад"/"На главную")
+                       that must always render as the LAST row(s), after
+                       append_buttons too — regardless of the row/col set
+                       for them in the page editor
         force_new: Force a new message to be sent (do not edit)
         fallback_text: Text rendered through the same pipeline if the page row is absent
         send_func: safe_edit_or_send-compatible sender override
@@ -981,6 +1009,7 @@ async def render_page(
         text_replacements=text_replacements,
         prepend_buttons=prepend_buttons,
         append_buttons=append_buttons,
+        bottom_button_ids=bottom_button_ids,
     )
 
     # 4. Define the media

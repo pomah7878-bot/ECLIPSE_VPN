@@ -287,6 +287,10 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         text_replacements=replacements,
         append_buttons=devices_append_buttons,
         force_new=not is_callback,
+        # «Назад» и «На главную» — всегда последней строкой, ниже
+        # «Устройства» и любых других добавляемых кнопок, независимо от
+        # того, в каком порядке админ расставил кнопки в редакторе страниц.
+        bottom_button_ids={'btn_my_keys', 'btn_back_main'},
     )
 
 @router.callback_query(F.data.startswith('key_delete:'))
