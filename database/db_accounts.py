@@ -22,6 +22,7 @@ __all__ = [
     'create_oauth_exchange_code',
     'consume_oauth_exchange_code',
     'get_or_create_placeholder_user_for_site_account',
+    'get_site_account_by_placeholder_user_id',
 ]
 
 
@@ -324,4 +325,17 @@ def get_or_create_placeholder_user_for_site_account(account_id: int) -> int:
         )
         conn.commit()
     return placeholder_user_id
+
+
+def get_site_account_by_placeholder_user_id(user_id: int) -> Optional[Dict[str, Any]]:
+    """Обратный поиск: сайт-аккаунт по его служебной (placeholder) личности
+    в users — нужен, например, чтобы подписать в уведомлении админу, чей
+    именно сайтовый аккаунт продлил ключ (email/провайдер), когда под
+    рукой есть только владелец ключа (users.id из vpn_keys), а не сам
+    исходный site_account_id."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM site_accounts WHERE placeholder_user_id = ?", (user_id,)
+        ).fetchone()
+        return dict(row) if row else None
 

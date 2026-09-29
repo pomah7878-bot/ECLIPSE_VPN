@@ -157,11 +157,15 @@ async def get_account_info_by_claim_code(claim_code: str) -> dict:
     }
 
 
-async def renew_anonymous_vpn_key(key_id: int, tariff_id: int) -> dict:
+async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str = "yookassa_qr") -> dict:
     """
     Продлевает уже существующий ключ (личный кабинет на сайте) — без
     выпуска нового, без затрагивания панели напрямую (используется тот же
     надёжный путь, что и в самом боте).
+
+    Args:
+        payment_type: "yookassa_qr" или "balance" — как был оплачен ЭТОТ
+            конкретный вызов продления (для уведомления админам — см. ниже).
 
     Returns:
         dict: {"ok": bool, "message": str}
@@ -178,6 +182,56 @@ async def renew_anonymous_vpn_key(key_id: int, tariff_id: int) -> dict:
 
     if not result.get("db_updated"):
         return {"ok": False, "message": "Не удалось продлить ключ. Обратитесь в поддержку."}
+
+    # Уведомление админам о продлении — раньше отсутствовало для ВСЕХ
+    # сайтовых путей продления (QR на весь аккаунт, QR на конкретный
+    # ключ, оплата балансом конкретного ключа), в отличие от продления
+    # через сам бот и от НОВЫХ покупок с сайта, которые уже уведомляли.
+    # Собрано здесь же, а не в каждом из вызывающих обработчиков
+    # (bot/webapp/server.py), чтобы гарантированно покрыть все текущие и
+    # будущие пути продления через эту функцию разом.
+    try:
+        from bot.services.notifications import notify_admins_payment
+        from bot.utils.runtime_state import get_bot_instance
+        from database.requests import get_vpn_key_by_id, get_user_by_id, get_site_account_by_placeholder_user_id
+
+        key = get_vpn_key_by_id(key_id)
+        owner = get_user_by_id(key["user_id"]) if key and key.get("user_id") else None
+        telegram_id = owner.get("telegram_id") if owner else None
+        # Служебные ("placeholder") личности анонимных сайтовых аккаунтов
+        # используют заведомо невозможный отрицательный telegram_id (см.
+        # provision_anonymous_vpn_key) — для них показываем уведомление как
+        # сайтовую покупку (🌐 email/провайдер), а не как реального
+        # пользователя бота с (нерабочей) ссылкой tg://user?id=-123...
+        is_real_telegram_user = bool(telegram_id and telegram_id > 0)
+
+        notify_order = {
+            "order_id": f"site-renew-key-{key_id}",
+            "_payment_action": "renewal",
+            "tariff_id": tariff_id,
+            "tariff_name": tariff.get("name") or "—",
+            "vpn_key_id": key_id,
+            "payment_type": payment_type,
+            "price_rub": tariff.get("price_rub") or 0,
+            "final_amount_cents": int(round(float(tariff.get("price_rub") or 0) * 100)),
+        }
+        if is_real_telegram_user:
+            notify_order["user_id"] = key["user_id"]
+        else:
+            buyer_label = "🌐 сайт (личный кабинет)"
+            site_account = get_site_account_by_placeholder_user_id(key["user_id"]) if key and key.get("user_id") else None
+            if site_account and site_account.get("email"):
+                buyer_label = f"🌐 {site_account['email']}"
+            elif site_account and site_account.get("provider"):
+                buyer_label = f"🌐 сайт ({site_account['provider']})"
+            notify_order["user_id"] = None
+            notify_order["_site_buyer_label"] = buyer_label
+
+        bot_instance = get_bot_instance()
+        if bot_instance:
+            await notify_admins_payment(bot_instance, notify_order)
+    except Exception as notify_err:
+        logger.warning(f"Ошибка отправки уведомления админам о продлении ключа {key_id} с сайта: {notify_err}")
 
     return {"ok": True, "message": f"Ключ продлён на {days} дней."}
 

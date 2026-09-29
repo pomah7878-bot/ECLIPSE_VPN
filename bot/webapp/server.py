@@ -1776,6 +1776,39 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
             if real_user_id:
                 mark_trial_used(real_user_id)
 
+        # Уведомление админам о выдаче пробного периода с сайта — раньше
+        # отсутствовало (единственный путь оформления, не заходящий в
+        # provision_anonymous_vpn_key через уже уведомляющие обёртки).
+        try:
+            from bot.services.notifications import notify_admins_payment
+            from bot.utils.runtime_state import get_bot_instance
+            from database.requests import get_tariff_by_id
+
+            trial_tariff = get_tariff_by_id(trial_tariff_id)
+            buyer_label = f"🌐 сайт ({account_id})"
+            if account.get("email"):
+                buyer_label = f"🌐 {account['email']}"
+            elif account.get("provider"):
+                buyer_label = f"🌐 сайт ({account['provider']})"
+
+            notify_order = {
+                "order_id": order_id,
+                "user_id": None,
+                "_site_buyer_label": buyer_label,
+                "_payment_action": "trial",
+                "tariff_id": trial_tariff_id,
+                "tariff_name": trial_tariff.get("name") if trial_tariff else "—",
+                "vpn_key_id": result["key_id"],
+                "payment_type": "trial",
+                "final_amount_cents": 0,
+                "price_rub": 0,
+            }
+            bot_instance = get_bot_instance()
+            if bot_instance:
+                await notify_admins_payment(bot_instance, notify_order)
+        except Exception as notify_err:
+            logger.warning(f"Ошибка отправки уведомления админам о пробном периоде с сайта order={order_id}: {notify_err}")
+
         purchase = get_anonymous_purchase_by_order_id(order_id)
         return web.json_response({
             "status": "paid",
@@ -2694,7 +2727,7 @@ async def handle_public_account_key_renew_balance(request: web.Request) -> web.R
 
     from bot.services.anonymous_purchase import renew_anonymous_vpn_key
     try:
-        result = await renew_anonymous_vpn_key(int(key_id), int(tariff_id))
+        result = await renew_anonymous_vpn_key(int(key_id), int(tariff_id), payment_type="balance")
     except Exception as e:
         result = {"ok": False, "message": str(e)}
 
