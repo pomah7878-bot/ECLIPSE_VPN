@@ -1036,6 +1036,24 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         for name in _forward_header_names
         if name in request.headers
     }
+    # Некоторые клиенты (например, Karing на Windows) НЕ реализуют заголовок
+    # X-HWID вообще — панель в режиме HWID-лимита в этом случае считает
+    # запрос неавторизованным и отдаёт 404 (пустое тело) независимо от
+    # проброса выше, поскольку пробрасывать просто нечего. Чтобы не
+    # блокировать таких пользователей, подставляем панели СИНТЕТИЧЕСКИЙ
+    # HWID, устойчиво рассчитанный из связки sub_id + IP клиента +
+    # User-Agent — благодаря этому одно и то же реальное устройство при
+    # повторных запросах попадает в один и тот же "слот" на панели (не
+    # плодит новые записи в client_hwids на каждый запрос), а разные
+    # устройства/IP всё равно получают разные значения.
+    if "X-HWID" not in forward_headers:
+        _synthetic_seed = f"{sub_id}:{_get_client_ip(request)}:{forward_headers.get('User-Agent', '')}"
+        forward_headers["X-HWID"] = hashlib.sha256(_synthetic_seed.encode("utf-8")).hexdigest()
+        logger.info(
+            f"handle_happ_subscription: клиент не прислал X-HWID (sub_id={sub_id[:8]}..., "
+            f"UA={forward_headers.get('User-Agent', '')!r}) — подставляю синтетический HWID, "
+            f"чтобы панель в режиме HWID-лимита не блокировала подписку"
+        )
     served_from_cache = False
     try:
         async with _aiohttp.ClientSession() as session:
