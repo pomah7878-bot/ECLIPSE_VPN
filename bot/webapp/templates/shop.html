@@ -575,6 +575,14 @@
 
         let BOT_USERNAME = '';
 
+        // Общий на applyBrand() и renderAccountData() промис — один запрос,
+        // и оба места гарантированно видят уже загруженные данные (без
+        // гонки, когда карточки ключей отрисовываются раньше, чем известно,
+        // куплена ли функция импорта в приложение).
+        const siteInfoPromise = fetch('/api/public/site-info')
+            .then(r => r.json())
+            .catch(() => ({}));
+
         // Название бренда и юзернейм бота — НЕ хардкодятся: подтягиваются с
         // сервера этой конкретной инсталляции (плюс подставляются уже на
         // сервере при отдаче страницы — см. _serve_html_with_brand в
@@ -584,8 +592,7 @@
         // невозможно забрать.
         (async function applyBrand() {
             try {
-                const res = await fetch('/api/public/site-info');
-                const site = await res.json();
+                const site = await siteInfoPromise;
                 if (site.shop_theme_id && site.shop_theme_id !== 'classic') {
                     document.body.dataset.theme = site.shop_theme_id;
                 }
@@ -1365,11 +1372,12 @@
                             <button onclick="copySubUrl(this, '${subUrlId}')" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">📋 Копировать</button>
                             <button onclick="showKeyQR(this)" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">▦ Показать QR</button>
                         </div>
+                        ${window._appImportEnabled ? `
                         <div class="flex gap-2">
                             <button data-scheme="happ" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>
                             <button data-scheme="incy" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>
                             <button data-scheme="karing" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>
-                        </div>
+                        </div>` : ''}
                     </div>
                 `;
             }
@@ -1518,6 +1526,13 @@
         async function renderAccountData(session) {
             const box = document.getElementById('accountDataBox');
             box.classList.remove('hidden');
+
+            // Кнопки импорта в Happ/INCY/Karing — платная функция (app_import
+            // в GATED_FEATURES на бэкенде). Безопасный дефолт — false: если
+            // site-info не удалось получить, лучше молча скрыть кнопки, чем
+            // показать нерабочие (ведущие на страницу "функция недоступна").
+            const siteInfo = await siteInfoPromise;
+            window._appImportEnabled = siteInfo.app_import_enabled === true;
 
             _sessionKeys = session.keys || [];
             _sessionBalanceCents = session.balance_cents || 0;

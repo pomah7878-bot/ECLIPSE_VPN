@@ -923,6 +923,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         get_effective_brand_name, get_cabinet_theme_id, get_shop_theme_id, get_marketing_channel_id,
         is_site_auth_method_enabled, get_zvonok_public_key, get_zvonok_campaign_id,
     )
+    from bot.services.license import is_feature_available
 
     bot_username = await _resolve_bot_username_for_webapp()
 
@@ -943,6 +944,14 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "news_channel_url": channel_url,
         "code_login_enabled": is_site_auth_method_enabled('code'),
         "phone_login_enabled": phone_login_enabled,
+        # Кнопки импорта в Happ/INCY/Karing — платная функция (см.
+        # bot/services/license.py, GATED_FEATURES["app_import"]). Раньше
+        # веб-кабинет (/ и /shop) показывал эти кнопки ВСЕГДА, когда у ключа
+        # есть sub_url, независимо от лицензии — по клику пользователь
+        # просто утыкался в страницу "функция недоступна" на /import.
+        # Явно передаём статус фичи, чтобы фронтенд не показывал нерабочие
+        # кнопки вообще, если она не куплена/выключена админом.
+        "app_import_enabled": is_feature_available("app_import"),
     })
     resp.headers['Cache-Control'] = 'no-store'
     return resp

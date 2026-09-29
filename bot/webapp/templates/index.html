@@ -518,6 +518,16 @@
         let _cachedPings = {};
         let BOT_USERNAME = (tg?.initDataUnsafe?.bot?.username) || '';
 
+        // Общий на applyBrand() и init() промис — раньше site-info запрашивался
+        // только внутри applyBrand(), и init() мог отрисовать список ключей
+        // ДО того, как этот запрос завершится (гонка), из-за чего кнопки
+        // Happ/INCY/Karing либо мигали, либо решение "показывать ли их"
+        // принималось по не до конца загруженным данным. Один и тот же
+        // промис, который оба места дожидаются — гонки нет, запрос один.
+        const siteInfoPromise = fetch('/api/public/site-info')
+            .then(r => r.json())
+            .catch(() => ({}));
+
         // Название бренда и юзернейм бота — НЕ хардкодятся: подтягиваются с
         // сервера этой конкретной инсталляции (плюс подставляются уже на
         // сервере при отдаче страницы — см. _serve_html_with_brand в
@@ -526,8 +536,7 @@
         // должен быть его собственный бренд, а не чей-то чужой.
         (async function applyBrand() {
             try {
-                const res = await fetch('/api/public/site-info');
-                const site = await res.json();
+                const site = await siteInfoPromise;
                 if (site.brand_name) {
                     document.getElementById('pageTitle').textContent = '💎' + site.brand_name + '💎';
                     document.getElementById('brandHeader').textContent = site.brand_name;
@@ -1131,11 +1140,19 @@
 
             let iconRow = '';
             if (isActive) {
-                // 2 кнопки (QR, Копия) всегда + 3 кнопки импорта (Happ/INCY/Karing),
-                // если есть sub_url — итого 5, а не 4 (раньше колонки не обновили,
-                // когда добавили кнопку Karing, и пятая кнопка переносилась на
-                // отдельную строку одна слева).
-                const cols = key.sub_url ? 'grid-cols-5' : 'grid-cols-2';
+                // Кнопки импорта в Happ/INCY/Karing — платная функция
+                // (app_import в GATED_FEATURES на бэкенде, включается/
+                // выключается админом на лицензии/тарифе партнёра). Раньше
+                // они показывались всегда, когда есть sub_url, и по клику
+                // упирались в страницу "функция недоступна" — теперь ещё
+                // сверяемся с window._appImportEnabled, выставленным в init().
+                //
+                // 2 кнопки (QR, Копия) всегда + 3 кнопки импорта, если фича
+                // куплена и есть sub_url — итого 5, а не 4 (раньше колонки не
+                // обновили, когда добавили кнопку Karing, и пятая кнопка
+                // переносилась на отдельную строку одна слева).
+                const showImport = !!(key.sub_url && window._appImportEnabled);
+                const cols = showImport ? 'grid-cols-5' : 'grid-cols-2';
                 iconRow = `<div class="grid ${cols} gap-2 mt-2">
                     <button onclick="showQR(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">▦</span>QR
@@ -1143,7 +1160,7 @@
                     <button onclick="copySubLink(${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">⧉</span>Копия
                     </button>`;
-                if (key.sub_url) {
+                if (showImport) {
                     iconRow += `
                     <button onclick="importToApp('happ', ${key.id})" class="py-2.5 btn-secondary rounded-xl text-[11px] font-semibold transition flex flex-col items-center gap-1">
                         <span class="text-sm">↗</span>Happ
@@ -1594,9 +1611,14 @@
                     return;
                 }
 
-                const [keysRes, statusRes, refRes, langRes] = await Promise.allSettled([
-                    fetchAPI('keys'), fetchAPI('status'), fetchAPI('referral'), fetchAPI('language')
+                const [keysRes, statusRes, refRes, langRes, siteInfo] = await Promise.allSettled([
+                    fetchAPI('keys'), fetchAPI('status'), fetchAPI('referral'), fetchAPI('language'), siteInfoPromise
                 ]);
+                // Кнопки импорта в Happ/INCY/Karing — платная функция (см.
+                // app_import в GATED_FEATURES на бэкенде). Безопасный дефолт —
+                // false: если site-info не удалось получить, лучше молча
+                // скрыть кнопки, чем показать нерабочие.
+                window._appImportEnabled = (siteInfo.status === 'fulfilled' && siteInfo.value.app_import_enabled === true);
                 window._userLanguage = (langRes.status === 'fulfilled' && langRes.value.language) || 'ru';
 
                 let html = '';
