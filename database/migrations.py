@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 132
+LATEST_VERSION = 133
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3071,6 +3071,58 @@ def migration_132(conn: sqlite3.Connection) -> None:
     logger.info("Migration v132 applied: строка btn_key_devices выровнена по фактическому row Автопродления")
 
 
+def migration_133(conn: sqlite3.Connection) -> None:
+    """Версия 1.142: кнопки быстрого импорта «📥 Импорт HAPP» / «📥 Импорт INCY»
+    убираются с ГЛАВНОГО экрана бота у всех установок (импорт остаётся на
+    карточке ключа и на экране выдачи ключа/подписки).
+
+    Убирает и системные кнопки (btn_start_import_happ / btn_start_import_incy),
+    и кнопки, добавленные вручную через редактор (action_value
+    cmd_import_happ / cmd_import_incy / import_happ / import_incy, либо подпись
+    «Импорт ... HAPP/INCY»). Правит buttons_default и buttons_custom страницы
+    'main'. Идемпотентно."""
+    remove_ids = {"btn_start_import_happ", "btn_start_import_incy"}
+    remove_actions = {"cmd_import_happ", "cmd_import_incy", "import_happ", "import_incy"}
+
+    def _is_import_btn(b) -> bool:
+        if not isinstance(b, dict):
+            return False
+        if b.get("id") in remove_ids:
+            return True
+        if b.get("action_value") in remove_actions:
+            return True
+        label = str(b.get("label") or "").lower()
+        return "импорт" in label and ("happ" in label or "incy" in label)
+
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'main'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v133: страница 'main' не найдена, пропускаю")
+        return
+
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(buttons, list):
+            continue
+        filtered = [b for b in buttons if not _is_import_btn(b)]
+        if len(filtered) != len(buttons):
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'main'",
+                (json.dumps(filtered, ensure_ascii=False),)
+            )
+            logger.info("Migration v133: убрано кнопок импорта с главной: %d (%s)",
+                        len(buttons) - len(filtered), column_name)
+
+    logger.info("Migration v133 applied: кнопки импорта убраны с главного экрана")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3130,6 +3182,7 @@ MIGRATIONS = {
     130: migration_130,
     131: migration_131,
     132: migration_132,
+    133: migration_133,
 }
 
 
