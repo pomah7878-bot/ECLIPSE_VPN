@@ -1958,3 +1958,55 @@ async def do_clear_logs(callback: CallbackQuery, state: FSMContext):
         await callback.answer(f"❌ Ошибка: {e}", show_alert=True)
     
     await show_logs_menu(callback, state)
+
+
+# ============================================================================
+# Ширина меню (menu_min_width)
+# ============================================================================
+
+@router.callback_query(F.data == "admin_menu_width")
+async def menu_width_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.states.admin_states import AdminStates
+    from bot.keyboards.admin_settings import integrations_edit_cancel_kb
+    from database.requests import get_menu_min_width
+    cur = get_menu_min_width()
+    await state.set_state(AdminStates.edit_menu_min_width)
+    await safe_edit_or_send(
+        callback.message,
+        "📏 <b>Ширина меню</b>\n\n"
+        "Чтобы все меню бота были одной ширины, к коротким текстам добавляется "
+        "невидимое заполнение до указанной длины (в символах).\n\n"
+        f"Сейчас: <b>{cur if cur else 'выключено'}</b>.\n\n"
+        "Пришли число от 10 до 80 (рекомендуется 30–40), или <code>0</code> — выключить.\n"
+        "Если пузырь слишком узкий — увеличь число, если слишком широкий (кнопки переносятся) — уменьши.",
+        reply_markup=integrations_edit_cancel_kb('admin_bot_settings'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_menu_min_width, F.text, ~F.text.startswith('/'))
+async def menu_width_save(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+    raw = (message.text or "").strip()
+    try:
+        val = int(raw)
+        if val != 0 and not (10 <= val <= 80):
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Нужно число от 10 до 80 или 0 (выключить). Попробуй ещё раз.")
+        return
+    from database.requests import set_menu_min_width
+    from bot.middlewares.menu_width import reset_cache
+    set_menu_min_width(val)
+    reset_cache()
+    await state.clear()
+    from bot.keyboards.admin_settings import bot_settings_kb
+    from bot.services.vpn_api import get_bot_mode
+    await message.answer(
+        f"✅ Ширина меню: {val if val else 'выключено'}. Откройте любое меню, чтобы оценить.",
+        reply_markup=bot_settings_kb(get_bot_mode()),
+    )

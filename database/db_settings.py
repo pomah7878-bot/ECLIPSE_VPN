@@ -32,6 +32,8 @@ __all__ = [
     'set_happ_routing_mode',
     'get_happ_routing_profile_json',
     'set_happ_routing_profile_json',
+    'get_menu_min_width',
+    'set_menu_min_width',
     'get_happ_routing_profile_name',
     'set_happ_routing_profile_name',
     'get_default_happ_routing_profile_json',
@@ -732,6 +734,21 @@ def get_happ_routing_profile_json() -> Optional[str]:
 
 def set_happ_routing_profile_json(profile_json: str) -> None:
     set_setting('happ_routing_profile_json', profile_json.strip())
+
+
+def get_menu_min_width() -> int:
+    """Минимальная ширина текста меню в символах (0 — выключено)."""
+    try:
+        raw = get_setting('menu_min_width', None)
+        if raw in (None, ''):
+            return 36
+        return max(0, min(80, int(str(raw).strip())))
+    except Exception:
+        return 36
+
+
+def set_menu_min_width(value: int) -> None:
+    set_setting('menu_min_width', str(max(0, min(80, int(value)))))
 
 
 def get_happ_routing_profile_name() -> str:

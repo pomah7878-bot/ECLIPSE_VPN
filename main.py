@@ -258,6 +258,10 @@ async def main():
     session = SafeParseSession()
     bot = Bot(token=BOT_TOKEN, session=session)
 
+    # Единая ширина «пузыря» сообщений с кнопками (настройка menu_min_width)
+    from bot.middlewares.menu_width import MenuWidthMiddleware
+    bot.session.middleware(MenuWidthMiddleware())
+
     # Регистрируем экземпляр в нейтральном модуле-посреднике — см.
     # bot/utils/runtime_state.py про то, почему `from main import bot`
     # не работает (проблема __main__ vs main при запуске python3 main.py).

@@ -25,6 +25,15 @@ def bot_settings_kb(current_mode: str = 'subscription') -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🌐 Интеграции (сайт, AI, вход)', callback_data='admin_integrations'))
     builder.row(InlineKeyboardButton(text='✏️ Изменить тексты', callback_data='admin_edit_texts'))
     builder.row(InlineKeyboardButton(text='🔒 Обязательная подписка', callback_data='admin_channel_gate'))
+    try:
+        from database.requests import get_menu_min_width
+        _w = get_menu_min_width()
+    except Exception:
+        _w = 36
+    builder.row(InlineKeyboardButton(
+        text=f"📏 Ширина меню: {_w if _w else 'выкл'}",
+        callback_data='admin_menu_width',
+    ))
     builder.row(InlineKeyboardButton(text='📥 Скачать логи', callback_data='admin_logs_menu'))
     builder.row(InlineKeyboardButton(text='🛑 Остановить бота', callback_data='admin_stop_bot'))
     builder.row(back_button('admin_panel'), home_button())
@@ -578,7 +587,6 @@ def integrations_edit_cancel_kb(back_callback: str = 'admin_integrations') -> In
     «На главную» добавлена отдельно, чтобы не выходить из режима ввода
     через два тапа, если админ передумал возвращаться в интеграции."""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text='⬅ Назад', callback_data=back_callback))
-    builder.row(home_button())
+    builder.row(back_button(back_callback), home_button())
     return builder.as_markup()
 
