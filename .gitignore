@@ -50,3 +50,6 @@ venv*/
 **/*.bak
 **/*.bak.*
 database/*.db.bak*
+
+*.bak*
+apply_*.py

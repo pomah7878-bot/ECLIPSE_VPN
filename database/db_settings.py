@@ -786,6 +786,39 @@ _HAPP_ROUTING_DEFAULT_TEMPLATE = {
 }
 
 
+# --- live geo profile v1.143 ---
+_LIVE_PROFILE_URL = "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/HAPP/DEFAULT.JSON"
+_LIVE_PROFILE_TTL = 6 * 3600
+_live_profile_cache = {"data": None, "ts": 0.0, "busy": False}
+
+
+def _live_profile_refresh():
+    import json as _json, time as _time, urllib.request as _rq
+    try:
+        with _rq.urlopen(_LIVE_PROFILE_URL, timeout=8) as r:
+            data = _json.loads(r.read().decode("utf-8"))
+        ok = (isinstance(data, dict) and data.get("Geoipurl") and data.get("Geositeurl")
+              and isinstance(data.get("DirectSites"), list))
+        if ok:
+            _live_profile_cache["data"] = data
+    except Exception:
+        pass
+    finally:
+        _live_profile_cache["ts"] = _time.time()
+        _live_profile_cache["busy"] = False
+
+
+def _get_live_profile():
+    """Свежий профиль из GitHub (кэш, фоновое обновление). None — пока нет данных."""
+    import time as _time, threading as _th
+    c = _live_profile_cache
+    if (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
+        c["busy"] = True
+        _th.Thread(target=_live_profile_refresh, daemon=True).start()
+    return c["data"]
+
+
+
 def get_default_happ_routing_profile_json() -> str:
     """Профиль маршрутизации 'из коробки' — компактные geo-базы ECLIPSE
     (форк mvrvntn/routing, проверено что не превышает лимит памяти туннеля
@@ -798,7 +831,10 @@ def get_default_happ_routing_profile_json() -> str:
     from database.db_settings import get_effective_brand_name
     name = get_happ_routing_profile_name() or get_effective_brand_name()
     profile = {'Name': name}
+    live = _get_live_profile()
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
+    if live:
+        profile.update({k: v for k, v in live.items() if k != 'Name'})
     return _json.dumps(profile, ensure_ascii=False)
 
 
