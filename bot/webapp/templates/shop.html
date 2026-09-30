@@ -1110,6 +1110,55 @@
             }
         }
 
+        // --- автоформат телефона v1.144: сам подставляет +7 или другой код страны ---
+        const PHONE_CODES = ['998','996','995','994','993','992','972','971','380','375','374','373','372','371','370','90','86','49','48','44','39','33','34','1','7'];
+        function phoneDigitsNormalize(raw) {
+            const hasPlus = String(raw || '').trim().startsWith('+');
+            let d = String(raw || '').replace(/\D/g, '');
+            if (!hasPlus && d) {
+                if (d[0] === '8') d = '7' + d.slice(1);          // 8 999... -> +7 999...
+                else if (d[0] === '9') d = '7' + d;               // 999... -> +7 999...
+            }
+            return d.slice(0, 15);
+        }
+        function phoneFormat(d) {
+            if (!d) return '';
+            const code = PHONE_CODES.find(c => d.startsWith(c)) || d.slice(0, Math.min(3, d.length));
+            const rest = d.slice(code.length);
+            if (code === '7') {
+                let out = '+7';
+                if (rest.length) out += ' ' + rest.slice(0, 3);
+                if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+                if (rest.length > 6) out += '-' + rest.slice(6, 8);
+                if (rest.length > 8) out += '-' + rest.slice(8, 10);
+                return out;
+            }
+            if (code === '1') {
+                let out = '+1';
+                if (rest.length) out += ' ' + rest.slice(0, 3);
+                if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+                if (rest.length > 6) out += '-' + rest.slice(6, 10);
+                return out;
+            }
+            const groups = rest.match(/.{1,3}/g) || [];
+            return '+' + code + (groups.length ? ' ' + groups.join(' ') : '');
+        }
+        function attachPhoneAutoFormat(input) {
+            if (!input || input.dataset.autofmt) return;
+            input.dataset.autofmt = '1';
+            input.setAttribute('inputmode', 'tel');
+            input.addEventListener('input', function (e) {
+                if (input.value.trim() === '+') { input.dataset.prevDigits = ''; input.value = '+'; return; }
+                const prev = input.dataset.prevDigits || '';
+                let d = phoneDigitsNormalize(input.value);
+                const deleting = (e.inputType || '').startsWith('delete');
+                if (deleting && d === prev && d) d = d.slice(0, -1);   // удалили пробел/дефис — удаляем цифру
+                if (deleting && !d) { input.value = ''; input.dataset.prevDigits = ''; return; }
+                input.dataset.prevDigits = d;
+                input.value = phoneFormat(d);
+            });
+            input.addEventListener('paste', function () { setTimeout(() => input.dispatchEvent(new Event('input')), 0); });
+        }
         function showPhoneLoginStep() {
             document.getElementById('phoneLoginToggleBtn').classList.add('hidden');
             const body = document.getElementById('phoneLoginBody');
@@ -1121,6 +1170,7 @@
                 <button onclick="requestPhoneLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Продолжить</button>
                 <div id="phoneLoginError" class="text-xs text-alert mt-2 text-center"></div>
             `;
+            attachPhoneAutoFormat(document.getElementById('phoneLoginInput'));
         }
 
         async function requestPhoneLogin() {
@@ -1233,6 +1283,7 @@
                 <button onclick="requestLinkPhone()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Продолжить</button>
                 <div id="linkPhoneError" class="text-xs text-alert mt-2 text-center"></div>
             `;
+            attachPhoneAutoFormat(document.getElementById('linkPhoneInput'));
         }
 
         async function requestLinkPhone() {
