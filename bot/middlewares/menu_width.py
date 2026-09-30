@@ -21,7 +21,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 logger = logging.getLogger(__name__)
 
 PAD_CHAR = "⠀"
-DEFAULT_MIN_WIDTH = 36
+DEFAULT_MIN_WIDTH = 40
 MAX_MIN_WIDTH = 80
 TEXT_LIMIT = 4096
 

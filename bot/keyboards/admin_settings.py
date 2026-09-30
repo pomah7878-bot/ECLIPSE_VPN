@@ -29,7 +29,7 @@ def bot_settings_kb(current_mode: str = 'subscription') -> InlineKeyboardMarkup:
         from database.requests import get_menu_min_width
         _w = get_menu_min_width()
     except Exception:
-        _w = 36
+        _w = 40
     builder.row(InlineKeyboardButton(
         text=f"📏 Ширина меню: {_w if _w else 'выкл'}",
         callback_data='admin_menu_width',

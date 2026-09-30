@@ -741,10 +741,10 @@ def get_menu_min_width() -> int:
     try:
         raw = get_setting('menu_min_width', None)
         if raw in (None, ''):
-            return 36
+            return 40
         return max(0, min(80, int(str(raw).strip())))
     except Exception:
-        return 36
+        return 40
 
 
 def set_menu_min_width(value: int) -> None:
