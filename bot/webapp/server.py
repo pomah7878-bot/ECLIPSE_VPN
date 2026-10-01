@@ -1323,6 +1323,12 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         headers["sub-info-text"] = f"⚠️ Подписка истекает через {days_left} {word}!"
         headers["sub-info-button-text"] = "Купить / продлить"
         headers["sub-info-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
+        headers["sub-expire"] = "0"
+    elif not is_expired:
+        # Happ кэширует баннеры между обновлениями — снимаем их явно (значение 0),
+        # иначе после продления остаётся старое «истекает через N дней».
+        headers["sub-info-text"] = "0"
+        headers["sub-expire"] = "0"
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
