@@ -1316,12 +1316,18 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             # к самому быстрому при запуске приложения.
             headers["subscription-autoconnect"] = "1"
             headers["subscription-autoconnect-type"] = "lowestdelay"
+            # v1.160: для выбора сервера с наименьшей задержкой Happ должен
+            # замерить отклик серверов при открытии приложения.
+            if "subscription-ping-onopen-enabled" not in headers:
+                headers["subscription-ping-onopen-enabled"] = "1"
         if is_client_toggle_enabled("happ", "hide_settings"):
             headers["hide-settings"] = "1"
         if is_client_toggle_enabled("happ", "notify_expire"):
             headers["notification-subs-expire"] = "1"
         if is_client_toggle_enabled("happ", "sort_ping"):
             headers["subscriptions-sort-type"] = "ping"
+            if "subscription-ping-onopen-enabled" not in headers:
+                headers["subscription-ping-onopen-enabled"] = "1"
         if is_client_toggle_enabled("happ", "auto_update"):
             headers["subscription-auto-update-enable"] = "1"
 
