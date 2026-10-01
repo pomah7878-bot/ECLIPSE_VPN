@@ -310,10 +310,16 @@ do_install() {
             cp "$INSTALL_DIR/config.py" /tmp/eclipse_config_backup.py
             BACKUP_CONFIG=1
         fi
-        if [ -f "$INSTALL_DIR/vpn_bot.db" ]; then
-            cp "$INSTALL_DIR/vpn_bot.db" /tmp/eclipse_db_backup.db
-            BACKUP_DB=1
-        fi
+        REINSTALL_SAVE="/root/eclipse_reinstall_backup_$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$REINSTALL_SAVE"
+        for f in secrets.env database/vpn_bot.db database/vpn_bot.db-wal database/vpn_bot.db-shm database/ai_history.db \
+                 bot/webapp/static/logo.png bot/webapp/static/favicon.ico bot/webapp/static/favicon-32x32.png \
+                 bot/webapp/static/favicon-16x16.png custom_extensions; do
+            if [ -e "$INSTALL_DIR/$f" ]; then
+                (cd "$INSTALL_DIR" && cp -a --parents "$f" "$REINSTALL_SAVE/")
+            fi
+        done
+        BACKUP_DB=1
         rm -rf "$INSTALL_DIR"
     fi
 
@@ -336,10 +342,9 @@ do_install() {
         print_ok "config.py восстановлен из резервной копии"
         NEED_WRITE_CONFIG=0
     fi
-    if [ "$BACKUP_DB" = "1" ] && [ -f "/tmp/eclipse_db_backup.db" ]; then
-        cp /tmp/eclipse_db_backup.db "$INSTALL_DIR/vpn_bot.db"
-        rm /tmp/eclipse_db_backup.db
-        print_ok "База данных восстановлена из резервной копии"
+    if [ "$BACKUP_DB" = "1" ] && [ -d "$REINSTALL_SAVE" ]; then
+        cp -a "$REINSTALL_SAVE/." "$INSTALL_DIR/"
+        print_ok "База, secrets.env, брендинг и расширения восстановлены (копия осталась в $REINSTALL_SAVE)"
     fi
 
     # Запись config.py
