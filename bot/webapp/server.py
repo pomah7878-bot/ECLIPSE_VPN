@@ -2013,6 +2013,10 @@ async def handle_oauth_start(request: web.Request) -> web.Response:
     # (cookie браузера всё равно не попадёт в OkHttp-клиент приложения).
     if request.query.get("client") == "app":
         resp.set_cookie("oauth_client", "app", max_age=600, httponly=True, secure=True, samesite="Lax")
+        # v1.162: PKCE — приложение передаёт code_challenge (base64url от SHA-256 verifier)
+        _challenge = (request.query.get("code_challenge") or "").strip()
+        if 32 <= len(_challenge) <= 128 and all(ch.isalnum() or ch in "-_" for ch in _challenge):
+            resp.set_cookie("oauth_challenge", _challenge, max_age=600, httponly=True, secure=True, samesite="Lax")
 
     return resp
 
@@ -2075,7 +2079,7 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         # клиента приложения. Возвращаем одноразовый короткоживущий код
         # обмена через deep-link в приложение вместо cookie.
         from database.requests import create_oauth_exchange_code
-        exchange_code = create_oauth_exchange_code(account_id)
+        exchange_code = create_oauth_exchange_code(account_id, code_challenge=request.cookies.get("oauth_challenge") or None)
         resp = web.HTTPFound(f"eclipsevpn://oauth-callback?code={exchange_code}")
         resp.del_cookie("oauth_state")
         resp.del_cookie("oauth_link_account_id")
@@ -2412,8 +2416,12 @@ async def handle_public_account_oauth_exchange(request: web.Request) -> web.Resp
 
     from database.requests import consume_oauth_exchange_code
 
-    account_id = consume_oauth_exchange_code(code)
+    _xip = _get_client_ip(request)
+    if not _rl_allowed(f"oauth-xchg-fail:{_xip}", 10, 600):
+        return web.json_response({"ok": False, "message": "Слишком много попыток. Попробуйте позже."}, status=429)
+    account_id = consume_oauth_exchange_code(code, (data.get("code_verifier") or "").strip() or None)
     if not account_id:
+        _rl_record(f"oauth-xchg-fail:{_xip}")
         return web.json_response({"ok": False, "message": "Код недействителен или истёк."}, status=400)
 
     session_value = _sign_session(account_id)

@@ -256,7 +256,7 @@ def get_latest_purchase_for_account(site_account_id: int) -> Optional[Dict[str, 
             (site_account_id,),
         ).fetchone()
         return dict(row) if row else None
-def create_oauth_exchange_code(account_id: int, ttl_minutes: int = 10) -> str:
+def create_oauth_exchange_code(account_id: int, ttl_minutes: int = 10, code_challenge: Optional[str] = None) -> str:
     """Создаёт одноразовый короткоживущий код обмена OAuth-сессии
     (полученной в системном браузере при входе через Google/Яндекс/VK) на
     cookie-сессию нативного Android-приложения. Не путать с
@@ -273,8 +273,8 @@ def create_oauth_exchange_code(account_id: int, ttl_minutes: int = 10) -> str:
         for _ in range(5):
             try:
                 conn.execute(
-                    "INSERT INTO oauth_exchange_codes (code, account_id, expires_at) VALUES (?, ?, ?)",
-                    (code, account_id, expires_at),
+                    "INSERT INTO oauth_exchange_codes (code, account_id, expires_at, code_challenge) VALUES (?, ?, ?, ?)",
+                    (code, account_id, expires_at, code_challenge),
                 )
                 return code
             except sqlite3.IntegrityError:
@@ -282,17 +282,32 @@ def create_oauth_exchange_code(account_id: int, ttl_minutes: int = 10) -> str:
         raise RuntimeError("Не удалось сгенерировать уникальный код обмена OAuth")
 
 
-def consume_oauth_exchange_code(code: str) -> Optional[int]:
+def consume_oauth_exchange_code(code: str, code_verifier: Optional[str] = None) -> Optional[int]:
     """Проверяет и «сжигает» (одноразово) код обмена OAuth. Возвращает
-    account_id, если код валиден, не использован и не истёк — иначе None."""
+    account_id, если код валиден, не использован и не истёк — иначе None.
+    v1.162: если при создании кода был задан code_challenge (PKCE), нужен
+    code_verifier, у которого base64url(sha256) совпадает с ним; при неверном
+    verifier код НЕ сжигается (перехватчик не может его угадать)."""
+    import base64 as _b64
+    import hashlib as _hashlib
+    import hmac as _hmac
+
     with get_db() as conn:
         row = conn.execute(
-            """SELECT account_id FROM oauth_exchange_codes
+            """SELECT account_id, code_challenge FROM oauth_exchange_codes
                WHERE code = ? AND used = 0 AND expires_at > datetime('now')""",
             (code.strip().upper(),),
         ).fetchone()
         if not row:
             return None
+        challenge = row["code_challenge"]
+        if challenge:
+            if not code_verifier:
+                return None
+            digest = _hashlib.sha256(code_verifier.encode("utf-8")).digest()
+            expected = _b64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+            if not _hmac.compare_digest(expected.encode("ascii"), str(challenge).encode("ascii")):
+                return None
         conn.execute("UPDATE oauth_exchange_codes SET used = 1 WHERE code = ?", (code.strip().upper(),))
         return row["account_id"]
 

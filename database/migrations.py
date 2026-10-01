@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 133
+LATEST_VERSION = 134
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3071,6 +3071,16 @@ def migration_132(conn: sqlite3.Connection) -> None:
     logger.info("Migration v132 applied: строка btn_key_devices выровнена по фактическому row Автопродления")
 
 
+def migration_134(conn: sqlite3.Connection) -> None:
+    """Версия 1.162: oauth_exchange_codes.code_challenge — привязка кода обмена
+    OAuth к приложению, начавшему вход (PKCE), чтобы код нельзя было перехватить
+    другим приложением через deep-link. Идемпотентно."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(oauth_exchange_codes)").fetchall()]
+    if cols and "code_challenge" not in cols:
+        conn.execute("ALTER TABLE oauth_exchange_codes ADD COLUMN code_challenge TEXT")
+    logger.info("Migration v134 applied: oauth_exchange_codes.code_challenge")
+
+
 def migration_133(conn: sqlite3.Connection) -> None:
     """Версия 1.142: кнопки быстрого импорта «📥 Импорт HAPP» / «📥 Импорт INCY»
     убираются с ГЛАВНОГО экрана бота у всех установок (импорт остаётся на
@@ -3183,6 +3193,7 @@ MIGRATIONS = {
     131: migration_131,
     132: migration_132,
     133: migration_133,
+    134: migration_134,
 }
 
 
