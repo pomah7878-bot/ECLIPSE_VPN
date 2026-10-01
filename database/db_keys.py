@@ -623,7 +623,7 @@ def get_keys_due_for_auto_renewal(hours: int = 24) -> List[Dict[str, Any]]:
                 vk.id, vk.user_id, vk.expires_at, vk.custom_name,
                 vk.tariff_id,
                 u.telegram_id,
-                t.name as tariff_name, t.price_cents, t.duration_days
+                t.name as tariff_name, t.price_cents, t.price_rub, t.duration_days
             FROM vpn_keys vk
             JOIN users u ON vk.user_id = u.id
             JOIN tariffs t ON vk.tariff_id = t.id

@@ -1462,9 +1462,9 @@ async def process_payment_order(
     order['_payment_processed_now'] = not already_paid
 
     if not already_paid:
-        complete_order(order_id)
+        won_order = complete_order(order_id)
         order = find_order_by_order_id(order_id) or order
-        order['_payment_processed_now'] = True
+        order['_payment_processed_now'] = bool(won_order)
 
     days = order.get('duration_days') or order.get('period_days') or 30
     vpn_key_id = order.get('vpn_key_id')

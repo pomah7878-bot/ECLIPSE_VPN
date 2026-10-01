@@ -635,7 +635,7 @@ async def process_auto_renewals(bot: Bot) -> None:
         key_id = key["id"]
         user_id = key["user_id"]
         telegram_id = key["telegram_id"]
-        price_cents = int(key.get("price_cents") or 0)
+        price_cents = int(round(float(key.get("price_rub") or 0) * 100))  # копейки RUB
         duration_days = int(key.get("duration_days") or 0)
         keyname = key.get("custom_name") or f"Ключ #{key_id}"
 
@@ -1087,6 +1087,7 @@ async def _monthly_traffic_reset_impl(bot: Bot) -> None:
     # сбросом) и отдельную линейку чисто по трафику (без сброса).
     groups_reset_map = {g['id']: bool(g.get('monthly_reset_enabled')) for g in get_all_groups()}
     any_group_reset_enabled = any(groups_reset_map.values())
+    reset_enabled = any_group_reset_enabled
     all_keys = get_all_active_keys_with_server()
     all_servers = get_all_servers()
     initial_snapshots = await collect_server_snapshots(all_keys, all_servers)

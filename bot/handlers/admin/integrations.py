@@ -2004,6 +2004,7 @@ async def delete_cloudflare_token_confirm(callback: CallbackQuery, state: FSMCon
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
     from database.requests import set_cloudflare_api_token
+    from bot.keyboards.admin_settings import integrations_site_menu_kb
     set_cloudflare_api_token("")
     await state.clear()
     await callback.answer("✅ Токен удалён")
@@ -2034,6 +2035,7 @@ async def delete_webapp_url_backup_confirm(callback: CallbackQuery, state: FSMCo
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
     from database.requests import set_webapp_url_backup
+    from bot.keyboards.admin_settings import integrations_site_menu_kb
     set_webapp_url_backup("")
     await state.clear()
     await callback.answer("✅ Резервный домен удалён из настроек")
