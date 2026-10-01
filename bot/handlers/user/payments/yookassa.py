@@ -168,7 +168,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
         payload=f'vpn_key:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=_pub(tariff), amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(tariff, short=True), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()
@@ -321,7 +321,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
         payload=f'renew:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=_pub(tariff), amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(tariff, short=True), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()

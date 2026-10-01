@@ -157,7 +157,7 @@ async def _process_balance_topup(*, bot, telegram_id: int, amount_rub: int, stat
         result = await create_yookassa_qr_payment(
             amount_rub=amount_rub,
             order_id=order_id,
-            description=f"Пополнение баланса на {amount_rub} ₽",
+            description=__import__('bot.utils.payment_text', fromlist=['x']).topup_description(),
             bot_name=bot_info.username,
         )
         from database.requests import save_yookassa_payment_id, schedule_payment_auto_check
@@ -632,7 +632,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         payload=f'vpn_key:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=_pub(tariff), amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(tariff, short=True), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()

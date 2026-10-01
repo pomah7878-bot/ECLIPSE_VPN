@@ -110,7 +110,7 @@ async def renew_stars_invoice(callback: CallbackQuery, state: FSMContext):
         description=_pub(tariff),
         payload=f'renew:{order_id}',
         currency='XTR',
-        prices=[LabeledPrice(label=_pub(tariff), amount=quote['final_amount'])],
+        prices=[LabeledPrice(label=_pub(tariff, short=True), amount=quote['final_amount'])],
         reply_markup=(
             InlineKeyboardBuilder()
             .row(InlineKeyboardButton(text=f"⭐️ Оплатить {quote['final_amount']} XTR", pay=True))
@@ -213,7 +213,7 @@ async def pay_stars_invoice(callback: CallbackQuery, state: FSMContext):
         description=_pub(tariff),
         payload=order_id,
         currency='XTR',
-        prices=[LabeledPrice(label=_pub(tariff), amount=price_stars)],
+        prices=[LabeledPrice(label=_pub(tariff, short=True), amount=price_stars)],
         reply_markup=(
             InlineKeyboardBuilder()
             .row(InlineKeyboardButton(text=f'⭐️ Оплатить {price_stars} XTR', pay=True))

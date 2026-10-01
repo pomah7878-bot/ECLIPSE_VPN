@@ -1,4 +1,6 @@
-"""Нейтральный текст платежей: плательщик видит сервис и срок подписки."""
+"""Текст платежей: плательщик видит срок, трафик, устройства и название сервиса."""
+
+PREFIXES = ("Подписка на ", "Пополнение баланса", "Оплата услуг ")
 
 
 def duration_label(days) -> str:
@@ -17,26 +19,59 @@ def duration_label(days) -> str:
     return f"{d} дн."
 
 
-def public_description(tariff=None) -> str:
+def _brand() -> str:
     from database.db_settings import get_effective_brand_name
-    brand = (get_effective_brand_name() or "").strip() or "ECLIPSE Unlimited"
-    text = f"Оплата услуг {brand}"
+    return (get_effective_brand_name() or "").strip() or "ECLIPSE Unlimited"
+
+
+def _devices_word(n: int) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return "устройства"
+    return "устройств"
+
+
+def public_description(tariff=None, short=False) -> str:
+    """short=True — краткая подпись («Подписка на 6 мес.»), для строки счёта Telegram."""
+    brand = _brand()
+    label = ""
     if tariff:
         try:
             label = duration_label(tariff.get("duration_days"))
         except Exception:
             label = ""
-        if label:
-            text += f" — подписка на {label}"
-    return text[:100]
+    if not label:
+        return (f"Услуги {brand}" if short else f"Оплата услуг {brand}")[:100]
+    head = f"Подписка на {label}"
+    if short:
+        return head[:100]
+    parts = [head]
+    try:
+        gb = int(tariff.get("traffic_limit_gb") or 0)
+    except (TypeError, ValueError):
+        gb = 0
+    parts.append("Безлимитный трафик" if gb <= 0 else f"{gb} ГБ трафика")
+    try:
+        ips = int(tariff.get("max_ips") or 0)
+    except (TypeError, ValueError):
+        ips = 0
+    if ips > 0:
+        parts.append(f"до {ips} {_devices_word(ips)}")
+    parts.append(brand)
+    return " · ".join(parts)[:120]
+
+
+def topup_description() -> str:
+    return f"Пополнение баланса · {_brand()}"[:100]
 
 
 def clean_description(description) -> str:
-    """Для платёжных функций: наш нейтральный текст проходит как есть,
-    всё остальное (названия тарифов, ключей и т.п.) заменяется на общий."""
+    """Для платёжных функций: наш текст проходит как есть; всё остальное
+    (названия тарифов, ключей, пометки) заменяется нейтральным."""
     text = str(description or "")
-    if text.startswith("Оплата услуг "):
+    if text.startswith("Пополнение"):
+        return topup_description()
+    if text.startswith(PREFIXES):
         return text[:255]
     return public_description()
 
-# v1.148 duration
+# v1.150 final text
