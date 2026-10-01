@@ -871,7 +871,7 @@ def get_user_keys_for_display(telegram_id: int) -> List[Dict[str, Any]]:
             SELECT
                 vk.id, vk.client_uuid, vk.custom_name, vk.expires_at, vk.user_id,
                 s.name as server_name, s.id as server_id, vk.panel_email,
-                vk.sub_id,
+                vk.sub_id, vk.tariff_id,
                 vk.traffic_used, vk.traffic_limit,
                 CASE
                     WHEN vk.expires_at > datetime('now') THEN 1

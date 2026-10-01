@@ -1472,6 +1472,7 @@
                     <div id="inbounds-${key.key_id}" style="display:none;"></div>
                     <button onclick="toggleDevices(${key.key_id})" class="w-full py-2 text-xs text-mist-dim hover:text-ink transition text-center">📱 Устройства</button>
                     <div id="devices-${key.key_id}" style="display:none;"></div>
+                    ${key.is_trial ? '<div class="mt-4 rounded-xl p-3 text-xs" style="border:1px solid var(--gold);">🎁 <b>Пробный период.</b> Нажмите «Продлить» и выберите тариф — оставшиеся дни добавятся, ключ и подписка в приложении не изменятся.</div>' : ''}
                     <button onclick="openRenewForKey(${key.key_id})" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mt-4">Продлить</button>
                 </div>
             `;

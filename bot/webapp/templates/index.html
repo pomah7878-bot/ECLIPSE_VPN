@@ -1218,6 +1218,7 @@
                         <span class="text-[13px] font-semibold ${expiryColor}">${escapeHtml(expiryText)}</span>
                     </div>
                     ${urgentNote}
+                    ${key.is_trial ? '<p class="text-[11px] text-ink mt-1.5">🎁 Пробный период. Нажмите «Продлить» и выберите тариф — оставшиеся дни добавятся, ключ и подписка не изменятся.</p>' : ''}
                     ${primaryBtn}
                     ${iconRow}
                     ${isActive ? `

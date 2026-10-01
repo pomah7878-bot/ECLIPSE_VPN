@@ -272,6 +272,30 @@ async def handle_key_inbounds(request: web.Request) -> web.Response:
         return web.json_response({"error": "internal_error"}, status=500)
 
 
+# v1.152 trial notice
+def _trial_tariff_ids() -> set:
+    ids = set()
+    try:
+        from database.requests import get_trial_tariff_id, get_groups_with_trial
+        t = get_trial_tariff_id()
+        if t:
+            ids.add(int(t))
+        for g in get_groups_with_trial():
+            if g.get("trial_tariff_id"):
+                ids.add(int(g["trial_tariff_id"]))
+    except Exception:
+        pass
+    return ids
+
+
+def _is_trial_key(key) -> bool:
+    try:
+        tid = key.get("tariff_id")
+        return bool(tid) and int(tid) in _trial_tariff_ids()
+    except Exception:
+        return False
+
+
 async def handle_keys(request: web.Request) -> web.Response:
     """GET /api/keys — возвращает список ключей пользователя."""
     telegram_id = _get_telegram_id(request)
@@ -311,6 +335,7 @@ async def handle_keys(request: web.Request) -> web.Response:
                 "server_id": key.get("server_id"),
                 "expiry": expiry,
                 "is_active": key.get("is_active", 0) == 1,
+                "is_trial": _is_trial_key(key),
             })
 
         return web.json_response({"keys": result})
@@ -1312,6 +1337,13 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         if renew_link:
             headers["sub-expire"] = "1"
             headers["sub-expire-button-link"] = renew_link
+    elif _is_trial_key(key) and _build_renew_link(key, webapp_url, bot_username):
+        # Пробный период: подсказка, что продление не теряет остаток (бот, сайт, webapp — любой пробник)
+        _left = f" Осталось {days_left} дн." if days_left is not None and 0 <= days_left <= 3 else ""
+        headers["sub-info-text"] = "🎁 Пробный период." + _left + " Нажмите «Купить / продлить» — остаток дней сохранится"
+        headers["sub-info-button-text"] = "Купить / продлить"
+        headers["sub-info-button-link"] = _build_renew_link(key, webapp_url, bot_username)
+        headers["sub-expire"] = "0"
     elif days_left is not None and 0 <= days_left <= 3 and bot_username and key.get("id"):
         # Ещё активна, но истекает в ближайшие 3 дня — мягкое предупреждение
         # (sub-info-*), а не жёсткий блок. VPN пока работает, поэтому ведём в
@@ -2352,6 +2384,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
                 "expires_at": k["expires_at"], "traffic_used": k["traffic_used"] or 0,
                 "traffic_limit": k["traffic_limit"] or 0, "is_active": bool(k["is_active"]),
                 "server_name": k.get("server_name"), "sub_url": sub_url,
+                "is_trial": _is_trial_key(k),
             }
 
         keys_with_urls = await asyncio.gather(*[_with_sub_url(k) for k in keys])
@@ -2398,6 +2431,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "is_active": True,
             "sub_url": purchase.get("sub_url"),
             "claim_code": purchase.get("claim_code"),
+            "is_trial": _is_trial_key(key),
         }],
     })
 
