@@ -28,6 +28,8 @@ from bot.services.promotions import prepare_order_pricing
 logger = logging.getLogger(__name__)
 
 
+from bot.utils.payment_text import public_description as _pub  # v1.147 neutral payment text
+
 async def create_custom_payment_order(
     provider_id: str,
     *,
@@ -260,12 +262,7 @@ def _payment_description(
     action: str,
     key: Mapping[str, Any] | None = None,
 ) -> str:
-    tariff_name = str(tariff.get('name') or 'VPN')
-    days = int(tariff.get('duration_days') or 0)
-    if action == 'renewal' and key:
-        key_name = str(key.get('display_name') or 'VPN-ключ')
-        return f"Продление ключа «{key_name}»: «{tariff_name}» ({days} дн.)"
-    return f"Покупка «{tariff_name}» — {days} дней"
+    return _pub()
 
 
 def _find_provider_order_for_webhook(

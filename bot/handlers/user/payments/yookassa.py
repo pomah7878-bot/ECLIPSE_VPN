@@ -33,6 +33,8 @@ _YK_LOADING = '⏳ Создаём оплату через ЮКассу...'
 # TG PAYMENTS (historical internal name cards)
 # ============================================================================
 
+from bot.utils.payment_text import public_description as _pub  # v1.147 neutral payment text
+
 @router.callback_query(F.data.startswith('pay_cards'))
 async def pay_cards_select_tariff(callback: CallbackQuery):
     """Selecting a tariff for payment via TG payments (new key)."""
@@ -140,7 +142,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
             },
             "items": [
                 {
-                    "description": f"Тариф «{tariff['name']}»",
+                    "description": _pub(),
                     "quantity": "1.00",
                     "amount": {
                         "value": f"{price_rub:.2f}",
@@ -162,11 +164,11 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
         provider_title='Оплатить картой',
         log_context=f"cards:new_key order={order_id} tariff={tariff.get('id')}",
         title=bot_name,
-        description=f"Оплата тарифа «{tariff['name']}» ({days} дн.).{promo_note}",
+        description=_pub(),
         payload=f'vpn_key:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=f"Тариф {tariff['name']}", amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()
@@ -293,7 +295,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
             },
             "items": [
                 {
-                    "description": f"Продление «{tariff['name']}»",
+                    "description": _pub(),
                     "quantity": "1.00",
                     "amount": {
                         "value": f"{price_rub:.2f}",
@@ -315,11 +317,11 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
         provider_title='Оплатить картой',
         log_context=f"cards:renew order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
-        description=f"Продление ключа «{key['display_name']}»: {tariff['name']}.{promo_note}",
+        description=_pub(),
         payload=f'renew:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=f"Тариф {tariff['name']}", amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()

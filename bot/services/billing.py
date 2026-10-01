@@ -23,6 +23,8 @@ from typing import Optional, Dict, Any, Tuple
 _SBP_LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "sbp_logo_qr.png")
 
 
+from bot.utils.payment_text import public_description as _pub  # v1.147 neutral payment text
+
 def _overlay_sbp_logo(qr_img):
     """Накладывает логотип СБП в центр QR-кода (как делают официальные
     банковские приложения) — размер логотипа ограничен ~22% от ширины
@@ -249,14 +251,14 @@ async def create_yookassa_qr_payment(
         "confirmation": {
             "type": "qr"
         },
-        "description": description,
+        "description": _pub(),
         "receipt": {
             "customer": {
                 "email": f"user_{order_id}@t.me"
             },
             "items": [
                 {
-                    "description": description[:128],
+                    "description": _pub()[:128],
                     "quantity": "1.00",
                     "amount": {
                         "value": f"{amount_rub:.2f}",
@@ -427,7 +429,7 @@ async def create_wata_payment(
     payload = {
         "amount": round(float(amount_rub), 2),
         "currency": "RUB",
-        "description": description[:255],
+        "description": _pub()[:255],
         "orderId": order_id,
         "successRedirectUrl": return_url,
         "failRedirectUrl": return_url,
@@ -601,7 +603,7 @@ async def create_platega_payment(
             "amount": round(float(amount_rub), 2),
             "currency": "RUB",
         },
-        "description": description[:255],
+        "description": _pub()[:255],
         "return": return_url,
         "failedUrl": fail_url,
         "payload": order_id,
@@ -791,8 +793,8 @@ async def create_cardlink_payment(
     form.add_field("order_id", order_id)
     form.add_field("currency_in", "RUB")
     form.add_field("type", "normal")
-    form.add_field("description", description[:255])
-    form.add_field("name", description[:100])
+    form.add_field("description", _pub()[:255])
+    form.add_field("name", _pub()[:100])
     return_url = build_payment_return_url(bot_name, 'cardlink', order_id)
     form.add_field("return_url", return_url)
     form.add_field("success_url", return_url)

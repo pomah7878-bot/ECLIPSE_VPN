@@ -18,6 +18,8 @@ PAYMENT_DEEPLINK_PROVIDERS = {'yookassa', 'wata', 'platega', 'cardlink'}
 QR_PAYMENT_PAGE_KEY = 'qr_payment'
 
 
+from bot.utils.payment_text import public_description as _pub  # v1.147 neutral payment text
+
 def parse_payment_deeplink(start_param: str) -> Optional[dict]:
     """
     Parses a single deep-link return from the payment form.
@@ -589,13 +591,7 @@ async def create_qr_payment_flow(
         bot_name = bot_info.username
 
         # Description for the provider
-        if key:
-            description = (
-                f"Продление Ключа «{key['display_name']}»: "
-                f"«{tariff['name']}» ({tariff['duration_days']} дн.)"
-            )
-        else:
-            description = f"Покупка «{tariff['name']}» — {tariff['duration_days']} дней"
+        description = _pub()
 
         # Provider API call
         create_kwargs = {

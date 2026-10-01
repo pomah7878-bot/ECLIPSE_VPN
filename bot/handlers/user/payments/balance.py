@@ -28,6 +28,8 @@ router = Router()
 _TOPUP_AMOUNTS_RUB = [200, 500, 1000, 2000]
 
 
+from bot.utils.payment_text import public_description as _pub  # v1.147 neutral payment text
+
 def _balance_topup_amount_kb():
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     from aiogram.types import InlineKeyboardButton
@@ -604,7 +606,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
             },
             "items": [
                 {
-                    "description": f"Доплата за «{tariff['name']}»",
+                    "description": _pub(),
                     "quantity": "1.00",
                     "amount": {
                         "value": f"{price_rub:.2f}",
@@ -626,11 +628,11 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         provider_title='Оплатить картой',
         log_context=f"balance_cards order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
-        description=f"Оплата тарифа «{tariff['name']}» ({tariff['duration_days']} дн.).",
+        description=_pub(),
         payload=f'vpn_key:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=f"Тариф {tariff['name']}", amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()
@@ -736,7 +738,7 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
     try:
         bot_info = await callback.bot.get_me()
         bot_name = bot_info.username
-        description = f"Покупка «{tariff['name']}» — {tariff['duration_days']} дней"
+        description = _pub()
         result = await create_yookassa_qr_payment(amount_rub=remaining_rub, order_id=order_id, description=description, bot_name=bot_name)
         save_result = save_yookassa_payment_id(order_id, result['yookassa_payment_id'])
         if save_result is False:

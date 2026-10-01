@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 router = Router()
 
+from bot.utils.payment_text import public_description as _pub  # v1.147 neutral payment text
+
 @router.callback_query(F.data.startswith('renew_stars_tariff:'))
 async def renew_stars_select_tariff(callback: CallbackQuery):
     """Selecting a tariff for renewal (Stars)."""
@@ -105,10 +107,10 @@ async def renew_stars_invoice(callback: CallbackQuery, state: FSMContext):
         provider_title='Telegram Stars',
         log_context=f"stars:renew order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
-        description=f"Продление ключа «{key['display_name']}»: {tariff['name']}.{promo_note}",
+        description=_pub(),
         payload=f'renew:{order_id}',
         currency='XTR',
-        prices=[LabeledPrice(label=f"Тариф {tariff['name']}", amount=quote['final_amount'])],
+        prices=[LabeledPrice(label=_pub(), amount=quote['final_amount'])],
         reply_markup=(
             InlineKeyboardBuilder()
             .row(InlineKeyboardButton(text=f"⭐️ Оплатить {quote['final_amount']} XTR", pay=True))
@@ -208,10 +210,10 @@ async def pay_stars_invoice(callback: CallbackQuery, state: FSMContext):
         provider_title='Telegram Stars',
         log_context=f"stars:new_key order={order_id} tariff={tariff.get('id')}",
         title=bot_name,
-        description=f"Оплата тарифа «{tariff['name']}» ({days} дн.).{promo_note}",
+        description=_pub(),
         payload=order_id,
         currency='XTR',
-        prices=[LabeledPrice(label=f"Тариф {tariff['name']}", amount=price_stars)],
+        prices=[LabeledPrice(label=_pub(), amount=price_stars)],
         reply_markup=(
             InlineKeyboardBuilder()
             .row(InlineKeyboardButton(text=f'⭐️ Оплатить {price_stars} XTR', pay=True))
