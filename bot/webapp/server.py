@@ -1835,6 +1835,21 @@ async def _verify_turnstile_token(token: str, remote_ip: str) -> bool:
         return False
 
 
+def _is_trusted_app_request(request: web.Request) -> bool:
+    """v1.161: запрос из нативного приложения. Если админ задал секрет
+    приложения (команда /app_secret), заголовок X-Eclipse-App-Key должен
+    совпадать с ним; без заданного секрета работает прежняя проверка по
+    X-Eclipse-App: 1 (совместимость со старыми версиями приложения)."""
+    if request.headers.get("X-Eclipse-App") != "1":
+        return False
+    from database.requests import get_setting
+    secret = (get_setting("app_client_secret", "") or "").strip()
+    if not secret:
+        return True
+    given = request.headers.get("X-Eclipse-App-Key", "")
+    return hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8"))
+
+
 async def handle_public_trial_create(request: web.Request) -> web.Response:
     """POST /api/public/trial/create — активирует бесплатный пробный период
     для текущего залогиненного аккаунта (по коду или OAuth). Без оплаты —
@@ -1864,7 +1879,7 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
     # здесь — rate-limit по IP (уже проверен выше) и обязательное требование
     # настоящей авторизованной сессии (код из бота или OAuth), а не просто
     # этот заголовок — он не секрет и не заменяет капчу как таковую.
-    is_app_request = request.headers.get("X-Eclipse-App") == "1"
+    is_app_request = _is_trusted_app_request(request)
     if not is_app_request:
         turnstile_token = body.get("turnstile_token", "")
         if not await _verify_turnstile_token(turnstile_token, client_ip):

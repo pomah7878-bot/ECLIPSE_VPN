@@ -2013,3 +2013,41 @@ async def menu_width_save(message: Message, state: FSMContext):
         f"✅ Ширина меню: {val if val else 'выключено'}. Откройте любое меню, чтобы оценить.",
         reply_markup=bot_settings_kb(get_bot_mode()),
     )
+
+
+@router.message(Command("app_secret"))
+async def app_secret_cmd(message: Message):
+    """v1.161: секрет Android-приложения для пробного периода без капчи.
+    /app_secret — статус, /app_secret new — создать новый, /app_secret off — выключить."""
+    import secrets as _secrets
+    from database.requests import get_setting, set_setting
+
+    if not is_admin(message.from_user.id):
+        return
+    arg = ((message.text or "").split(maxsplit=1) + [""])[1].strip().lower()
+    current = (get_setting("app_client_secret", "") or "").strip()
+
+    if arg == "new":
+        new_secret = _secrets.token_urlsafe(24)
+        set_setting("app_client_secret", new_secret)
+        await message.answer(
+            "🔑 <b>Секрет приложения создан</b>\n\n"
+            f"<code>{new_secret}</code>\n\n"
+            "Приложение должно передавать его в заголовке <code>X-Eclipse-App-Key</code> "
+            "вместе с <code>X-Eclipse-App: 1</code>. Пока секрет не зашит в приложение, "
+            "пробный период из приложения будет требовать капчу. Сообщение с секретом лучше удалить после копирования.",
+            parse_mode="HTML",
+        )
+        return
+    if arg == "off":
+        set_setting("app_client_secret", "")
+        await message.answer("🔓 Секрет приложения отключён: действует прежняя проверка по заголовку X-Eclipse-App.", parse_mode="HTML")
+        return
+
+    status = "задан ✅" if current else "не задан (проверка только по заголовку X-Eclipse-App)"
+    await message.answer(
+        f"🔑 <b>Секрет приложения:</b> {status}\n\n"
+        "<code>/app_secret new</code> — создать новый\n"
+        "<code>/app_secret off</code> — отключить",
+        parse_mode="HTML",
+    )
