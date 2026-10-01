@@ -47,6 +47,17 @@ def _mask_secret(value: str) -> str:
     return "•" * (len(value) - 4) + value[-4:]
 
 
+def _integrations_menu_text() -> str:
+    return (
+        "🌐 <b>Интеграции</b>\n\n"
+        "Выбери раздел — статус каждой настройки виден прямо на кнопке "
+        "внутри соответствующего раздела.\n\n"
+        "Изменения домена/AI применяются сразу. Для OAuth и AI-ключа "
+        "может понадобиться перезапуск соответствующего сервиса — "
+        "спросите поддержку, если что-то не заработает сразу."
+    )
+
+
 @router.callback_query(F.data == "admin_integrations")
 async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
     """Показывает категории интеграций (детали — внутри каждой)."""
@@ -56,16 +67,7 @@ async def show_integrations_menu(callback: CallbackQuery, state: FSMContext):
 
     await state.set_state(AdminStates.integrations_menu)
 
-    await safe_edit_or_send(
-        callback.message,
-        "🌐 <b>Интеграции</b>\n\n"
-        "Выбери раздел — статус каждой настройки виден прямо на кнопке "
-        "внутри соответствующего раздела.\n\n"
-        "Изменения домена/AI применяются сразу. Для OAuth и AI-ключа "
-        "может понадобиться перезапуск соответствующего сервиса — "
-        "спросите поддержку, если что-то не заработает сразу.",
-        reply_markup=integrations_menu_kb(),
-    )
+    await safe_edit_or_send(callback.message, _integrations_menu_text(), reply_markup=integrations_menu_kb())
     await callback.answer()
 
 
@@ -498,7 +500,7 @@ async def edit_webapp_url_save(message: Message, state: FSMContext):
         "сервере что-то не так с nginx/SSL, домен ещё не готов.",
         parse_mode="HTML", reply_markup=check_kb,
     )
-    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+    await message.answer(_integrations_menu_text(), parse_mode="HTML", reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_webapp_url_backup")
@@ -586,7 +588,7 @@ async def edit_webapp_url_backup_save(message: Message, state: FSMContext):
             f"⚠️ Автонастройка не завершилась успехом (см. последний шаг выше) — резервный домен "
             f"НЕ сохранён. Устраните причину и отправьте домен ещё раз.",
         )
-    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+    await message.answer(_integrations_menu_text(), parse_mode="HTML", reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_cloudflare_token")
@@ -742,7 +744,7 @@ async def edit_panel_cleanup_days_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
 
     await message.answer(f"✅ Сохранено: клиент будет удаляться с панели через {days} дней после истечения подписки.")
-    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+    await message.answer(_integrations_menu_text(), parse_mode="HTML", reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_logo")
@@ -886,7 +888,7 @@ async def edit_happ_provider_id_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
 
     await message.answer(f"✅ Happ Provider ID сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
-    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+    await message.answer(_integrations_menu_text(), parse_mode="HTML", reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_public_key")
@@ -933,7 +935,7 @@ async def edit_zvonok_public_key_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
 
     await message.answer(f"✅ Zvonok API Public Key сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
-    await message.answer("Меню интеграций:", reply_markup=integrations_menu_kb())
+    await message.answer(_integrations_menu_text(), parse_mode="HTML", reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_zvonok_campaign_id")
@@ -1776,7 +1778,7 @@ async def toggle_auth_method(callback: CallbackQuery):
 
     label = SITE_AUTH_METHODS[method]
     await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: {label}")
-    await safe_edit_or_send(callback.message, "🌐 Меню интеграций:", reply_markup=integrations_menu_kb())
+    await safe_edit_or_send(callback.message, _integrations_menu_text(), reply_markup=integrations_menu_kb())
 
 
 @router.callback_query(F.data.startswith("admin_toggle_client_setting:"))
@@ -2005,7 +2007,7 @@ async def delete_cloudflare_token_confirm(callback: CallbackQuery, state: FSMCon
     set_cloudflare_api_token("")
     await state.clear()
     await callback.answer("✅ Токен удалён")
-    await safe_edit_or_send(callback.message, "Сайт и витрина:", reply_markup=integrations_site_menu_kb())
+    await safe_edit_or_send(callback.message, "🌐 <b>Сайт и витрина</b>", reply_markup=integrations_site_menu_kb())
 
 
 @router.callback_query(F.data == "admin_delete_webapp_url_backup_ask")
@@ -2035,12 +2037,25 @@ async def delete_webapp_url_backup_confirm(callback: CallbackQuery, state: FSMCo
     set_webapp_url_backup("")
     await state.clear()
     await callback.answer("✅ Резервный домен удалён из настроек")
-    await safe_edit_or_send(callback.message, "Сайт и витрина:", reply_markup=integrations_site_menu_kb())
+    await safe_edit_or_send(callback.message, "🌐 <b>Сайт и витрина</b>", reply_markup=integrations_site_menu_kb())
 
 
 # ============================================================
 # happ-proxy.com API — лимитированные ссылки, HWID, push/remote
 # ============================================================
+
+def _happ_proxy_menu_text() -> str:
+    return (
+        "🌐 <b>happ-proxy.com API</b>\n\n"
+        "provider_code и auth_key — из личного кабинета happ-proxy.com, раздел API "
+        "(это ОТДЕЛЬНЫЕ данные от Happ Provider ID выше — тот просто уходит в заголовок "
+        "подписки, а эти нужны для вызовов API).\n\n"
+        "После задания provider_code/auth_key при первом импорте в Happ у клиента бот сам "
+        "зарегистрирует домен сайта и создаст лимитированную ссылку (install_code) для его "
+        "подписки — с лимитом устройств из настройки ниже. Push и «обновить подписку» требуют "
+        "платного тарифа happ-proxy.com (Enterprise для push, Pro/Enterprise для remote-команд)."
+    )
+
 
 @router.callback_query(F.data == "admin_happ_proxy_menu")
 async def show_happ_proxy_menu(callback: CallbackQuery, state: FSMContext):
@@ -2049,18 +2064,7 @@ async def show_happ_proxy_menu(callback: CallbackQuery, state: FSMContext):
         return
     await state.clear()
     from bot.keyboards.admin_settings import happ_proxy_menu_kb
-    await safe_edit_or_send(
-        callback.message,
-        "🌐 <b>happ-proxy.com API</b>\n\n"
-        "provider_code и auth_key — из личного кабинета happ-proxy.com, раздел API "
-        "(это ОТДЕЛЬНЫЕ данные от Happ Provider ID выше — тот просто уходит в заголовок "
-        "подписки, а эти нужны для вызовов API).\n\n"
-        "После задания provider_code/auth_key при первом импорте в Happ у клиента бот сам "
-        "зарегистрирует домен сайта и создаст лимитированную ссылку (install_code) для его "
-        "подписки — с лимитом устройств из настройки ниже. Push и «обновить подписку» требуют "
-        "платного тарифа happ-proxy.com (Enterprise для push, Pro/Enterprise для remote-команд).",
-        reply_markup=happ_proxy_menu_kb(),
-    )
+    await safe_edit_or_send(callback.message, _happ_proxy_menu_text(), reply_markup=happ_proxy_menu_kb())
     await callback.answer()
 
 
@@ -2103,7 +2107,7 @@ async def edit_happ_proxy_provider_code_save(message: Message, state: FSMContext
     await state.set_state(AdminStates.integrations_menu)
     from bot.keyboards.admin_settings import happ_proxy_menu_kb
     await message.answer(f"✅ provider_code сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_happ_proxy_auth_key")
@@ -2142,7 +2146,7 @@ async def edit_happ_proxy_auth_key_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
     from bot.keyboards.admin_settings import happ_proxy_menu_kb
     await message.answer(f"✅ auth_key сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_happ_install_limit")
@@ -2177,7 +2181,7 @@ async def edit_happ_install_limit_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
     from bot.keyboards.admin_settings import happ_proxy_menu_kb
     await message.answer(f"✅ Лимит устройств по умолчанию: {int(value)}")
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 def _happ_proxy_error_text(e: "Exception") -> str:
@@ -2238,7 +2242,7 @@ async def happ_proxy_hwid_lookup_run(message: Message, state: FSMContext):
             "автоматически при первом клике клиента на «Импорт в Happ», а не заранее."
         )
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     from bot.services.happ_proxy import list_hwid
@@ -2247,14 +2251,14 @@ async def happ_proxy_hwid_lookup_run(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(_happ_proxy_error_text(e))
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     if not hwids:
         text = f"📡 Ключ #{value} (install_code <code>{install_code}</code>): устройств пока нет."
         await message.answer(text, parse_mode="HTML")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     lines = [f"📡 Ключ #{value} (install_code <code>{install_code}</code>), устройств: {len(hwids)}:\n"]
@@ -2338,7 +2342,7 @@ async def happ_proxy_push_all_run(message: Message, state: FSMContext):
     else:
         await message.answer("✅ Push-уведомление отправлено всем пользователям.")
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_happ_proxy_push_key")
@@ -2382,7 +2386,7 @@ async def happ_proxy_push_key_text_entered(message: Message, state: FSMContext):
     if not key or not install_code:
         await message.answer("❌ У этого ключа ещё нет лимитированной ссылки Happ (нет данных об устройствах для адресной отправки).")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     from bot.services.happ_proxy import list_hwid, send_push_notification
@@ -2396,7 +2400,7 @@ async def happ_proxy_push_key_text_entered(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(_happ_proxy_error_text(e))
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_happ_proxy_refresh_all")
@@ -2443,7 +2447,7 @@ async def happ_proxy_refresh_key_run(message: Message, state: FSMContext):
     if not key or not install_code:
         await message.answer("❌ У этого ключа ещё нет лимитированной ссылки Happ (нет данных об устройствах).")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     from bot.services.happ_proxy import list_hwid, update_subscription_now
@@ -2457,7 +2461,7 @@ async def happ_proxy_refresh_key_run(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(_happ_proxy_error_text(e))
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_happ_proxy_list_installs")
@@ -2528,13 +2532,13 @@ async def happ_proxy_edit_limit_key_id_entered(message: Message, state: FSMConte
     if not key or not key.get('sub_id'):
         await message.answer("❌ Ключ не найден или у него нет подписки.")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
     cached = get_happ_install_link(key['sub_id'])
     if not cached or not cached.get('install_id'):
         await message.answer("ℹ️ У этого ключа ещё нет лимитированной ссылки Happ (создаётся автоматически при первом импорте клиента).")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     await state.update_data(happ_edit_limit_install_id=cached['install_id'], happ_edit_limit_sub_id=key['sub_id'])
@@ -2567,7 +2571,7 @@ async def happ_proxy_edit_limit_value_entered(message: Message, state: FSMContex
             save_happ_install_link(sub_id, cached['install_code'], install_id, int(value))
         await message.answer(f"✅ Лимит устройств обновлён: {value}.")
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_happ_proxy_toggle_link")
@@ -2600,13 +2604,13 @@ async def happ_proxy_toggle_link_run(message: Message, state: FSMContext):
     if not key or not key.get('sub_id'):
         await message.answer("❌ Ключ не найден или у него нет подписки.")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
     cached = get_happ_install_link(key['sub_id'])
     if not cached or not cached.get('install_id'):
         await message.answer("ℹ️ У этого ключа ещё нет лимитированной ссылки Happ.")
         await state.set_state(AdminStates.integrations_menu)
-        await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+        await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
         return
 
     from bot.services.happ_proxy import list_installs, update_install
@@ -2620,7 +2624,7 @@ async def happ_proxy_toggle_link_run(message: Message, state: FSMContext):
     else:
         await message.answer(f"✅ Ссылка теперь {'🟢 включена' if new_status == 10 else '⚪ отключена'}.")
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 @router.callback_query(F.data == "admin_happ_proxy_change_domain_all")
@@ -2654,7 +2658,7 @@ async def happ_proxy_change_domain_run(message: Message, state: FSMContext):
     else:
         await message.answer(f"✅ Команда смены домена на «{value}» отправлена всем устройствам.")
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🌐 happ-proxy.com API:", reply_markup=happ_proxy_menu_kb())
+    await message.answer(_happ_proxy_menu_text(), parse_mode="HTML", reply_markup=happ_proxy_menu_kb())
 
 
 # ============================================================
@@ -2677,13 +2681,9 @@ _HAPP_ROUTING_EXAMPLE_PROFILE = """{
 }"""
 
 
-@router.callback_query(F.data == "admin_happ_routing_menu")
-async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
-        return
-    await state.clear()
-    from bot.keyboards.admin_settings import happ_routing_menu_kb
+def _happ_routing_menu_text() -> str:
+    """Полный текст страницы «Маршрутизация (routing)» — одинаковый при открытии
+    и после любого действия на ней."""
     from database.requests import get_happ_routing_profile_json, get_effective_brand_name
     has_custom = bool(get_happ_routing_profile_json())
     default_note = (
@@ -2695,8 +2695,7 @@ async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
         "Задан свой JSON-профиль — используется он целиком, дефолтный профиль "
         "ECLIPSE игнорируется."
     )
-    await safe_edit_or_send(
-        callback.message,
+    return (
         "🗺 <b>Маршрутизация (routing)</b>\n\n"
         "Необязательный заголовок подписки — задаёт профиль маршрутизации "
         "(какие сайты/IP идут напрямую, через прокси или блокируются). Работает "
@@ -2713,9 +2712,18 @@ async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
         "активировать» (onadd) — станет активным сразу, даже поверх другого "
         "активного профиля. «Отключить у клиента» (off) — выключает маршрутизацию "
         "целиком; <b>поддерживается только у Happ</b> (у INCY по офиц. документации "
-        "такого режима нет — если он выбран, INCY просто не получит заголовок).",
-        reply_markup=happ_routing_menu_kb(),
+        "такого режима нет — если он выбран, INCY просто не получит заголовок)."
     )
+
+
+@router.callback_query(F.data == "admin_happ_routing_menu")
+async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.clear()
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
     await callback.answer()
 
 
@@ -2728,7 +2736,7 @@ async def set_happ_routing_mode_run(callback: CallbackQuery, state: FSMContext):
     from database.requests import set_happ_routing_mode
     set_happ_routing_mode(mode)
     from bot.keyboards.admin_settings import happ_routing_menu_kb
-    await safe_edit_or_send(callback.message, "🗺 <b>Маршрутизация (routing)</b>", reply_markup=happ_routing_menu_kb())
+    await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
     await callback.answer("✅ Режим обновлён")
 
 
@@ -2767,7 +2775,7 @@ async def edit_happ_routing_name_save(message: Message, state: FSMContext):
         set_happ_routing_profile_name(raw)
         await message.answer(f"✅ Название профиля маршрутизации: «{raw}»")
     await state.set_state(AdminStates.integrations_menu)
-    await message.answer("🗺 Маршрутизация (routing):", reply_markup=happ_routing_menu_kb())
+    await message.answer(_happ_routing_menu_text(), parse_mode="HTML", reply_markup=happ_routing_menu_kb())
 
 
 @router.callback_query(F.data == "admin_edit_happ_routing_profile")
@@ -2807,4 +2815,4 @@ async def edit_happ_routing_profile_save(message: Message, state: FSMContext):
     set_happ_routing_profile_json(json.dumps(parsed, ensure_ascii=False))
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(f"✅ Профиль «{parsed['Name']}» сохранён.")
-    await message.answer("🗺 Маршрутизация (routing):", reply_markup=happ_routing_menu_kb())
+    await message.answer(_happ_routing_menu_text(), parse_mode="HTML", reply_markup=happ_routing_menu_kb())
