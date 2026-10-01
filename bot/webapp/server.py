@@ -1445,8 +1445,12 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         # продления остаётся старое «истекает через N дней». По документации Happ:
         # info-блок отключается ПУСТОЙ строкой (значение «0» на части версий
         # выводится как текст «0»), а уведомление об истечении — значением 0.
-        headers["sub-info-text"] = ""
-        headers["sub-expire"] = "0"
+        # v1.159: если инфо-блок задала сама панель (например кнопка «AI помощник»),
+        # оставляем его — снимаем только наш устаревший баннер.
+        if not headers.get("sub-info-text"):
+            headers["sub-info-text"] = ""
+        if "sub-expire" not in headers:
+            headers["sub-expire"] = "0"
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
