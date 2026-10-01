@@ -1441,9 +1441,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         headers["sub-info-button-link"] = f"https://t.me/{bot_username}?start=renew_{key['id']}"
         headers["sub-expire"] = "0"
     elif not is_expired:
-        # Happ кэширует баннеры между обновлениями — снимаем их явно (значение 0),
-        # иначе после продления остаётся старое «истекает через N дней».
-        headers["sub-info-text"] = "0"
+        # Happ кэширует баннеры между обновлениями — снимаем их явно, иначе после
+        # продления остаётся старое «истекает через N дней». По документации Happ:
+        # info-блок отключается ПУСТОЙ строкой (значение «0» на части версий
+        # выводится как текст «0»), а уведомление об истечении — значением 0.
+        headers["sub-info-text"] = ""
         headers["sub-expire"] = "0"
 
     resp = web.Response(body=body, headers=headers)
