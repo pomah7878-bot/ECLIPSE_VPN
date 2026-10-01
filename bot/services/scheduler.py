@@ -720,6 +720,26 @@ async def check_and_send_expiry_notifications(bot: Bot) -> None:
         
         expiring_keys = get_expiring_keys(days)
         sent_count = 0
+
+        # v1.151 trial notice
+        trial_tariff_ids = set()
+        try:
+            from database.requests import get_trial_tariff_id, get_groups_with_trial
+            if get_trial_tariff_id():
+                trial_tariff_ids.add(int(get_trial_tariff_id()))
+            for _g in get_groups_with_trial():
+                if _g.get('trial_tariff_id'):
+                    trial_tariff_ids.add(int(_g['trial_tariff_id']))
+        except Exception as _e:
+            logger.warning(f"Не удалось определить пробные тарифы: {_e}")
+        default_trial_notification = (
+            '⏳ <b>Пробный период скоро закончится</b>\n\n'
+            'Ключ %ключ_имя% действует ещё %ключ_дней_до_окончания% дн.\n\n'
+            'Чтобы продолжить пользоваться сервисом, просто нажмите «Купить / продлить» и выберите тариф. '
+            'Оставшиеся дни добавятся к новому сроку, а ключ и подписка в приложении останутся прежними — '
+            'ничего настраивать заново не нужно.'
+        )
+        trial_notification_text = get_setting('trial_notification_text', '') or default_trial_notification
         
         for key_info in expiring_keys:
             vpn_key_id = key_info['vpn_key_id']
@@ -736,8 +756,9 @@ async def check_and_send_expiry_notifications(bot: Bot) -> None:
                 'key_name': keyname,
                 'key_days_left': days_left,
             })
+            is_trial_key = bool(key_info.get('tariff_id')) and int(key_info['tariff_id']) in trial_tariff_ids
             text = render_event_placeholders(
-                notification_text,
+                trial_notification_text if is_trial_key else notification_text,
                 'key_expiring',
                 event_context,
                 mode='html',
@@ -745,6 +766,8 @@ async def check_and_send_expiry_notifications(bot: Bot) -> None:
             
             # Keyboard with "My keys" and "Home" buttons
             builder = InlineKeyboardBuilder()
+            if is_trial_key:
+                builder.row(InlineKeyboardButton(text="💳 Купить / продлить", callback_data=f"key_renew:{vpn_key_id}"))
             builder.row(InlineKeyboardButton(text="🔑 Мои ключи", callback_data="my_keys"))
             builder.row(InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
             kb = builder.as_markup()

@@ -155,6 +155,7 @@ def get_expiring_keys(days: int) -> List[Dict[str, Any]]:
                 u.telegram_id as user_telegram_id,
                 vk.expires_at,
                 vk.custom_name,
+                vk.tariff_id,
                 CAST((julianday(vk.expires_at) - julianday('now')) AS INTEGER) as days_left
             FROM vpn_keys vk
             JOIN users u ON vk.user_id = u.id
