@@ -1332,7 +1332,7 @@ async def _run_payment_post_actions(
             )
 
     days = order.get('period_days') or order.get('duration_days') or 30
-    await process_referral_reward(
+    _ref_events = await process_referral_reward(
         user_internal_id,
         days,
         referral_amount,
@@ -1343,7 +1343,8 @@ async def _run_payment_post_actions(
 
     try:
         from database.requests import get_site_referrer_code_for_order, get_user_by_referral_code
-        site_ref_code = get_site_referrer_code_for_order(str(order.get('order_id') or ''))
+        # v1.157: если награда уже начислена по основной цепочке — сайтовую не дублируем
+        site_ref_code = None if _ref_events else get_site_referrer_code_for_order(str(order.get('order_id') or ''))
         if site_ref_code:
             referrer = get_user_by_referral_code(site_ref_code)
             if referrer:

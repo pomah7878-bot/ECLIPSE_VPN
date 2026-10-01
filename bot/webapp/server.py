@@ -66,6 +66,15 @@ def _validate_init_data(init_data: str, bot_token: str) -> Optional[int]:
             return None
 
         data = parse_webapp_init_data(init_data)
+        # v1.157: initData старше 48 часов не принимаем (защита от повторного использования)
+        try:
+            import time as _t
+            _auth_ts = data.auth_date.timestamp()
+            if _t.time() - _auth_ts > 48 * 3600:
+                logger.warning("WebApp: initData устарел (auth_date старше 48 часов) — доступ отклонён")
+                return None
+        except Exception:
+            pass
         # parse_webapp_init_data возвращает объект WebAppInitData, не словарь
         user = data.user
         if user:
@@ -75,6 +84,33 @@ def _validate_init_data(init_data: str, bot_token: str) -> Optional[int]:
     except Exception as e:
         logger.error(f"WebApp: initData validation error: {e}")
         return None
+
+
+# v1.157: простой лимитер запросов в памяти процесса
+_RL_BUCKETS: Dict[str, list] = {}
+
+
+def _rl_prune(key: str, window: float) -> list:
+    import time as _t
+    now = _t.time()
+    items = [t for t in _RL_BUCKETS.get(key, []) if now - t < window]
+    if items:
+        _RL_BUCKETS[key] = items
+    else:
+        _RL_BUCKETS.pop(key, None)
+    if len(_RL_BUCKETS) > 5000:
+        for k in [k for k, v in _RL_BUCKETS.items() if not v or now - v[-1] > 3600]:
+            _RL_BUCKETS.pop(k, None)
+    return items
+
+
+def _rl_allowed(key: str, limit: int, window: float) -> bool:
+    return len(_rl_prune(key, window)) < limit
+
+
+def _rl_record(key: str) -> None:
+    import time as _t
+    _RL_BUCKETS.setdefault(key, []).append(_t.time())
 
 
 def _get_telegram_id(request: web.Request) -> Optional[int]:
@@ -1856,6 +1892,7 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
         result = await provision_anonymous_vpn_key(trial_tariff_id, order_id, site_account_id=account_id)
         save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
         mark_anonymous_purchase_paid(order_id, "trial")  # без реального платежа, просто маркер завершения
+        _trial_rate_limit_record(client_ip)  # v1.157: считаем и успешные выдачи (раньше — только провалы капчи)
 
         if account.get("telegram_id"):
             real_user_id = get_user_internal_id(account["telegram_id"])
@@ -2075,7 +2112,7 @@ def _zv_bind_call(call_id, phone: str) -> None:
     now = _t.time()
     for k in [k for k, v in _ZV_CALL_BINDINGS.items() if now - v[1] > _ZV_CALL_TTL_SECONDS]:
         _ZV_CALL_BINDINGS.pop(k, None)
-    _ZV_CALL_BINDINGS[str(call_id)] = (_zv_norm_phone(phone), now)
+    _ZV_CALL_BINDINGS[str(call_id)] = [_zv_norm_phone(phone), now, 0]
 
 
 def _zv_call_matches(call_id, phone: str) -> bool:
@@ -2086,11 +2123,37 @@ def _zv_call_matches(call_id, phone: str) -> bool:
     return entry[0] == _zv_norm_phone(phone)
 
 
+def _zv_code_attempt_ok(call_id) -> bool:
+    """v1.157: не более 5 попыток ввода кода на один звонок (защита от подбора)."""
+    entry = _ZV_CALL_BINDINGS.get(str(call_id))
+    if not entry:
+        return False
+    entry[2] += 1
+    if entry[2] > 5:
+        _ZV_CALL_BINDINGS.pop(str(call_id), None)
+        return False
+    return True
+
+
 def _zv_consume_call(call_id) -> None:
     _ZV_CALL_BINDINGS.pop(str(call_id), None)
 
 
 async def handle_public_auth_phone_request(request: web.Request) -> web.Response:
+    # v1.157: лимиты — каждый звонок стоит денег и беспокоит владельца номера
+    _ip = _get_client_ip(request)
+    try:
+        _rb = await request.json()
+    except Exception:
+        _rb = {}
+    _ph = _zv_norm_phone((_rb.get("phone") or "").strip()) if isinstance(_rb, dict) else ""
+    if not _rl_allowed(f"phreq-ip:{_ip}", 10, 3600) or (_ph and not _rl_allowed(f"phreq-ph:{_ph}", 3, 600)):
+        return web.json_response(
+            {"error": "rate_limited", "message": "Слишком много запросов. Попробуйте позже."}, status=429
+        )
+    _rl_record(f"phreq-ip:{_ip}")
+    if _ph:
+        _rl_record(f"phreq-ph:{_ph}")
     resp = await _handle_public_auth_phone_request_impl(request)
     try:
         payload = json.loads(resp.text)
@@ -2215,6 +2278,8 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
         if not entered_code:
             msg = "Введите код, который продиктовал робот." if method == "voice_code" else "Введите 4 цифры номера, с которого поступил звонок."
             return web.json_response({"status": "ok", "verified": False, "message": msg})
+        if not _zv_code_attempt_ok(call_id):
+            return web.json_response({"status": "ok", "verified": False, "message": "Слишком много попыток. Запросите звонок заново."})
         confirmed = zv.check_voice_code(call_id, entered_code)
     else:
         # Кэшу постбека доверяем ТОЛЬКО для flash_call ("Звонок на
@@ -2266,6 +2331,10 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
     if not code:
         return web.json_response({"ok": False, "message": "Введите код."}, status=400)
 
+    _login_ip = _get_client_ip(request)
+    if not _rl_allowed(f"login-fail:{_login_ip}", 10, 600):
+        return web.json_response({"ok": False, "message": "Слишком много неудачных попыток. Попробуйте через 10 минут."}, status=429)
+
     from database.requests import consume_site_login_code, is_site_auth_method_enabled
     from database.db_accounts import _get_or_create_telegram_site_account
 
@@ -2282,6 +2351,7 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
 
     purchase = get_anonymous_purchase_by_claim_code(code)
     if not purchase or not purchase.get("vpn_key_id"):
+        _rl_record(f"login-fail:{_login_ip}")
         return web.json_response({"ok": False, "message": "Код не найден или ключ ещё не готов. Проверьте правильность ввода."})
 
     site_account_id = purchase.get("site_account_id")
@@ -2568,6 +2638,8 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
         if not entered_code:
             msg = "Введите код, который продиктовал робот." if method2 == "voice_code" else "Введите 4 цифры номера, с которого поступил звонок."
             return web.json_response({"ok": True, "verified": False, "message": msg})
+        if not _zv_code_attempt_ok(call_id):
+            return web.json_response({"ok": True, "verified": False, "message": "Слишком много попыток. Запросите звонок заново."})
         confirmed = zv.check_voice_code(call_id, entered_code)
     else:
         # См. подробный комментарий в handle_public_auth_phone_check —

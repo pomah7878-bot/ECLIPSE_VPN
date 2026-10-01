@@ -823,6 +823,16 @@ def get_seconds_until(target_hour: int, target_minute: int = 0) -> int:
     return int((target - now).total_seconds())
 
 
+async def _run_daily_step(name: str, coro) -> None:
+    """v1.157: ошибка одного шага не прерывает остальные ежедневные задачи."""
+    try:
+        await coro
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка шага ежедневных задач «{name}»: {e}", exc_info=True)
+
+
 async def run_daily_tasks(bot: Bot) -> None:
     """
     Background task for running daily tasks.
@@ -854,7 +864,7 @@ async def run_daily_tasks(bot: Bot) -> None:
             
             # Sending statistics
             logger.info("📊 Запуск отправки суточной статистики...")
-            await send_daily_stats(bot)
+            await _run_daily_step("суточная статистика", send_daily_stats(bot))
 
             # Автоочистка панели от осиротевших ключей (user_*, которых нет в БД)
             try:
@@ -898,23 +908,23 @@ async def run_daily_tasks(bot: Bot) -> None:
             
             # Sending a backup
             logger.info("📦 Запуск создания и отправки бэкапа...")
-            await send_backup_archive(bot)
+            await _run_daily_step("бэкап", send_backup_archive(bot))
             
             # Wait 5 minutes
             await asyncio.sleep(300)
             
             # Sending notifications to users
-            await check_and_send_expiry_notifications(bot)
+            await _run_daily_step("уведомления об истечении", check_and_send_expiry_notifications(bot))
 
             # Автопродление ключей с личного баланса
-            await process_auto_renewals(bot)
+            await _run_daily_step("автопродление", process_auto_renewals(bot))
 
             # Снапшот трафика для графика статистики
-            await snapshot_daily_traffic()
+            await _run_daily_step("снапшот трафика", snapshot_daily_traffic())
             
             # Monthly traffic reset (1st day of every month)
             if datetime.now().day == 1:
-                await monthly_traffic_reset(bot)
+                await _run_daily_step("ежемесячное обслуживание", monthly_traffic_reset(bot))
             
             # We wait a little so as not to start again at the same minute
             await asyncio.sleep(60)
