@@ -612,9 +612,20 @@ async def handle_pay_create(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "user_not_found"}, status=404)
 
+    if vpn_key_id:
+        # v1.155: ключ должен принадлежать этому пользователю
+        from database.requests import get_key_details_for_user
+        try:
+            _owned = get_key_details_for_user(int(vpn_key_id), telegram_id)
+        except (TypeError, ValueError):
+            return web.json_response({"error": "invalid_key"}, status=400)
+        if not _owned:
+            return web.json_response({"error": "key_not_found"}, status=404)
+
     action = "renewal" if vpn_key_id else "new_key"
 
     if payment_method == "balance":
+        debited_cents = 0
         try:
             (_, order_id) = create_pending_order(
                 user_id=user_id, tariff_id=tariff["id"], payment_type="balance",
@@ -645,12 +656,51 @@ async def handle_pay_create(request: web.Request) -> web.Response:
                     "required_cents": quote["final_amount"],
                 }, status=400)
 
+            from bot.services.balance import debit_user_balance, credit_user_balance
+            from database.requests import save_payment_balance_deduction
+            debit = await debit_user_balance(
+                user_id, quote["final_amount"],
+                source="payment_balance", reason="Оплата тарифа с баланса (WebApp)",
+                reference_type="payment_order", reference_id=order_id,
+                metadata={"payment_type": "balance"},
+            )
+            if not debit.get("ok"):
+                if debit.get("status") == "insufficient_funds":
+                    return web.json_response({
+                        "error": "insufficient_balance",
+                        "message": "Недостаточно средств на балансе для этого тарифа.",
+                        "balance_cents": debit.get("balance_before", 0),
+                        "required_cents": quote["final_amount"],
+                    }, status=400)
+                return web.json_response({"error": "debit_failed", "message": "Не удалось списать баланс."}, status=502)
+            debited_cents = int(quote["final_amount"])
+            save_payment_balance_deduction(order_id, debited_cents)
+
             result = await _complete_webapp_order(
                 order_id, quote_final_amount_cents=quote["final_amount"], telegram_id=telegram_id,
             )
+            if result.get("status") != "paid":
+                await credit_user_balance(
+                    user_id, debited_cents, source="payment_balance_refund",
+                    reason="Возврат: оплата тарифа не завершена",
+                    reference_type="payment_order_refund", reference_id=order_id,
+                )
+                debited_cents = 0
             return web.json_response(result)
         except Exception as e:
             logger.error(f"WebApp pay/create (balance) error: {e}")
+            if debited_cents:
+                try:
+                    from database.db_payments import is_order_already_paid
+                    if not is_order_already_paid(order_id):
+                        from bot.services.balance import credit_user_balance as _refund
+                        await _refund(
+                            user_id, debited_cents, source="payment_balance_refund",
+                            reason="Возврат: ошибка при оплате тарифа",
+                            reference_type="payment_order_refund", reference_id=order_id,
+                        )
+                except Exception as refund_err:
+                    logger.error(f"WebApp balance refund failed for {order_id}: {refund_err}")
             return web.json_response({"error": "payment_creation_failed"}, status=502)
 
     try:
@@ -1931,6 +1981,10 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
     from database.requests import get_or_create_site_account, attach_oauth_to_existing_account
 
     link_account_id = request.cookies.get("oauth_link_account_id")
+    _session_account = _verify_session(request.cookies.get("site_session"))
+    if link_account_id and not (_session_account and str(_session_account) == str(link_account_id)):
+        # v1.155: cookie без подтверждения подписанной сессией — игнорируем (защита от захвата аккаунта)
+        link_account_id = None
     if link_account_id:
         ok = attach_oauth_to_existing_account(
             int(link_account_id), provider, user_info["provider_user_id"],
@@ -2006,7 +2060,49 @@ async def handle_zvonok_postback(request: web.Request) -> web.Response:
     return web.Response(text="ok")
 
 
+# v1.155: call_id привязан к номеру, для которого был запрошен звонок, и одноразовый
+_ZV_CALL_BINDINGS: Dict[str, tuple] = {}
+_ZV_CALL_TTL_SECONDS = 1800
+
+
+def _zv_norm_phone(phone: str) -> str:
+    from bot.services.trial_phone_registry import normalize_phone
+    return normalize_phone(phone or "")
+
+
+def _zv_bind_call(call_id, phone: str) -> None:
+    import time as _t
+    now = _t.time()
+    for k in [k for k, v in _ZV_CALL_BINDINGS.items() if now - v[1] > _ZV_CALL_TTL_SECONDS]:
+        _ZV_CALL_BINDINGS.pop(k, None)
+    _ZV_CALL_BINDINGS[str(call_id)] = (_zv_norm_phone(phone), now)
+
+
+def _zv_call_matches(call_id, phone: str) -> bool:
+    import time as _t
+    entry = _ZV_CALL_BINDINGS.get(str(call_id))
+    if not entry or _t.time() - entry[1] > _ZV_CALL_TTL_SECONDS:
+        return False
+    return entry[0] == _zv_norm_phone(phone)
+
+
+def _zv_consume_call(call_id) -> None:
+    _ZV_CALL_BINDINGS.pop(str(call_id), None)
+
+
 async def handle_public_auth_phone_request(request: web.Request) -> web.Response:
+    resp = await _handle_public_auth_phone_request_impl(request)
+    try:
+        payload = json.loads(resp.text)
+        if payload.get("status") == "ok" and payload.get("call_id"):
+            body = await request.json()
+            _zv_bind_call(payload["call_id"], (body.get("phone") or "").strip())
+    except Exception as e:
+        logger.warning(f"Не удалось привязать call_id к номеру: {e}")
+    return resp
+
+
+async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Response:
     """POST /api/public/auth/phone/request — инициирует вход по номеру
     телефона (отдельный, полноценный способ входа — НЕ путать с
     /trial/phone/request, который лишь защита от повторного пробника
@@ -2103,6 +2199,8 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
     call_id = body.get("call_id")
     if not phone or not call_id:
         return web.json_response({"error": "phone_required"}, status=400)
+    if not _zv_call_matches(call_id, phone):
+        return web.json_response({"status": "ok", "verified": False, "message": "Запросите звонок заново."})
 
     from database.requests import get_zvonok_verification_method
     import bot.services.zvonok_verification as zv
@@ -2130,6 +2228,7 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
 
     if not confirmed:
         return web.json_response({"status": "ok", "verified": False})
+    _zv_consume_call(call_id)
 
     from bot.services.trial_phone_registry import normalize_phone, get_telegram_id_for_verified_phone
 
@@ -2457,6 +2556,8 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     call_id = body.get("call_id")
     if not phone or not call_id:
         return web.json_response({"ok": False, "message": "Не указан телефон или call_id."}, status=400)
+    if not _zv_call_matches(call_id, phone):
+        return web.json_response({"ok": True, "verified": False, "message": "Запросите звонок заново."})
 
     from database.requests import get_zvonok_verification_method
     import bot.services.zvonok_verification as zv
@@ -2474,6 +2575,7 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
         confirmed = await zv.check_phone_confirmation(call_id, trust_postback_cache=(method2 == "flash_call"))
     if not confirmed:
         return web.json_response({"ok": True, "verified": False})
+    _zv_consume_call(call_id)
 
     from bot.services.trial_phone_registry import normalize_phone
     from database.db_accounts import set_account_phone
