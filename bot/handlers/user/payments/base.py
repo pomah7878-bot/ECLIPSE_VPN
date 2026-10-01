@@ -591,7 +591,7 @@ async def create_qr_payment_flow(
         bot_name = bot_info.username
 
         # Description for the provider
-        description = _pub()
+        description = _pub(tariff)
 
         # Provider API call
         create_kwargs = {

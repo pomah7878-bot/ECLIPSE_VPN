@@ -262,7 +262,7 @@ def _payment_description(
     action: str,
     key: Mapping[str, Any] | None = None,
 ) -> str:
-    return _pub()
+    return _pub(tariff)
 
 
 def _find_provider_order_for_webhook(

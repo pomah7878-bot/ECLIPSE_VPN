@@ -142,7 +142,7 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
             },
             "items": [
                 {
-                    "description": _pub(),
+                    "description": _pub(tariff),
                     "quantity": "1.00",
                     "amount": {
                         "value": f"{price_rub:.2f}",
@@ -164,11 +164,11 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
         provider_title='Оплатить картой',
         log_context=f"cards:new_key order={order_id} tariff={tariff.get('id')}",
         title=bot_name,
-        description=_pub(),
+        description=_pub(tariff),
         payload=f'vpn_key:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=_pub(), amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(tariff), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()
@@ -295,7 +295,7 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
             },
             "items": [
                 {
-                    "description": _pub(),
+                    "description": _pub(tariff),
                     "quantity": "1.00",
                     "amount": {
                         "value": f"{price_rub:.2f}",
@@ -317,11 +317,11 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
         provider_title='Оплатить картой',
         log_context=f"cards:renew order={order_id} tariff={tariff.get('id')} key={key_id}",
         title=bot_name,
-        description=_pub(),
+        description=_pub(tariff),
         payload=f'renew:{order_id}',
         provider_token=provider_token,
         currency='RUB',
-        prices=[LabeledPrice(label=_pub(), amount=price_kopecks)],
+        prices=[LabeledPrice(label=_pub(tariff), amount=price_kopecks)],
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()

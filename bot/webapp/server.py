@@ -42,6 +42,8 @@ _HAPP_SUB_CACHE: dict = {}
 # Аутентификация: проверка Telegram initData через aiogram
 # ============================================================
 
+from bot.utils.payment_text import public_description as _pub  # v1.148 duration
+
 def _validate_init_data(init_data: str, bot_token: str) -> Optional[int]:
     """
     Проверяет подлинность Telegram initData через встроенную проверку aiogram.
@@ -654,11 +656,7 @@ async def handle_pay_create(request: web.Request) -> web.Response:
         pay_bot = Bot(token=BOT_TOKEN)
         try:
             bot_info = await pay_bot.get_me()
-            description = (
-                f"Продление тарифа «{tariff['name']}» ({tariff['duration_days']} дн.)"
-                if vpn_key_id else
-                f"Покупка «{tariff['name']}» — {tariff['duration_days']} дней"
-            )
+            description = _pub(tariff)
             yk_result = await create_yookassa_qr_payment(
                 amount_rub=final_amount_rub, order_id=order_id, description=description,
                 bot_name=bot_info.username,
@@ -1474,7 +1472,7 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
         pay_bot = Bot(token=BOT_TOKEN)
         try:
             bot_info = await pay_bot.get_me()
-            description = f"Покупка «{tariff['name']}» — {tariff['duration_days']} дней (сайт)"
+            description = _pub(tariff)
             yk_result = await create_yookassa_qr_payment(
                 amount_rub=price_rub, order_id=order_id, description=description,
                 bot_name=bot_info.username,
@@ -2581,7 +2579,7 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
         pay_bot = Bot(token=BOT_TOKEN)
         try:
             bot_info = await pay_bot.get_me()
-            description = f"Продление тарифа «{tariff['name']}» ({tariff['duration_days']} дн., сайт)"
+            description = _pub(tariff)
             yk_result = await create_yookassa_qr_payment(
                 amount_rub=price_rub, order_id=order_id, description=description,
                 bot_name=bot_info.username,
@@ -2949,7 +2947,7 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
         pay_bot = Bot(token=BOT_TOKEN)
         try:
             bot_info = await pay_bot.get_me()
-            description = f"Продление тарифа «{tariff['name']}» ({tariff['duration_days']} дн., сайт)"
+            description = _pub(tariff)
             yk_result = await create_yookassa_qr_payment(
                 amount_rub=price_rub, order_id=order_id, description=description,
                 bot_name=bot_info.username,
