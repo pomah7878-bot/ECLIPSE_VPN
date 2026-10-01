@@ -2030,24 +2030,50 @@ async def app_secret_cmd(message: Message):
     if arg == "new":
         new_secret = _secrets.token_urlsafe(24)
         set_setting("app_client_secret", new_secret)
+        set_setting("app_client_secret_enforced", "0")
         await message.answer(
             "🔑 <b>Секрет приложения создан</b>\n\n"
             f"<code>{new_secret}</code>\n\n"
-            "Приложение должно передавать его в заголовке <code>X-Eclipse-App-Key</code> "
-            "вместе с <code>X-Eclipse-App: 1</code>. Пока секрет не зашит в приложение, "
-            "пробный период из приложения будет требовать капчу. Сообщение с секретом лучше удалить после копирования.",
+            "Строгая проверка пока <b>выключена</b>: старые версии приложения работают как раньше. "
+            "Добавьте секрет в GitHub Secrets как <code>APP_CLIENT_SECRET</code>, выпустите новую версию приложения, "
+            "а когда она разойдётся, включите проверку командой <code>/app_secret enforce</code>. "
+            "Сообщение с секретом лучше удалить после копирования.",
             parse_mode="HTML",
         )
         return
+    if arg == "enforce":
+        if not current:
+            await message.answer("Сначала создайте секрет: <code>/app_secret new</code>", parse_mode="HTML")
+            return
+        set_setting("app_client_secret_enforced", "1")
+        await message.answer(
+            "🔒 Строгая проверка <b>включена</b>: пробный период из приложения без верного ключа потребует капчу. "
+            "Отключить: <code>/app_secret soft</code>.",
+            parse_mode="HTML",
+        )
+        return
+    if arg == "soft":
+        set_setting("app_client_secret_enforced", "0")
+        await message.answer("🔓 Строгая проверка выключена, секрет сохранён.", parse_mode="HTML")
+        return
     if arg == "off":
         set_setting("app_client_secret", "")
+        set_setting("app_client_secret_enforced", "0")
         await message.answer("🔓 Секрет приложения отключён: действует прежняя проверка по заголовку X-Eclipse-App.", parse_mode="HTML")
         return
 
-    status = "задан ✅" if current else "не задан (проверка только по заголовку X-Eclipse-App)"
+    enforced = (get_setting("app_client_secret_enforced", "") or "").strip() == "1"
+    if not current:
+        status = "не задан (проверка только по заголовку X-Eclipse-App)"
+    elif enforced:
+        status = "задан, строгая проверка включена 🔒"
+    else:
+        status = "задан, строгая проверка выключена 🔓"
     await message.answer(
         f"🔑 <b>Секрет приложения:</b> {status}\n\n"
-        "<code>/app_secret new</code> — создать новый\n"
-        "<code>/app_secret off</code> — отключить",
+        "<code>/app_secret new</code> — создать новый (проверка выключена)\n"
+        "<code>/app_secret enforce</code> — включить строгую проверку\n"
+        "<code>/app_secret soft</code> — выключить строгую проверку\n"
+        "<code>/app_secret off</code> — удалить секрет",
         parse_mode="HTML",
     )

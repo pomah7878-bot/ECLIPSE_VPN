@@ -1846,6 +1846,10 @@ def _is_trusted_app_request(request: web.Request) -> bool:
     secret = (get_setting("app_client_secret", "") or "").strip()
     if not secret:
         return True
+    # v1.163: пока админ не включил жёсткую проверку (/app_secret enforce),
+    # старые версии приложения без ключа продолжают работать
+    if (get_setting("app_client_secret_enforced", "") or "").strip() != "1":
+        return True
     given = request.headers.get("X-Eclipse-App-Key", "")
     return hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8"))
 
