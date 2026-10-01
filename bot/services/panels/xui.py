@@ -22,6 +22,32 @@ from config import RETRY_CONFIG
 logger = logging.getLogger(__name__)
 
 DEFAULT_PANEL_TIMEOUT_SECONDS = 15
+# v1.164: недоступная панель не должна вешать бота на десятки секунд.
+PANEL_CONNECT_TIMEOUT_SECONDS = 5      # установка соединения (дальше — общий таймаут)
+PANEL_DOWN_COOLDOWN_SECONDS = 90       # сколько не стучимся в панель после неудачи
+PANEL_RECENT_FAIL_WINDOW_SECONDS = 600  # после неудачи проверяем панель одной попыткой
+_PANEL_DOWN_UNTIL: Dict[str, float] = {}
+_PANEL_LAST_FAIL: Dict[str, float] = {}
+
+
+def _panel_cooldown_remaining(key: str) -> float:
+    return _PANEL_DOWN_UNTIL.get(key, 0.0) - time.monotonic()
+
+
+def _panel_recently_failed(key: str) -> bool:
+    last = _PANEL_LAST_FAIL.get(key)
+    return last is not None and (time.monotonic() - last) < PANEL_RECENT_FAIL_WINDOW_SECONDS
+
+
+def _mark_panel_down(key: str) -> None:
+    now = time.monotonic()
+    _PANEL_DOWN_UNTIL[key] = now + PANEL_DOWN_COOLDOWN_SECONDS
+    _PANEL_LAST_FAIL[key] = now
+
+
+def _mark_panel_up(key: str) -> None:
+    _PANEL_DOWN_UNTIL.pop(key, None)
+    _PANEL_LAST_FAIL.pop(key, None)
 API_PROFILE_LEGACY = "legacy_inbounds"
 API_PROFILE_CLIENTS = "clients_api"
 BOT_API_TOKEN_NAME = "ECLIPSE_VPN Bot"
@@ -167,7 +193,10 @@ class XUIClient(BaseVPNClient):
                 timeout_seconds = float(RETRY_CONFIG.get("timeout_seconds", DEFAULT_PANEL_TIMEOUT_SECONDS))
             except (TypeError, ValueError):
                 timeout_seconds = DEFAULT_PANEL_TIMEOUT_SECONDS
-            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+            timeout = aiohttp.ClientTimeout(
+                total=timeout_seconds,
+                sock_connect=min(PANEL_CONNECT_TIMEOUT_SECONDS, timeout_seconds),
+            )
             self.session = aiohttp.ClientSession(connector=connector, cookie_jar=jar, timeout=timeout)
             self.is_authenticated = False
             self.cookie_authenticated = False
@@ -976,7 +1005,16 @@ class XUIClient(BaseVPNClient):
         # URL = https://ip:port/secret_path/panel/...
         url = f"{self.base_url}{endpoint}"
 
+        panel_key = f"{self.host}:{self.port}"
+        cooldown_left = _panel_cooldown_remaining(panel_key)
+        if cooldown_left > 0:
+            raise VPNAPIError(
+                f"Панель недоступна: сервер не отвечает, повторная проверка через {int(cooldown_left) + 1} с"
+            )
+
         attempts = RETRY_CONFIG["max_attempts"] if retry else 1
+        if attempts > 1 and _panel_recently_failed(panel_key):
+            attempts = 1
         delays = RETRY_CONFIG["delays"]
         is_cookie_setting_route = endpoint.startswith(f"{SETTING_BASE_LEGACY}/")
 
@@ -1004,6 +1042,7 @@ class XUIClient(BaseVPNClient):
 
                 async with session.request(method, url, json=data, headers=headers) as response:
                     text = await response.text()
+                    _mark_panel_up(panel_key)  # любой ответ панели — она доступна
 
                     # Bearer is rotten (rotated in the panel) - reset the token, re-login
                     if response.status == 401 and self.panel_mode == 'bearer' and not is_cookie_setting_route:
@@ -1087,6 +1126,7 @@ class XUIClient(BaseVPNClient):
                 if attempt < attempts - 1:
                     await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
                 else:
+                    _mark_panel_down(panel_key)
                     raise VPNAPIError(f"Панель недоступна: {e}")
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 reason = "таймаут подключения" if isinstance(e, asyncio.TimeoutError) else str(e)
@@ -1096,6 +1136,7 @@ class XUIClient(BaseVPNClient):
                 if attempt < attempts - 1:
                     await asyncio.sleep(delays[min(attempt, len(delays) - 1)])
                 else:
+                    _mark_panel_down(panel_key)
                     raise VPNAPIError(f"Панель недоступна: {reason}")
             except StaleAPIProfileError:
                 raise
