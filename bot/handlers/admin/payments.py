@@ -40,6 +40,9 @@ logger = logging.getLogger(__name__)
 
 
 router = Router()
+from bot.utils.admin import is_admin as _is_admin_guard
+router.callback_query.filter(lambda c: _is_admin_guard(c.from_user.id))
+router.message.filter(lambda m: m.from_user is not None and _is_admin_guard(m.from_user.id))
 
 
 # ============================================================================

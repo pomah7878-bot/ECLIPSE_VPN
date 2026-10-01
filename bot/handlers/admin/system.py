@@ -50,6 +50,9 @@ from bot.utils.text import escape_html, get_message_text_for_storage, safe_edit_
 from bot.utils.update_block import is_update_blocked, get_blocked_message, try_unblock, set_update_blocked
 
 router = Router()
+from bot.utils.admin import is_admin as _is_admin_guard
+router.callback_query.filter(lambda c: _is_admin_guard(c.from_user.id))
+router.message.filter(lambda m: m.from_user is not None and _is_admin_guard(m.from_user.id))
 
 
 def _installed_bot_version_text() -> str:
