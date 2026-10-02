@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 MSK_OFFSET_HOURS = 3
+POST_TEXT_LIMIT = 4096
+
+
+def _visible_len(html_text: str) -> int:
+    """Длина поста глазами Telegram: без тегов, с раскрытыми HTML-сущностями"""
+    import html as _html
+    import re as _re
+    return len(_html.unescape(_re.sub(r"<[^>]+>", "", html_text or "")))
 
 # Автоматически добавляется в конец КАЖДОГО поста, созданного через это меню
 # — чтобы не приходилось вручную набирать ссылки в каждом посте.
@@ -178,6 +186,17 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
     from database.requests import is_post_footer_enabled
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
+    _n = _visible_len(text_with_footer)
+    if _n > POST_TEXT_LIMIT:
+        await safe_edit_or_send(
+            message,
+            f'❌ Пост слишком длинный: {_n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
+            f'Сократите текст минимум на {_n - POST_TEXT_LIMIT} и отправьте его снова. '
+            'Иначе Telegram обрежет конец поста вместе со ссылками.',
+            reply_markup=channel_post_cancel_kb(),
+            force_new=True,
+        )
+        return
     await state.update_data(post_text=text_with_footer)
     await state.set_state(AdminStates.channel_post_date)
     await safe_edit_or_send(
@@ -402,6 +421,17 @@ async def process_edit_post_text(message: Message, state: FSMContext):
     from database.requests import is_post_footer_enabled
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
 
+    _n = _visible_len(text_with_footer)
+    if _n > POST_TEXT_LIMIT:
+        await safe_edit_or_send(
+            message,
+            f'❌ Пост слишком длинный: {_n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
+            f'Сократите текст минимум на {_n - POST_TEXT_LIMIT} и отправьте его снова.',
+            reply_markup=channel_post_edit_cancel_kb(post_id),
+            force_new=True,
+        )
+        return
+
     from database.requests import update_scheduled_post_content
     updated = update_scheduled_post_content(post_id, text_with_footer)
     await state.clear()
@@ -421,3 +451,17 @@ async def process_edit_post_text(message: Message, state: FSMContext):
             reply_markup=channel_posts_menu_kb(),
             force_new=True,
         )
+
+
+@router.message(AdminStates.channel_post_text, ~F.text)
+@router.message(AdminStates.channel_post_edit_text, ~F.text)
+async def channel_post_non_text(message: Message, state: FSMContext):
+    """Фото, видео, пересланные медиа и т.п. сюда не подходят — раньше бот молча игнорировал."""
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer(
+        '⚠️ Сейчас пост можно создать только из текста. Отправьте текст сообщением '
+        '(форматирование Telegram и HTML-теги сохранятся). Фото и видео не поддерживаются — '
+        'если нужна картинка, опубликуйте её в канале вручную.',
+        reply_markup=channel_post_cancel_kb(),
+    )
