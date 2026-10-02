@@ -309,7 +309,15 @@ def _availability_for_row(conn, promo: Dict[str, Any], order_id: Optional[str] =
     return {"ok": True, "reason": None, "promo": promo}
 
 
+def _promo_licensed() -> bool:
+    """v1.167: промокоды и купоны работают только с лицензией promo_coupons."""
+    from bot.services.license import is_feature_available
+    return is_feature_available("promo_coupons")
+
+
 def get_promo_code_availability(code: str, order_id: Optional[str] = None) -> Dict[str, Any]:
+    if not _promo_licensed():
+        return {"ok": False, "reason": "inactive", "promo": None}
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM promo_codes WHERE code = ?",
@@ -320,6 +328,8 @@ def get_promo_code_availability(code: str, order_id: Optional[str] = None) -> Di
 
 def has_available_promo_codes() -> bool:
     """Checks if there is at least one promotional code or coupon available."""
+    if not _promo_licensed():
+        return False
     with get_db() as conn:
         row = conn.execute(
             """

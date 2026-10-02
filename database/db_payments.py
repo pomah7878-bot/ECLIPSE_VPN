@@ -972,8 +972,14 @@ def update_referral_stat(
         return True
 
 def is_referral_enabled() -> bool:
-    """Is the referral system enabled?"""
-    return get_setting('referral_enabled', '0') == '1'
+    """Is the referral system enabled?
+
+    v1.167: без лицензии на referral_system система выключена целиком —
+    привязка по ссылке, начисление наград и Mini App, а не только кнопка."""
+    if get_setting('referral_enabled', '0') != '1':
+        return False
+    from bot.services.license import is_feature_available
+    return is_feature_available("referral_system")
 
 def get_referral_reward_type() -> str:
     """Accrual type: 'days' or 'balance'."""
