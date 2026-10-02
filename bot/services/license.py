@@ -29,6 +29,7 @@
 """
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Set
 
@@ -59,16 +60,17 @@ def get_license_key() -> Optional[str]:
     ПРЯМО В БОТЕ через кнопку "🔑 Ввести код лицензии" (для партнёров,
     которым Роман выдал ключ напрямую, без покупки, и которым не нужно
     лезть на сервер руками)."""
-    env_key = os.environ.get("LICENSE_KEY", "").strip()
-    if env_key:
-        return env_key
-
+    # v1.165: ключ, введённый кнопкой в боте, важнее ключа из secrets.env —
+    # иначе при продлении новый код молча игнорировался бы старым ключом.
     try:
         from database.requests import get_setting
         db_key = (get_setting("license_key_override", "") or "").strip()
-        return db_key or None
+        if db_key:
+            return db_key
     except Exception:
-        return None
+        pass
+    env_key = os.environ.get("LICENSE_KEY", "").strip()
+    return env_key or None
 
 
 def is_license_server() -> bool:
@@ -105,12 +107,20 @@ def features_from_str(features_str: Optional[str]) -> Set[str]:
     return {f.strip() for f in features_str.split(",") if f.strip() in GATED_FEATURES}
 
 
-async def refresh_license_status() -> None:
-    license_key = get_license_key()
-    if not license_key:
-        return
+_KEY_FORMAT_RE = re.compile(r"^ECLW-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$")
 
-    from database.requests import set_setting
+
+def is_valid_key_format(code: str) -> bool:
+    return bool(_KEY_FORMAT_RE.match((code or "").strip().upper()))
+
+
+async def fetch_license(license_key: str):
+    """Запрашивает статус лицензии на сервере лицензий.
+
+    Возвращает ("valid" | "invalid" | "unreachable", данные).
+    "invalid" — только если сервер ЯВНО ответил HTTP 200 с valid=false (ключ
+    не найден, отозван, истёк). Любой сбой связи, не-JSON, ошибка прокси,
+    лимит запросов — "unreachable": прежний статус лицензии сохраняется."""
     import aiohttp
 
     try:
@@ -120,20 +130,27 @@ async def refresh_license_status() -> None:
                 json={"license_key": license_key},
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
-                data = await resp.json()
+                status_code = resp.status
+                data = await resp.json(content_type=None)
     except Exception as e:
         logger.warning(
             f"Лицензия: не удалось связаться с сервером ({e}) — "
             f"используем последний известный статус (грейс-период {_GRACE_PERIOD_HOURS}ч)"
         )
-        return
+        return "unreachable", {}
 
-    if not data.get("valid"):
-        set_setting("license_features", "")
-        set_setting("license_tier", "basic")
-        set_setting("license_checked_at", datetime.utcnow().isoformat())
-        logger.warning(f"Лицензия недействительна или истекла: {data.get('message', '')}")
-        return
+    if status_code != 200 or not isinstance(data, dict):
+        logger.warning(f"Лицензия: сервер ответил HTTP {status_code} — статус не меняем")
+        return "unreachable", {}
+    if data.get("valid") is True:
+        return "valid", data
+    if data.get("valid") is False:
+        return "invalid", data
+    return "unreachable", {}
+
+
+def _apply_valid_license(data: dict) -> None:
+    from database.requests import set_setting
 
     features_str = data.get("features") or ""
     set_setting("license_features", features_str)
@@ -142,6 +159,40 @@ async def refresh_license_status() -> None:
     set_setting("license_expires_at", data.get("expires_at") or "")
     set_setting("license_partner_name", data.get("partner_name") or "")
     logger.info(f"Лицензия обновлена: функции={features_str or '(нет)'}")
+
+
+def _clear_license_status(message: str) -> None:
+    from database.requests import set_setting
+
+    set_setting("license_features", "")
+    set_setting("license_tier", "basic")
+    set_setting("license_checked_at", datetime.utcnow().isoformat())
+    logger.warning(f"Лицензия недействительна или истекла: {message}")
+
+
+async def refresh_license_status() -> None:
+    license_key = get_license_key()
+    if not license_key:
+        return
+
+    state, data = await fetch_license(license_key)
+    if state == "valid":
+        _apply_valid_license(data)
+    elif state == "invalid":
+        _clear_license_status(data.get("message", ""))
+    # "unreachable": ничего не меняем, действует грейс-период
+
+
+async def activate_license_code(code: str):
+    """Проверяет код на сервере и сохраняет его ТОЛЬКО если он действителен —
+    опечатка не перетирает рабочую лицензию. Возвращает (состояние, данные)."""
+    from database.requests import set_setting
+
+    state, data = await fetch_license(code)
+    if state == "valid":
+        set_setting("license_key_override", code)
+        _apply_valid_license(data)
+    return state, data
 
 
 def get_enabled_features() -> Set[str]:

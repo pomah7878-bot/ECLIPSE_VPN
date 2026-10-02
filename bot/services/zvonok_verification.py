@@ -413,3 +413,29 @@ def save_postback_status(call_id: str, confirmed: bool) -> None:
             (str(call_id), 1 if confirmed else 0),
         )
         conn.commit()
+
+
+# v1.165: рабочая верификация по звонку проверяет лицензию (раньше закрывался
+# только экран настроек): без функции «zvonok_verification» звонки не отправляются.
+def _license_guarded(fn):
+    import functools
+
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        from bot.services.license import is_feature_available
+        if not is_feature_available("zvonok_verification"):
+            logger.warning("Zvonok: функция не входит в лицензию — звонок не отправлен")
+            return None
+        return await fn(*args, **kwargs)
+
+    return wrapper
+
+
+for _zv_name in (
+    "request_phone_confirmation",
+    "request_phone_confirmation_pincode",
+    "request_phone_confirmation_flashcall_real",
+    "request_phone_confirmation_voice_code",
+    "request_phone_confirmation_press_digit",
+):
+    globals()[_zv_name] = _license_guarded(globals()[_zv_name])

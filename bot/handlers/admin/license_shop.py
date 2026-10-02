@@ -112,65 +112,33 @@ async def buy_license_tariff_selected(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("check_license_pay:"))
 async def check_license_payment(callback: CallbackQuery):
-    """Проверяет оплату и, если прошла — автоматически создаёт лицензию
-    и выдаёт ключ клиенту без участия администратора."""
-    from database.db_licenses import (
-        get_license_purchase_by_order_id, get_license_tariff_by_id,
-        complete_license_purchase, create_partner_license,
-    )
-    from bot.services.billing import check_yookassa_payment_status
+    """Проверяет оплату и, если прошла, автоматически выдаёт ключ. Заказ можно
+    проверить только с аккаунта, который его создал; ключ выдаётся один раз."""
+    from bot.services.license_purchase import issue_license_for_order, build_issued_text
 
     order_id = callback.data.split(":", 1)[1]
-    purchase = get_license_purchase_by_order_id(order_id)
-    if not purchase:
-        await callback.answer("❌ Заказ не найден.", show_alert=True)
-        return
-
-    if purchase["status"] == "paid":
-        await callback.answer()
-        await callback.message.answer(
-            f"✅ Лицензия уже выдана:\n<code>{purchase['license_key']}</code>",
-            parse_mode="HTML",
-        )
-        return
+    partner_name = callback.from_user.username or callback.from_user.full_name or f"user_{callback.from_user.id}"
 
     await callback.answer("Проверяю оплату...")
-
-    try:
-        status = await check_yookassa_payment_status(purchase["yookassa_payment_id"], order_id=order_id)
-    except Exception as e:
-        logger.error(f"Ошибка проверки оплаты лицензии {order_id}: {e}")
-        await callback.message.answer("❌ Не удалось проверить оплату. Попробуйте ещё раз через минуту.")
-        return
-
-    if status != "succeeded":
-        await callback.message.answer("⏳ Оплата ещё не поступила. Если вы уже оплатили — подождите немного и нажмите ещё раз.")
-        return
-
-    tariff = get_license_tariff_by_id(purchase["license_tariff_id"])
-    from bot.services.license import features_from_str, GATED_FEATURES
-
-    tariff_features = features_from_str(tariff.get("features"))
-    partner_name = callback.from_user.username or callback.from_user.full_name or f"user_{callback.from_user.id}"
-    license_key = create_partner_license(
-        partner_name=partner_name,
-        features=tariff_features,
-        duration_days=tariff["duration_days"],
-        notes=f"Куплено через бота, order_id={order_id}",
+    status, info = await issue_license_for_order(
+        order_id, expected_telegram_id=callback.from_user.id, partner_name=partner_name,
     )
-    complete_license_purchase(order_id, license_key)
 
-    if tariff_features:
-        features_text = ", ".join(GATED_FEATURES[k] for k in GATED_FEATURES if k in tariff_features)
+    if status == "not_found":
+        await callback.message.answer("❌ Заказ не найден.")
+    elif status == "already":
+        await callback.message.answer(
+            f"✅ Лицензия уже выдана:\n<code>{info['license_key']}</code>", parse_mode="HTML",
+        )
+    elif status == "issued":
+        await callback.message.answer(build_issued_text(info), parse_mode="HTML")
+    elif status == "unpaid":
+        await callback.message.answer(
+            "⏳ Оплата ещё не поступила. Если вы уже оплатили — подождите немного и нажмите ещё раз."
+        )
+    elif status == "canceled":
+        await callback.message.answer("❌ Платёж отменён. Создайте новый заказ командой /buy_license.")
+    elif status == "busy":
+        await callback.message.answer("⏳ Лицензия уже выдаётся, подождите несколько секунд и нажмите ещё раз.")
     else:
-        features_text = "нет платных функций"
-
-    await callback.message.answer(
-        f"🎉 <b>Оплата прошла успешно!</b>\n\n"
-        f"Ваша лицензия включает: {features_text}\n\n"
-        f"Ключ лицензии (вставьте в secrets.env вашего бота как <code>LICENSE_KEY</code>):\n"
-        f"<code>{license_key}</code>\n\n"
-        f"Сохраните этот ключ — он понадобится при настройке вашей инсталляции бота.",
-        parse_mode="HTML",
-    )
-    logger.info(f"Лицензия автоматически выдана: order_id={order_id}, tier={tariff['tier']}, key={license_key}")
+        await callback.message.answer("❌ Не удалось проверить оплату. Попробуйте ещё раз через минуту.")

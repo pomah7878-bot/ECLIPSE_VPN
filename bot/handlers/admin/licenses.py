@@ -812,17 +812,27 @@ async def my_license_enter_code_entered(message: Message, state: FSMContext):
     except Exception:
         pass
 
-    from database.requests import set_setting
-    from bot.services.license import refresh_license_status, get_license_bot_username
+    from bot.services.license import activate_license_code, is_valid_key_format, get_license_bot_username
 
-    # Сохраняем код ПРЯМО В БД (не требует правки secrets.env и
-    # перезапуска бота вручную) — get_license_key() подхватит его
-    # автоматически при следующей же проверке.
-    set_setting("license_key_override", code)
+    if not is_valid_key_format(code):
+        await message.answer("❌ Код должен быть вида ECLW-XXXX-XXXX-XXXX. Проверьте и введите ещё раз.")
+        return
+
+    # v1.165: код сохраняется только после успешной проверки на сервере —
+    # опечатка не стирает действующую лицензию.
+    await message.answer("🔄 Проверяю код...")
+    license_state, license_data = await activate_license_code(code)
     await state.set_state(AdminStates.admin_menu)
 
-    await message.answer("🔄 Проверяю код...")
-    await refresh_license_status()
+    if license_state == "invalid":
+        await message.answer(
+            f"❌ {license_data.get('message') or 'Код не принят.'}\n\nТекущая лицензия не изменена."
+        )
+    elif license_state == "unreachable":
+        await message.answer(
+            "❌ Не удалось связаться с сервером лицензий. Код не сохранён, "
+            "текущая лицензия не изменена. Повторите попытку через несколько минут."
+        )
 
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
     await message.answer(_build_my_license_text(), parse_mode="HTML", reply_markup=my_license_kb(deep_link))

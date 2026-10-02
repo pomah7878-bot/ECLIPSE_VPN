@@ -180,10 +180,16 @@ def deactivate_license_tariff(tariff_id: int) -> bool:
 # ============================================================================
 
 def create_license_purchase(order_id: str, telegram_id: int, license_tariff_id: int) -> None:
+    """Создаёт заказ. Условия тарифа (функции, срок, цена) фиксируются В ЗАКАЗЕ
+    на момент создания: правка тарифа админом позже не меняет то, что получит
+    покупатель за уже созданную оплату."""
+    tariff = get_license_tariff_by_id(license_tariff_id) or {}
     with get_db() as conn:
         conn.execute(
-            "INSERT INTO license_purchases (order_id, telegram_id, license_tariff_id, status) VALUES (?, ?, ?, 'pending')",
-            (order_id, telegram_id, license_tariff_id),
+            "INSERT INTO license_purchases (order_id, telegram_id, license_tariff_id, status, "
+            "features, duration_days, price_rub) VALUES (?, ?, ?, 'pending', ?, ?, ?)",
+            (order_id, telegram_id, license_tariff_id, tariff.get("features") or "",
+             tariff.get("duration_days"), tariff.get("price_rub")),
         )
         conn.commit()
 
@@ -203,12 +209,49 @@ def get_license_purchase_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
-def complete_license_purchase(order_id: str, license_key: str) -> None:
-    """Помечает заказ оплаченным и сохраняет выданный ключ (идемпотентно —
-    повторный вызов для уже оплаченного заказа ничего не ломает)."""
+def claim_license_purchase(order_id: str) -> bool:
+    """Атомарно «захватывает» неоплаченный заказ для выдачи ключа. True получает
+    ровно ОДИН вызов — параллельные нажатия и фоновая автопроверка не выдадут
+    второй ключ за тот же платёж. Зависший захват (процесс упал посреди выдачи)
+    освобождается через 2 минуты."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE license_purchases SET status = 'issuing', claimed_at = datetime('now') "
+            "WHERE order_id = ? AND (status = 'pending' OR "
+            "(status = 'issuing' AND claimed_at < datetime('now', '-2 minutes')))",
+            (order_id,),
+        )
+        conn.commit()
+        return cursor.rowcount == 1
+
+
+def release_license_purchase_claim(order_id: str) -> None:
+    """Возвращает захваченный заказ в 'pending' (выдача не удалась)."""
     with get_db() as conn:
         conn.execute(
-            "UPDATE license_purchases SET status = 'paid', license_key = ? WHERE order_id = ?",
+            "UPDATE license_purchases SET status = 'pending', claimed_at = NULL "
+            "WHERE order_id = ? AND status = 'issuing'",
+            (order_id,),
+        )
+        conn.commit()
+
+
+def mark_license_purchase_status(order_id: str, status: str) -> None:
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE license_purchases SET status = ? WHERE order_id = ? AND status != 'paid'",
+            (status, order_id),
+        )
+        conn.commit()
+
+
+def complete_license_purchase(order_id: str, license_key: str) -> None:
+    """Помечает заказ оплаченным и сохраняет выданный ключ. Уже оплаченный
+    заказ не перезаписывается."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE license_purchases SET status = 'paid', license_key = ? "
+            "WHERE order_id = ? AND status != 'paid'",
             (license_key, order_id),
         )
         conn.commit()
@@ -221,7 +264,8 @@ def get_abandoned_license_purchases(older_than_minutes: int = 5) -> List[Dict[st
         rows = conn.execute(
             """SELECT * FROM license_purchases
                WHERE status = 'pending' AND yookassa_payment_id IS NOT NULL
-               AND created_at <= datetime('now', '-' || ? || ' minutes')""",
+               AND created_at <= datetime('now', '-' || ? || ' minutes')
+               AND created_at >= datetime('now', '-1 day')""",
             (older_than_minutes,),
         ).fetchall()
         return [dict(r) for r in rows]

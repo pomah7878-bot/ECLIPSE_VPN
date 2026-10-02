@@ -941,7 +941,14 @@ async def license_status_cmd(message: Message):
     from database.requests import get_setting
     license_key = get_license_key()
     if not license_key:
-        await message.answer("🔓 Эта инсталляция без лицензирования (главная, либо старая версия) — все функции доступны.")
+        from bot.services.license import is_license_server as _is_main
+        if _is_main():
+            await message.answer("🔓 Главная инсталляция — все функции доступны без лицензии.")
+        else:
+            await message.answer(
+                "🔒 Лицензия не введена — платные функции отключены.\n"
+                "Введите код: «💳 Моя лицензия» → «🔑 Ввести код лицензии»."
+            )
         return
     tier = get_license_tier()
     expires_at = get_setting("license_expires_at", "") or "бессрочно"

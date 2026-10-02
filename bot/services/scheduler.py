@@ -1404,7 +1404,8 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
 
     while True:
         try:
-            due_posts = get_due_scheduled_posts(limit=10)
+            from bot.services.license import is_feature_available as _feature_ok
+            due_posts = get_due_scheduled_posts(limit=10) if _feature_ok("channel_posts") else []
             now_msk = datetime.utcnow() + timedelta(hours=MSK_OFFSET_HOURS)
             past_cutoff = now_msk.hour >= RETRY_CUTOFF_HOUR_MSK
 
@@ -1591,14 +1592,14 @@ async def run_license_check_scheduler(bot: Bot) -> None:
     (каждые 6 часов)."""
     from bot.services.license import refresh_license_status, get_license_key
 
-    if not get_license_key():
-        return
-
+    # v1.165: планировщик работает всегда — ключ могли ввести кнопкой уже после
+    # запуска бота, и без регулярной проверки функции отключились бы через 72 часа.
     logger.info("🔑 Планировщик проверки лицензии запущен (каждые 6 часов)")
 
     while True:
         try:
-            await refresh_license_status()
+            if get_license_key():
+                await refresh_license_status()
         except asyncio.CancelledError:
             logger.info("Планировщик проверки лицензии остановлен")
             break
@@ -1606,3 +1607,25 @@ async def run_license_check_scheduler(bot: Bot) -> None:
             logger.error(f"Ошибка в планировщике проверки лицензии: {e}")
 
         await asyncio.sleep(6 * 3600)
+
+
+async def run_license_purchase_sweeper(bot: Bot) -> None:
+    """Только на ГЛАВНОЙ инсталляции: каждые 2 минуты проверяет оплаты лицензий,
+    по которым покупатель не нажал «Я оплатил», и сам выдаёт ключ."""
+    from bot.services.license import is_license_server
+    from bot.services.license_purchase import process_abandoned_license_purchases
+
+    if not is_license_server():
+        return
+
+    logger.info("🔑 Автовыдача оплаченных лицензий запущена (каждые 2 минуты)")
+    await asyncio.sleep(30)
+    while True:
+        try:
+            await process_abandoned_license_purchases(bot)
+        except asyncio.CancelledError:
+            logger.info("Автовыдача лицензий остановлена")
+            break
+        except Exception as e:
+            logger.error(f"Ошибка автовыдачи лицензий: {e}")
+        await asyncio.sleep(120)

@@ -461,6 +461,12 @@ async def handle_ai_consult(request: web.Request) -> web.Response:
     except json.JSONDecodeError:
         return web.json_response({"error": "invalid_json"}, status=400)
 
+    from bot.services.license import is_feature_available as _lic_ok
+    if not _lic_ok("ai_assistant"):
+        return web.json_response(
+            {"error": "feature_unavailable", "message": "AI-помощник недоступен."}, status=403,
+        )
+
     message = (data.get("message") or "").strip()
     image_base64 = data.get("image_base64")
     if not message and not image_base64:
@@ -1865,6 +1871,12 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
     if not account_id:
         return web.json_response({"error": "unauthorized"}, status=401)
 
+    from bot.services.license import is_feature_available as _lic_ok
+    if not _lic_ok("trial_period"):
+        return web.json_response(
+            {"error": "feature_unavailable", "message": "Пробный период недоступен."}, status=403,
+        )
+
     client_ip = _get_client_ip(request)
     if not _trial_rate_limit_check(client_ip):
         return web.json_response(
@@ -2437,19 +2449,32 @@ async def handle_public_account_oauth_exchange(request: web.Request) -> web.Resp
 async def handle_license_check(request: web.Request) -> web.Response:
     """POST /api/license/check — эндпоинт лицензионного сервера (работает
     на ГЛАВНОЙ инсталляции). Клиентские боты whitelabel-партнёров стучатся
-    сюда своим license_key, чтобы узнать текущий тариф (basic/full) и срок
-    действия. Body JSON: {"license_key": "ECLW-XXXX-XXXX-XXXX"}."""
+    сюда своим license_key, чтобы узнать функции и срок действия.
+    Body JSON: {"license_key": "ECLW-XXXX-XXXX-XXXX"}.
+
+    v1.165: ограничение частоты по IP (общее и отдельно по неудачным
+    проверкам — защита от перебора ключей). Ответ 429 не содержит поля
+    valid, поэтому клиент не принимает его за отзыв лицензии."""
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"lic-req:{_lip}", 60, 600) or not _rl_allowed(f"lic-fail:{_lip}", 10, 600):
+        return web.json_response({"error": "rate_limited"}, status=429)
+    _rl_record(f"lic-req:{_lip}")
+
     try:
         data = await request.json()
     except json.JSONDecodeError:
         return web.json_response({"valid": False, "message": "Некорректный запрос."}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"valid": False, "message": "Некорректный запрос."}, status=400)
 
-    license_key = (data.get("license_key") or "").strip()
+    license_key = str(data.get("license_key") or "").strip()
     if not license_key:
         return web.json_response({"valid": False, "message": "Не передан license_key."}, status=400)
 
     from database.db_licenses import check_license_validity
     result = check_license_validity(license_key)
+    if not result.get("valid"):
+        _rl_record(f"lic-fail:{_lip}")
     return web.json_response(result)
 
 
@@ -3688,6 +3713,19 @@ _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/api/license/",
     "/static/",
     "/favicon.ico",
+    # v1.165: Telegram Mini App и оплата из него — базовые функции, они работают
+    # всегда (сайт и личный кабинет закрываются лицензией «site_webapp»)
+    "/api/keys",
+    "/api/key/",
+    "/api/pay/",
+    "/api/tariffs",
+    "/api/language",
+    "/api/rename",
+    "/api/delete",
+    "/api/referral",
+    "/api/weblink",
+    "/api/ai-consult",
+    "/api/ai-feedback",
 )
 
 
@@ -3699,7 +3737,7 @@ async def license_gate_middleware(request: web.Request, handler):
     клиентов (см. _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES) НИКОГДА не
     блокируется вне зависимости от статуса лицензии."""
     path = request.path
-    if any(path.startswith(prefix) for prefix in _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES):
+    if path == "/" or any(path.startswith(prefix) for prefix in _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES):
         return await handler(request)
 
     from bot.services.license import is_feature_available

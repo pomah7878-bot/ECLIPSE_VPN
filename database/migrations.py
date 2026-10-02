@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 134
+LATEST_VERSION = 135
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3071,6 +3071,19 @@ def migration_132(conn: sqlite3.Connection) -> None:
     logger.info("Migration v132 applied: строка btn_key_devices выровнена по фактическому row Автопродления")
 
 
+def migration_135(conn: sqlite3.Connection) -> None:
+    """Версия 1.165: license_purchases — снимок условий тарифа на момент заказа
+    (features/duration_days/price_rub), метка захвата заказа при выдаче ключа
+    (claimed_at) — защита от повторной выдачи ключей за один платёж. Идемпотентно."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(license_purchases)").fetchall()]
+    if cols:
+        for name, ddl in (("features", "TEXT"), ("duration_days", "INTEGER"),
+                          ("price_rub", "REAL"), ("claimed_at", "TEXT")):
+            if name not in cols:
+                conn.execute("ALTER TABLE license_purchases ADD COLUMN %s %s" % (name, ddl))
+    logger.info("Migration v135 applied: license_purchases снимок тарифа и claimed_at")
+
+
 def migration_134(conn: sqlite3.Connection) -> None:
     """Версия 1.162: oauth_exchange_codes.code_challenge — привязка кода обмена
     OAuth к приложению, начавшему вход (PKCE), чтобы код нельзя было перехватить
@@ -3194,6 +3207,7 @@ MIGRATIONS = {
     132: migration_132,
     133: migration_133,
     134: migration_134,
+    135: migration_135,
 }
 
 
