@@ -1,7 +1,7 @@
 # ECLIPSE Unlimited VPN
 
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
-![License](https://img.shields.io/badge/license-см.%20LICENSING.md-orange)
+![License](https://img.shields.io/badge/license-Elastic%202.0-blue)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-informational)
 ![Status](https://img.shields.io/badge/status-active-success)
 
@@ -42,6 +42,8 @@
 ---
 
 ## 🔑 Whitelabel-лицензия
+
+**Лицензия на код:** [Elastic License 2.0](LICENSE) с дополнительным разрешением для владельцев VPN-сервисов (см. [LICENSING.md](LICENSING.md)). Обход проверки лицензионных ключей запрещён.
 
 Базовые функции (продажа ключей, тарифы, серверы, оплата, брендинг) работают всегда бесплатно. Премиум-функции — AI-помощник, верификация по звонку, сайт/личный кабинет, рассылка, промокоды, своё Android-приложение, публикация в канал, пробный период, реферальная система, импорт в Happ/INCY/Karing, автонастройка резервного домена — включаются лицензией, и вы сами выбираете, что из этого вам нужно.
 
