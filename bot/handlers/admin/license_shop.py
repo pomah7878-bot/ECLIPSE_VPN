@@ -47,14 +47,18 @@ def _license_tariffs_kb(tariffs, trial_days=None):
 
 @router.message(Command("buy_license"))
 async def buy_license_cmd(message: Message):
-    """Показывает доступные тарифы на whitelabel-лицензию."""
+    await show_license_tariffs(message, message.from_user.id)
+
+
+async def show_license_tariffs(message: Message, user_id: int):
+    """Показывает доступные тарифы на whitelabel-лицензию (команда и диплинк ?start=buy_license)."""
     from database.db_licenses import get_active_license_tariffs
 
     from bot.services.license_trial import trial_enabled, trial_days
     from database.db_licenses import has_used_trial
 
     tariffs = get_active_license_tariffs()
-    offer_days = trial_days() if (trial_enabled() and not has_used_trial(message.from_user.id)) else None
+    offer_days = trial_days() if (trial_enabled() and not has_used_trial(user_id)) else None
     if not tariffs and not offer_days:
         await message.answer("😔 Пока нет доступных тарифов на лицензию. Обратитесь к администратору напрямую.")
         return

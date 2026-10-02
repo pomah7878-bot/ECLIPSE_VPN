@@ -144,17 +144,27 @@ async def process_license_expiry_reminders(bot) -> None:
         except (TypeError, ValueError):
             continue
         days_left = max(0, (expires - datetime.utcnow()).days)
+        is_trial = bool(lic.get("is_trial"))
+        if is_trial and days_left > 1:
+            continue  # пробным — только последнее напоминание, за сутки
         threshold = 1 if days_left <= 1 else 7
         event = f"reminder_{threshold}d:{lic['expires_at']}"
         if has_license_event(lic["license_key"], event):
             continue
         log_license_event(lic["license_key"], event)
-        text = (
-            f"⏰ <b>Лицензия заканчивается {expires.strftime('%d.%m.%Y')}</b>\n\n"
-            "Чтобы платные функции не отключились, купите продление командой /buy_license "
-            "и введите новый код в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии». "
-            "Новый код заменит старый."
-        )
+        if is_trial:
+            text = (
+                f"⏰ <b>Пробный период заканчивается {expires.strftime('%d.%m.%Y')}</b>\n\n"
+                "Чтобы платные функции не отключились, выберите тариф командой /buy_license "
+                "и введите новый код в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии»."
+            )
+        else:
+            text = (
+                f"⏰ <b>Лицензия заканчивается {expires.strftime('%d.%m.%Y')}</b>\n\n"
+                "Чтобы платные функции не отключились, купите продление командой /buy_license "
+                "и введите новый код в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии». "
+                "Новый код заменит старый."
+            )
         try:
             await bot.send_message(lic["telegram_id"], text, parse_mode="HTML")
         except Exception as e:

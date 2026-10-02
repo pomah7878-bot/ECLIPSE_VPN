@@ -684,6 +684,12 @@ async def add_server_save(callback: CallbackQuery, state: FSMContext):
         )
         return
     
+    from bot.services.license_limits import can_add_server
+    _ok, _msg = can_add_server()
+    if not _ok:
+        await callback.answer(_msg, show_alert=True)
+        return
+
     try:
         server_id = add_server(
             name=server_data['name'],

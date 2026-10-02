@@ -431,14 +431,20 @@ def has_license_event(license_key: str, event: str) -> bool:
 
 
 def get_expiring_licenses_with_buyers(within_days: int = 7) -> List[Dict[str, Any]]:
-    """Активные лицензии, купленные через бота, срок которых истекает в ближайшие within_days дней."""
+    """Активные лицензии с известным получателем (купленные через бота или пробные),
+    срок которых истекает в ближайшие within_days дней. is_trial=1 для пробных."""
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT l.license_key, l.expires_at, l.partner_name, p.telegram_id "
+            "SELECT l.license_key, l.expires_at, l.partner_name, p.telegram_id, 0 AS is_trial "
             "FROM partner_licenses l JOIN license_purchases p ON p.license_key = l.license_key "
             "WHERE l.is_active = 1 AND l.expires_at IS NOT NULL "
+            "AND l.expires_at > datetime('now') AND l.expires_at <= datetime('now', ?) "
+            "UNION ALL "
+            "SELECT l.license_key, l.expires_at, l.partner_name, t.telegram_id, 1 AS is_trial "
+            "FROM partner_licenses l JOIN license_trials t ON t.license_key = l.license_key "
+            "WHERE l.is_active = 1 AND l.expires_at IS NOT NULL "
             "AND l.expires_at > datetime('now') AND l.expires_at <= datetime('now', ?)",
-            ("+%d days" % within_days,),
+            ("+%d days" % within_days, "+%d days" % within_days),
         ).fetchall()
         return [dict(r) for r in rows]
 

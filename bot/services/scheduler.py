@@ -1600,6 +1600,8 @@ async def run_license_check_scheduler(bot: Bot) -> None:
         try:
             if get_license_key():
                 await refresh_license_status()
+            from bot.services.license_limits import process_license_notices
+            await process_license_notices(bot)
         except asyncio.CancelledError:
             logger.info("Планировщик проверки лицензии остановлен")
             break

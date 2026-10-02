@@ -469,6 +469,11 @@ async def license_tariff_create_price_entered(message: Message, state: FSMContex
 # покупку/продление в ГЛАВНЫЙ бот, где живут тарифы на лицензии.
 # ============================================================================
 
+def _limits_line() -> str:
+    from bot.services.license_limits import limits_line
+    return limits_line()
+
+
 def _build_my_license_text() -> str:
     from bot.services.license import get_license_key, get_enabled_features, GATED_FEATURES
     from database.requests import get_setting
@@ -479,7 +484,7 @@ def _build_my_license_text() -> str:
             f"💳 <b>Моя лицензия</b>\n\n"
             f"Лицензия ещё не активирована.\n\n"
             f"Если вы уже оплатили — введите код кнопкой ниже. Если ещё "
-            f"нет — купите лицензию, чтобы разблокировать платные функции."
+            f"нет — купите лицензию, чтобы разблокировать платные функции." + _limits_line()
         )
 
     enabled = get_enabled_features()
@@ -956,3 +961,34 @@ async def my_license_trial(callback: CallbackQuery):
     )
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
     await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))
+
+
+from aiogram.filters import Command
+
+
+@router.message(Command("license_limits"))
+async def license_limits_cmd(message: Message):
+    """/license_limits — статус; warn | enforce | off — режим бесплатных лимитов."""
+    from bot.services.license_limits import (
+        FREE_MAX_SERVERS, FREE_MAX_KEYS, is_licensed, limits_mode, set_limits_mode, count_servers, count_keys,
+    )
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    if arg in ("warn", "enforce", "off"):
+        set_limits_mode(arg)
+    elif arg:
+        await message.answer("Использование: /license_limits [warn|enforce|off]")
+        return
+    mode_text = {"warn": "⚠️ предупреждение", "enforce": "🔒 блокировка новых серверов", "off": "⬜️ выключены"}[limits_mode()]
+    await message.answer(
+        "📊 <b>Бесплатные лимиты</b>\n\n"
+        f"Лицензия: {'есть — лимитов нет' if is_licensed() else 'нет'}\n"
+        f"Серверы: {count_servers()} из {FREE_MAX_SERVERS}\n"
+        f"Активные ключи: {count_keys()} из {FREE_MAX_KEYS}\n"
+        f"Режим: {mode_text}\n\n"
+        "<code>/license_limits warn</code> · <code>/license_limits enforce</code> · <code>/license_limits off</code>\n"
+        "Блокировка касается только добавления серверов; ключи клиентов никогда не блокируются.",
+        parse_mode="HTML",
+    )

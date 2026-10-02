@@ -492,8 +492,8 @@ async def _continue_start(
             )
 
     if args == 'buy_license':
-        from bot.handlers.admin.license_shop import buy_license_cmd
-        await buy_license_cmd(send_target)
+        from bot.handlers.admin.license_shop import show_license_tariffs
+        await show_license_tariffs(send_target, telegram_id)
         return
 
     if args and args.startswith('claim_'):
