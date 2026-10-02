@@ -1,5 +1,7 @@
 # ECLIPSE Unlimited VPN
 
+<p align="center"><img src="assets/banner.png" alt="ECLIPSE Unlimited VPN — Telegram-бот для своего VPN-бизнеса" width="100%"></p>
+
 ![Python](https://img.shields.io/badge/python-3.12%2B-blue)
 ![License](https://img.shields.io/badge/license-Elastic%202.0-blue)
 ![aiogram](https://img.shields.io/badge/aiogram-3.x-informational)
