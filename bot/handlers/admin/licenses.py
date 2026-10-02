@@ -106,7 +106,7 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext):
         text="♻️ Сбросить установки", callback_data=f"license_reset_inst:{lic['license_key']}")])
     _pb_on = "hide_powered_by" in enabled
     kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
-        text=("🏷 Метка Powered by: можно отключить ✅" if _pb_on else "🏷 Метка Powered by: обязательна ⬜️"),
+        text=("🏷 Право отключать метку: ✅ ЕСТЬ (нажми — забрать)" if _pb_on else "🏷 Право отключать метку: ⬜️ НЕТ (нажми — выдать)"),
         callback_data=f"license_pb_toggle:{lic['license_key']}")])
     await safe_edit_or_send(callback.message, text, reply_markup=kb)
     await callback.answer()
@@ -489,13 +489,21 @@ def _build_my_license_text() -> str:
     partner_name = get_setting("license_partner_name", "") or "—"
     checked_at = get_setting("license_checked_at", "") or "ещё не проверялась"
 
+    try:
+        from bot.services.branding_mark import can_hide_powered_by, is_powered_by_visible
+        _pb_state = "✅ включена" if is_powered_by_visible() else "⬜️ выключена"
+        _pb_note = "" if can_hide_powered_by() else " (отключение не входит в лицензию)"
+        _pb_line = f"\n\n🏷 Метка «Powered by ECLIPSE»: {_pb_state}{_pb_note}"
+    except Exception:
+        _pb_line = ""
+
     return (
         f"💳 <b>Моя лицензия</b>\n\n"
         f"Ключ: <code>{license_key}</code>\n"
         f"Партнёр: {partner_name}\n"
         f"Действует до: {expires_at}\n"
         f"Последняя проверка: {checked_at}\n\n"
-        f"Функции:\n{features_list}"
+        f"Функции:\n{features_list}{_pb_line}"
     )
 
 
@@ -899,7 +907,7 @@ async def my_license_powered_by(callback: CallbackQuery):
         return
     hide = is_powered_by_visible()
     set_powered_by_hidden(hide)
-    await callback.answer("✅ Метка отключена" if hide else "✅ Метка включена")
+    await callback.answer("⬜️ Метка ВЫКЛЮЧЕНА" if hide else "✅ Метка ВКЛЮЧЕНА", show_alert=True)
     from bot.services.license import get_license_bot_username
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
     await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))

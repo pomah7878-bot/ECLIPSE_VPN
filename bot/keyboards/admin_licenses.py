@@ -175,9 +175,9 @@ def my_license_kb(buy_deep_link: str) -> InlineKeyboardMarkup:
     try:
         from bot.services.branding_mark import can_hide_powered_by, is_powered_by_visible
         if can_hide_powered_by():
-            _t = "🏷 Метка Powered by: показана → скрыть" if is_powered_by_visible() else "🏷 Метка Powered by: скрыта → показать"
+            _t = "🏷 Метка Powered by: ✅ ВКЛЮЧЕНА (нажми — выключить)" if is_powered_by_visible() else "🏷 Метка Powered by: ⬜️ ВЫКЛЮЧЕНА (нажми — включить)"
         else:
-            _t = "🏷 Метка Powered by 🔒"
+            _t = "🏷 Метка Powered by: ✅ ВКЛЮЧЕНА (отключение недоступно 🔒)"
         builder.row(InlineKeyboardButton(text=_t, callback_data="my_license_pb"))
     except Exception:
         pass
