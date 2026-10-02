@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Уязвимость
+    url: https://github.com/pomah7878-bot/ECLIPSE_VPN/security/advisories/new
+    about: Сообщайте об уязвимостях приватно, не в публичных issue.
