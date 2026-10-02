@@ -104,6 +104,10 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext):
     kb = license_detail_kb(lic["license_key"], bool(lic["is_active"]), lic["tier"])
     kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
         text="♻️ Сбросить установки", callback_data=f"license_reset_inst:{lic['license_key']}")])
+    _pb_on = "hide_powered_by" in enabled
+    kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
+        text=("🏷 Метка Powered by: можно отключить ✅" if _pb_on else "🏷 Метка Powered by: обязательна ⬜️"),
+        callback_data=f"license_pb_toggle:{lic['license_key']}")])
     await safe_edit_or_send(callback.message, text, reply_markup=kb)
     await callback.answer()
 
@@ -862,3 +866,20 @@ async def license_reset_instances(callback: CallbackQuery):
     removed = reset_activations(license_key)
     log_license_event(license_key, "instances_reset", f"admin={callback.from_user.id} removed={removed}")
     await callback.answer(f"♻️ Сброшено установок: {removed}. Новая займёт место при следующей проверке.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("license_pb_toggle:"))
+async def license_powered_by_toggle(callback: CallbackQuery):
+    """v1.173: вкл/выкл право партнёра отключать метку «Powered by ECLIPSE»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.db_licenses import toggle_license_feature, log_license_event
+
+    license_key = callback.data.split(":", 1)[1]
+    selected = toggle_license_feature(license_key, "hide_powered_by")
+    now = "hide_powered_by" in selected
+    log_license_event(license_key, "powered_by_right", f"admin={callback.from_user.id} allowed={now}")
+    await callback.answer("✅ Партнёр может отключить метку" if now else "⬜️ Метка у партнёра обязательна")
+    callback.data = f"license_view:{license_key}"
+    await show_license_detail(callback, None)

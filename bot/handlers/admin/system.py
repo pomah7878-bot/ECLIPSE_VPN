@@ -2103,7 +2103,7 @@ async def powered_by_cmd(message: Message):
             await message.answer("✅ Метка «Powered by ECLIPSE» отключена в боте и на сайте.")
         else:
             await message.answer(
-                "🔒 Отключить метку могут владельцы лицензии. Купить или ввести ключ: «💳 Моя лицензия»."
+                "🔒 Отключение метки не входит в вашу лицензию. Обратитесь к поставщику лицензии."
             )
         return
     if arg == "on":
@@ -2112,5 +2112,5 @@ async def powered_by_cmd(message: Message):
         return
 
     status = "показывается" if is_powered_by_visible() else "отключена"
-    can = "можно отключить: /powered_by off" if can_hide_powered_by() else "отключение доступно с лицензией"
+    can = "можно отключить: /powered_by off" if can_hide_powered_by() else "отключение не входит в вашу лицензию"
     await message.answer(f"⚡ Метка «Powered by ECLIPSE»: {status}\n{can}")

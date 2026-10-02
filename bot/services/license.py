@@ -49,7 +49,19 @@ GATED_FEATURES = {
     "referral_system": "🔗 Реферальная система",
     "app_import": "📲 Импорт в Happ/INCY/Karing",
     "domain_autoprovision": "🌐 Автонастройка резервного домена (DNS+nginx+SSL)",
+    "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
 }
+
+HIDE_POWERED_BY_FEATURE = "hide_powered_by"
+
+
+def tier_of(enabled) -> str:
+    """Тариф для отображения. Право отключения метки на тариф не влияет."""
+    e = set(enabled) - {HIDE_POWERED_BY_FEATURE}
+    core = set(GATED_FEATURES) - {HIDE_POWERED_BY_FEATURE}
+    if e == core:
+        return "full"
+    return "basic" if not e else "custom"
 
 _GRACE_PERIOD_HOURS = 72
 
@@ -261,12 +273,7 @@ def get_enabled_features() -> Set[str]:
 def get_license_tier() -> str:
     """Сохранено для обратной совместимости и отображения — 'full', если
     включены ВСЕ функции, 'basic', если ни одной, иначе 'custom'."""
-    enabled = get_enabled_features()
-    if enabled == set(GATED_FEATURES.keys()):
-        return "full"
-    if not enabled:
-        return "basic"
-    return "custom"
+    return tier_of(get_enabled_features())
 
 
 def is_full_tier() -> bool:

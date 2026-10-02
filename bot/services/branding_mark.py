@@ -1,7 +1,7 @@
 """Метка «Powered by ECLIPSE».
 
 По умолчанию показывается в боте (нижняя кнопка главного экрана) и на сайте-витрине.
-Администратор инсталляции с действующей лицензией (любой платной функцией)
+Администратор инсталляции, которому поставщик выдал право «отключение метки»,
 может отключить её командой /powered_by off. Без лицензии метку отключить нельзя.
 """
 import html
@@ -15,10 +15,11 @@ _SETTING_KEY = "powered_by_hidden"
 
 
 def can_hide_powered_by() -> bool:
-    """Отключить метку может только инсталляция с действующей лицензией."""
+    """Отключить метку можно, если в лицензии включено право hide_powered_by
+    (его выдаёт поставщик кнопкой в карточке лицензии; на главном сервере оно есть всегда)."""
     try:
-        from bot.services.license import get_enabled_features
-        return bool(get_enabled_features())
+        from bot.services.license import get_enabled_features, HIDE_POWERED_BY_FEATURE
+        return HIDE_POWERED_BY_FEATURE in get_enabled_features()
     except Exception as e:
         logger.warning(f"Powered by: не удалось проверить лицензию ({e}) — метка остаётся")
         return False

@@ -23,7 +23,8 @@ def create_partner_license(partner_name: str, features, duration_days: Optional[
     features_str = features_to_str(features) if not isinstance(features, str) else features
     all_keys = set(GATED_FEATURES.keys())
     enabled = set(features_str.split(",")) if features_str else set()
-    tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
+    from bot.services.license import tier_of
+    tier = tier_of(enabled)
 
     license_key = generate_license_key()
     expires_at = None
@@ -61,7 +62,8 @@ def set_partner_license_features(license_key: str, features) -> bool:
     features_str = features_to_str(features) if not isinstance(features, str) else features
     all_keys = set(GATED_FEATURES.keys())
     enabled = set(features_str.split(",")) if features_str else set()
-    tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
+    from bot.services.license import tier_of
+    tier = tier_of(enabled)
 
     with get_db() as conn:
         cursor = conn.execute(
@@ -143,7 +145,8 @@ def create_license_tariff(name: str, features, price_rub: float, duration_days: 
     features_str = features_to_str(features) if not isinstance(features, str) else features
     all_keys = set(GATED_FEATURES.keys())
     enabled = set(features_str.split(",")) if features_str else set()
-    tier = "full" if enabled == all_keys else ("basic" if not enabled else "custom")
+    from bot.services.license import tier_of
+    tier = tier_of(enabled)
 
     with get_db() as conn:
         cursor = conn.execute(
@@ -342,7 +345,8 @@ def toggle_tariff_feature(tariff_id: int, feature: str) -> Set[str]:
     features_str = features_to_str(current)
     from bot.services.license import GATED_FEATURES
     all_keys = set(GATED_FEATURES.keys())
-    tier = "full" if current == all_keys else ("basic" if not current else "custom")
+    from bot.services.license import tier_of
+    tier = tier_of(current)
     with get_db() as conn:
         conn.execute(
             "UPDATE license_tariffs SET tier = ?, features = ? WHERE id = ?",
