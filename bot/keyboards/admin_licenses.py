@@ -169,6 +169,13 @@ def license_cancel_kb() -> InlineKeyboardMarkup:
 def my_license_kb(buy_deep_link: str) -> InlineKeyboardMarkup:
     """Клавиатура партнёрской (обратной) стороны — «Моя лицензия»."""
     builder = InlineKeyboardBuilder()
+    try:
+        from bot.services.license import get_license_key, is_license_server
+        from database.requests import get_setting
+        if not is_license_server() and not get_license_key() and get_setting("license_trial_used", "") != "1":
+            builder.row(InlineKeyboardButton(text="🎁 Попробовать бесплатно", callback_data="my_license_trial"))
+    except Exception:
+        pass
     builder.row(InlineKeyboardButton(text="💳 Купить / продлить", url=buy_deep_link))
     builder.row(InlineKeyboardButton(text="🔑 Ввести код лицензии", callback_data="my_license_enter_code"))
     builder.row(InlineKeyboardButton(text="🔄 Обновить статус", callback_data="my_license_refresh"))

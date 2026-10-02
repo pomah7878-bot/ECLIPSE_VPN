@@ -2511,6 +2511,52 @@ async def handle_license_check(request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+async def handle_license_trial(request: web.Request) -> web.Response:
+    """POST /api/license/trial — пробная лицензия по запросу из бота партнёра (только на
+    главном сервере). Body: {"instance_id", "telegram_id"}. Одна на установку и на аккаунт Telegram,
+    не больше 2 с одного IP за 30 дней."""
+    import re
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"lic-trial:{_lip}", 5, 3600):
+        return web.json_response({"error": "rate_limited"}, status=429)
+    _rl_record(f"lic-trial:{_lip}")
+
+    from bot.services.license import is_license_server
+    from bot.services.license_trial import trial_enabled, trial_days, trial_features
+    if not is_license_server() or not trial_enabled():
+        return web.json_response({"ok": False, "reason": "disabled", "message": "Пробный период сейчас недоступен."})
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "reason": "bad", "message": "Некорректный запрос."}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "reason": "bad", "message": "Некорректный запрос."}, status=400)
+    instance_id = str(data.get("instance_id") or "").strip()
+    try:
+        telegram_id = int(data.get("telegram_id"))
+    except (TypeError, ValueError):
+        telegram_id = 0
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", instance_id) or telegram_id <= 0:
+        return web.json_response({"ok": False, "reason": "bad", "message": "Некорректный запрос."}, status=400)
+
+    from database.db_licenses import issue_trial_license, count_recent_trials_by_ip, log_license_event
+    if count_recent_trials_by_ip(_lip, 30) >= 2:
+        return web.json_response({
+            "ok": False, "reason": "limit",
+            "message": "С вашего адреса уже выдавались пробные лицензии. Выберите тариф: команда /buy_license в главном боте.",
+        })
+    days = trial_days()
+    res = issue_trial_license(telegram_id, f"tg{telegram_id}", days, trial_features(), instance_id=instance_id, ip=_lip)
+    if res["status"] == "already":
+        return web.json_response({
+            "ok": False, "reason": "used",
+            "message": "Пробный период для этой установки или аккаунта уже использован. Выберите тариф: /buy_license в главном боте.",
+        })
+    log_license_event(res["license_key"], "trial_issued", f"remote tg={telegram_id} inst={instance_id[:8]} ip={_lip}")
+    return web.json_response({"ok": True, "license_key": res["license_key"], "expires_at": res["expires_at"], "days": days})
+
+
 async def handle_public_account_claim_purchase(request: web.Request) -> web.Response:
     """POST /api/public/account/claim-purchase — для УЖЕ залогиненного (через
     OAuth/телефон) аккаунта: привязывает к нему покупку с сайта по её
@@ -3833,6 +3879,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/license/check", handle_license_check)
+    app.router.add_post("/api/license/trial", handle_license_trial)
     app.router.add_post("/api/public/account/claim-purchase", handle_public_account_claim_purchase)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)

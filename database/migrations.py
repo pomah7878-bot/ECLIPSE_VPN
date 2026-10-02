@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 137
+LATEST_VERSION = 138
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3114,6 +3114,18 @@ def migration_137(conn: sqlite3.Connection) -> None:
     logger.info("Migration v137 applied: license_trials")
 
 
+def migration_138(conn: sqlite3.Connection) -> None:
+    """Версия 1.180: пробная лицензия по запросу из бота партнёра — одна на установку
+    (instance_id) и ограничение по IP."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(license_trials)").fetchall()]
+    if cols and "instance_id" not in cols:
+        conn.execute("ALTER TABLE license_trials ADD COLUMN instance_id TEXT")
+    if cols and "ip" not in cols:
+        conn.execute("ALTER TABLE license_trials ADD COLUMN ip TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_license_trials_instance ON license_trials(instance_id) WHERE instance_id IS NOT NULL")
+    logger.info("Migration v138 applied: license_trials.instance_id, ip")
+
+
 def migration_135(conn: sqlite3.Connection) -> None:
     """Версия 1.165: license_purchases — снимок условий тарифа на момент заказа
     (features/duration_days/price_rub), метка захвата заказа при выдаче ключа
@@ -3253,6 +3265,7 @@ MIGRATIONS = {
     135: migration_135,
     136: migration_136,
     137: migration_137,
+    138: migration_138,
 }
 
 

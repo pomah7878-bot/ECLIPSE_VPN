@@ -193,6 +193,30 @@ async def fetch_license(license_key: str):
     return "unreachable", {}
 
 
+async def request_trial_license(telegram_id: int):
+    """Запрашивает пробную лицензию у главного сервера.
+    Возвращает ("ok" | "denied" | "unreachable", данные)."""
+    import aiohttp
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                get_license_server_url() + "/api/license/trial",
+                json={"instance_id": get_instance_id(), "telegram_id": int(telegram_id)},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                status_code = resp.status
+                data = await resp.json(content_type=None)
+    except Exception as e:
+        logger.warning(f"Пробная лицензия: не удалось связаться с сервером ({e})")
+        return "unreachable", {}
+    if status_code != 200 or not isinstance(data, dict):
+        return "unreachable", {}
+    if data.get("ok") is True and data.get("license_key"):
+        return "ok", data
+    return "denied", data
+
+
 def _apply_valid_license(data: dict) -> None:
     from database.requests import set_setting
 

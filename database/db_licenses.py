@@ -447,17 +447,25 @@ def get_expiring_licenses_with_buyers(within_days: int = 7) -> List[Dict[str, An
 # ПРОБНАЯ ЛИЦЕНЗИЯ (v1.179)
 # ============================================================================
 
-def issue_trial_license(telegram_id: int, partner_name: str, days: int, features) -> Dict[str, Any]:
-    """Выдаёт пробную лицензию ровно один раз на аккаунт Telegram.
+def issue_trial_license(telegram_id: int, partner_name: str, days: int, features,
+                        instance_id: Optional[str] = None, ip: Optional[str] = None) -> Dict[str, Any]:
+    """Выдаёт пробную лицензию ровно один раз на аккаунт Telegram И на установку бота.
     Возвращает {"status": "issued"|"already", "license_key", "expires_at"}."""
     with get_db() as conn:
-        cur = conn.execute("INSERT OR IGNORE INTO license_trials (telegram_id) VALUES (?)", (telegram_id,))
-        inserted = cur.rowcount > 0
-        row = conn.execute("SELECT license_key FROM license_trials WHERE telegram_id = ?", (telegram_id,)).fetchone()
-    if not inserted:
-        key = row["license_key"] if row else None
-        lic = get_partner_license(key) if key else None
-        return {"status": "already", "license_key": key, "expires_at": lic.get("expires_at") if lic else None}
+        existing = conn.execute(
+            "SELECT license_key FROM license_trials WHERE telegram_id = ? OR (instance_id IS NOT NULL AND instance_id = ?)",
+            (telegram_id, instance_id),
+        ).fetchone()
+        if existing:
+            key = existing["license_key"]
+            lic = get_partner_license(key) if key else None
+            return {"status": "already", "license_key": key, "expires_at": lic.get("expires_at") if lic else None}
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO license_trials (telegram_id, instance_id, ip) VALUES (?, ?, ?)",
+            (telegram_id, instance_id, ip),
+        )
+        if cur.rowcount == 0:
+            return {"status": "already", "license_key": None, "expires_at": None}
 
     try:
         key = create_partner_license(
@@ -472,6 +480,14 @@ def issue_trial_license(telegram_id: int, partner_name: str, days: int, features
         raise
     lic = get_partner_license(key)
     return {"status": "issued", "license_key": key, "expires_at": lic.get("expires_at") if lic else None}
+
+
+def count_recent_trials_by_ip(ip: str, within_days: int = 30) -> int:
+    with get_db() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM license_trials WHERE ip = ? AND created_at > datetime('now', ?)",
+            (ip, "-%d days" % within_days),
+        ).fetchone()[0]
 
 
 def has_used_trial(telegram_id: int) -> bool:

@@ -913,3 +913,46 @@ async def my_license_powered_by(callback: CallbackQuery):
     from bot.services.license import get_license_bot_username
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
     await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))
+
+
+@router.callback_query(F.data == "my_license_trial")
+async def my_license_trial(callback: CallbackQuery):
+    """v1.180: пробная лицензия одной кнопкой — для новых админов без ключа."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.license import (
+        get_license_key, request_trial_license, activate_license_code, get_license_bot_username,
+    )
+    from database.requests import set_setting
+
+    if get_license_key():
+        await callback.answer("Лицензия уже есть.", show_alert=True)
+        return
+    await callback.answer("Запрашиваю пробную лицензию…")
+    state, data = await request_trial_license(callback.from_user.id)
+    if state == "unreachable":
+        await callback.message.answer("❌ Не удалось связаться с сервером лицензий. Попробуйте через несколько минут.")
+        return
+    if state == "denied":
+        if data.get("reason") == "used":
+            set_setting("license_trial_used", "1")
+        await callback.message.answer("ℹ️ " + (data.get("message") or "Пробная лицензия недоступна."))
+        return
+
+    lic_state, _ = await activate_license_code(data["license_key"])
+    set_setting("license_trial_used", "1")
+    if lic_state != "valid":
+        await callback.message.answer(
+            "⚠️ Ключ выдан, но проверить его сразу не удалось. Введите его вручную в «🔑 Ввести код лицензии»:\n"
+            f"<code>{data['license_key']}</code>", parse_mode="HTML",
+        )
+        return
+    await callback.message.answer(
+        f"🎁 <b>Пробная лицензия на {data.get('days')} дн. активирована!</b>\n"
+        f"Действует до: {data.get('expires_at')} (UTC). Платные функции уже включены. "
+        "Метка «Powered by ECLIPSE» остаётся. После окончания продлите лицензию кнопкой «💳 Купить / продлить».",
+        parse_mode="HTML",
+    )
+    deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
+    await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))
