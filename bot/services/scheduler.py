@@ -1613,16 +1613,22 @@ async def run_license_purchase_sweeper(bot: Bot) -> None:
     """Только на ГЛАВНОЙ инсталляции: каждые 2 минуты проверяет оплаты лицензий,
     по которым покупатель не нажал «Я оплатил», и сам выдаёт ключ."""
     from bot.services.license import is_license_server
-    from bot.services.license_purchase import process_abandoned_license_purchases
+    from bot.services.license_purchase import (
+        process_abandoned_license_purchases, process_license_expiry_reminders,
+    )
 
     if not is_license_server():
         return
 
     logger.info("🔑 Автовыдача оплаченных лицензий запущена (каждые 2 минуты)")
     await asyncio.sleep(30)
+    _tick = 0
     while True:
         try:
             await process_abandoned_license_purchases(bot)
+            if _tick % 30 == 0:  # напоминания об окончании — примерно раз в час
+                await process_license_expiry_reminders(bot)
+            _tick += 1
         except asyncio.CancelledError:
             logger.info("Автовыдача лицензий остановлена")
             break

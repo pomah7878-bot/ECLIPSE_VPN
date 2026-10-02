@@ -89,10 +89,22 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext):
     if lic.get("notes"):
         text += f"\n\nЗаметка: {lic['notes']}"
 
-    await safe_edit_or_send(
-        callback.message, text,
-        reply_markup=license_detail_kb(lic["license_key"], bool(lic["is_active"]), lic["tier"]),
-    )
+    from aiogram.types import InlineKeyboardButton
+    from database.db_licenses import list_activations
+
+    acts = [a for a in list_activations(lic["license_key"]) if not str(a["instance_id"]).startswith("legacy-")]
+    legacy = len(list_activations(lic["license_key"])) - len(acts)
+    limit = lic.get("max_instances")
+    limit_text = "без ограничения" if limit == 0 else str(2 if limit is None else limit)
+    text += f"\n\nУстановки: {len(acts)} из {limit_text}"
+    for a in acts[:5]:
+        text += f"\n  • {str(a['instance_id'])[:8]}… · {a['last_seen']} · {a.get('last_ip') or '—'}"
+    if legacy:
+        text += f"\n  (старых версий бота: {legacy})"
+    kb = license_detail_kb(lic["license_key"], bool(lic["is_active"]), lic["tier"])
+    kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
+        text="♻️ Сбросить установки", callback_data=f"license_reset_inst:{lic['license_key']}")])
+    await safe_edit_or_send(callback.message, text, reply_markup=kb)
     await callback.answer()
 
 
@@ -836,3 +848,17 @@ async def my_license_enter_code_entered(message: Message, state: FSMContext):
 
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
     await message.answer(_build_my_license_text(), parse_mode="HTML", reply_markup=my_license_kb(deep_link))
+
+
+@router.callback_query(F.data.startswith("license_reset_inst:"))
+async def license_reset_instances(callback: CallbackQuery):
+    """v1.166: освобождает места установок — партнёр переехал на другой сервер."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.db_licenses import reset_activations, log_license_event
+
+    license_key = callback.data.split(":", 1)[1]
+    removed = reset_activations(license_key)
+    log_license_event(license_key, "instances_reset", f"admin={callback.from_user.id} removed={removed}")
+    await callback.answer(f"♻️ Сброшено установок: {removed}. Новая займёт место при следующей проверке.", show_alert=True)

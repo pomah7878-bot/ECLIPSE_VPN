@@ -350,3 +350,90 @@ def toggle_tariff_feature(tariff_id: int, feature: str) -> Set[str]:
         )
         conn.commit()
     return current
+
+
+# ============================================================================
+# v1.166: установки, журнал событий, напоминания
+# ============================================================================
+
+def register_activation(license_key: str, instance_id: str, ip: str = "", stale_days: int = 14):
+    """Учитывает установку, использующую ключ. Возвращает (разрешено, занято мест).
+    Установка, молчавшая дольше stale_days, место не занимает. Старые версии
+    бота (instance_id начинается с 'legacy-') только записываются, не ограничиваются."""
+    key = license_key.strip().upper()
+    with get_db() as conn:
+        lic = conn.execute("SELECT max_instances FROM partner_licenses WHERE license_key = ?", (key,)).fetchone()
+        limit = 2
+        if lic is not None and lic["max_instances"] is not None:
+            limit = int(lic["max_instances"])
+        known = conn.execute(
+            "SELECT 1 FROM license_activations WHERE license_key = ? AND instance_id = ?", (key, instance_id)
+        ).fetchone()
+        busy = conn.execute(
+            "SELECT COUNT(*) FROM license_activations WHERE license_key = ? AND instance_id NOT LIKE 'legacy-%' "
+            "AND instance_id != ? AND last_seen >= datetime('now', ?)",
+            (key, instance_id, "-%d days" % stale_days),
+        ).fetchone()[0]
+        if known:
+            conn.execute(
+                "UPDATE license_activations SET last_seen = CURRENT_TIMESTAMP, last_ip = ? "
+                "WHERE license_key = ? AND instance_id = ?", (ip, key, instance_id),
+            )
+            conn.commit()
+            return True, busy + 1
+        if not instance_id.startswith("legacy-") and limit > 0 and busy >= limit:
+            return False, busy
+        conn.execute(
+            "INSERT INTO license_activations (license_key, instance_id, last_ip) VALUES (?, ?, ?)",
+            (key, instance_id, ip),
+        )
+        conn.commit()
+        return True, busy + 1
+
+
+def list_activations(license_key: str) -> List[Dict[str, Any]]:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM license_activations WHERE license_key = ? ORDER BY last_seen DESC",
+            (license_key.strip().upper(),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def reset_activations(license_key: str) -> int:
+    """Освобождает все места (партнёр переехал на другой сервер). Возвращает число записей."""
+    with get_db() as conn:
+        cur = conn.execute("DELETE FROM license_activations WHERE license_key = ?", (license_key.strip().upper(),))
+        conn.commit()
+        return cur.rowcount
+
+
+def log_license_event(license_key: str, event: str, details: str = "") -> None:
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO license_events (license_key, event, details) VALUES (?, ?, ?)",
+            (license_key.strip().upper(), event, details),
+        )
+        conn.commit()
+
+
+def has_license_event(license_key: str, event: str) -> bool:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM license_events WHERE license_key = ? AND event = ? LIMIT 1",
+            (license_key.strip().upper(), event),
+        ).fetchone()
+        return row is not None
+
+
+def get_expiring_licenses_with_buyers(within_days: int = 7) -> List[Dict[str, Any]]:
+    """Активные лицензии, купленные через бота, срок которых истекает в ближайшие within_days дней."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT l.license_key, l.expires_at, l.partner_name, p.telegram_id "
+            "FROM partner_licenses l JOIN license_purchases p ON p.license_key = l.license_key "
+            "WHERE l.is_active = 1 AND l.expires_at IS NOT NULL "
+            "AND l.expires_at > datetime('now') AND l.expires_at <= datetime('now', ?)",
+            ("+%d days" % within_days,),
+        ).fetchall()
+        return [dict(r) for r in rows]

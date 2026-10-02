@@ -131,3 +131,31 @@ async def process_abandoned_license_purchases(bot) -> None:
                 logger.warning(
                     f"Ключ по заказу {purchase['order_id']} выдан, но сообщение покупателю не доставлено: {e}"
                 )
+
+
+async def process_license_expiry_reminders(bot) -> None:
+    """Предупреждает покупателя лицензии за 7 и за 1 день до окончания."""
+    from datetime import datetime
+    from database.db_licenses import get_expiring_licenses_with_buyers, has_license_event, log_license_event
+
+    for lic in get_expiring_licenses_with_buyers(7):
+        try:
+            expires = datetime.strptime(lic["expires_at"], "%Y-%m-%d %H:%M:%S")
+        except (TypeError, ValueError):
+            continue
+        days_left = max(0, (expires - datetime.utcnow()).days)
+        threshold = 1 if days_left <= 1 else 7
+        event = f"reminder_{threshold}d:{lic['expires_at']}"
+        if has_license_event(lic["license_key"], event):
+            continue
+        log_license_event(lic["license_key"], event)
+        text = (
+            f"⏰ <b>Лицензия заканчивается {expires.strftime('%d.%m.%Y')}</b>\n\n"
+            "Чтобы платные функции не отключились, купите продление командой /buy_license "
+            "и введите новый код в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии». "
+            "Новый код заменит старый."
+        )
+        try:
+            await bot.send_message(lic["telegram_id"], text, parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"Напоминание о лицензии {mask_license_key(lic['license_key'])} не доставлено: {e}")

@@ -2471,10 +2471,38 @@ async def handle_license_check(request: web.Request) -> web.Response:
     if not license_key:
         return web.json_response({"valid": False, "message": "Не передан license_key."}, status=400)
 
-    from database.db_licenses import check_license_validity
+    from database.db_licenses import check_license_validity, register_activation, log_license_event
     result = check_license_validity(license_key)
     if not result.get("valid"):
         _rl_record(f"lic-fail:{_lip}")
+        return web.json_response(result)
+
+    import re
+    # v1.166: учёт установок. Бот версии 1.166+ присылает instance_id и nonce.
+    instance_id = str(data.get("instance_id") or "").strip()
+    nonce = str(data.get("nonce") or "").strip()
+    if instance_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", instance_id):
+        return web.json_response({"valid": False, "message": "Некорректный идентификатор установки."}, status=400)
+    if nonce and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", nonce):
+        return web.json_response({"valid": False, "message": "Некорректный запрос."}, status=400)
+
+    legacy = not instance_id
+    allowed, used = register_activation(license_key, instance_id or f"legacy-{_lip}", _lip)
+    if not allowed:
+        _rl_record(f"lic-fail:{_lip}")
+        log_license_event(license_key, "instance_refused", f"{instance_id[:8]} ip={_lip}")
+        return web.json_response({
+            "valid": False,
+            "message": "Лицензия уже используется на другом сервере. Если вы переехали — напишите владельцу лицензии, он освободит место.",
+        })
+
+    if instance_id and nonce:
+        try:
+            from bot.services.license_signing import sign_license_response
+            result = dict(result)
+            result["signed"] = sign_license_response(result, license_key, instance_id, nonce)
+        except Exception as e:
+            logger.error(f"Лицензия: не удалось подписать ответ ({e}) — отправляю без подписи")
     return web.json_response(result)
 
 

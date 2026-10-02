@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 135
+LATEST_VERSION = 136
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3071,6 +3071,37 @@ def migration_132(conn: sqlite3.Connection) -> None:
     logger.info("Migration v132 applied: строка btn_key_devices выровнена по фактическому row Автопродления")
 
 
+def migration_136(conn: sqlite3.Connection) -> None:
+    """Версия 1.166: привязка лицензии к установкам. partner_licenses.max_instances
+    (сколько установок бота могут одновременно использовать ключ, 0 = без
+    ограничения), таблица license_activations (какие установки и когда
+    обращались) и license_events (журнал событий по лицензиям). Идемпотентно."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(partner_licenses)").fetchall()]
+    if cols and "max_instances" not in cols:
+        conn.execute("ALTER TABLE partner_licenses ADD COLUMN max_instances INTEGER DEFAULT 2")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS license_activations (
+            license_key TEXT NOT NULL,
+            instance_id TEXT NOT NULL,
+            first_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_seen TEXT DEFAULT CURRENT_TIMESTAMP,
+            last_ip TEXT,
+            PRIMARY KEY (license_key, instance_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS license_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_key TEXT NOT NULL,
+            event TEXT NOT NULL,
+            details TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_license_events_key ON license_events(license_key, event)")
+    logger.info("Migration v136 applied: license_activations, license_events, max_instances")
+
+
 def migration_135(conn: sqlite3.Connection) -> None:
     """Версия 1.165: license_purchases — снимок условий тарифа на момент заказа
     (features/duration_days/price_rub), метка захвата заказа при выдаче ключа
@@ -3208,6 +3239,7 @@ MIGRATIONS = {
     133: migration_133,
     134: migration_134,
     135: migration_135,
+    136: migration_136,
 }
 
 

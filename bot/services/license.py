@@ -114,6 +114,19 @@ def is_valid_key_format(code: str) -> bool:
     return bool(_KEY_FORMAT_RE.match((code or "").strip().upper()))
 
 
+def get_instance_id() -> str:
+    """Постоянный случайный идентификатор ЭТОЙ установки бота. Сервер лицензий
+    по нему считает, на скольких установках используется ключ."""
+    import uuid
+    from database.requests import get_setting, set_setting
+
+    value = get_setting("license_instance_id", "")
+    if not value:
+        value = uuid.uuid4().hex
+        set_setting("license_instance_id", value)
+    return value
+
+
 async def fetch_license(license_key: str):
     """Запрашивает статус лицензии на сервере лицензий.
 
@@ -122,12 +135,15 @@ async def fetch_license(license_key: str):
     не найден, отозван, истёк). Любой сбой связи, не-JSON, ошибка прокси,
     лимит запросов — "unreachable": прежний статус лицензии сохраняется."""
     import aiohttp
+    import secrets
 
+    instance_id = get_instance_id()
+    nonce = secrets.token_urlsafe(16)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 get_license_server_url() + "/api/license/check",
-                json={"license_key": license_key},
+                json={"license_key": license_key, "instance_id": instance_id, "nonce": nonce},
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
                 status_code = resp.status
@@ -143,6 +159,22 @@ async def fetch_license(license_key: str):
         logger.warning(f"Лицензия: сервер ответил HTTP {status_code} — статус не меняем")
         return "unreachable", {}
     if data.get("valid") is True:
+        # v1.166: ответ должен быть подписан сервером лицензий; данные берём
+        # из подписанной части, а не из открытых полей ответа.
+        from bot.services.license_signing import verify_license_response
+
+        verdict, payload = verify_license_response(data.get("signed"), license_key, instance_id, nonce)
+        if verdict == "bad":
+            logger.warning("Лицензия: подпись ответа сервера неверна — ответ отклонён, статус не меняем")
+            return "unreachable", {}
+        if verdict == "ok":
+            data = {
+                "valid": True,
+                "tier": payload.get("tier"),
+                "features": payload.get("features") or "",
+                "expires_at": payload.get("expires_at"),
+                "partner_name": payload.get("partner_name"),
+            }
         return "valid", data
     if data.get("valid") is False:
         return "invalid", data
