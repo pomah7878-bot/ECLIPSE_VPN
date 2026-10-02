@@ -55,12 +55,14 @@ async def show_licenses_menu(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data.startswith("license_view:"))
-async def show_license_detail(callback: CallbackQuery, state: FSMContext):
+async def show_license_detail(callback: CallbackQuery, state: FSMContext = None, license_key: str = None):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
-    license_key = callback.data.split(":", 1)[1]
+    # license_key передаётся явно из других обработчиков: callback.data менять нельзя —
+    # объекты aiogram неизменяемы (frozen), присваивание падало и экран не обновлялся.
+    license_key = license_key or callback.data.split(":", 1)[1]
     from database.db_licenses import get_partner_license
     from bot.services.license import features_from_str, GATED_FEATURES
 
@@ -109,7 +111,10 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext):
         text=("🏷 Право отключать метку: ✅ ЕСТЬ (нажми — забрать)" if _pb_on else "🏷 Право отключать метку: ⬜️ НЕТ (нажми — выдать)"),
         callback_data=f"license_pb_toggle:{lic['license_key']}")])
     await safe_edit_or_send(callback.message, text, reply_markup=kb)
-    await callback.answer()
+    try:
+        await callback.answer()
+    except Exception:
+        pass  # на callback уже ответили в вызывающем обработчике
 
 
 @router.callback_query(F.data.startswith("license_extend:"))
@@ -123,8 +128,7 @@ async def extend_license_action(callback: CallbackQuery):
     extend_partner_license(license_key, int(days_str))
     await callback.answer(f"✅ Продлено на {days_str} дней")
     # Обновляем экран деталей, чтобы сразу видеть новую дату
-    callback.data = f"license_view:{license_key}"
-    await show_license_detail(callback, None)
+    await show_license_detail(callback, None, license_key)
 
 
 @router.callback_query(F.data.startswith("license_features_edit:"))
@@ -199,8 +203,7 @@ async def do_deactivate_license(callback: CallbackQuery):
     from database.db_licenses import deactivate_partner_license
     deactivate_partner_license(license_key)
     await callback.answer("🚫 Лицензия деактивирована")
-    callback.data = f"license_view:{license_key}"
-    await show_license_detail(callback, None)
+    await show_license_detail(callback, None, license_key)
 
 
 # ============================================================================
@@ -889,8 +892,7 @@ async def license_powered_by_toggle(callback: CallbackQuery):
     now = "hide_powered_by" in selected
     log_license_event(license_key, "powered_by_right", f"admin={callback.from_user.id} allowed={now}")
     await callback.answer("✅ Партнёр может отключить метку" if now else "⬜️ Метка у партнёра обязательна")
-    callback.data = f"license_view:{license_key}"
-    await show_license_detail(callback, None)
+    await show_license_detail(callback, None, license_key)
 
 
 @router.callback_query(F.data == "my_license_pb")
