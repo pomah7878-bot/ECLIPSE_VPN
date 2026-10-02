@@ -172,6 +172,15 @@ def my_license_kb(buy_deep_link: str) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="💳 Купить / продлить", url=buy_deep_link))
     builder.row(InlineKeyboardButton(text="🔑 Ввести код лицензии", callback_data="my_license_enter_code"))
     builder.row(InlineKeyboardButton(text="🔄 Обновить статус", callback_data="my_license_refresh"))
+    try:
+        from bot.services.branding_mark import can_hide_powered_by, is_powered_by_visible
+        if can_hide_powered_by():
+            _t = "🏷 Метка Powered by: показана → скрыть" if is_powered_by_visible() else "🏷 Метка Powered by: скрыта → показать"
+        else:
+            _t = "🏷 Метка Powered by 🔒"
+        builder.row(InlineKeyboardButton(text=_t, callback_data="my_license_pb"))
+    except Exception:
+        pass
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 

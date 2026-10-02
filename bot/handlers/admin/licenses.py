@@ -883,3 +883,23 @@ async def license_powered_by_toggle(callback: CallbackQuery):
     await callback.answer("✅ Партнёр может отключить метку" if now else "⬜️ Метка у партнёра обязательна")
     callback.data = f"license_view:{license_key}"
     await show_license_detail(callback, None)
+
+
+@router.callback_query(F.data == "my_license_pb")
+async def my_license_powered_by(callback: CallbackQuery):
+    """v1.175: админ инсталляции включает/выключает метку «Powered by ECLIPSE»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.branding_mark import (
+        can_hide_powered_by, is_powered_by_visible, set_powered_by_hidden,
+    )
+    if not can_hide_powered_by():
+        await callback.answer("🔒 Отключение метки не входит в вашу лицензию. Обратитесь к поставщику лицензии.", show_alert=True)
+        return
+    hide = is_powered_by_visible()
+    set_powered_by_hidden(hide)
+    await callback.answer("✅ Метка отключена" if hide else "✅ Метка включена")
+    from bot.services.license import get_license_bot_username
+    deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
+    await safe_edit_or_send(callback.message, _build_my_license_text(), reply_markup=my_license_kb(deep_link))
