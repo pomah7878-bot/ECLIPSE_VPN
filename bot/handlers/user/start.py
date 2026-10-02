@@ -241,6 +241,18 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     except Exception as e:
         logger.warning(f"Не удалось построить кнопку новостей/магазина: {e}")
 
+    # v1.173: метка «Powered by ECLIPSE» — последняя строка (отключается лицензиатом)
+    try:
+        from bot.services.branding_mark import (
+            is_powered_by_visible, POWERED_BY_TEXT, POWERED_BY_URL,
+        )
+        if is_powered_by_visible():
+            append_buttons = (append_buttons or []) + [[
+                InlineKeyboardButton(text=f"⚡ {POWERED_BY_TEXT}", url=POWERED_BY_URL)
+            ]]
+    except Exception as e:
+        logger.warning(f"Не удалось добавить метку Powered by: {e}")
+
     await render_page(
         target,
         page_key='main',

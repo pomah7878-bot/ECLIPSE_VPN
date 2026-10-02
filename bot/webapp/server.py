@@ -981,6 +981,11 @@ async def handle_shop_page(request: web.Request) -> web.Response:
             "Cloudflare для домена этой инсталляции и добавьте его в secrets.env."
         )
     patched_body = resp.text.replace("{{TURNSTILE_SITE_KEY}}", turnstile_site_key)
+    try:
+        from bot.services.branding_mark import powered_by_html
+        patched_body = patched_body.replace("{{POWERED_BY}}", powered_by_html())
+    except Exception:
+        patched_body = patched_body.replace("{{POWERED_BY}}", "")
     new_resp = web.Response(text=patched_body, content_type="text/html")
     for hk, hv in resp.headers.items():
         if hk.lower() not in ("content-type", "content-length"):

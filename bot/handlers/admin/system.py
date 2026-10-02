@@ -2084,3 +2084,33 @@ async def app_secret_cmd(message: Message):
         "<code>/app_secret off</code> — удалить секрет",
         parse_mode="HTML",
     )
+
+
+@router.message(Command("powered_by"))
+async def powered_by_cmd(message: Message):
+    """v1.173: метка «Powered by ECLIPSE». /powered_by — статус, /powered_by off — скрыть
+    (только при действующей лицензии), /powered_by on — показать."""
+    from bot.services.branding_mark import (
+        can_hide_powered_by, is_powered_by_visible, set_powered_by_hidden,
+    )
+
+    if not is_admin(message.from_user.id):
+        return
+    arg = ((message.text or "").split(maxsplit=1) + [""])[1].strip().lower()
+
+    if arg == "off":
+        if set_powered_by_hidden(True):
+            await message.answer("✅ Метка «Powered by ECLIPSE» отключена в боте и на сайте.")
+        else:
+            await message.answer(
+                "🔒 Отключить метку могут владельцы лицензии. Купить или ввести ключ: «💳 Моя лицензия»."
+            )
+        return
+    if arg == "on":
+        set_powered_by_hidden(False)
+        await message.answer("✅ Метка «Powered by ECLIPSE» включена.")
+        return
+
+    status = "показывается" if is_powered_by_visible() else "отключена"
+    can = "можно отключить: /powered_by off" if can_hide_powered_by() else "отключение доступно с лицензией"
+    await message.answer(f"⚡ Метка «Powered by ECLIPSE»: {status}\n{can}")
