@@ -21,10 +21,14 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
-def _license_tariffs_kb(tariffs):
+def _license_tariffs_kb(tariffs, trial_days=None):
     from bot.services.license import features_from_str, GATED_FEATURES
 
     builder = InlineKeyboardBuilder()
+    if trial_days:
+        builder.row(InlineKeyboardButton(
+            text=f"🎁 Попробовать бесплатно — {trial_days} дн.", callback_data="license_trial_start",
+        ))
     for t in tariffs:
         duration_text = f"{t['duration_days']} дн." if t["duration_days"] else "бессрочно"
         enabled = features_from_str(t.get("features"))
@@ -46,17 +50,22 @@ async def buy_license_cmd(message: Message):
     """Показывает доступные тарифы на whitelabel-лицензию."""
     from database.db_licenses import get_active_license_tariffs
 
+    from bot.services.license_trial import trial_enabled, trial_days
+    from database.db_licenses import has_used_trial
+
     tariffs = get_active_license_tariffs()
-    if not tariffs:
+    offer_days = trial_days() if (trial_enabled() and not has_used_trial(message.from_user.id)) else None
+    if not tariffs and not offer_days:
         await message.answer("😔 Пока нет доступных тарифов на лицензию. Обратитесь к администратору напрямую.")
         return
 
     await message.answer(
         "🏢 <b>Whitelabel-лицензия ECLIPSE</b>\n\n"
         "Запустите собственный VPN-бот под своим брендом на нашей платформе.\n\n"
-        "Выберите тариф:",
+        + ("Можно сначала попробовать бесплатно, без оплаты.\n\n" if offer_days else "")
+        + ("Выберите тариф:" if tariffs else ""),
         parse_mode="HTML",
-        reply_markup=_license_tariffs_kb(tariffs),
+        reply_markup=_license_tariffs_kb(tariffs, offer_days),
     )
 
 
@@ -142,3 +151,78 @@ async def check_license_payment(callback: CallbackQuery):
         await callback.message.answer("⏳ Лицензия уже выдаётся, подождите несколько секунд и нажмите ещё раз.")
     else:
         await callback.message.answer("❌ Не удалось проверить оплату. Попробуйте ещё раз через минуту.")
+
+
+@router.callback_query(F.data == "license_trial_start")
+async def license_trial_start(callback: CallbackQuery):
+    """Выдаёт пробную лицензию (один раз на аккаунт Telegram)."""
+    from bot.services.license import GATED_FEATURES
+    from bot.services.license_trial import trial_enabled, trial_days, trial_features
+    from database.db_licenses import issue_trial_license, log_license_event
+
+    if not trial_enabled():
+        await callback.answer("Пробный период сейчас недоступен.", show_alert=True)
+        return
+
+    days = trial_days()
+    name = callback.from_user.username or callback.from_user.full_name or f"user_{callback.from_user.id}"
+    try:
+        res = issue_trial_license(callback.from_user.id, name, days, trial_features())
+    except Exception as e:
+        logger.error(f"Ошибка выдачи пробной лицензии tg={callback.from_user.id}: {e}")
+        await callback.answer("❌ Не удалось выдать пробную лицензию. Попробуйте позже.", show_alert=True)
+        return
+
+    await callback.answer()
+    if res["status"] == "already":
+        extra = f"\nВаш прежний ключ: <code>{res['license_key']}</code> (до {res['expires_at']})" if res.get("license_key") else ""
+        await callback.message.answer(
+            "ℹ️ Пробный период можно взять только один раз на аккаунт." + extra +
+            "\n\nЧтобы продолжить пользоваться платными функциями, выберите тариф: /buy_license",
+            parse_mode="HTML",
+        )
+        return
+
+    log_license_event(res["license_key"], "trial_issued", f"tg={callback.from_user.id} days={days}")
+    feats = ", ".join(GATED_FEATURES[k] for k in GATED_FEATURES if k in trial_features())
+    await callback.message.answer(
+        f"🎁 <b>Пробный период на {days} дн. активирован!</b>\n\n"
+        f"Включено: {feats}\n\n"
+        "Введите ключ в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии» "
+        "(или впишите в secrets.env как <code>LICENSE_KEY</code>):\n"
+        f"<code>{res['license_key']}</code>\n\n"
+        f"Действует до: {res['expires_at']} (UTC). Ключ привязывается к одной установке бота. "
+        "Метка «Powered by ECLIPSE» на пробной лицензии остаётся. "
+        "После окончания платные функции отключатся — продлить можно командой /buy_license.",
+        parse_mode="HTML",
+    )
+
+
+@router.message(Command("license_trial"))
+async def license_trial_cmd(message: Message):
+    """/license_trial — статус; on|off — включить/выключить; days N — длительность (1–60)."""
+    from bot.utils.admin import is_admin
+    from bot.services.license_trial import (
+        trial_enabled, trial_days, set_trial_enabled, set_trial_days,
+    )
+    from database.db_licenses import count_trials
+
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()
+    arg = parts[1].lower() if len(parts) > 1 else ""
+    if arg in ("on", "off"):
+        set_trial_enabled(arg == "on")
+    elif arg == "days" and len(parts) > 2 and parts[2].isdigit():
+        set_trial_days(int(parts[2]))
+    elif arg:
+        await message.answer("Использование: /license_trial [on|off|days N]")
+        return
+    await message.answer(
+        "🎁 <b>Пробная лицензия</b>\n\n"
+        f"Статус: {'✅ включена' if trial_enabled() else '⬜️ выключена'}\n"
+        f"Длительность: {trial_days()} дн.\n"
+        f"Выдано всего: {count_trials()}\n\n"
+        "Команды: <code>/license_trial on</code>, <code>/license_trial off</code>, <code>/license_trial days 7</code>",
+        parse_mode="HTML",
+    )

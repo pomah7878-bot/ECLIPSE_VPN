@@ -441,3 +441,44 @@ def get_expiring_licenses_with_buyers(within_days: int = 7) -> List[Dict[str, An
             ("+%d days" % within_days,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ============================================================================
+# ПРОБНАЯ ЛИЦЕНЗИЯ (v1.179)
+# ============================================================================
+
+def issue_trial_license(telegram_id: int, partner_name: str, days: int, features) -> Dict[str, Any]:
+    """Выдаёт пробную лицензию ровно один раз на аккаунт Telegram.
+    Возвращает {"status": "issued"|"already", "license_key", "expires_at"}."""
+    with get_db() as conn:
+        cur = conn.execute("INSERT OR IGNORE INTO license_trials (telegram_id) VALUES (?)", (telegram_id,))
+        inserted = cur.rowcount > 0
+        row = conn.execute("SELECT license_key FROM license_trials WHERE telegram_id = ?", (telegram_id,)).fetchone()
+    if not inserted:
+        key = row["license_key"] if row else None
+        lic = get_partner_license(key) if key else None
+        return {"status": "already", "license_key": key, "expires_at": lic.get("expires_at") if lic else None}
+
+    try:
+        key = create_partner_license(
+            f"{partner_name} (пробный)", features, days, notes=f"trial tg={telegram_id}",
+        )
+        with get_db() as conn:
+            conn.execute("UPDATE license_trials SET license_key = ? WHERE telegram_id = ?", (key, telegram_id))
+            conn.execute("UPDATE partner_licenses SET max_instances = 1 WHERE license_key = ?", (key,))
+    except Exception:
+        with get_db() as conn:
+            conn.execute("DELETE FROM license_trials WHERE telegram_id = ?", (telegram_id,))
+        raise
+    lic = get_partner_license(key)
+    return {"status": "issued", "license_key": key, "expires_at": lic.get("expires_at") if lic else None}
+
+
+def has_used_trial(telegram_id: int) -> bool:
+    with get_db() as conn:
+        return conn.execute("SELECT 1 FROM license_trials WHERE telegram_id = ?", (telegram_id,)).fetchone() is not None
+
+
+def count_trials() -> int:
+    with get_db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM license_trials").fetchone()[0]

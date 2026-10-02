@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 136
+LATEST_VERSION = 137
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3102,6 +3102,18 @@ def migration_136(conn: sqlite3.Connection) -> None:
     logger.info("Migration v136 applied: license_activations, license_events, max_instances")
 
 
+def migration_137(conn: sqlite3.Connection) -> None:
+    """Версия 1.179: пробная лицензия — один раз на аккаунт Telegram."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS license_trials (
+            telegram_id INTEGER PRIMARY KEY,
+            license_key TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("Migration v137 applied: license_trials")
+
+
 def migration_135(conn: sqlite3.Connection) -> None:
     """Версия 1.165: license_purchases — снимок условий тарифа на момент заказа
     (features/duration_days/price_rub), метка захвата заказа при выдаче ключа
@@ -3240,6 +3252,7 @@ MIGRATIONS = {
     134: migration_134,
     135: migration_135,
     136: migration_136,
+    137: migration_137,
 }
 
 
