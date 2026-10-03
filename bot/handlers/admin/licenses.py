@@ -455,11 +455,11 @@ async def license_tariff_create_price_entered(message: Message, state: FSMContex
     selected_features = set(data.get("selected_features", []))
 
     from database.db_licenses import create_license_tariff
-    create_license_tariff(name, selected_features, price_rub, duration_days=30)
+    create_license_tariff(name, selected_features, price_rub, duration_days=90)
 
     await state.set_state(AdminStates.admin_menu)
     await message.answer(
-        f"✅ Тариф «{name}» создан ({price_rub:.0f} ₽, 30 дней). Теперь он виден в /buy_license.",
+        f"✅ Тариф «{name}» создан ({price_rub:.0f} ₽, 90 дней). Теперь он виден в /buy_license.",
     )
 
 

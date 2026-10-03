@@ -25,7 +25,8 @@ def licenses_menu_kb(licenses: list) -> InlineKeyboardMarkup:
 def license_detail_kb(license_key: str, is_active: bool, tier: str) -> InlineKeyboardMarkup:
     """Действия для конкретной лицензии."""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="📅 Продлить на 30 дней", callback_data=f"license_extend:{license_key}:30"))
+    builder.row(InlineKeyboardButton(text="📅 Продлить на 90 дней", callback_data=f"license_extend:{license_key}:90"))
+    builder.row(InlineKeyboardButton(text="📅 Продлить на 180 дней", callback_data=f"license_extend:{license_key}:180"))
     builder.row(InlineKeyboardButton(text="📅 Продлить на 365 дней", callback_data=f"license_extend:{license_key}:365"))
 
     builder.row(InlineKeyboardButton(text="🔧 Настроить функции", callback_data=f"license_features_edit:{license_key}"))
@@ -74,8 +75,8 @@ def license_create_tier_kb(selected: set) -> InlineKeyboardMarkup:
 def license_create_duration_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="30 дней", callback_data="license_create_duration:30"),
         InlineKeyboardButton(text="90 дней", callback_data="license_create_duration:90"),
+        InlineKeyboardButton(text="180 дней", callback_data="license_create_duration:180"),
         InlineKeyboardButton(text="365 дней", callback_data="license_create_duration:365"),
     )
     builder.row(InlineKeyboardButton(text="♾ Бессрочно", callback_data="license_create_duration:0"))
@@ -145,8 +146,8 @@ def license_features_edit_kb(license_key: str, selected: set) -> InlineKeyboardM
 def license_tariff_edit_duration_kb(tariff_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="30 дней", callback_data=f"license_tariff_set_duration:{tariff_id}:30"),
         InlineKeyboardButton(text="90 дней", callback_data=f"license_tariff_set_duration:{tariff_id}:90"),
+        InlineKeyboardButton(text="180 дней", callback_data=f"license_tariff_set_duration:{tariff_id}:180"),
         InlineKeyboardButton(text="365 дней", callback_data=f"license_tariff_set_duration:{tariff_id}:365"),
     )
     builder.row(InlineKeyboardButton(text="♾ Бессрочно", callback_data=f"license_tariff_set_duration:{tariff_id}:0"))
