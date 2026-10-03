@@ -172,7 +172,8 @@ async def start_channel_post_new(callback: CallbackQuery, state: FSMContext):
     await safe_edit_or_send(
         callback.message,
         '✏️ <b>Текст поста</b>\n\n'
-        'Отправьте текст поста (поддерживается HTML-разметка: <b>жирный</b>, <i>курсив</i> и т.д.).',
+        'Отправьте текст поста в любом формате: форматирование Telegram, HTML-теги или Markdown (**жирный**, > цитата, [текст](ссылка)). '
+        'Бот сам приведёт его к нужному виду.',
         reply_markup=channel_post_cancel_kb(),
     )
     await callback.answer()
@@ -183,7 +184,8 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     """Сохраняет текст поста, запрашивает дату публикации."""
     if not is_admin(message.from_user.id):
         return
-    text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
+    from bot.utils.post_format import convert_post_text
+    text = convert_post_text(message)
     from database.requests import is_post_footer_enabled
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
     _n = _visible_len(text_with_footer)
@@ -417,7 +419,8 @@ async def process_edit_post_text(message: Message, state: FSMContext):
         await state.clear()
         return
 
-    text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
+    from bot.utils.post_format import convert_post_text
+    text = convert_post_text(message)
     from database.requests import is_post_footer_enabled
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
 
