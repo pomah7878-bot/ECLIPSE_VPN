@@ -213,9 +213,9 @@ def get_editor_text_for_storage(message: Message) -> str:
     html_text, а набранные вручную теги (<b>, <a href="...">) восстанавливаются
     как разметка — см. get_message_text_for_storage(..., admin_raw_html=True).
     """
-    from bot.utils.text import get_message_text_for_storage
+    from bot.utils.post_format import convert_post_text
 
-    return get_message_text_for_storage(message, 'html', admin_raw_html=True)
+    return convert_post_text(message)
 
 
 def save_message_data(key: str, message: Message, allowed_types: Optional[List[str]] = None) -> dict:

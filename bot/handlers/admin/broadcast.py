@@ -29,6 +29,7 @@ from bot.keyboards.admin import (
 
 logger = logging.getLogger(__name__)
 
+from bot.utils.post_format import convert_post_text
 from bot.utils.text import escape_html, safe_edit_or_send
 from bot.utils.delivery import is_bot_blocked_error
 from bot.utils.event_placeholders import build_user_event_context, render_event_placeholders
@@ -376,9 +377,9 @@ async def broadcast_save_message(message: Message, state: FSMContext, bot: Bot):
 
     if message.photo:
         photo_file_id = message.photo[-1].file_id
-        text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
+        text = convert_post_text(message)
     elif message.text:
-        text = get_message_text_for_storage(message, 'html', admin_raw_html=True)
+        text = convert_post_text(message)
     else:
         await safe_edit_or_send(message,
             "❌ <b>Материал не поддерживается</b>\n\n"
