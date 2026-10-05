@@ -246,7 +246,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         from bot.services.branding_mark import (
             is_powered_by_visible, POWERED_BY_TEXT, POWERED_BY_URL,
         )
-        if is_powered_by_visible():
+        if is_powered_by_visible() and not is_admin:  # v1.187: админам метку не показываем
             append_buttons = (append_buttons or []) + [[
                 InlineKeyboardButton(text=f"⚡ {POWERED_BY_TEXT}", url=POWERED_BY_URL)
             ]]
