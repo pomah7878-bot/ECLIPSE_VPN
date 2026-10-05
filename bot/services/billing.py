@@ -1631,7 +1631,7 @@ async def _notify_admins_unfulfilled(bot: Any, order_id: str, error: Exception) 
             f"Заказ: <code>{order_id}</code>\n"
             f"Способ: {order.get('payment_type')}\n"
             f"Ошибка: {str(error)[:200]}\n\n"
-            "Заказ возвращён в ожидание. Оформите вручную или верните платёж (для Stars: /refund_stars "
+            "Заказ возвращён в ожидание. Оформите вручную или верните сумму на баланс (/refund_stars "
             f"{order_id})."
         )
         for admin_id in list(ADMIN_IDS)[:5]:

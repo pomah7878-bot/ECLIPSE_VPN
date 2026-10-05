@@ -2121,31 +2121,29 @@ async def powered_by_cmd(message: Message):
 
 @router.message(Command("refund_stars"))
 async def refund_stars_cmd(message: Message):
-    """v1.195: /refund_stars <номер заказа> — вернуть звёзды за оплаченный заказ."""
+    """v1.196: /refund_stars <номер заказа> — вернуть сумму оплаченного заказа на баланс пользователя
+    (физического возврата денег и звёзд нет)."""
     if not is_admin(message.from_user.id):
         return
     parts = (message.text or "").split()[1:]
     if len(parts) != 1:
-        await message.answer("Использование: <code>/refund_stars НОМЕР_ЗАКАЗА</code>", parse_mode="HTML")
+        await message.answer("Использование: <code>/refund_stars НОМЕР_ЗАКАЗА</code>\nСумма заказа вернётся на баланс пользователя.", parse_mode="HTML")
         return
-    from database.db_payments import get_telegram_charge_info
-    info = get_telegram_charge_info(parts[0])
-    if not info:
+    from database.db_payments import find_order_by_order_id
+    order = find_order_by_order_id(parts[0])
+    if not order:
         await message.answer("❌ Заказ не найден.")
         return
-    if not info.get("telegram_charge_id") or not info.get("telegram_id"):
-        await message.answer("❌ Для этого заказа не сохранён идентификатор платежа Telegram (возможно, он оплачен до обновления 1.195).")
-        return
-    try:
-        await message.bot.refund_star_payment(
-            user_id=int(info["telegram_id"]),
-            telegram_payment_charge_id=str(info["telegram_charge_id"]),
-        )
-    except Exception as e:
-        await message.answer(f"❌ Не удалось вернуть платёж: {e}")
+    from bot.services.balance_reserve import credit_order_to_balance
+    cents = credit_order_to_balance(
+        parts[0], 'admin_order_refund', parts[0],
+        f'Возврат на баланс по заказу {parts[0]} (админ)',
+    )
+    if cents <= 0:
+        await message.answer("ℹ️ Ничего не зачислено: возврат по этому заказу уже сделан или сумма заказа равна нулю.")
         return
     await message.answer(
-        f"↩️ Звёзды по заказу <code>{parts[0]}</code> возвращены. "
+        f"↩️ На баланс пользователя зачислено {cents / 100:.2f} ₽ по заказу <code>{parts[0]}</code>. "
         "Ключ или подписку, если нужно, отключите вручную.",
         parse_mode="HTML",
     )

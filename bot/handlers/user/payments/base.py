@@ -239,15 +239,17 @@ async def successful_payment_handler(message: Message, state: FSMContext):
             _status = _info.get('status')
             _refund = (_status == 'canceled') or (_status == 'paid' and _stored and _stored != _charge)
             if _refund:
+                # v1.196: деньги/звёзды физически не возвращаем — зачисляем на баланс
                 try:
-                    await message.bot.refund_star_payment(
-                        user_id=message.from_user.id,
-                        telegram_payment_charge_id=_charge,
+                    from bot.services.balance_reserve import credit_order_to_balance
+                    _cents = credit_order_to_balance(
+                        order_id, 'stars_extra_payment', _charge,
+                        'Возврат на баланс: платёж Stars по закрытому заказу',
                     )
-                    logger.warning(f'Stars возвращены: заказ {order_id} (статус {_status}), charge={_charge}')
-                    await message.answer('↩️ Заказ уже закрыт, поэтому платёж возвращён автоматически. Откройте оплату заново.')
+                    logger.warning(f'Stars → баланс: заказ {order_id} (статус {_status}), charge={_charge}, коп={_cents}')
+                    await message.answer('↩️ Заказ уже закрыт, поэтому сумма платежа зачислена на ваш баланс. Используйте её при следующей оплате.')
                 except Exception as _refund_err:
-                    logger.error(f'Не удалось вернуть Stars по заказу {order_id}: {_refund_err}')
+                    logger.error(f'Не удалось зачислить возврат на баланс по заказу {order_id}: {_refund_err}')
                 return
             save_telegram_charge_id(order_id, _charge)
         except Exception as _charge_err:

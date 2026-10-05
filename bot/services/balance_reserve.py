@@ -149,3 +149,33 @@ def release_stale_balance_reservations(card_minutes: int = 180, provider_hours: 
         except Exception as e:
             logger.error("Не удалось снять резерв по заказу %s: %s", row['order_id'], e)
     return released
+
+
+def credit_order_to_balance(order_id: str, ref_type: str, ref_id: str, reason: str) -> int:
+    """v1.196: возврат за заказ ТОЛЬКО на баланс (деньги и звёзды физически не возвращаются).
+
+    Сумма — цена заказа. Идемпотентно по (ref_type, ref_id). Возвращает зачисленные копейки (0 — ничего).
+    """
+    with _LOCK:
+        order = _order_row(order_id)
+        if not order:
+            return 0
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(final_amount_cents, amount_cents, 0) AS c FROM payments WHERE order_id = ?",
+                (str(order_id),),
+            ).fetchone()
+        cents = int(row['c'] or 0) if row else 0
+        if cents <= 0:
+            return 0
+        user_id = int(order['user_id'])
+        if has_balance_operation_reference(
+            user_id=user_id, operation_type='credit', source=REFUND_SOURCE,
+            reference_type=ref_type, reference_id=str(ref_id),
+        ):
+            return 0
+        result = apply_balance_operation(
+            user_id=user_id, operation_type='credit', cents=cents, source=REFUND_SOURCE,
+            reason=reason, reference_type=ref_type, reference_id=str(ref_id),
+        )
+        return cents if result.get('ok') else 0
