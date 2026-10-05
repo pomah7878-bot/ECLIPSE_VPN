@@ -1232,6 +1232,10 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
 
     if upstream_status != 200:
         cached = _HAPP_SUB_CACHE.get(sub_id)
+        if cached and key.get('panel_removed_at'):
+            # клиента штатно убрала panel_only_cleanup — кэш устарел, не отдаём его
+            _HAPP_SUB_CACHE.pop(sub_id, None)
+            cached = None
         if cached:
             logger.warning(
                 f"handle_happ_subscription: панель вернула {upstream_status} для sub_id={sub_id[:8]}... — "
