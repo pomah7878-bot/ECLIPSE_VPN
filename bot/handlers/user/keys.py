@@ -1253,7 +1253,7 @@ async def key_protocols_handler(callback: CallbackQuery):
 @router.callback_query(F.data.startswith('key_proto:'))
 async def key_proto_handler(callback: CallbackQuery):
     """Отправляет выбранное подключение: .conf + QR для WG/AWG, ссылка для остальных.
-    Под последним сообщением — «К подключениям» и «На главную»."""
+    Под последним сообщением — «Назад» и «На главную» (в одну строку)."""
     import base64
     from aiogram.types import BufferedInputFile
     from bot.services.license import is_feature_available
@@ -1280,7 +1280,7 @@ async def key_proto_handler(callback: CallbackQuery):
     await callback.answer()
     chat_id = callback.message.chat.id
     bot = callback.message.bot
-    nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}', '⬅️ К подключениям')])
+    nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')])
     qr = item.get('qr_png') or ''
     png = base64.b64decode(qr.split(',', 1)[1]) if qr.startswith('data:image/png;base64,') else None
     if item.get('kind') == 'conf':
@@ -1288,16 +1288,19 @@ async def key_proto_handler(callback: CallbackQuery):
             chat_id,
             BufferedInputFile(item['config_text'].encode('utf-8'), filename=item.get('filename') or 'config.conf'),
             caption=(
-                f"📄 <b>Конфиг {item['protocol_label']}</b>\n\n"
+                f"⬇️ <b>СКАЧАЙТЕ ЭТОТ ФАЙЛ</b> — конфиг {item['protocol_label']}\n"
+                f"📄 <code>{escape_html(item.get('filename') or 'config.conf')}</code>\n\n"
+                '<b>Как подключиться:</b>\n'
                 '1. Установите приложение <b>AmneziaWG</b> (или AmneziaVPN)\n'
-                '2. Добавьте туннель из этого файла или отсканируйте QR\n'
+                '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
+                '   или отсканируйте QR-код ниже\n'
                 '3. Никому не пересылайте файл: в нём ваш личный ключ'
             ),
             parse_mode='HTML',
             reply_markup=None if png else nav,
         )
         if png:
-            await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код конфига', reply_markup=nav)
+            await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='📷 Или отсканируйте QR-код в приложении AmneziaWG', reply_markup=nav)
     else:
         await bot.send_message(
             chat_id,
