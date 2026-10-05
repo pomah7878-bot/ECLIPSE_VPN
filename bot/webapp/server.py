@@ -1134,6 +1134,66 @@ def _build_renew_link(key: Dict[str, Any], webapp_url: str, bot_username: str) -
     return None
 
 
+async def _trial_device_guard(request: web.Request, key: Dict[str, Any]):
+    """v1.190: один пробный ключ на устройство. Возвращает готовый ответ для заблокированного
+    ключа или None. Любая ошибка = None (подписка не должна ломаться из-за этой проверки)."""
+    from bot.services import trial_device as td
+
+    if not td.guard_enabled() or not _is_trial_key(key):
+        return None
+    key_id, user_id = key.get("id"), key.get("user_id")
+    if not key_id or not user_id:
+        return None
+
+    if td.is_key_blocked(key_id):
+        td.touch_block(key_id)
+    else:
+        # берём только настоящий идентификатор клиента; синтетический (его подставляет бот) не годится
+        hwid_hash = td.normalize_hwid(request.headers.get("X-HWID"))
+        if not hwid_hash:
+            return None
+        res = td.check_and_register(hwid_hash, key_id, user_id)
+        if res["status"] != "duplicate":
+            return None
+        created = td.block_key(key_id, hwid_hash, user_id, res.get("owner_user_id"))
+        logger.warning(
+            f"trial_device_guard: пробный ключ {key_id} (user {user_id}) заблокирован — устройство уже "
+            f"использовало пробник (user {res.get('owner_user_id')})"
+        )
+        if created:
+            try:
+                from bot.utils.runtime_state import get_bot_instance
+                from config import ADMIN_IDS
+                bot_instance = get_bot_instance()
+                if bot_instance:
+                    for admin_id in ADMIN_IDS:
+                        try:
+                            await bot_instance.send_message(
+                                admin_id,
+                                f"⚠️ Повторный пробник на том же устройстве: ключ #{key_id} заблокирован. "
+                                f"Список и исключения: /trial_devices",
+                            )
+                        except Exception:
+                            pass
+            except Exception as notify_err:
+                logger.debug(f"trial_device_guard: уведомление не отправлено: {notify_err}")
+
+    from database.requests import get_effective_brand_name, get_effective_webapp_url
+    headers = {"Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store"}
+    brand = get_effective_brand_name()
+    if brand:
+        headers["profile-title"] = brand[:25]
+    headers["subscription-userinfo"] = "upload=0;download=0;total=0;expire=1"
+    headers["sub-info-text"] = "Пробный период на этом устройстве уже использован. Оформите подписку, чтобы продолжить."
+    link = _build_renew_link(key, (get_effective_webapp_url() or "").rstrip("/"), await _resolve_bot_username_for_webapp())
+    headers["sub-expire"] = "1"
+    if link:
+        headers["sub-expire-button-link"] = link
+        headers["sub-info-button-text"] = "Купить / продлить"
+        headers["sub-info-button-link"] = link
+    return web.Response(status=200, body=b"", headers=headers)
+
+
 async def handle_happ_subscription(request: web.Request) -> web.Response:
     """GET /happ-sub/{sub_id} — прокси-обёртка над реальной подпиской,
     отдаваемой панелью 3x-ui, добавляющая заголовки, которые понимает
@@ -1166,6 +1226,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     key = get_vpn_key_by_sub_id(sub_id)
     if not key:
         return web.Response(status=404, text="Not Found")
+
+    # v1.190: учёт устройств для пробных ключей
+    try:
+        _blocked_resp = await _trial_device_guard(request, key)
+    except Exception as _guard_err:
+        logger.warning(f"trial_device_guard: {_guard_err}")
+        _blocked_resp = None
+    if _blocked_resp is not None:
+        return _blocked_resp
 
     raw_url = await get_subscription_url_for_key(key)
     if not raw_url:

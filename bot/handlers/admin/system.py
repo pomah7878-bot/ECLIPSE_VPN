@@ -2116,6 +2116,48 @@ async def powered_by_cmd(message: Message):
     await message.answer(f"⚡ Метка «Powered by ECLIPSE»: {status}\n{can}")
 
 
+@router.message(Command("trial_devices"))
+async def trial_devices_cmd(message: Message):
+    """v1.190: учёт устройств для пробников.
+    /trial_devices — статус и последние блокировки; on/off — включить/выключить;
+    unblock <id ключа> — снять блокировку и разрешить это устройство."""
+    from bot.services import trial_device as td
+
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()[1:]
+    note = ""
+    if parts and parts[0].lower() in ("on", "off"):
+        td.set_guard_enabled(parts[0].lower() == "on")
+        note = "✅ Проверка включена.\n\n" if parts[0].lower() == "on" else "⏸ Проверка выключена.\n\n"
+    elif len(parts) == 2 and parts[0].lower() == "unblock" and parts[1].isdigit():
+        if td.unblock_key(int(parts[1])):
+            note = f"✅ Ключ #{parts[1]} разблокирован, устройство добавлено в исключения.\n\n"
+        else:
+            note = f"ℹ️ Для ключа #{parts[1]} блокировки нет.\n\n"
+    elif parts:
+        await message.answer("❌ Не понял. Примеры: /trial_devices, /trial_devices off, /trial_devices unblock 123")
+        return
+
+    st = td.stats()
+    lines = [
+        note + "📱 <b>Учёт устройств для пробников</b>",
+        f"Проверка: <b>{'включена' if td.guard_enabled() else 'выключена'}</b>",
+        f"Запомнено устройств: {st['devices']}, заблокировано ключей: {st['blocks']}",
+    ]
+    blocks = td.recent_blocks(10)
+    if blocks:
+        lines.append("\nПоследние блокировки:")
+        for b in blocks:
+            lines.append(
+                f"• ключ #{b['key_id']} (tg {b.get('tg') or '—'}), устройство уже было у tg {b.get('owner_tg') or '—'}, "
+                f"запросов: {b['hits']}, {b['created_at']}"
+            )
+        lines.append("\nСнять блокировку: /trial_devices unblock <id ключа>")
+    lines.append("\nВыключить: /trial_devices off")
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
 @router.message(Command("sub_mode"))
 async def sub_mode_cmd(message: Message):
     """v1.188: режимы выдачи подписки.
