@@ -48,6 +48,7 @@ GATED_FEATURES = {
     "trial_period": "🎁 Пробный период (автовыдача)",
     "referral_system": "🔗 Реферальная система",
     "app_import": "📲 Импорт в Happ/INCY/Karing",
+    "extra_protocols": "🛡 AmneziaWG / WireGuard / TUIC в списке подключений",
     "domain_autoprovision": "🌐 Автонастройка резервного домена (DNS+nginx+SSL)",
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
 }

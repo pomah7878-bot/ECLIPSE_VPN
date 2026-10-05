@@ -327,10 +327,10 @@ async def handle_key_inbounds(request: web.Request) -> web.Response:
 
     try:
         from bot.services.vpn_api import get_client
-        from bot.utils.inbound_links import parse_and_group_inbound_links, add_ping_to_groups
+        from bot.utils.inbound_links import build_connection_groups, add_ping_to_groups
         client = await get_client(key["server_id"])
         raw = await client.get_subscription_link(key["sub_id"])
-        groups = parse_and_group_inbound_links(raw)
+        groups = build_connection_groups(raw)  # v1.197: + AmneziaWG/WireGuard/TUIC (по лицензии)
         groups = await add_ping_to_groups(groups)
         return web.json_response({"groups": groups})
     except Exception as e:
@@ -3030,10 +3030,10 @@ async def handle_public_key_inbounds(request: web.Request) -> web.Response:
 
     try:
         from bot.services.vpn_api import get_client
-        from bot.utils.inbound_links import parse_and_group_inbound_links, add_ping_to_groups
+        from bot.utils.inbound_links import build_connection_groups, add_ping_to_groups
         client = await get_client(key["server_id"])
         raw = await client.get_subscription_link(key["sub_id"])
-        groups = parse_and_group_inbound_links(raw)
+        groups = build_connection_groups(raw)  # v1.197: + AmneziaWG/WireGuard/TUIC (по лицензии)
         groups = await add_ping_to_groups(groups)
         return web.json_response({"groups": groups})
     except Exception as e:

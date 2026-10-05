@@ -1,26 +1,199 @@
-"""Разбор и группировка отдельных ссылок подключения (vless/vmess/
-trojan/hysteria2) внутри одной подписки — для отображения клиенту
-списка конкретных inbound'ов вместо одной агрегированной ссылки.
+"""Разбор и группировка отдельных ссылок подключения внутри одной подписки
+(vless/vmess/trojan/hysteria2/tuic и конфиги AmneziaWG/WireGuard) — для
+отображения клиенту списка конкретных inbound'ов вместо одной агрегированной
+ссылки.
+
+v1.197: добавлены TUIC v5 (tuic://) и AmneziaWG/WireGuard. Панель 3x-ui отдаёт
+их в подписке строкой vpn://<base64 от .conf>; такую строку разбираем в
+обычный конфиг, который клиент может скачать файлом или отсканировать.
 """
+import base64
+import binascii
+import io
+import json
+import re
 import urllib.parse
+import zlib
 from typing import Any, Optional
+
+# Протоколы поверх UDP — TCP-пинг к их порту бессмысленен.
+UDP_PROTOCOLS = {"hysteria2", "tuic", "amneziawg", "wireguard"}
+# Протоколы, показ которых включается функцией лицензии "extra_protocols".
+EXTRA_PROTOCOLS = {"tuic", "amneziawg", "wireguard"}
+EXTRA_FEATURE = "extra_protocols"
+
+_PROTOCOL_LABELS = {
+    "vless": "Vless",
+    "vmess": "VMess",
+    "trojan": "Trojan",
+    "ss": "Shadowsocks",
+    "hysteria2": "Hysteria2",
+    "tuic": "TUIC",
+}
+_AWG_KEYS = {"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1"}
+
+
+def _b64_to_bytes(raw: str) -> Optional[bytes]:
+    """Декодирует base64 (обычный или URL-safe, с паддингом или без)."""
+    try:
+        text = urllib.parse.unquote(raw).strip().replace("+", "-").replace("/", "_")
+        return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+    except (binascii.Error, ValueError):
+        return None
+
+
+def _conf_from_amnezia_json(blob: bytes) -> Optional[str]:
+    """Официальный формат vpn:// приложения Amnezia: 4 байта длины + zlib(JSON).
+    Достаём из JSON готовый конфиг (последний встреченный), если он там есть."""
+    try:
+        data = json.loads(zlib.decompress(blob[4:]).decode("utf-8"))
+    except Exception:
+        return None
+    found: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "last_config" and isinstance(value, str):
+                    try:
+                        inner = json.loads(value)
+                        cfg = inner.get("config") if isinstance(inner, dict) else None
+                        if isinstance(cfg, str):
+                            found.append(cfg)
+                    except Exception:
+                        found.append(value)
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(data)
+    for cfg in found:
+        if "[Interface]" in cfg and "[Peer]" in cfg:
+            return cfg
+    return None
+
+
+def decode_vpn_link(link: str) -> Optional[str]:
+    """vpn://... -> текст конфига WireGuard/AmneziaWG или None."""
+    blob = _b64_to_bytes(link[len("vpn://"):])
+    if not blob:
+        return None
+    try:
+        text = blob.decode("utf-8")
+        if "[Interface]" in text and "[Peer]" in text:
+            return text.strip() + "\n"
+    except UnicodeDecodeError:
+        pass
+    cfg = _conf_from_amnezia_json(blob)
+    return (cfg.strip() + "\n") if cfg else None
+
+
+def parse_conf(text: str) -> Optional[dict[str, Any]]:
+    """Разбирает конфиг WireGuard/AmneziaWG: секции, endpoint, название."""
+    section = None
+    interface: dict[str, str] = {}
+    peer: dict[str, str] = {}
+    comment = ""
+    peer_comment = ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            comment = line.lstrip("#").strip()
+            continue
+        low = line.lower()
+        if low == "[interface]":
+            section = interface
+            continue
+        if low == "[peer]":
+            section = peer
+            peer_comment = comment
+            continue
+        if section is None or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        section[key.strip()] = value.strip()
+    endpoint = peer.get("Endpoint", "")
+    match = re.match(r"^\[?([^\]]+?)\]?:(\d{1,5})$", endpoint)
+    if not match or not interface or not peer:
+        return None
+    is_awg = any(k.lower() in _AWG_KEYS for k in interface)
+    return {
+        "host": match.group(1),
+        "port": int(match.group(2)),
+        "name": peer_comment,
+        "protocol": "amneziawg" if is_awg else "wireguard",
+    }
+
+
+def _qr_png_data_url(payload: str) -> Optional[str]:
+    """QR-код локально (приватные ключи не отправляются сторонним сервисам)."""
+    try:
+        import qrcode
+
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=6,
+            border=2,
+        )
+        qr.add_data(payload)
+        qr.make(fit=True)
+        buf = io.BytesIO()
+        qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return None
+
+
+def _parse_vpn_link(link: str) -> Optional[dict[str, Any]]:
+    conf = decode_vpn_link(link)
+    if not conf:
+        return None
+    info = parse_conf(conf)
+    if not info:
+        return None
+    protocol = info["protocol"]
+    is_awg = protocol == "amneziawg"
+    return {
+        "protocol": protocol,
+        "protocol_label": "AmneziaWG" if is_awg else "WireGuard",
+        "transport_label": "UDP",
+        "security_label": "AWG" if is_awg else "WG",
+        "host": info["host"],
+        "port": info["port"],
+        "name": info["name"] or ("AmneziaWG" if is_awg else "WireGuard"),
+        "link": link,
+        "kind": "conf",
+        "config_text": conf,
+        "filename": f"{protocol}-{re.sub(r'[^A-Za-z0-9.-]', '_', info['host'])}.conf",
+    }
 
 
 def parse_inbound_link(link: str) -> Optional[dict[str, Any]]:
     """Разбирает одну ссылку на составные части.
 
     Args:
-        link: Полная ссылка (vless://..., hysteria2://... и т.п.)
+        link: Полная ссылка (vless://..., hysteria2://..., tuic://..., vpn://...)
 
     Returns:
-        Словарь {protocol, host, port, name, link} или None при ошибке разбора.
+        Словарь {protocol, host, port, name, link, kind} или None при ошибке.
+        `kind` — "link" (обычная ссылка) или "conf" (конфиг-файл WG/AWG,
+        тогда есть ещё config_text и filename).
         `name` — это remark из ссылки (уже красиво оформлен панелью,
         с флагами и медалями приоритета — используем как есть).
     """
     try:
+        if link.lower().startswith("vpn://"):
+            return _parse_vpn_link(link)
+
         parsed = urllib.parse.urlparse(link)
         if not parsed.hostname or not parsed.port:
             return None
+        scheme = parsed.scheme.lower()
         name = urllib.parse.unquote(parsed.fragment) if parsed.fragment else parsed.hostname
         query = urllib.parse.parse_qs(parsed.query)
 
@@ -32,20 +205,23 @@ def parse_inbound_link(link: str) -> Optional[dict[str, Any]]:
             security_label = "REALITY"
         elif security_raw == "tls":
             security_label = "TLS"
-        elif parsed.scheme == "hysteria2":
+        elif scheme in ("hysteria2", "tuic"):
             security_label = "TLS"
         else:
             security_label = security_raw.upper() or "NONE"
+        if scheme == "tuic":
+            net_type = "QUIC"
 
         return {
-            "protocol": parsed.scheme,
-            "protocol_label": "Hysteria2" if parsed.scheme == "hysteria2" else "Vless",
+            "protocol": scheme,
+            "protocol_label": _PROTOCOL_LABELS.get(scheme, scheme.upper() or "Vless"),
             "transport_label": net_type,
             "security_label": security_label,
             "host": parsed.hostname,
             "port": parsed.port,
             "name": name.strip(),
             "link": link,
+            "kind": "link",
         }
     except Exception:
         return None
@@ -59,7 +235,7 @@ def parse_and_group_inbound_links(raw_links_text: str) -> list[dict[str, Any]]:
         raw_links_text: Сырой текст из get_subscription_link (\n-разделённый)
 
     Returns:
-        Список групп: [{host, inbounds: [{protocol, port, name, link}, ...]}],
+        Список групп: [{host, inbounds: [{protocol, port, name, link, ...}, ...]}],
         отсортировано по хосту для стабильного порядка.
     """
     if not raw_links_text:
@@ -74,7 +250,7 @@ def parse_and_group_inbound_links(raw_links_text: str) -> list[dict[str, Any]]:
         if not parsed:
             continue
         host = parsed["host"]
-        groups.setdefault(host, []).append({
+        item = {
             "protocol": parsed["protocol"],
             "protocol_label": parsed["protocol_label"],
             "transport_label": parsed["transport_label"],
@@ -82,12 +258,58 @@ def parse_and_group_inbound_links(raw_links_text: str) -> list[dict[str, Any]]:
             "port": parsed["port"],
             "name": parsed["name"],
             "link": parsed["link"],
-        })
+            "kind": parsed.get("kind", "link"),
+        }
+        if item["kind"] == "conf":
+            item["config_text"] = parsed["config_text"]
+            item["filename"] = parsed["filename"]
+        groups.setdefault(host, []).append(item)
 
     return [
         {"host": host, "inbounds": inbounds}
         for host, inbounds in sorted(groups.items())
     ]
+
+
+def extra_protocols_allowed() -> bool:
+    """Включена ли функция лицензии «AmneziaWG/WireGuard/TUIC в подключениях»."""
+    try:
+        from bot.services.license import is_feature_available
+        return bool(is_feature_available(EXTRA_FEATURE))
+    except Exception:
+        return False
+
+
+def filter_extra_protocols(groups: list[dict], allowed: bool) -> list[dict]:
+    """Без лицензии убирает AmneziaWG/WireGuard/TUIC из списка (остальное — как раньше)."""
+    if allowed:
+        return groups
+    result = []
+    for group in groups:
+        kept = [ib for ib in group["inbounds"] if ib["protocol"] not in EXTRA_PROTOCOLS]
+        if kept:
+            result.append({"host": group["host"], "inbounds": kept})
+    return result
+
+
+def attach_local_qr(groups: list[dict]) -> list[dict]:
+    """Для новых протоколов делаем QR на нашей стороне: в конфиге лежит
+    приватный ключ клиента, отдавать его сторонним сервисам нельзя."""
+    for group in groups:
+        for ib in group["inbounds"]:
+            if ib["protocol"] in EXTRA_PROTOCOLS:
+                payload = ib.get("config_text") or ib["link"]
+                qr = _qr_png_data_url(payload)
+                if qr:
+                    ib["qr_png"] = qr
+    return groups
+
+
+def build_connection_groups(raw_links_text: str) -> list[dict[str, Any]]:
+    """Готовый список подключений для бота, мини-приложения и сайта."""
+    groups = parse_and_group_inbound_links(raw_links_text)
+    groups = filter_extra_protocols(groups, extra_protocols_allowed())
+    return attach_local_qr(groups)
 
 
 def _tcp_ping(host: str, port: int, timeout: float = 2.0) -> int | None:
@@ -115,7 +337,7 @@ async def add_ping_to_groups(groups: list[dict]) -> list[dict]:
     for group in groups:
         tcp_pings_this_host = []
         for inbound in group["inbounds"]:
-            if inbound["protocol"] == "hysteria2":
+            if inbound["protocol"] in UDP_PROTOCOLS:
                 inbound["latency_ms"] = None
                 inbound["ping_unsupported"] = True
                 inbound["is_approximate"] = False
@@ -129,14 +351,14 @@ async def add_ping_to_groups(groups: list[dict]) -> list[dict]:
             if latency is not None:
                 tcp_pings_this_host.append(latency)
 
-        # Hysteria2 работает по UDP/QUIC — обычный TCP-пинг технически
-        # неприменим напрямую к его порту. Вместо пустого поля показываем
-        # приближённую оценку — среднюю задержку TCP-подключений того же
-        # физического хоста (помечено как "≈", не точное измерение).
+        # Hysteria2/TUIC/AmneziaWG работают по UDP — обычный TCP-пинг
+        # технически неприменим напрямую к их порту. Вместо пустого поля
+        # показываем приближённую оценку — среднюю задержку TCP-подключений
+        # того же физического хоста (помечено как "≈", не точное измерение).
         if tcp_pings_this_host:
             approx = round(sum(tcp_pings_this_host) / len(tcp_pings_this_host))
             for inbound in group["inbounds"]:
-                if inbound["protocol"] == "hysteria2":
+                if inbound["protocol"] in UDP_PROTOCOLS:
                     inbound["latency_ms"] = approx
                     inbound["ping_unsupported"] = False
                     inbound["is_approximate"] = True
