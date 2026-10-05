@@ -440,6 +440,29 @@ def _resolve_key_delivery_back(ctx: dict) -> Optional[dict]:
     return {"callback_data": "my_keys"}
 
 
+def _resolve_key_protocols(ctx: dict) -> Optional[dict]:
+    """v1.198: «🔌 Подключения» на экране «Показать подписку» — список протоколов
+    подписки (AmneziaWG/WireGuard/TUIC и др.). Только для ключей с подпиской и
+    только если включена функция лицензии extra_protocols."""
+    key_id = _get_renew_key_id(ctx)
+    if not key_id:
+        return None
+    from bot.services.license import is_feature_available
+    if not is_feature_available("extra_protocols"):
+        return None
+    telegram_id = ctx.get('telegram_id')
+    if not telegram_id:
+        return None
+    try:
+        from database.requests import get_key_details_for_user
+        key = get_key_details_for_user(int(key_id), int(telegram_id))
+    except Exception:
+        return None
+    if not key or not key.get('sub_id') or not key.get('server_id'):
+        return None
+    return {"callback_data": f"key_protocols:{key_id}"}
+
+
 def _resolve_key_traffic_chart(ctx: dict) -> Optional[dict]:
     """Кнопка графика трафика ключа (14 дней) — на экране выдачи ключа/
     подписки (key_delivery), рядом с «Мои ключи». Доступна всегда, пока
@@ -755,6 +778,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_rename": _resolve_key_rename,
     "btn_key_auto_renew_toggle": _resolve_key_auto_renew_toggle,
     "btn_key_devices": _resolve_key_devices,
+    "btn_key_protocols": _resolve_key_protocols,
     "btn_balance_topup": _resolve_balance_topup,
     "btn_key_traffic_chart": _resolve_key_traffic_chart,
     "btn_key_import_happ": _resolve_key_import_happ,

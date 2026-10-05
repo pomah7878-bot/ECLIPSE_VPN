@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 140
+LATEST_VERSION = 141
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3234,6 +3234,43 @@ def migration_133(conn: sqlite3.Connection) -> None:
     logger.info("Migration v133 applied: кнопки импорта убраны с главного экрана")
 
 
+def migration_141(conn: sqlite3.Connection) -> None:
+    """Версия 1.198: кнопка «🔌 Подключения» на экране «Показать подписку» (key_delivery).
+    Ставится отдельной строкой над «Назад / На главную»: строки от «Назад» и ниже
+    сдвигаются на одну вниз. Правит buttons_default и buttons_custom, если кнопки ещё нет."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        logger.info("Migration v141: страница 'key_delivery' не найдена, пропускаю")
+        return
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if any(b.get("id") == "btn_key_protocols" for b in buttons):
+            continue
+        back_row = next((b.get("row") for b in buttons if b.get("id") == "btn_key_delivery_back"), None)
+        if back_row is None:
+            back_row = max([int(b.get("row", 0)) for b in buttons] + [-1]) + 1
+        for b in buttons:
+            if int(b.get("row", 0)) >= int(back_row):
+                b["row"] = int(b.get("row", 0)) + 1
+        buttons.append({
+            "id": "btn_key_protocols", "label": "🔌 Подключения", "color": "secondary",
+            "row": int(back_row), "col": 0, "is_hidden": False, "action_type": "system", "action_value": None,
+        })
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+    logger.info("Migration v141 applied: btn_key_protocols добавлена на key_delivery")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3301,6 +3338,7 @@ MIGRATIONS = {
     138: migration_138,
     139: migration_139,
     140: migration_140,
+    141: migration_141,
 }
 
 

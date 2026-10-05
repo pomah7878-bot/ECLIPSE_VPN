@@ -270,13 +270,6 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         protocol=protocol,
         prepend_html=prepend_text,
     )
-    _extra_rows = None
-    try:
-        from bot.services.license import is_feature_available as _lic_extra
-        if key.get('sub_id') and not is_unconfigured and _lic_extra('extra_protocols'):
-            _extra_rows = [[InlineKeyboardButton(text='🔌 Подключения', callback_data=f'key_protocols:{key_id}')]]
-    except Exception:
-        _extra_rows = None
     await render_page(
         message,
         page_key='key_details',
@@ -294,7 +287,6 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         # «Назад» и «На главную» — всегда последней строкой, ниже
         # «Устройства» и любых других добавляемых кнопок, независимо от
         # того, в каком порядке админ расставил кнопки в редакторе страниц.
-        append_buttons=_extra_rows,
         bottom_button_ids={'btn_my_keys', 'btn_back_main'},
     )
 
@@ -1190,11 +1182,20 @@ async def import_eclipse_handler(callback: CallbackQuery):
     key_id = _parse_import_callback_key_id(callback.data, "import_eclipse")
     await _handle_import_deeplink(callback, "eclipse", "ECLIPSE VPN", key_id=key_id)
 
-# ===== v1.197: экран «Подключения» — все протоколы подписки (в т.ч. AmneziaWG/WireGuard/TUIC)
+# ===== v1.198: экран «Подключения» — все протоколы подписки (в т.ч. AmneziaWG/WireGuard/TUIC)
+# Открывается кнопкой «🔌 Подключения» на экране «Показать подписку». Везде есть «Назад» и «На главную».
 
 def _connection_tag(item: dict) -> str:
     import hashlib
     return hashlib.md5((item.get('link') or '').encode('utf-8')).hexdigest()[:8]
+
+
+def _connections_nav(key_id: int, back_callback: Optional[str] = None, back_text: str = '⬅️ Назад') -> list:
+    """Нижняя строка навигации экранов «Подключения»: назад и на главную."""
+    return [
+        InlineKeyboardButton(text=back_text, callback_data=back_callback or f'key_show:{key_id}'),
+        InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
+    ]
 
 
 async def _load_key_connections(key: dict) -> list:
@@ -1209,24 +1210,27 @@ async def _load_key_connections(key: dict) -> list:
 async def key_protocols_handler(callback: CallbackQuery):
     """Список подключений ключа по протоколам; по нажатию — конфиг/ссылка."""
     from bot.services.license import is_feature_available
+    from bot.utils.text import safe_edit_or_send
     key_id = int(callback.data.split(':')[1])
     if not is_feature_available('extra_protocols'):
         await callback.answer('🔒 Недоступно на вашем тарифе', show_alert=True)
         return
     from database.requests import get_key_details_for_user
     key = get_key_details_for_user(key_id, callback.from_user.id)
-    back = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')
-    ]])
     if not key or not key.get('sub_id') or not key.get('server_id'):
         await callback.answer('Ключ не найден', show_alert=True)
         return
     await callback.answer('Загружаю подключения…')
+    nav_only = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id)])
     try:
         groups = await _load_key_connections(key)
     except Exception as e:
         logger.warning(f'Подключения ключа {key_id}: {e}')
-        await callback.message.edit_text('Не удалось получить список подключений. Попробуйте чуть позже.', reply_markup=back)
+        await safe_edit_or_send(
+            callback.message,
+            '❌ Не удалось получить список подключений. Попробуйте чуть позже.',
+            reply_markup=nav_only,
+        )
         return
     rows = []
     for group in groups:
@@ -1234,21 +1238,22 @@ async def key_protocols_handler(callback: CallbackQuery):
             label = f"{ib['protocol_label']} · {ib['transport_label']}/{ib['security_label']} — {ib['name']}"
             rows.append([InlineKeyboardButton(text=label[:60], callback_data=f"key_proto:{key_id}:{_connection_tag(ib)}")])
     if not rows:
-        await callback.message.edit_text('Подключений не найдено.', reply_markup=back)
+        await safe_edit_or_send(callback.message, 'Подключений не найдено.', reply_markup=nav_only)
         return
-    rows.append([InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')])
+    rows.append(_connections_nav(key_id))
     text = (
         '🔌 <b>Подключения</b>\n\n'
         'Выберите протокол — пришлю конфиг или ссылку.\n\n'
         '• <b>AmneziaWG / WireGuard</b> — файл .conf и QR для приложения AmneziaWG\n'
         '• <b>TUIC, Hysteria2, Vless</b> — ссылка для импорта в клиент'
     )
-    await callback.message.edit_text(text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+    await safe_edit_or_send(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
 @router.callback_query(F.data.startswith('key_proto:'))
 async def key_proto_handler(callback: CallbackQuery):
-    """Отправляет выбранное подключение: .conf + QR для WG/AWG, ссылка для остальных."""
+    """Отправляет выбранное подключение: .conf + QR для WG/AWG, ссылка для остальных.
+    Под последним сообщением — «К подключениям» и «На главную»."""
     import base64
     from aiogram.types import BufferedInputFile
     from bot.services.license import is_feature_available
@@ -1274,30 +1279,31 @@ async def key_proto_handler(callback: CallbackQuery):
         return
     await callback.answer()
     chat_id = callback.message.chat.id
+    bot = callback.message.bot
+    nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}', '⬅️ К подключениям')])
+    qr = item.get('qr_png') or ''
+    png = base64.b64decode(qr.split(',', 1)[1]) if qr.startswith('data:image/png;base64,') else None
     if item.get('kind') == 'conf':
-        title = item['protocol_label']
-        await callback.message.bot.send_document(
+        await bot.send_document(
             chat_id,
             BufferedInputFile(item['config_text'].encode('utf-8'), filename=item.get('filename') or 'config.conf'),
             caption=(
-                f'📄 <b>Конфиг {title}</b>\n\n'
+                f"📄 <b>Конфиг {item['protocol_label']}</b>\n\n"
                 '1. Установите приложение <b>AmneziaWG</b> (или AmneziaVPN)\n'
                 '2. Добавьте туннель из этого файла или отсканируйте QR\n'
                 '3. Никому не пересылайте файл: в нём ваш личный ключ'
             ),
             parse_mode='HTML',
+            reply_markup=None if png else nav,
         )
-        qr = item.get('qr_png') or ''
-        if qr.startswith('data:image/png;base64,'):
-            png = base64.b64decode(qr.split(',', 1)[1])
-            await callback.message.bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код конфига')
+        if png:
+            await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код конфига', reply_markup=nav)
     else:
-        await callback.message.bot.send_message(
+        await bot.send_message(
             chat_id,
             f"🔗 <b>{escape_html(item['protocol_label'])}</b> — {escape_html(item['name'])}\n\n<code>{escape_html(item['link'])}</code>",
             parse_mode='HTML',
+            reply_markup=None if png else nav,
         )
-        qr = item.get('qr_png') or ''
-        if qr.startswith('data:image/png;base64,'):
-            png = base64.b64decode(qr.split(',', 1)[1])
-            await callback.message.bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код')
+        if png:
+            await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код', reply_markup=nav)
