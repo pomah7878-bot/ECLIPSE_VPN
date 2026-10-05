@@ -1301,7 +1301,7 @@ async def key_proto_handler(callback: CallbackQuery):
         )
         if png:
             last_msg = await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='📷 Или отсканируйте QR-код в приложении AmneziaWG', reply_markup=nav)
-            _conn_register(chat_id, first_msg, last_msg)
+            _conn_register(chat_id, first_msg, last_msg, callback.message.message_id)
     else:
         first_msg = await bot.send_message(
             chat_id,
@@ -1311,20 +1311,20 @@ async def key_proto_handler(callback: CallbackQuery):
         )
         if png:
             last_msg = await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код', reply_markup=nav)
-            _conn_register(chat_id, first_msg, last_msg)
+            _conn_register(chat_id, first_msg, last_msg, callback.message.message_id)
 
 
 # ===== v1.199: удаление файла/ссылки при возврате назад =====
 _CONN_COMPANIONS: dict = {}
 
 
-def _conn_register(chat_id, first_msg, last_msg):
+def _conn_register(chat_id, first_msg, last_msg, list_msg_id=None):
     """Запоминает, какие сообщения прислали вместе с QR (последнее — с кнопками)."""
     try:
         if first_msg and last_msg:
             if len(_CONN_COMPANIONS) > 500:
                 _CONN_COMPANIONS.clear()
-            _CONN_COMPANIONS[(chat_id, last_msg.message_id)] = [first_msg.message_id]
+            _CONN_COMPANIONS[(chat_id, last_msg.message_id)] = [first_msg.message_id] + ([list_msg_id] if list_msg_id else [])
     except Exception:
         pass
 
