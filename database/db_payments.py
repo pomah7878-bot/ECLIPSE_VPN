@@ -12,6 +12,15 @@ BASE62_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxy
 from .db_tariffs import get_tariff_by_id
 from .db_settings import get_setting, set_setting
 
+
+def _stars_amount(tariff) -> int:
+    """Цена тарифа в звёздах с учётом автоцены (v1.193)."""
+    try:
+        from bot.services.stars_pricing import effective_price_stars
+        return int(effective_price_stars(tariff))
+    except Exception:
+        return int(tariff.get('price_stars') or 0)
+
 DEFAULT_REFERRAL_NEW_REF_NOTIFICATION_TEXT = (
     "👥 <b>Новый реферал</b>\n\n"
     "По вашей ссылке зарегистрировался пользователь.\n\n"
@@ -548,7 +557,7 @@ def create_pending_order(
         """, (
             user_id, tariff_id, payment_type, vpn_key_id,
             tariff['price_cents'] if tariff else 0,
-            tariff['price_stars'] if tariff else 0,
+            _stars_amount(tariff) if tariff else 0,
             tariff['duration_days'] if tariff else None
         ))
         payment_id = cursor.lastrowid
@@ -729,7 +738,7 @@ def update_order_tariff(order_id: str, tariff_id: int, payment_type: Optional[st
         """, (
             tariff_id, 
             tariff['price_cents'], 
-            tariff['price_stars'], 
+            _stars_amount(tariff), 
             tariff['duration_days'], 
             payment_type,
             order_id

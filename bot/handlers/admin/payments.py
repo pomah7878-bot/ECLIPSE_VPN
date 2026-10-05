@@ -177,6 +177,133 @@ async def toggle_stars(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================================
+# STARS AUTO PRICE (v1.193)
+# ============================================================================
+
+_STARS_MARKUPS = (0, 3, 5, 10, 15)
+_STARS_NETS = (0.013, 0.015, 0.02)
+
+
+def _stars_price_screen():
+    from bot.services import stars_pricing as sp
+    from database.requests import get_all_tariffs
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    on = sp.auto_enabled()
+    net = sp.net_usd()
+    mk = sp.markup_pct()
+    rate = sp.rate_rub()
+
+    lines = [
+        "⭐ <b>Цены в Telegram Stars</b>",
+        "",
+        "Бот сам считает цену в звёздах из рублёвой цены тарифа по курсу ЦБ — так, чтобы вы получали не меньше, чем при оплате рублями.",
+        "",
+        f"📌 <b>Автоцена:</b> {'🟢 включена' if on else '⚪ выключена (цены вводятся вручную в тарифах)'}",
+        f"💱 <b>Курс ЦБ:</b> {f'{rate:.2f} ₽ за $1' if rate else 'ещё не получен — пока действуют ручные цены'}",
+        f"💰 <b>Вы получаете за 1 ⭐:</b> ${net:g}" + (f" (≈ {net * rate:.2f} ₽)" if rate else ""),
+        f"🛡 <b>Запас в вашу пользу:</b> +{mk}%",
+        "",
+        "<b>Как считается:</b>",
+        "• цена в ₽ переводится в доллары по курсу ЦБ",
+        "• добавляется запас",
+        "• результат делится на выплату за 1 ⭐",
+        "• округляется вверх",
+    ]
+    try:
+        tariffs = [t for t in get_all_tariffs(include_hidden=False)][:8]
+    except Exception:
+        tariffs = []
+    if tariffs:
+        lines += ["", "<b>Цены сейчас:</b>"]
+        for t in tariffs:
+            stars = sp.effective_price_stars(t)
+            lines.append(f"• {escape_html(str(t['name']))}: {t.get('price_rub') or 0} ₽ → {stars} ⭐")
+    lines += [
+        "",
+        "ℹ️ Выплату за 1 ⭐ проверьте в своих выплатах Telegram: если она другая — выберите ближайший вариант ниже.",
+    ]
+
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(
+        text='⏸ Выключить автоцену' if on else '▶️ Включить автоцену',
+        callback_data='admin_stars_price_toggle'))
+    b.row(*[InlineKeyboardButton(
+        text=(f'✅ {m}%' if m == mk else f'{m}%'),
+        callback_data=f'admin_stars_markup:{m}') for m in _STARS_MARKUPS])
+    b.row(*[InlineKeyboardButton(
+        text=(f'✅ ${n:g}' if abs(n - net) < 1e-9 else f'${n:g}'),
+        callback_data=f'admin_stars_net:{n:g}') for n in _STARS_NETS])
+    b.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_payments'),
+          InlineKeyboardButton(text='🈴 На главную', callback_data='start'))
+    return "\n".join(lines), b.as_markup()
+
+
+async def _show_stars_price(callback: CallbackQuery):
+    from bot.services.stars_pricing import refresh_stars_rate
+    await refresh_stars_rate()
+    text, kb = _stars_price_screen()
+    await safe_edit_or_send(callback.message, text, reply_markup=kb)
+
+
+@router.callback_query(F.data == "admin_stars_price")
+async def admin_stars_price(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await _show_stars_price(callback)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_stars_price_toggle")
+async def admin_stars_price_toggle(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.stars_pricing import auto_enabled
+    set_setting('stars_auto_price', '0' if auto_enabled() else '1')
+    await _show_stars_price(callback)
+    await callback.answer("Готово")
+
+
+@router.callback_query(F.data.startswith("admin_stars_markup:"))
+async def admin_stars_markup(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    try:
+        value = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer("Некорректное значение", show_alert=True)
+        return
+    if value not in _STARS_MARKUPS:
+        await callback.answer("Некорректное значение", show_alert=True)
+        return
+    set_setting('stars_markup_pct', str(value))
+    await _show_stars_price(callback)
+    await callback.answer("Готово")
+
+
+@router.callback_query(F.data.startswith("admin_stars_net:"))
+async def admin_stars_net(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    try:
+        value = float(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer("Некорректное значение", show_alert=True)
+        return
+    if value not in _STARS_NETS:
+        await callback.answer("Некорректное значение", show_alert=True)
+        return
+    set_setting('stars_net_usd', f'{value:g}')
+    await _show_stars_price(callback)
+    await callback.answer("Готово")
+
+
+# ============================================================================
 # TOGGLE DEMO PAYMENT
 # ============================================================================
 

@@ -29,6 +29,7 @@ def payments_menu_kb(stars_enabled: bool, cards_enabled: bool, qr_enabled: bool=
     builder.row(
         InlineKeyboardButton(text=f'{stars_status} Telegram Stars', callback_data='admin_payments_toggle_stars'),
     )
+    builder.row(InlineKeyboardButton(text='⭐ Цены в Stars (авто по курсу)', callback_data='admin_stars_price'))
     cards_status = _status_dot(cards_enabled)
     qr_status = _status_dot(qr_enabled)
     builder.row(

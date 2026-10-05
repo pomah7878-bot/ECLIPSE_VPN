@@ -55,7 +55,8 @@ def _amount_unit(payment_type: str) -> str:
 
 def _base_amount(tariff: Dict[str, Any], payment_type: str) -> int:
     if payment_type == "stars":
-        return int(tariff.get("price_stars") or 0)
+        from bot.services.stars_pricing import effective_price_stars
+        return int(effective_price_stars(tariff))
     if payment_type == "crypto":
         return int(tariff.get("price_cents") or 0)
     if payment_type in RUB_PAYMENT_TYPES or _is_custom_rub_payment_type(payment_type):

@@ -21,6 +21,8 @@ from bot.utils.payment_text import public_description as _pub  # v1.147 neutral 
 @router.callback_query(F.data.startswith('renew_stars_tariff:'))
 async def renew_stars_select_tariff(callback: CallbackQuery):
     """Selecting a tariff for renewal (Stars)."""
+    from bot.services.stars_pricing import refresh_stars_rate
+    await refresh_stars_rate()
     from database.requests import get_key_details_for_user, get_all_tariffs
     from bot.keyboards.user import renew_tariff_select_kb
     parts = callback.data.split(':')
@@ -57,6 +59,8 @@ async def renew_stars_select_tariff(callback: CallbackQuery):
 @router.callback_query(F.data.startswith('renew_pay_stars:'))
 async def renew_stars_invoice(callback: CallbackQuery, state: FSMContext):
     """Invoice for renewal (Stars)."""
+    from bot.services.stars_pricing import refresh_stars_rate
+    await refresh_stars_rate()
     from aiogram.types import LabeledPrice
     from database.requests import get_tariff_by_id, get_user_internal_id, create_pending_order, get_key_details_for_user, update_order_tariff, update_payment_type
     parts = callback.data.split(':')
@@ -126,6 +130,8 @@ async def renew_stars_invoice(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith('pay_stars'))
 async def pay_stars_select_tariff(callback: CallbackQuery):
     """Selecting a Stars payment plan."""
+    from bot.services.stars_pricing import refresh_stars_rate
+    await refresh_stars_rate()
     from database.requests import get_all_tariffs
     from bot.keyboards.user import tariff_select_kb
     from bot.keyboards.admin import home_only_kb
@@ -156,6 +162,8 @@ async def pay_stars_select_tariff(callback: CallbackQuery):
 @router.callback_query(F.data.startswith('stars_pay:'))
 async def pay_stars_invoice(callback: CallbackQuery, state: FSMContext):
     """Creating an invoice for Stars payment."""
+    from bot.services.stars_pricing import refresh_stars_rate
+    await refresh_stars_rate()
     from aiogram.types import LabeledPrice
     from database.requests import get_tariff_by_id, update_order_tariff, update_payment_type
     parts = callback.data.split(':')

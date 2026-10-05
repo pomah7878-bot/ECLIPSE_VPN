@@ -5,6 +5,7 @@ Inline keyboards for ordinary users.
 """
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from bot.services.stars_pricing import effective_price_stars as _eps, auto_enabled as _stars_auto
 
 
 def language_choice_kb() -> InlineKeyboardMarkup:
@@ -189,7 +190,7 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
                 prefix = "balance_pay"
                 emoji = '💎'
             else:
-                price_display = f"{tariff['price_stars']} звёзд"
+                price_display = f"{_eps(tariff)} звёзд"
                 prefix = "stars_pay"
                 emoji = '⭐'
                 
@@ -331,7 +332,7 @@ def renew_tariff_select_kb(tariffs: list, key_id: int, order_id: str = None, is_
             prefix = "balance_pay"
             emoji = '💎'
         else:
-            price_display = f"{tariff['price_stars']} звёзд"
+            price_display = f"{_eps(tariff)} звёзд"
             prefix = "renew_pay_stars"
             emoji = '⭐'
             

@@ -1590,7 +1590,7 @@ async def handle_landing_tariffs(request: web.Request) -> web.Response:
             "duration_days": t.get("duration_days"),
             "traffic_limit_gb": t.get("traffic_limit_gb", 0),
             "price_rub": t.get("price_rub"),
-            "price_stars": t.get("price_stars"),
+            "price_stars": __import__("bot.services.stars_pricing", fromlist=["x"]).effective_price_stars(t),
         }
         for t in tariffs
     ]

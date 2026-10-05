@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton
 
 from bot.utils.datetime_format import format_date_for_display
 from bot.utils.text import escape_html
+from bot.services.stars_pricing import effective_price_stars as _eps, auto_enabled as _stars_auto
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
             price_str = f'{price_usd:g}'.replace('.', ',')
             prices.append(f'${escape_html(price_str)}')
         if stars_enabled:
-            prices.append(f"{tariff['price_stars']} ⭐")
+            prices.append(f"{_eps(tariff)} ⭐")
         if (
             cards_enabled
             or yookassa_qr_enabled

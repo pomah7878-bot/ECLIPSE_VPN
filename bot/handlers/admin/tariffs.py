@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 from bot.utils.text import safe_edit_or_send
 
 router = Router()
+from bot.services.stars_pricing import effective_price_stars as _eps, auto_enabled as _stars_auto
 from bot.utils.admin import is_admin as _is_admin_guard
 router.callback_query.filter(lambda c: _is_admin_guard(c.from_user.id))
 router.message.filter(lambda m: m.from_user is not None and _is_admin_guard(m.from_user.id))
@@ -104,7 +105,7 @@ async def show_tariffs_list(callback: CallbackQuery, state: FSMContext):
             
             lines.append(
                 f"{status} <b>{tariff['name']}</b> — "
-                f"${price_str} / ⭐ {tariff['price_stars']} / ₽ {tariff.get('price_rub', 0)} / "
+                f"${price_str} / ⭐ {_eps(tariff)} / ₽ {tariff.get('price_rub', 0)} / "
                 f"{tariff['duration_days']} дн. / {traffic_text}"
             )
             
@@ -136,7 +137,8 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
     lines = [
         f"📋 <b>{tariff['name']}</b>\n",
         f"💰 Цена (USDT): <code>${price_str}</code>",
-        f"⭐ Цена (Stars): <code>{tariff['price_stars']}</code>",
+        (f"⭐ Цена (Stars): <code>{_eps(tariff)}</code> (авто, по курсу ЦБ)" if _stars_auto()
+         else f"⭐ Цена (Stars): <code>{tariff['price_stars']}</code>"),
         f"💳 Цена (₽): <code>{tariff.get('price_rub', 0)}</code>",
         f"📅 Длительность: <code>{tariff['duration_days']} дней</code>",
     ]
