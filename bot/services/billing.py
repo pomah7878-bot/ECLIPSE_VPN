@@ -950,6 +950,48 @@ def convert_to_rub_cents(amount_raw: int, payment_type: str, usd_rub_rate: int) 
         return amount_raw
 
 
+def _referral_already_rewarded(referrer_id: int, order: Optional[Dict[str, Any]]) -> bool:
+    """v1.195: награда этому рефереводу за этот заказ уже была (деньги или дни)."""
+    try:
+        order_id = str((order or {}).get('order_id') or '')
+        if not order_id:
+            return False
+        from database.requests import has_balance_operation_reference
+        if has_balance_operation_reference(
+            user_id=int(referrer_id), operation_type='credit', source='referral_reward',
+            reference_type='payment_order', reference_id=order_id,
+        ):
+            return True
+        from database.connection import get_db
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM key_operation_log WHERE user_id = ? AND source = 'referral_reward' "
+                "AND reference_type = 'payment_order' AND reference_id = ? LIMIT 1",
+                (int(referrer_id), order_id),
+            ).fetchone()
+            return bool(row)
+    except Exception as check_err:
+        logger.debug("Проверка повторной реферальной награды: %s", check_err)
+        return False
+
+
+def site_referral_allowed(order_id: str, referrer: Optional[Dict[str, Any]], buyer_user_id: Optional[int] = None) -> bool:
+    """v1.195: нельзя получить награду за собственную покупку на сайте."""
+    try:
+        if not referrer:
+            return False
+        if buyer_user_id and int(referrer.get('id') or 0) == int(buyer_user_id):
+            return False
+        from database.db_accounts import get_site_account_telegram_id_for_order
+        buyer_tg = get_site_account_telegram_id_for_order(str(order_id))
+        ref_tg = referrer.get('telegram_id')
+        if buyer_tg and ref_tg and int(buyer_tg) == int(ref_tg):
+            return False
+    except Exception as check_err:
+        logger.debug("Проверка самореферала: %s", check_err)
+    return True
+
+
 async def process_referral_reward(
     payer_id: int,
     period_days: int,
@@ -998,6 +1040,10 @@ async def process_referral_reward(
         referrer_id = get_user_referrer(current_user_id)
         if not referrer_id:
             break
+
+        if _referral_already_rewarded(referrer_id, order):
+            current_user_id = referrer_id
+            continue
 
         percent = active_levels.get(level_num)
         if percent is None:
@@ -1143,6 +1189,8 @@ async def process_site_referral_reward(
     if payment_type in ('balance', 'trial', 'promo_free') or amount_raw <= 0:
         return None
     if not is_referral_enabled():
+        return None
+    if _referral_already_rewarded(referrer_id, order):
         return None
 
     reward_type = get_referral_reward_type()
@@ -1339,6 +1387,22 @@ async def _run_payment_post_actions(
     except Exception as promo_err:
         logger.warning("Не удалось зафиксировать использование промокода order=%s: %s", order.get('order_id'), promo_err)
 
+    # v1.195: автокупон на следующую покупку (если включён админом) — один раз на заказ
+    try:
+        from bot.services.promotions import issue_auto_coupon_for_order, format_auto_coupon_text
+        _coupon = issue_auto_coupon_for_order(order)
+        if _coupon and bot is not None:
+            from database.requests import get_user_by_id as _get_user
+            _owner = _get_user(int(order['user_id'])) or {}
+            if _owner.get('telegram_id'):
+                await bot.send_message(
+                    int(_owner['telegram_id']),
+                    format_auto_coupon_text(_coupon).strip(),
+                    parse_mode='HTML',
+                )
+    except Exception as coupon_err:
+        logger.warning("Не удалось выдать автокупон order=%s: %s", order.get('order_id'), coupon_err)
+
     days = order.get('period_days') or order.get('duration_days') or 30
     _ref_events = await process_referral_reward(
         user_internal_id,
@@ -1355,7 +1419,7 @@ async def _run_payment_post_actions(
         site_ref_code = None if _ref_events else get_site_referrer_code_for_order(str(order.get('order_id') or ''))
         if site_ref_code:
             referrer = get_user_by_referral_code(site_ref_code)
-            if referrer:
+            if referrer and site_referral_allowed(str(order.get('order_id') or ''), referrer, order.get('user_id')):
                 await process_site_referral_reward(
                     referrer['id'], days, referral_amount, payment_type,
                     bot=bot, order=order,
@@ -1432,11 +1496,12 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
         return False
 
 
-async def process_payment_order(
+async def _process_payment_order_inner(
     order_id: str,
     *,
     bot: Any = None,
     process_referrals: bool = False,
+    _won: Optional[list] = None,
 ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
     """
     Завершает оплаченный заказ: отмечает его оплаченным (идемпотентно —
@@ -1474,6 +1539,8 @@ async def process_payment_order(
         won_order = complete_order(order_id)
         order = find_order_by_order_id(order_id) or order
         order['_payment_processed_now'] = bool(won_order)
+        if won_order and _won is not None:
+            _won.append(True)
 
     days = order.get('duration_days') or order.get('period_days') or 30
     vpn_key_id = order.get('vpn_key_id')
@@ -1484,14 +1551,19 @@ async def process_payment_order(
         if order['_payment_processed_now']:
             from bot.services.balance import credit_user_balance
             amount_cents = int(order.get('final_amount_cents') or order.get('amount_cents') or 0)
-            await credit_user_balance(
-                int(order['user_id']),
-                amount_cents,
-                source='topup',
-                reason='Пополнение личного баланса',
-                reference_type='payment',
-                reference_id=order_id,
-            )
+            from database.requests import has_balance_operation_reference as _has_topup
+            if not _has_topup(user_id=int(order['user_id']), operation_type='credit', source='topup',
+                              reference_type='payment', reference_id=order_id):
+                _topup = await credit_user_balance(
+                    int(order['user_id']),
+                    amount_cents,
+                    source='topup',
+                    reason='Пополнение личного баланса',
+                    reference_type='payment',
+                    reference_id=order_id,
+                )
+                if not _topup.get('ok'):
+                    raise RuntimeError(f"Не удалось зачислить пополнение по заказу {order_id}")
         amount_rub = int(order.get('final_amount_cents') or order.get('amount_cents') or 0) / 100
         text = f"✅ Баланс пополнен на {amount_rub:.2f} ₽!"
         return True, text, order
@@ -1507,10 +1579,14 @@ async def process_payment_order(
         # лимит устройств оставались от старого тарифа.
         if order['_payment_processed_now']:
             from bot.services.key_lifecycle import renew_key_access
+            _renew = None
             try:
-                await renew_key_access(vpn_key_id, days, reset_traffic=True, tariff_id=tariff_id)
+                _renew = await renew_key_access(vpn_key_id, days, reset_traffic=True, tariff_id=tariff_id)
             except Exception as e:
                 logger.error(f"Не удалось продлить ключ {vpn_key_id} для заказа {order_id}: {e}")
+            if not (_renew or {}).get('db_updated'):
+                # v1.195: срок не изменился — заказ вернётся в ожидание и будет оформлен повторно
+                raise RuntimeError(f"Ключ {vpn_key_id} не продлён для заказа {order_id}")
         order["_payment_action"] = "renewal"
         text = f"✅ Подписка продлена на {days} дней!"
     else:
@@ -1539,6 +1615,58 @@ async def process_payment_order(
             logger.error(f"Ошибка обработки реферального начисления для заказа {order_id}: {e}")
 
     return True, text, order
+
+
+async def _notify_admins_unfulfilled(bot: Any, order_id: str, error: Exception) -> None:
+    """v1.195: Stars/карты не имеют автоповтора — сообщаем админам об оплаченном, но не оформленном заказе."""
+    try:
+        if bot is None:
+            return
+        order = find_order_by_order_id(order_id) or {}
+        if str(order.get('payment_type') or '') not in ('stars', 'cards'):
+            return
+        from config import ADMIN_IDS
+        text = (
+            "⚠️ <b>Оплачен, но не оформлен</b>\n\n"
+            f"Заказ: <code>{order_id}</code>\n"
+            f"Способ: {order.get('payment_type')}\n"
+            f"Ошибка: {str(error)[:200]}\n\n"
+            "Заказ возвращён в ожидание. Оформите вручную или верните платёж (для Stars: /refund_stars "
+            f"{order_id})."
+        )
+        for admin_id in list(ADMIN_IDS)[:5]:
+            try:
+                await bot.send_message(admin_id, text, parse_mode='HTML')
+            except Exception:
+                pass
+    except Exception as notify_err:
+        logger.warning("Не удалось уведомить админов о неоформленном заказе %s: %s", order_id, notify_err)
+
+
+async def process_payment_order(
+    order_id: str,
+    *,
+    bot: Any = None,
+    process_referrals: bool = False,
+) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    """Завершает оплаченный заказ. v1.195: если после статуса «оплачен» выдача не
+    удалась, заказ возвращается в «ожидает» — автопроверка повторит оформление
+    (раньше такой заказ навсегда оставался оплаченным без ключа)."""
+    won: list = []
+    try:
+        return await _process_payment_order_inner(
+            order_id, bot=bot, process_referrals=process_referrals, _won=won,
+        )
+    except Exception as fulfil_err:
+        if won:
+            try:
+                from database.db_payments import reopen_paid_order
+                reopen_paid_order(order_id)
+            except Exception as reopen_err:
+                logger.error("Не удалось вернуть заказ %s в ожидание: %s", order_id, reopen_err)
+            logger.error("Заказ %s оплачен, но не оформлен: %s", order_id, fulfil_err)
+            await _notify_admins_unfulfilled(bot, order_id, fulfil_err)
+        raise
 
 
 async def complete_payment_order_background(
@@ -1627,7 +1755,7 @@ async def complete_payment_flow(
                 bot=message.bot,
                 payment_type=payment_type,
                 referral_amount=referral_amount,
-                balance_override_cents=balance_to_deduct,
+                balance_override_cents=0,  # v1.195: устаревшее состояние диалога не списывается
             )
 
             # Clearing FSM balance data

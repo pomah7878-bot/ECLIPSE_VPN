@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 139
+LATEST_VERSION = 140
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3150,6 +3150,15 @@ def migration_139(conn: sqlite3.Connection) -> None:
     logger.info("Migration v139 applied: trial_devices, trial_device_blocks")
 
 
+def migration_140(conn: sqlite3.Connection) -> None:
+    """Версия 1.195: payments.telegram_charge_id — идентификатор платежа Telegram
+    (нужен для возврата звёзд). Идемпотентно."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(payments)").fetchall()]
+    if cols and "telegram_charge_id" not in cols:
+        conn.execute("ALTER TABLE payments ADD COLUMN telegram_charge_id TEXT")
+    logger.info("Migration v140 applied: payments.telegram_charge_id")
+
+
 def migration_135(conn: sqlite3.Connection) -> None:
     """Версия 1.165: license_purchases — снимок условий тарифа на момент заказа
     (features/duration_days/price_rub), метка захвата заказа при выдаче ключа
@@ -3291,6 +3300,7 @@ MIGRATIONS = {
     137: migration_137,
     138: migration_138,
     139: migration_139,
+    140: migration_140,
 }
 
 

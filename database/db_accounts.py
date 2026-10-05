@@ -244,6 +244,21 @@ def get_site_referrer_code_for_order(order_id: str) -> Optional[str]:
     return row["referred_by_code"] if row and row["referred_by_code"] else None
 
 
+def get_site_account_telegram_id_for_order(order_id: str) -> Optional[int]:
+    """v1.195: telegram_id сайт-аккаунта, оплатившего заказ (для защиты от самореферала)."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT sa.telegram_id
+            FROM anonymous_purchases ap
+            JOIN site_accounts sa ON sa.id = ap.site_account_id
+            WHERE ap.order_id = ?
+            """,
+            (order_id,),
+        ).fetchone()
+    return int(row["telegram_id"]) if row and row["telegram_id"] else None
+
+
 def get_latest_purchase_for_account(site_account_id: int) -> Optional[Dict[str, Any]]:
     """Последняя покупка/продление с готовым ключом для аккаунта —
     используется, чтобы сразу показать личный кабинет после OAuth-входа,

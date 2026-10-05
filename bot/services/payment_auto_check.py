@@ -379,6 +379,15 @@ async def run_payment_auto_check_scheduler(bot: Any) -> None:
             raise
         except Exception as error:
             logger.error("Ошибка очистки устаревших резервов промокодов: %s", error, exc_info=True)
+        try:
+            from bot.services.balance_reserve import release_stale_balance_reservations
+            _released = release_stale_balance_reservations()
+            if _released:
+                logger.info("Возвращено %s резервов баланса по устаревшим заказам", _released)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.error("Ошибка очистки резервов баланса: %s", error, exc_info=True)
         await asyncio.sleep(60)
 
 

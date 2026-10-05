@@ -316,6 +316,35 @@ def _order_final_amount(order: Dict[str, Any]) -> int:
     return 0
 
 
+def issue_auto_coupon_for_order(order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """v1.195: выдаёт автокупон за оплаченный заказ — один раз на заказ, только если включено админом."""
+    if not order or not order.get("order_id") or not order.get("user_id"):
+        return None
+    if not (order.get("tariff_id") or order.get("vpn_key_id")):
+        return None  # пополнение баланса — не покупка
+    from database.db_promotions import (
+        get_coupon_auto_enabled, get_coupon_auto_discount_percent, get_coupon_auto_lifetime_days,
+        create_coupon_batch,
+    )
+    from database.connection import get_db
+    if not get_coupon_auto_enabled():
+        return None
+    if order.get("payment_type") in {"promo_free", "trial", "demo"}:
+        return None
+    source = f"auto:{order['order_id']}"
+    with get_db() as conn:
+        if conn.execute("SELECT 1 FROM promo_codes WHERE source = ? LIMIT 1", (source,)).fetchone():
+            return None
+    coupons = create_coupon_batch(
+        discount_percent=get_coupon_auto_discount_percent(),
+        lifetime_days=get_coupon_auto_lifetime_days(),
+        count=1,
+        source=source,
+        issued_to_user_id=int(order["user_id"]),
+    )
+    return coupons[0] if coupons else None
+
+
 def maybe_issue_auto_coupon_after_payment(order: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Issues a one-time coupon after a paid purchase or renewal."""
     return _issue_auto_coupon_after_payment(order)

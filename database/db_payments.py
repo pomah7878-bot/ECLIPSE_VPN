@@ -688,7 +688,9 @@ def save_payment_balance_deduction(order_id: str, amount_cents: int) -> bool:
 
 
 def cancel_pending_order(order_id: str) -> bool:
-    """Marks a provider-canceled pending order and releases its promo reservation."""
+    """Marks a provider-canceled pending order, releases its promo reservation
+    and (v1.195) returns the balance reserved for a partial payment."""
+    canceled = False
     with get_db() as conn:
         cursor = conn.execute(
             """
@@ -707,8 +709,41 @@ def cancel_pending_order(order_id: str) -> bool:
                 """,
                 (str(order_id),),
             )
-            return True
+            canceled = True
+    if canceled:
+        try:
+            from bot.services.balance_reserve import release_balance_reservation
+            release_balance_reservation(str(order_id))
+        except Exception as release_err:
+            logger.error("Не удалось вернуть резерв баланса по заказу %s: %s", order_id, release_err)
+    return canceled
+
+
+def save_telegram_charge_id(order_id: str, charge_id: str) -> bool:
+    """v1.195: запоминает идентификатор платежа Telegram (первый; не перезаписывает)."""
+    if not charge_id:
         return False
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE payments SET telegram_charge_id = ? WHERE order_id = ? AND telegram_charge_id IS NULL",
+            (str(charge_id), str(order_id)),
+        )
+        return cursor.rowcount > 0
+
+
+def get_telegram_charge_info(order_id: str):
+    """v1.195: данные для возврата звёзд по заказу или None."""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT p.order_id, p.status, p.payment_type, p.telegram_charge_id, p.amount_stars,
+                   p.final_amount_stars, u.telegram_id AS telegram_id
+            FROM payments p LEFT JOIN users u ON u.id = p.user_id
+            WHERE p.order_id = ?
+            """,
+            (str(order_id),),
+        ).fetchone()
+        return dict(row) if row else None
 
 def update_order_tariff(order_id: str, tariff_id: int, payment_type: Optional[str] = None,
                         telegram_id: Optional[int] = None) -> bool:

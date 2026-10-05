@@ -625,6 +625,13 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
             final_amount=remaining_cents,
             amount_unit='cents',
         )
+    # v1.195: резерв баланса под доплату картой (раньше сумма бралась из состояния диалога)
+    from bot.services.balance_reserve import reserve_balance_for_order
+    if balance_to_deduct > 0 and not reserve_balance_for_order(order_id, user_id, balance_to_deduct):
+        from database.db_payments import cancel_pending_order as _cancel_order
+        _cancel_order(order_id)
+        await callback.answer('❌ Баланс изменился. Откройте оплату заново.', show_alert=True)
+        return
     price_rub = remaining_cents / 100
     price_kopecks = remaining_cents
     
@@ -672,6 +679,8 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         ),
     )
     if not invoice_sent:
+        from database.db_payments import cancel_pending_order as _cancel_order
+        _cancel_order(order_id)  # v1.195: вернуть резерв баланса
         return
     await callback.message.delete()
     await callback.answer()
@@ -742,7 +751,15 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         amount_unit='cents',
         promo=quote['promo'],
     )
-    save_payment_balance_deduction(order_id, balance_to_deduct)
+    # v1.195: часть цены с баланса резервируется сразу (атомарно); при отмене/истечении вернётся
+    from bot.services.balance_reserve import reserve_balance_for_order
+    if balance_to_deduct > 0 and not reserve_balance_for_order(order_id, user_id, balance_to_deduct):
+        from database.db_payments import cancel_pending_order as _cancel_order
+        _cancel_order(order_id)
+        await safe_answer_callback(callback, '❌ Баланс изменился. Откройте оплату заново.', show_alert=True)
+        return
+    if balance_to_deduct <= 0:
+        save_payment_balance_deduction(order_id, balance_to_deduct)
     if quote.get('promo'):
         reserve_promo_for_order(
             order_id=order_id,
@@ -785,6 +802,8 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         qr_image_data = result.get('qr_image_data')
         qr_url = result.get('qr_url', '')
         if not qr_image_data or not qr_url:
+            from database.db_payments import cancel_pending_order as _cancel_order
+            _cancel_order(order_id)  # v1.195: вернуть резерв баланса
             await show_payment_status_message(
                 callback.message,
                 title_html='❌ <b>ЮКасса не вернула данные для оплаты</b>',
@@ -828,6 +847,11 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         )
     except Exception as e:
         logger.warning('Не удалось создать QR ЮКасса order=%s: %s', order_id, e)
+        try:
+            from database.db_payments import cancel_pending_order as _cancel_order
+            _cancel_order(order_id)  # v1.195: вернуть резерв баланса
+        except Exception as _cancel_err:
+            logger.error('Не удалось отменить заказ %s: %s', order_id, _cancel_err)
         await show_payment_status_message(
             callback.message,
             title_html='❌ <b>Ошибка ЮКассы</b>',

@@ -160,6 +160,8 @@ write_config() {
         cp "$INSTALL_DIR/secrets.env.example" "$INSTALL_DIR/secrets.env"
     fi
 
+    chmod 600 "$INSTALL_DIR/config.py" "$INSTALL_DIR/secrets.env" 2>/dev/null || true
+
     if [ -n "$GROQ_KEY_INPUT" ]; then
         sed -i "s|^GROQ_API_KEY=.*|GROQ_API_KEY=$GROQ_KEY_INPUT|" "$INSTALL_DIR/secrets.env"
         print_ok "Ключ AI (Groq) сохранён в secrets.env"

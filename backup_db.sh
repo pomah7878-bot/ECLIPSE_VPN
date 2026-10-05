@@ -10,7 +10,9 @@ BACKUP_DIR="/root/backups/db"
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
 RETENTION_DAYS=14
 
+umask 077
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 
 for DB_NAME in vpn_bot.db ai_history.db; do
     SRC="$SRC_DIR/$DB_NAME"

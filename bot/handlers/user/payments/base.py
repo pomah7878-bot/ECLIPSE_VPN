@@ -230,6 +230,29 @@ async def successful_payment_handler(message: Message, state: FSMContext):
     else:
         order_id = payload
     
+    if currency == 'XTR' and payment.telegram_payment_charge_id:
+        try:
+            from database.db_payments import get_telegram_charge_info, save_telegram_charge_id
+            _info = get_telegram_charge_info(order_id) or {}
+            _stored = _info.get('telegram_charge_id')
+            _charge = payment.telegram_payment_charge_id
+            _status = _info.get('status')
+            _refund = (_status == 'canceled') or (_status == 'paid' and _stored and _stored != _charge)
+            if _refund:
+                try:
+                    await message.bot.refund_star_payment(
+                        user_id=message.from_user.id,
+                        telegram_payment_charge_id=_charge,
+                    )
+                    logger.warning(f'Stars возвращены: заказ {order_id} (статус {_status}), charge={_charge}')
+                    await message.answer('↩️ Заказ уже закрыт, поэтому платёж возвращён автоматически. Откройте оплату заново.')
+                except Exception as _refund_err:
+                    logger.error(f'Не удалось вернуть Stars по заказу {order_id}: {_refund_err}')
+                return
+            save_telegram_charge_id(order_id, _charge)
+        except Exception as _charge_err:
+            logger.error(f'Ошибка учёта платежа Stars {order_id}: {_charge_err}')
+
     await complete_payment_flow(
         order_id=order_id,
         message=message,

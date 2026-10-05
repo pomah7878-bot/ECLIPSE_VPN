@@ -2119,6 +2119,38 @@ async def powered_by_cmd(message: Message):
     await message.answer(f"⚡ Метка «Powered by ECLIPSE»: {status}\n{can}")
 
 
+@router.message(Command("refund_stars"))
+async def refund_stars_cmd(message: Message):
+    """v1.195: /refund_stars <номер заказа> — вернуть звёзды за оплаченный заказ."""
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").split()[1:]
+    if len(parts) != 1:
+        await message.answer("Использование: <code>/refund_stars НОМЕР_ЗАКАЗА</code>", parse_mode="HTML")
+        return
+    from database.db_payments import get_telegram_charge_info
+    info = get_telegram_charge_info(parts[0])
+    if not info:
+        await message.answer("❌ Заказ не найден.")
+        return
+    if not info.get("telegram_charge_id") or not info.get("telegram_id"):
+        await message.answer("❌ Для этого заказа не сохранён идентификатор платежа Telegram (возможно, он оплачен до обновления 1.195).")
+        return
+    try:
+        await message.bot.refund_star_payment(
+            user_id=int(info["telegram_id"]),
+            telegram_payment_charge_id=str(info["telegram_charge_id"]),
+        )
+    except Exception as e:
+        await message.answer(f"❌ Не удалось вернуть платёж: {e}")
+        return
+    await message.answer(
+        f"↩️ Звёзды по заказу <code>{parts[0]}</code> возвращены. "
+        "Ключ или подписку, если нужно, отключите вручную.",
+        parse_mode="HTML",
+    )
+
+
 @router.message(Command("trial_devices"))
 async def trial_devices_cmd(message: Message):
     """v1.190: учёт устройств для пробников.

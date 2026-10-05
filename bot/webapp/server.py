@@ -86,7 +86,9 @@ def _validate_init_data(init_data: str, bot_token: str) -> Optional[int]:
                 logger.warning("WebApp: initData устарел (auth_date старше 48 часов) — доступ отклонён")
                 return None
         except Exception:
-            pass
+            # v1.195: не смогли проверить свежесть — не доверяем
+            logger.warning("WebApp: не удалось проверить auth_date initData — доступ отклонён")
+            return None
         # parse_webapp_init_data возвращает объект WebAppInitData, не словарь
         user = data.user
         if user:
@@ -2489,9 +2491,14 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
         if not entered_code:
             msg = "Введите код, который продиктовал робот." if method == "voice_code" else "Введите 4 цифры номера, с которого поступил звонок."
             return web.json_response({"status": "ok", "verified": False, "message": msg})
+        _phk = re.sub(r"\D", "", phone)
+        if not _rl_allowed(f"phfail:{_phk}", 10, 3600):
+            return web.json_response({"status": "ok", "verified": False, "message": "Слишком много неверных попыток. Попробуйте позже."})
         if not _zv_code_attempt_ok(call_id):
             return web.json_response({"status": "ok", "verified": False, "message": "Слишком много попыток. Запросите звонок заново."})
         confirmed = zv.check_voice_code(call_id, entered_code)
+        if not confirmed:
+            _rl_record(f"phfail:{_phk}")
     else:
         # Кэшу постбека доверяем ТОЛЬКО для flash_call ("Звонок на
         # проверочный номер") — там "Успешный дозвон" на стороне Zvonok

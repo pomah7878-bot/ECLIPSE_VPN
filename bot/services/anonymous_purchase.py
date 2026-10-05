@@ -384,7 +384,8 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
         site_ref_code = get_site_referrer_code_for_order(order_id)
         if site_ref_code:
             referrer = get_user_by_referral_code(site_ref_code)
-            if referrer:
+            from bot.services.billing import site_referral_allowed
+            if referrer and site_referral_allowed(order_id, referrer):
                 await process_site_referral_reward(
                     referrer["id"], days, amount_cents, "yookassa_qr", bot=None, order={"order_id": order_id},
                 )
