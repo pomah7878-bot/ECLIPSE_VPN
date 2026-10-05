@@ -2114,3 +2114,35 @@ async def powered_by_cmd(message: Message):
     status = "показывается" if is_powered_by_visible() else "отключена"
     can = "можно отключить: /powered_by off" if can_hide_powered_by() else "отключение не входит в вашу лицензию"
     await message.answer(f"⚡ Метка «Powered by ECLIPSE»: {status}\n{can}")
+
+
+@router.message(Command("sub_mode"))
+async def sub_mode_cmd(message: Message):
+    """v1.188: режимы выдачи подписки.
+    /sub_mode — статус; /sub_mode incy strict|all; /sub_mode hwid strict|friendly."""
+    from database.requests import get_setting, set_setting
+
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").lower().split()[1:]
+    if len(parts) == 2:
+        what, val = parts
+        if what == "incy" and val in ("strict", "all"):
+            set_setting("incy_headers_mode", val)
+        elif what == "hwid" and val in ("strict", "friendly"):
+            set_setting("sub_cache_on_4xx", "0" if val == "strict" else "1")
+        else:
+            await message.answer("❌ Не понял. Примеры: /sub_mode incy strict, /sub_mode hwid friendly")
+            return
+    incy = (get_setting("incy_headers_mode", "all") or "all")
+    hwid = "friendly" if (get_setting("sub_cache_on_4xx", "1") or "1") != "0" else "strict"
+    await message.answer(
+        "⚙️ <b>Режимы подписки</b>\n\n"
+        f"INCY: <b>{'только свои заголовки' if incy == 'strict' else 'все заголовки панели'}</b>\n"
+        "  /sub_mode incy strict — убрать из ответа INCY заголовки, понятные только Happ\n"
+        "  /sub_mode incy all — как раньше\n\n"
+        f"Лимит устройств: <b>{'строгий' if hwid == 'strict' else 'мягкий (по умолчанию)'}</b>\n"
+        "  /sub_mode hwid strict — если панель отказала (404/403), не подменять ответ сохранённой копией\n"
+        "  /sub_mode hwid friendly — как раньше",
+        parse_mode="HTML",
+    )

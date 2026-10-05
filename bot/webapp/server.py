@@ -37,6 +37,18 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 # См. handle_happ_subscription().
 _HAPP_SUB_CACHE: dict = {}
 
+# v1.188: заголовки, которые понимает только Happ (панель присылает их всем клиентам).
+# В режиме «INCY: только свои заголовки» (/sub_mode incy strict) они убираются из ответа INCY.
+_INCY_STRIP_HEADERS = (
+    "ping-type", "tun-type", "http-auth-mode", "socks-auth-mode", "color-profile",
+    "exclude-apns-enable", "routing-enable", "hide-settings", "providerid",
+    "subscription-autoconnect", "subscription-autoconnect-type",
+    "subscription-ping-onopen-enabled", "subscriptions-sort-type",
+    "subscription-auto-update-enable", "notification-subs-expire",
+    "sub-expire", "sub-expire-button-link",
+    "sub-info-text", "sub-info-color", "sub-info-button-text", "sub-info-button-link",
+)
+
 
 # ============================================================
 # Аутентификация: проверка Telegram initData через aiogram
@@ -1236,6 +1248,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             # клиента штатно убрала panel_only_cleanup — кэш устарел, не отдаём его
             _HAPP_SUB_CACHE.pop(sub_id, None)
             cached = None
+        if cached and 400 <= upstream_status < 500:
+            from database.requests import get_setting as _get_setting_cache
+            if (_get_setting_cache("sub_cache_on_4xx", "1") or "1") == "0":
+                # строгий режим: ответ панели 4xx (в т.ч. лимит устройств) — это ответ, а не сбой
+                logger.info(
+                    f"handle_happ_subscription: панель вернула {upstream_status} для sub_id={sub_id[:8]}... — "
+                    f"кэш не отдаём (строгий режим, /sub_mode hwid)"
+                )
+                return web.Response(status=502, text="Subscription temporarily unavailable — please try again shortly")
         if cached:
             logger.warning(
                 f"handle_happ_subscription: панель вернула {upstream_status} для sub_id={sub_id[:8]}... — "
@@ -1470,8 +1491,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         # оставляем его — снимаем только наш устаревший баннер.
         if not headers.get("sub-info-text"):
             headers["sub-info-text"] = ""
-        if "sub-expire" not in headers:
-            headers["sub-expire"] = "0"
+        # v1.188: бот знает срок точно — для не истёкшего ключа всегда «0»
+        # (раньше оставалось «1», которое присылала панель)
+        headers["sub-expire"] = "0"
+
+    if detected_app == "incy":
+        from database.requests import get_setting as _get_setting_incy
+        if (_get_setting_incy("incy_headers_mode", "all") or "all") == "strict":
+            for _h in _INCY_STRIP_HEADERS:
+                headers.popall(_h, None)
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
