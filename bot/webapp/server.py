@@ -1564,6 +1564,17 @@ def _site_account_used_trial(account_id: int, trial_tariff_id: int, telegram_id)
     if existing:
         return True
 
+    # v1.186: пробник распознаём по маркеру 'trial' в заказе, а не только по текущему
+    # пробному тарифу — иначе после смены пробного тарифа админом все могли бы взять его снова
+    with get_db() as conn:
+        any_trial = conn.execute(
+            """SELECT id FROM anonymous_purchases
+               WHERE site_account_id = ? AND yookassa_payment_id = 'trial' AND status IN ('paid', 'claimed')""",
+            (account_id,),
+        ).fetchone()
+    if any_trial:
+        return True
+
     if telegram_id:
         from database.requests import has_used_trial
         if has_used_trial(telegram_id):
@@ -1869,7 +1880,7 @@ def _is_trusted_app_request(request: web.Request) -> bool:
     return hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8"))
 
 
-async def handle_public_trial_create(request: web.Request) -> web.Response:
+async def _handle_public_trial_create_impl(request: web.Request) -> web.Response:
     """POST /api/public/trial/create — активирует бесплатный пробный период
     для текущего залогиненного аккаунта (по коду или OAuth). Без оплаты —
     сразу провижинит рабочий ключ, как и обычная покупка.
@@ -1993,6 +2004,32 @@ async def handle_public_trial_create(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error(f"Public trial creation error: {e}")
         return web.json_response({"error": "trial_creation_failed", "message": "Не удалось активировать пробный период. Попробуйте позже."}, status=502)
+
+
+_TRIAL_IN_PROGRESS_ACCOUNTS: set = set()
+_TRIAL_IN_PROGRESS_IPS: set = set()
+
+
+async def handle_public_trial_create(request: web.Request) -> web.Response:
+    """v1.186: обёртка над выдачей пробника. Пока запрос одного аккаунта или одного IP
+    ещё выполняется, параллельные запросы отклоняются — иначе несколько одновременных
+    запросов проходили проверку «ещё не брал» до того, как первый ключ был записан,
+    и один аккаунт получал несколько пробных ключей."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    client_ip = _get_client_ip(request)
+    if account_id and (account_id in _TRIAL_IN_PROGRESS_ACCOUNTS or client_ip in _TRIAL_IN_PROGRESS_IPS):
+        return web.json_response(
+            {"error": "in_progress", "message": "Пробный период уже оформляется. Подождите несколько секунд."},
+            status=429,
+        )
+    if account_id:
+        _TRIAL_IN_PROGRESS_ACCOUNTS.add(account_id)
+        _TRIAL_IN_PROGRESS_IPS.add(client_ip)
+    try:
+        return await _handle_public_trial_create_impl(request)
+    finally:
+        _TRIAL_IN_PROGRESS_ACCOUNTS.discard(account_id)
+        _TRIAL_IN_PROGRESS_IPS.discard(client_ip)
 
 
 def _get_site_base_url(request: web.Request) -> str:
@@ -2626,6 +2663,18 @@ async def handle_public_account_link_code(request: web.Request) -> web.Response:
 
     if not link_oauth_to_site_account(account_id, telegram_id):
         return web.json_response({"ok": False, "message": "Не удалось привязать аккаунт. Обратитесь в поддержку."})
+
+    # v1.186: если этот сайт-аккаунт уже брал пробник — помечаем и Telegram-пользователя,
+    # иначе тот же человек мог взять второй пробник уже в боте
+    try:
+        from database.requests import get_trial_tariff_id, get_user_internal_id, mark_trial_used
+        _tid = get_trial_tariff_id()
+        if _tid and _site_account_used_trial(account_id, _tid, None):
+            _uid = get_user_internal_id(telegram_id)
+            if _uid:
+                mark_trial_used(_uid)
+    except Exception as _e:
+        logger.warning(f"link-code: не удалось перенести отметку о пробнике: {_e}")
 
     return web.json_response({"ok": True})
 
