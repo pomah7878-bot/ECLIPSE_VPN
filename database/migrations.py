@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 141
+LATEST_VERSION = 142
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3271,6 +3271,35 @@ def migration_141(conn: sqlite3.Connection) -> None:
     logger.info("Migration v141 applied: btn_key_protocols добавлена на key_delivery")
 
 
+def migration_142(conn: sqlite3.Connection) -> None:
+    """Версия 1.201: кнопка «🔌 Подключения» → «🛡 AmneziaWG» на key_delivery.
+    Меняет подпись только если её не правили вручную."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        return
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        changed = False
+        for b in buttons:
+            if b.get("id") == "btn_key_protocols" and b.get("label") == "🔌 Подключения":
+                b["label"] = "🛡 AmneziaWG"
+                changed = True
+        if changed:
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+    logger.info("Migration v142 applied: кнопка btn_key_protocols переименована в AmneziaWG")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3339,6 +3368,7 @@ MIGRATIONS = {
     139: migration_139,
     140: migration_140,
     141: migration_141,
+    142: migration_142,
 }
 
 

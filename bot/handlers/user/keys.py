@@ -1220,7 +1220,7 @@ async def key_protocols_handler(callback: CallbackQuery):
     if not key or not key.get('sub_id') or not key.get('server_id'):
         await callback.answer('Ключ не найден', show_alert=True)
         return
-    await callback.answer('Загружаю подключения…')
+    await callback.answer('Загружаю…')
     nav_only = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id)])
     try:
         groups = await _load_key_connections(key)
@@ -1228,24 +1228,35 @@ async def key_protocols_handler(callback: CallbackQuery):
         logger.warning(f'Подключения ключа {key_id}: {e}')
         await safe_edit_or_send(
             callback.message,
-            '❌ Не удалось получить список подключений. Попробуйте чуть позже.',
+            '❌ Не удалось получить подключения AmneziaWG. Попробуйте чуть позже.',
             reply_markup=nav_only,
         )
         return
     rows = []
     for group in groups:
         for ib in group['inbounds']:
-            label = f"{ib['protocol_label']} · {ib['transport_label']}/{ib['security_label']} — {ib['name']}"
+            if ib.get('protocol_label') != 'AmneziaWG':
+                continue  # v1.201: в этом разделе только AmneziaWG
+            label = f"📄 {ib['name']} — {ib['protocol_label']}"
             rows.append([InlineKeyboardButton(text=label[:60], callback_data=f"key_proto:{key_id}:{_connection_tag(ib)}")])
     if not rows:
-        await safe_edit_or_send(callback.message, 'Подключений не найдено.', reply_markup=nav_only)
+        await safe_edit_or_send(
+            callback.message,
+            '🛡 <b>AmneziaWG</b>\n\nДля этого ключа подключений AmneziaWG пока нет. Попробуйте позже или напишите в поддержку.',
+            reply_markup=nav_only,
+        )
         return
     rows.append(_connections_nav(key_id))
     text = (
-        '🔌 <b>Подключения</b>\n\n'
-        'Выберите протокол — пришлю конфиг или ссылку.\n\n'
-        '• <b>AmneziaWG / WireGuard</b> — файл .conf и QR для приложения AmneziaWG\n'
-        '• <b>TUIC, Hysteria2, Vless</b> — ссылка для импорта в клиент'
+        '🛡 <b>AmneziaWG</b>\n\n'
+        'Быстрый протокол, который хорошо работает там, где обычный VPN блокируют.\n\n'
+        '<b>Как подключиться:</b>\n'
+        '1. Установите приложение <b>AmneziaWG</b> (или AmneziaVPN) из App Store / Google Play\n'
+        '2. Нажмите кнопку с подключением ниже — бот пришлёт файл .conf и QR-код\n'
+        '3. В приложении: «+» → «Импорт из файла» или «Сканировать QR-код»\n'
+        '4. Включите туннель\n\n'
+        '⚠️ Файл содержит ваш личный ключ — никому его не пересылайте.\n\n'
+        '<b>Выберите подключение:</b>'
     )
     await safe_edit_or_send(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
@@ -1275,7 +1286,7 @@ async def key_proto_handler(callback: CallbackQuery):
         return
     item = next((ib for g in groups for ib in g['inbounds'] if _connection_tag(ib) == tag), None)
     if not item:
-        await callback.answer('Список изменился — откройте «Подключения» заново', show_alert=True)
+        await callback.answer('Список изменился — откройте «AmneziaWG» заново', show_alert=True)
         return
     await callback.answer()
     chat_id = callback.message.chat.id
