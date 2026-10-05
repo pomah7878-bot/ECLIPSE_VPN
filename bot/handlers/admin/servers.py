@@ -116,7 +116,7 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
 
     lines.extend([
         f"🧩 <b>3x-ui API:</b>",
-        f"   Версия: <code>{escape_html(server.get('panel_version') or 'не определена')}</code>",
+        f"   Версия: <code>{escape_html(server.get('panel_version') or 'не определена')}</code>{_panel_outdated_note(server.get('panel_version'))}",
         f"   Профиль: <code>{escape_html(server.get('panel_api_profile') or 'не определён')}</code>",
         f"   Проверка: <code>{escape_html(server.get('panel_checked_at') or 'ещё не выполнялась')}</code>",
         f"   Группа inbound'ов: <code>{server.get('inbound_group') or 'все (не задана)'}</code>\n",
@@ -1448,3 +1448,23 @@ async def server_toggle_group(callback: CallbackQuery, state: FSMContext):
         "Нажмите на группу чтобы добавить или убрать:",
         reply_markup=server_groups_kb(server_id, groups, selected)
     )
+
+
+_PANEL_MIN_SAFE_VERSION = (3, 8, 0)  # в 3.8.0 закрыты уязвимости подписок и прав на файлы
+
+
+def _panel_outdated_note(version) -> str:
+    """v1.189: пометка в карточке сервера, если версия 3x-ui ниже безопасной."""
+    import re as _re
+    parts = []
+    for chunk in str(version or "").strip().lstrip("vV").split("."):
+        m = _re.match(r"(\d+)", chunk)
+        if not m:
+            break
+        parts.append(int(m.group(1)))
+    if not parts:
+        return ""
+    parts = tuple(parts) + (0,) * (3 - len(parts))
+    if parts[:3] < _PANEL_MIN_SAFE_VERSION:
+        return " ⚠️ <b>устарела — обновите панель (в 3.8.0 закрыты уязвимости)</b>"
+    return ""

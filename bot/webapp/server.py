@@ -1250,7 +1250,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             cached = None
         if cached and 400 <= upstream_status < 500:
             from database.requests import get_setting as _get_setting_cache
-            if (_get_setting_cache("sub_cache_on_4xx", "1") or "1") == "0":
+            if (_get_setting_cache("sub_cache_on_4xx", "0") or "0") == "0":
                 # строгий режим: ответ панели 4xx (в т.ч. лимит устройств) — это ответ, а не сбой
                 logger.info(
                     f"handle_happ_subscription: панель вернула {upstream_status} для sub_id={sub_id[:8]}... — "
@@ -1497,7 +1497,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
 
     if detected_app == "incy":
         from database.requests import get_setting as _get_setting_incy
-        if (_get_setting_incy("incy_headers_mode", "all") or "all") == "strict":
+        if (_get_setting_incy("incy_headers_mode", "strict") or "strict") == "strict":
             for _h in _INCY_STRIP_HEADERS:
                 headers.popall(_h, None)
 

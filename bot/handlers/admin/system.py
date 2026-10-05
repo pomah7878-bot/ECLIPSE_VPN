@@ -2134,14 +2134,14 @@ async def sub_mode_cmd(message: Message):
         else:
             await message.answer("❌ Не понял. Примеры: /sub_mode incy strict, /sub_mode hwid friendly")
             return
-    incy = (get_setting("incy_headers_mode", "all") or "all")
-    hwid = "friendly" if (get_setting("sub_cache_on_4xx", "1") or "1") != "0" else "strict"
+    incy = (get_setting("incy_headers_mode", "strict") or "strict")
+    hwid = "friendly" if (get_setting("sub_cache_on_4xx", "0") or "0") != "0" else "strict"
     await message.answer(
         "⚙️ <b>Режимы подписки</b>\n\n"
-        f"INCY: <b>{'только свои заголовки' if incy == 'strict' else 'все заголовки панели'}</b>\n"
+        f"INCY: <b>{'только свои заголовки (по умолчанию)' if incy == 'strict' else 'все заголовки панели'}</b>\n"
         "  /sub_mode incy strict — убрать из ответа INCY заголовки, понятные только Happ\n"
         "  /sub_mode incy all — как раньше\n\n"
-        f"Лимит устройств: <b>{'строгий' if hwid == 'strict' else 'мягкий (по умолчанию)'}</b>\n"
+        f"Лимит устройств: <b>{'строгий (по умолчанию)' if hwid == 'strict' else 'мягкий'}</b>\n"
         "  /sub_mode hwid strict — если панель отказала (404/403), не подменять ответ сохранённой копией\n"
         "  /sub_mode hwid friendly — как раньше",
         parse_mode="HTML",
