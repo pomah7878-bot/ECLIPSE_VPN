@@ -92,7 +92,7 @@ def custom_reset_done_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None, mode: str='account') -> InlineKeyboardMarkup:
+def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None, mode: str='account', device_guard_label: Optional[str]=None) -> InlineKeyboardMarkup:
     """
     Trial subscription control keyboard.
     
@@ -114,6 +114,8 @@ def trial_settings_kb(enabled: bool, tariff_name: Optional[str]=None, mode: str=
     builder.row(InlineKeyboardButton(text='✏️ Изменить текст', callback_data='admin_trial_edit_text'))
     tariff_label = tariff_name if tariff_name else 'не задан'
     builder.row(InlineKeyboardButton(text=f'📋 Общий тариф: {tariff_label}', callback_data='admin_trial_select_tariff'))
+    if device_guard_label:
+        builder.row(InlineKeyboardButton(text=device_guard_label, callback_data='admin_trial_devices'))
     builder.row(back_button('admin_payments'), home_button())
     return builder.as_markup()
 

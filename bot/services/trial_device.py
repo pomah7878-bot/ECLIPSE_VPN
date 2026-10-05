@@ -17,13 +17,24 @@ _SETTING_ENABLED = "trial_device_guard"
 _BAD_VALUES = {"", "unknown", "null", "none", "undefined", "0", "00000000-0000-0000-0000-000000000000"}
 
 
-def guard_enabled() -> bool:
-    """Включено по умолчанию; выключается командой /trial_devices off."""
+def guard_setting_on() -> bool:
+    """Настройка администратора: включено по умолчанию."""
     try:
         from database.requests import get_setting
         return (get_setting(_SETTING_ENABLED, "1") or "1") != "0"
     except Exception:
         return True
+
+
+def guard_enabled() -> bool:
+    """Проверка действует, если она включена И есть лицензия на пробный период."""
+    try:
+        from bot.services.license import is_feature_available
+        if not is_feature_available("trial_period"):
+            return False
+    except Exception:
+        pass
+    return guard_setting_on()
 
 
 def set_guard_enabled(on: bool) -> None:

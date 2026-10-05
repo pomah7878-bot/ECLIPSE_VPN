@@ -65,7 +65,7 @@ async def show_trial_menu(callback: CallbackQuery):
 
     await safe_edit_or_send(callback.message, 
         text,
-        reply_markup=trial_settings_kb(enabled, tariff_name, mode)
+        reply_markup=trial_settings_kb(enabled, tariff_name, mode, _device_guard_label())
     )
     await callback.answer()
 
@@ -214,3 +214,98 @@ async def admin_trial_set_tariff(callback: CallbackQuery):
 
     await callback.answer(f"✅ Тариф «{tariff['name']}» выбран", show_alert=False)
     await show_trial_menu(callback)
+
+
+# ============================================================================
+# v1.191: УЧЁТ УСТРОЙСТВ ДЛЯ ПРОБНИКОВ (только с лицензией: функция пробного периода)
+# ============================================================================
+
+def _device_guard_label() -> str:
+    """Подпись кнопки в меню пробного периода."""
+    from bot.services.license import is_feature_available
+    from bot.services import trial_device as td
+    if not is_feature_available("trial_period"):
+        return "📱 Учёт устройств 🔒"
+    return f"📱 Учёт устройств: {'✅ вкл' if td.guard_setting_on() else '⬜️ выкл'}"
+
+
+async def _trial_devices_locked(callback: CallbackQuery) -> bool:
+    from bot.services.license import is_feature_available
+    if is_feature_available("trial_period"):
+        return False
+    await callback.answer(
+        "🔒 Эта функция недоступна без лицензии. Обратитесь к поставщику лицензии.", show_alert=True
+    )
+    return True
+
+
+async def _show_trial_devices(callback: CallbackQuery):
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from bot.services import trial_device as td
+
+    on = td.guard_setting_on()
+    st = td.stats()
+    blocks = td.recent_blocks(5)
+    lines = [
+        "📱 <b>Учёт устройств для пробников</b>",
+        "",
+        "Приложение (Happ, INCY и др.) присылает идентификатор устройства. Если это устройство уже "
+        "брало пробный период под другим аккаунтом, второй пробный ключ получает заблокированную "
+        "подписку с кнопкой покупки. Хранится только хеш идентификатора.",
+        "",
+        f"📌 <b>Статус:</b> {'🟢 Включено' if on else '⚪ Выключено'}",
+        f"📊 Запомнено устройств: {st['devices']}, заблокировано ключей: {st['blocks']}",
+    ]
+    if blocks:
+        lines.append("")
+        lines.append("<b>Последние блокировки:</b>")
+        for b in blocks:
+            lines.append(
+                f"• ключ #{b['key_id']} (tg {b.get('tg') or '—'}) — устройство уже было у tg "
+                f"{b.get('owner_tg') or '—'}, запросов: {b['hits']}"
+            )
+        lines.append("")
+        lines.append("Если блокировка ошибочна, нажмите «🔓 Разрешить» — устройство попадёт в исключения.")
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(
+        text="⏸ Выключить" if on else "▶️ Включить", callback_data="admin_trial_devices_toggle"
+    ))
+    for b in blocks:
+        kb.row(InlineKeyboardButton(
+            text=f"🔓 Разрешить ключ #{b['key_id']}",
+            callback_data=f"admin_trial_devices_unblock:{b['key_id']}",
+        ))
+    kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_trial"))
+    await safe_edit_or_send(callback.message, "\n".join(lines), reply_markup=kb.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_trial_devices")
+async def admin_trial_devices(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id) or await _trial_devices_locked(callback):
+        return
+    await _show_trial_devices(callback)
+
+
+@router.callback_query(F.data == "admin_trial_devices_toggle")
+async def admin_trial_devices_toggle(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id) or await _trial_devices_locked(callback):
+        return
+    from bot.services import trial_device as td
+    td.set_guard_enabled(not td.guard_setting_on())
+    await _show_trial_devices(callback)
+
+
+@router.callback_query(F.data.startswith("admin_trial_devices_unblock:"))
+async def admin_trial_devices_unblock(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id) or await _trial_devices_locked(callback):
+        return
+    from bot.services import trial_device as td
+    try:
+        key_id = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer()
+        return
+    td.unblock_key(key_id)
+    await _show_trial_devices(callback)

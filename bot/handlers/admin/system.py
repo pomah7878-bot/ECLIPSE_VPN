@@ -2125,6 +2125,10 @@ async def trial_devices_cmd(message: Message):
 
     if not is_admin(message.from_user.id):
         return
+    from bot.services.license import is_feature_available as _lic_td
+    if not _lic_td("trial_period"):
+        await message.answer("🔒 Эта функция недоступна без лицензии. Обратитесь к поставщику лицензии.")
+        return
     parts = (message.text or "").split()[1:]
     note = ""
     if parts and parts[0].lower() in ("on", "off"):
