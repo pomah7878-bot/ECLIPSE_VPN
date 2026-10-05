@@ -1284,7 +1284,7 @@ async def key_proto_handler(callback: CallbackQuery):
     qr = item.get('qr_png') or ''
     png = base64.b64decode(qr.split(',', 1)[1]) if qr.startswith('data:image/png;base64,') else None
     if item.get('kind') == 'conf':
-        await bot.send_document(
+        first_msg = await bot.send_document(
             chat_id,
             BufferedInputFile(item['config_text'].encode('utf-8'), filename=item.get('filename') or 'config.conf'),
             caption=(
@@ -1300,13 +1300,50 @@ async def key_proto_handler(callback: CallbackQuery):
             reply_markup=None if png else nav,
         )
         if png:
-            await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='📷 Или отсканируйте QR-код в приложении AmneziaWG', reply_markup=nav)
+            last_msg = await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='📷 Или отсканируйте QR-код в приложении AmneziaWG', reply_markup=nav)
+            _conn_register(chat_id, first_msg, last_msg)
     else:
-        await bot.send_message(
+        first_msg = await bot.send_message(
             chat_id,
             f"🔗 <b>{escape_html(item['protocol_label'])}</b> — {escape_html(item['name'])}\n\n<code>{escape_html(item['link'])}</code>",
             parse_mode='HTML',
             reply_markup=None if png else nav,
         )
         if png:
-            await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код', reply_markup=nav)
+            last_msg = await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код', reply_markup=nav)
+            _conn_register(chat_id, first_msg, last_msg)
+
+
+# ===== v1.199: удаление файла/ссылки при возврате назад =====
+_CONN_COMPANIONS: dict = {}
+
+
+def _conn_register(chat_id, first_msg, last_msg):
+    """Запоминает, какие сообщения прислали вместе с QR (последнее — с кнопками)."""
+    try:
+        if first_msg and last_msg:
+            if len(_CONN_COMPANIONS) > 500:
+                _CONN_COMPANIONS.clear()
+            _CONN_COMPANIONS[(chat_id, last_msg.message_id)] = [first_msg.message_id]
+    except Exception:
+        pass
+
+
+from aiogram import BaseMiddleware as _BaseMw
+
+
+class ConnCleanupMiddleware(_BaseMw):
+    """Нажатие кнопки под QR подключения → удаляем файл конфига/ссылку (там личный ключ)."""
+
+    async def __call__(self, handler, event, data):
+        try:
+            msg = getattr(event, 'message', None)
+            ids = _CONN_COMPANIONS.pop((msg.chat.id, msg.message_id), None) if msg else None
+            for mid in ids or []:
+                try:
+                    await msg.bot.delete_message(msg.chat.id, mid)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return await handler(event, data)

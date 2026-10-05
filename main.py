@@ -274,6 +274,8 @@ async def main():
     bot_blocked_reset = BotBlockedResetMiddleware()
     dp.message.outer_middleware(bot_blocked_reset)
     dp.callback_query.outer_middleware(bot_blocked_reset)
+    from bot.handlers.user.keys import ConnCleanupMiddleware
+    dp.callback_query.outer_middleware(ConnCleanupMiddleware())
     
     # Registering routers
     # The order is important: first the more specific, then the general
