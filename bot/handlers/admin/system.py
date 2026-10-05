@@ -2041,10 +2041,12 @@ async def app_secret_cmd(message: Message):
         await message.answer(
             "🔑 <b>Секрет приложения создан</b>\n\n"
             f"<code>{new_secret}</code>\n\n"
-            "Строгая проверка пока <b>выключена</b>: старые версии приложения работают как раньше. "
-            "Добавьте секрет в GitHub Secrets как <code>APP_CLIENT_SECRET</code>, выпустите новую версию приложения, "
-            "а когда она разойдётся, включите проверку командой <code>/app_secret enforce</code>. "
-            "Сообщение с секретом лучше удалить после копирования.",
+            "Строгая проверка пока <b>выключена</b>: старые версии приложения работают как раньше.\n\n"
+            "<b>Что делать дальше:</b>\n"
+            "1. Добавьте секрет в GitHub Secrets как <code>APP_CLIENT_SECRET</code>\n"
+            "2. Выпустите новую версию приложения\n"
+            "3. Когда она разойдётся — включите проверку: <code>/app_secret enforce</code>\n\n"
+            "🗑 Сообщение с секретом лучше удалить после копирования.",
             parse_mode="HTML",
         )
         return
@@ -2054,7 +2056,8 @@ async def app_secret_cmd(message: Message):
             return
         set_setting("app_client_secret_enforced", "1")
         await message.answer(
-            "🔒 Строгая проверка <b>включена</b>: пробный период из приложения без верного ключа потребует капчу. "
+            "🔒 Строгая проверка <b>включена</b>\n\n"
+            "Пробный период из приложения без верного ключа потребует капчу.\n\n"
             "Отключить: <code>/app_secret soft</code>.",
             parse_mode="HTML",
         )

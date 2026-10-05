@@ -955,8 +955,10 @@ async def my_license_trial(callback: CallbackQuery):
         return
     await callback.message.answer(
         f"🎁 <b>Пробная лицензия на {data.get('days')} дн. активирована!</b>\n"
-        f"Действует до: {data.get('expires_at')} (UTC). Платные функции уже включены. "
-        "Метка «Powered by ECLIPSE» остаётся. После окончания продлите лицензию кнопкой «💳 Купить / продлить».",
+        f"📅 Действует до: {data.get('expires_at')} (UTC)\n\n"
+        "• платные функции уже включены\n"
+        "• метка «Powered by ECLIPSE» остаётся\n"
+        "• после окончания продлите лицензию кнопкой «💳 Купить / продлить»",
         parse_mode="HTML",
     )
     deep_link = f"https://t.me/{get_license_bot_username()}?start=buy_license"
