@@ -504,6 +504,22 @@ async def pay_with_balance_handler(callback: CallbackQuery, state: FSMContext):
         await callback.answer('❌ Недостаточно средств на балансе', show_alert=True)
         return
 
+    # v1.194: списываем баланс ДО выдачи (атомарно, под блокировкой пользователя) —
+    # два одновременных нажатия больше не дают два ключа за одни деньги
+    from bot.services.balance import debit_user_balance, credit_user_balance
+    _debit = await debit_user_balance(
+        user_internal_id,
+        quote['final_amount'],
+        source='payment_balance',
+        reason='Списание баланса при оплате тарифа',
+        reference_type='payment_order',
+        reference_id=order_id,
+        metadata={'payment_type': 'balance'},
+    )
+    if not _debit.get('ok'):
+        await callback.answer('❌ Недостаточно средств на балансе', show_alert=True)
+        return
+
     await state.update_data(
         balance_to_deduct=quote['final_amount'],
         tariff_price_cents=quote['final_amount'],
@@ -519,6 +535,20 @@ async def pay_with_balance_handler(callback: CallbackQuery, state: FSMContext):
         payment_type='balance',
         referral_amount=0,
     )
+    # v1.194: если заказ так и не оформился — возвращаем списанное
+    try:
+        from database.db_payments import is_order_already_paid
+        if not is_order_already_paid(order_id):
+            await credit_user_balance(
+                user_internal_id,
+                quote['final_amount'],
+                source='refund',
+                reason='Возврат: заказ не был оформлен',
+                reference_type='payment_order_refund',
+                reference_id=order_id,
+            )
+    except Exception as refund_err:
+        logger.error(f'Не удалось вернуть баланс по заказу {order_id}: {refund_err}')
     await callback.answer()
 
 @router.callback_query(F.data.startswith('pay_card_balance:'))

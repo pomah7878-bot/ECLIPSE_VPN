@@ -125,6 +125,22 @@ def _rl_record(key: str) -> None:
     _RL_BUCKETS.setdefault(key, []).append(_t.time())
 
 
+def _tariff_purchasable(tariff, key_id=None) -> bool:
+    """v1.194: тариф можно купить, если он активен либо это текущий тариф продлеваемого ключа."""
+    if not tariff:
+        return False
+    if tariff.get('is_active'):
+        return True
+    if key_id:
+        try:
+            from database.requests import get_vpn_key_by_id
+            _k = get_vpn_key_by_id(int(key_id))
+            return bool(_k and _k.get('tariff_id') == tariff.get('id'))
+        except Exception:
+            return False
+    return False
+
+
 def _get_telegram_id(request: web.Request) -> Optional[int]:
     """
     Извлекает и проверяет initData из запроса (query param или header).
@@ -659,7 +675,7 @@ async def handle_pay_create(request: web.Request) -> web.Response:
     from bot.services.billing import create_yookassa_qr_payment
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not tariff:
+    if not _tariff_purchasable(tariff, vpn_key_id):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     user_id = get_user_internal_id(telegram_id)
@@ -822,7 +838,8 @@ async def _complete_webapp_order(order_id: str, quote_final_amount_cents: int, t
         success, text, order = await process_payment_order(order_id, bot=complete_bot, process_referrals=False)
         if success and order:
             await _run_payment_post_actions(
-                order, bot=complete_bot, payment_type="yookassa_qr",
+                order, bot=complete_bot,
+                payment_type=("balance" if str(order.get("payment_type")) == "balance" else "yookassa_qr"),
                 referral_amount=quote_final_amount_cents, balance_override_cents=0,
             )
 
@@ -1685,6 +1702,10 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
     ЮKassa, без Telegram. Полная цена, без промокодов/баланса.
     Body JSON: {"tariff_id": int}
     """
+    _pip = _get_client_ip(request)
+    if not _rl_allowed(f"pubpay:{_pip}", 20, 3600):
+        return web.json_response({"error": "rate_limited"}, status=429)
+    _rl_record(f"pubpay:{_pip}")
     try:
         data = await request.json()
     except json.JSONDecodeError:
@@ -1698,7 +1719,7 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
     from database.db_payments import create_anonymous_purchase, save_anonymous_purchase_payment_id
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not tariff:
+    if not _tariff_purchasable(tariff, None):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_rub = float(tariff.get("price_rub") or 0)
@@ -2624,7 +2645,7 @@ async def handle_license_check(request: web.Request) -> web.Response:
     # v1.166: учёт установок. Бот версии 1.166+ присылает instance_id и nonce.
     instance_id = str(data.get("instance_id") or "").strip()
     nonce = str(data.get("nonce") or "").strip()
-    if instance_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", instance_id):
+    if instance_id and (instance_id.lower().startswith("legacy-") or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", instance_id)):
         return web.json_response({"valid": False, "message": "Некорректный идентификатор установки."}, status=400)
     if nonce and not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", nonce):
         return web.json_response({"valid": False, "message": "Некорректный запрос."}, status=400)
@@ -3061,7 +3082,7 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
     from database.db_payments import create_anonymous_purchase, save_anonymous_purchase_payment_id
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not tariff:
+    if not _tariff_purchasable(tariff, key_id):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_rub = float(tariff.get("price_rub") or 0)
@@ -3199,7 +3220,7 @@ async def handle_public_account_key_renew_balance(request: web.Request) -> web.R
 
     from database.db_tariffs import get_tariff_by_id
     tariff = get_tariff_by_id(int(tariff_id))
-    if not tariff:
+    if not _tariff_purchasable(tariff, key_id):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_cents = int(round(float(tariff.get("price_rub") or 0) * 100))
@@ -3410,6 +3431,10 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
     """POST /api/public/account/renew/create — создаёт платёж на продление
     существующего ключа личного кабинета.
     Body JSON: {"code": "XXXX-XXXX", "tariff_id": int}"""
+    _pip = _get_client_ip(request)
+    if not _rl_allowed(f"pubrenew:{_pip}", 20, 3600):
+        return web.json_response({"error": "rate_limited"}, status=429)
+    _rl_record(f"pubrenew:{_pip}")
     try:
         data = await request.json()
     except json.JSONDecodeError:
@@ -3429,7 +3454,7 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
     from database.db_payments import create_anonymous_purchase, save_anonymous_purchase_payment_id
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not tariff:
+    if not _tariff_purchasable(tariff, None):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_rub = float(tariff.get("price_rub") or 0)

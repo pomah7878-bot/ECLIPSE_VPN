@@ -76,7 +76,9 @@ async def renew_stars_invoice(callback: CallbackQuery, state: FSMContext):
     if not user_id:
         return
     if order_id:
-        update_order_tariff(order_id, tariff_id)
+        if not update_order_tariff(order_id, tariff_id, telegram_id=callback.from_user.id):
+            await callback.answer('❌ Заказ недоступен. Откройте оплату заново.', show_alert=True)
+            return
         update_payment_type(order_id, 'stars')
     else:
         (_, order_id) = create_pending_order(user_id=user_id, tariff_id=tariff_id, payment_type='stars', vpn_key_id=key_id)
@@ -180,7 +182,9 @@ async def pay_stars_invoice(callback: CallbackQuery, state: FSMContext):
         await callback.answer('❌ Ошибка пользователя', show_alert=True)
         return
     if order_id:
-        update_order_tariff(order_id, tariff_id, payment_type='stars')
+        if not update_order_tariff(order_id, tariff_id, payment_type='stars', telegram_id=callback.from_user.id):
+            await callback.answer('❌ Заказ недоступен. Откройте оплату заново.', show_alert=True)
+            return
     else:
         if not user_id:
             await callback.answer('❌ Ошибка пользователя', show_alert=True)

@@ -172,9 +172,41 @@ async def complete_promo_free_payment(
         referral_amount=0,
     )
 
+def _pre_checkout_problem(pre_checkout: PreCheckoutQuery):
+    """v1.194: проверяет заказ до списания денег. None — всё в порядке."""
+    from database.db_payments import find_order_by_order_id
+
+    payload = pre_checkout.invoice_payload or ''
+    if payload.startswith('renew:') or payload.startswith('vpn_key:'):
+        order_id = payload.split(':')[1]
+    else:
+        order_id = payload
+    order = find_order_by_order_id(order_id)
+    if not order:
+        return None  # не наш заказ (расширения и т.п.) — не вмешиваемся
+    if order.get('status') != 'pending':
+        return 'Этот заказ уже оплачен или отменён. Откройте оплату заново.'
+    if pre_checkout.currency == 'XTR' and order.get('payment_type') == 'stars':
+        expected = order.get('final_amount_stars')
+        if expected is None:
+            expected = order.get('amount_stars')
+        if expected is not None and int(expected) != int(pre_checkout.total_amount):
+            return 'Цена изменилась. Откройте оплату заново.'
+    return None
+
+
 @router.pre_checkout_query()
 async def pre_checkout_handler(pre_checkout: PreCheckoutQuery):
-    """Pre-checkout confirmation for Telegram Stars."""
+    """Pre-checkout confirmation (Stars/TG payments) с проверкой заказа."""
+    try:
+        problem = _pre_checkout_problem(pre_checkout)
+    except Exception as e:  # при внутренней ошибке не блокируем продажи
+        logger.exception(f'pre_checkout: ошибка проверки заказа: {e}')
+        problem = None
+    if problem:
+        logger.warning(f'pre_checkout отклонён: {problem} payload={pre_checkout.invoice_payload}')
+        await pre_checkout.answer(ok=False, error_message=problem)
+        return
     await pre_checkout.answer(ok=True)
 
 @router.message(F.successful_payment)

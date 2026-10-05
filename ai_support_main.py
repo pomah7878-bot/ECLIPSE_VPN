@@ -174,7 +174,7 @@ class _TelegramHTMLSanitizer(HTMLParser):
             self.open_stack.pop()
 
     def handle_data(self, data):
-        self.out.append(data)
+        self.out.append(html.escape(data, quote=False))
 
     def get_result(self):
         for tag in reversed(self.open_stack):

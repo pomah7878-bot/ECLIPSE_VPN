@@ -91,7 +91,9 @@ async def pay_cards_invoice(callback: CallbackQuery, state: FSMContext):
         return
     days = tariff['duration_days']
     if order_id:
-        update_order_tariff(order_id, tariff_id, payment_type='cards')
+        if not update_order_tariff(order_id, tariff_id, payment_type='cards', telegram_id=callback.from_user.id):
+            await callback.answer('❌ Заказ недоступен. Откройте оплату заново.', show_alert=True)
+            return
     else:
         if not user_id:
             await callback.answer('❌ Ошибка пользователя', show_alert=True)
@@ -247,7 +249,9 @@ async def renew_cards_invoice(callback: CallbackQuery, state: FSMContext):
     if not user_id:
         return
     if order_id:
-        update_order_tariff(order_id, tariff_id, payment_type='cards')
+        if not update_order_tariff(order_id, tariff_id, payment_type='cards', telegram_id=callback.from_user.id):
+            await callback.answer('❌ Заказ недоступен. Откройте оплату заново.', show_alert=True)
+            return
     else:
         (_, order_id) = create_pending_order(user_id=user_id, tariff_id=tariff_id, payment_type='cards', vpn_key_id=key_id)
     from bot.services.promotions import prepare_order_pricing

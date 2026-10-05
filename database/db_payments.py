@@ -710,7 +710,8 @@ def cancel_pending_order(order_id: str) -> bool:
             return True
         return False
 
-def update_order_tariff(order_id: str, tariff_id: int, payment_type: Optional[str] = None) -> bool:
+def update_order_tariff(order_id: str, tariff_id: int, payment_type: Optional[str] = None,
+                        telegram_id: Optional[int] = None) -> bool:
     """
     Updates the tariff and amounts in the order.
     
@@ -727,22 +728,18 @@ def update_order_tariff(order_id: str, tariff_id: int, payment_type: Optional[st
         return False
         
     with get_db() as conn:
-        cursor = conn.execute("""
-            UPDATE payments 
-            SET tariff_id = ?, 
-                amount_cents = ?, 
-                amount_stars = ?, 
-                period_days = ?,
-                payment_type = COALESCE(?, payment_type)
-            WHERE order_id = ?
-        """, (
-            tariff_id, 
-            tariff['price_cents'], 
-            _stars_amount(tariff), 
-            tariff['duration_days'], 
-            payment_type,
-            order_id
-        ))
+        # v1.194: менять можно только ожидающий заказ и только владельцу
+        sql = (
+            "UPDATE payments SET tariff_id = ?, amount_cents = ?, amount_stars = ?, "
+            "period_days = ?, payment_type = COALESCE(?, payment_type) "
+            "WHERE order_id = ? AND status = 'pending'"
+        )
+        params = [tariff_id, tariff['price_cents'], _stars_amount(tariff),
+                  tariff['duration_days'], payment_type, order_id]
+        if telegram_id is not None:
+            sql += " AND user_id = (SELECT id FROM users WHERE telegram_id = ?)"
+            params.append(telegram_id)
+        cursor = conn.execute(sql, params)
         success = cursor.rowcount > 0
         if success:
             logger.info(f"Order {order_id} обновлен на тариф {tariff_id} (тип: {payment_type})")

@@ -552,7 +552,7 @@ def save_order_pricing_snapshot(
                 amount_cents = CASE WHEN ? = 'cents' THEN ? ELSE amount_cents END,
                 amount_stars = CASE WHEN ? = 'stars' THEN ? ELSE amount_stars END,
                 is_promo_free = ?
-            WHERE order_id = ?
+            WHERE order_id = ? AND status = 'pending'
             """,
             (
                 payment_type,

@@ -1331,6 +1331,14 @@ async def _run_payment_post_actions(
                 payment_type,
             )
 
+    # v1.194: фиксируем использование промокода/купона (раньше не вызывалось —
+    # лимиты активаций не работали, одноразовые купоны не гасились)
+    try:
+        from bot.services.promotions import apply_order_promotion_after_payment
+        apply_order_promotion_after_payment(order)
+    except Exception as promo_err:
+        logger.warning("Не удалось зафиксировать использование промокода order=%s: %s", order.get('order_id'), promo_err)
+
     days = order.get('period_days') or order.get('duration_days') or 30
     _ref_events = await process_referral_reward(
         user_internal_id,

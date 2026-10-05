@@ -277,7 +277,15 @@ def validate_payment_webhook_secret(provider_id: str, provided_secret: str | Non
         return False
     expected = provider.webhook_secret
     if not expected:
-        return True
+        # v1.194: без секрета любой мог прислать «оплачено». Разрешаем только явно:
+        # настройка custom_webhook_allow_unsigned = 1
+        try:
+            from database.requests import get_setting as _gs
+            if (_gs('custom_webhook_allow_unsigned', '0') or '0') == '1':
+                return True
+        except Exception:
+            pass
+        return False
     if not isinstance(provided_secret, str):
         return False
     return compare_digest(expected, provided_secret)
