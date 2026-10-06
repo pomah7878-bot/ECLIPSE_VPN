@@ -1357,6 +1357,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                     f"handle_happ_subscription: панель вернула {upstream_status} для sub_id={sub_id[:8]}... — "
                     f"кэш не отдаём (строгий режим, /sub_mode hwid)"
                 )
+                try:
+                    from bot.services import device_limit_notify as _dln
+                    _dln.schedule(key, upstream_status)
+                except Exception:
+                    pass
                 return web.Response(status=502, text="Subscription temporarily unavailable — please try again shortly")
         if cached:
             logger.warning(
@@ -1391,12 +1396,17 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                     f"очисткой (panel_removed_at={key.get('panel_removed_at')}), клиенту нужно продлить"
                 )
             else:
-                logger.warning(
+                logger.info(
                     f"handle_happ_subscription: панель вернула {upstream_status} для "
                     f"sub_id={sub_id[:8]}... (client_uuid={key.get('client_uuid')}) — "
-                    f"ключ есть в БД и не убирался плановой очисткой, но панель его не "
-                    f"находит. Похоже на рассинхронизацию."
+                    f"либо исчерпан лимит устройств, либо клиент не найден на панели; "
+                    f"причина определяется в device_limit_notify"
                 )
+                try:
+                    from bot.services import device_limit_notify as _dln
+                    _dln.schedule(key, upstream_status)
+                except Exception:
+                    pass
             return web.Response(status=502, text="Subscription temporarily unavailable — please try again shortly")
 
     if served_from_cache:

@@ -2195,6 +2195,38 @@ async def trial_devices_cmd(message: Message):
     await message.answer("\n".join(lines), parse_mode="HTML")
 
 
+@router.message(Command("devlimit"))
+async def devlimit_cmd(message: Message):
+    """v1.208: уведомления о лимите устройств.
+    /devlimit — статус; /devlimit user on|off; /devlimit admin on|off."""
+    from database.requests import get_setting, set_setting
+
+    if not is_admin(message.from_user.id):
+        return
+    parts = (message.text or "").lower().split()[1:]
+    if len(parts) == 2:
+        what, val = parts
+        if what in ("user", "admin") and val in ("on", "off"):
+            set_setting(f"device_limit_notify_{what}", "1" if val == "on" else "0")
+        else:
+            await message.answer("❌ Не понял. Примеры: /devlimit user off, /devlimit admin on")
+            return
+    user_on = (get_setting("device_limit_notify_user", "1") or "1") != "0"
+    admin_on = (get_setting("device_limit_notify_admin", "1") or "1") != "0"
+    await message.answer(
+        "📱 <b>Уведомления о лимите устройств</b>\n\n"
+        f"Пользователю: <b>{'включены' if user_on else 'выключены'}</b>\n"
+        "  /devlimit user on — включить\n"
+        "  /devlimit user off — выключить\n\n"
+        f"Администратору: <b>{'включены' if admin_on else 'выключены'}</b>\n"
+        "  /devlimit admin on — включить\n"
+        "  /devlimit admin off — выключить\n\n"
+        "Пользователь получает сообщение не чаще раза в 6 часов на ключ, "
+        "администратор — не чаще раза в сутки на ключ (и не более 10 сообщений в час).",
+        parse_mode="HTML",
+    )
+
+
 @router.message(Command("sub_mode"))
 async def sub_mode_cmd(message: Message):
     """v1.188: режимы выдачи подписки.
