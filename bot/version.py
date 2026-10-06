@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 UNKNOWN_BOT_VERSION = "unknown"
 _RELEASE_PREFIX_RE = re.compile(
-    r"^[!?]?\s*версия\s+([0-9]+(?:\.[0-9]+)*)\b",
+    r"^[!?]?\s*(?:версия\s+|v(?=[0-9]+\.[0-9]))([0-9]+(?:\.[0-9]+)*)\b",
     flags=re.IGNORECASE,
 )
 
@@ -53,7 +53,7 @@ BOT_RELEASE, BOT_COMMIT = resolve_bot_version()
 # ============================================================================
 
 _RELEASE_HEADER_RE = re.compile(
-    r"^([!?]?)\s*версия\s+([0-9]+(?:\.[0-9]+)*)\s*:?\s*(.*)$",
+    r"^([!?]?)\s*(?:версия\s+|v(?=[0-9]+\.[0-9]))([0-9]+(?:\.[0-9]+)*)\s*:?\s*(.*)$",
     flags=re.IGNORECASE,
 )
 
