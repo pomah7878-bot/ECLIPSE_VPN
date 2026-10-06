@@ -1300,10 +1300,11 @@ async def key_proto_handler(callback: CallbackQuery):
         try:
             from database.requests import get_effective_webapp_url
             from bot.utils.awg_open_tokens import create_token
+            from bot.utils.inbound_links import conf_to_amnezia_vpn
             _wb = (get_effective_webapp_url() or '').rstrip('/')
             if _wb.startswith('https://'):
                 nav = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text='📲 Открыть в AmneziaVPN', url=f"{_wb}/awg-open/{create_token(item['link'])}")],
+                    [InlineKeyboardButton(text='📲 Открыть в AmneziaVPN', url=f"{_wb}/awg-open/{create_token(conf_to_amnezia_vpn(item.get('config_text') or '', item.get('name') or 'ECLIPSE') or item['link'])}")],
                     _connections_nav(key_id, f'key_protocols:{key_id}'),
                 ])
                 open_btn_added = True

@@ -363,3 +363,78 @@ async def add_ping_to_groups(groups: list[dict]) -> list[dict]:
                     inbound["ping_unsupported"] = False
                     inbound["is_approximate"] = True
     return groups
+
+
+# ===== v1.203: .conf -> официальный ключ vpn:// приложения AmneziaVPN =====
+# Панель 3x-ui отдаёт vpn:// как base64 от «голого» .conf. Приложение AmneziaVPN
+# такой ключ не принимает (ErrorCode 900: «Конфигурация не содержит контейнеров»):
+# ему нужен JSON с контейнерами, сжатый qCompress (4 байта длины + zlib) и base64url.
+_AWG_CANON = {
+    "jc": "Jc", "jmin": "Jmin", "jmax": "Jmax",
+    "s1": "S1", "s2": "S2", "s3": "S3", "s4": "S4",
+    "h1": "H1", "h2": "H2", "h3": "H3", "h4": "H4",
+    "i1": "I1", "i2": "I2", "i3": "I3", "i4": "I4", "i5": "I5",
+}
+
+
+def conf_to_amnezia_vpn(conf_text: str, description: str = "ECLIPSE") -> Optional[str]:
+    """Конфиг WireGuard/AmneziaWG -> ключ vpn:// в формате AmneziaVPN (или None)."""
+    import struct
+    interface: dict[str, str] = {}
+    peer: dict[str, str] = {}
+    section = None
+    for raw in (conf_text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        low = line.lower()
+        if low == "[interface]":
+            section = interface
+            continue
+        if low == "[peer]":
+            section = peer
+            continue
+        if section is None or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        section[key.strip()] = value.strip()
+    match = re.match(r"^\[?([^\]]+?)\]?:(\d{1,5})$", peer.get("Endpoint", ""))
+    if not match or not interface.get("PrivateKey") or not peer.get("PublicKey"):
+        return None
+    host, port = match.group(1), int(match.group(2))
+    awg = {_AWG_CANON[k.lower()]: v for k, v in interface.items() if k.lower() in _AWG_CANON}
+    is_awg = bool(awg)
+    dns = [d.strip() for d in interface.get("DNS", "").split(",") if d.strip()]
+    last_config: dict[str, Any] = dict(awg)
+    last_config.update({
+        "client_priv_key": interface["PrivateKey"],
+        "client_ip": interface.get("Address", "").split(",")[0].split("/")[0].strip(),
+        "server_pub_key": peer["PublicKey"],
+        "psk_key": peer.get("PresharedKey", ""),
+        "allowed_ips": [a.strip() for a in peer.get("AllowedIPs", "0.0.0.0/0, ::/0").split(",") if a.strip()],
+        "persistent_keep_alive": peer.get("PersistentKeepalive", "25"),
+        "mtu": interface.get("MTU", "1280"),
+        "hostName": host,
+        "port": port,
+        "config": conf_text.strip() + "\n",
+    })
+    container_body: dict[str, Any] = dict(awg)
+    container_body.update({
+        "last_config": json.dumps(last_config, ensure_ascii=False, separators=(",", ":")),
+        "port": str(port),
+        "transport_proto": "udp",
+        "isThirdPartyConfig": True,
+    })
+    name = "amnezia-awg" if is_awg else "amnezia-wireguard"
+    payload = {
+        "containers": [{"container": name, ("awg" if is_awg else "wireguard"): container_body}],
+        "defaultContainer": name,
+        "description": description or "ECLIPSE",
+        "dns1": dns[0] if dns else "1.1.1.1",
+        "dns2": dns[1] if len(dns) > 1 else "1.0.0.1",
+        "hostName": host,
+        "isThirdPartyConfig": True,
+    }
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    blob = struct.pack(">I", len(data)) + zlib.compress(data)
+    return "vpn://" + base64.urlsafe_b64encode(blob).decode("ascii").rstrip("=")
