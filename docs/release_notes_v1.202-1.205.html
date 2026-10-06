@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Релизы v1.202–v1.205</title>
+<style>
+:root { --bg:#f6f8fa; --card:#fff; --text:#1f2328; --muted:#59636e; --border:#d1d9e0; --accent:#0969da; --code:#eff2f5; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --card:#151b23; --text:#e6edf3; --muted:#9198a1; --border:#3d444d; --accent:#4493f8; --code:#212830; } }
+* { box-sizing: border-box; }
+body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--text); font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+main { max-width:760px; margin:0 auto; }
+h1 { font-size:22px; margin:0 0 4px; }
+.sub { color:var(--muted); margin:0 0 24px; }
+section { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+section h2 { font-size:18px; margin:0 0 4px; }
+.tag { color:var(--muted); font-size:13px; margin:0 0 10px; }
+ul { margin:8px 0 12px; padding-left:22px; }
+li { margin:4px 0; }
+details { margin-top:10px; }
+summary { cursor:pointer; color:var(--accent); font-size:14px; }
+pre { background:var(--code); border-radius:8px; padding:12px; overflow:auto; font-size:13px; margin:8px 0 0; white-space:pre-wrap; word-break:break-word; }
+button { margin-top:8px; padding:6px 12px; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--text); cursor:pointer; font-size:13px; }
+.hint { color:var(--muted); font-size:13px; margin-top:20px; }
+</style>
+</head>
+<body>
+<main>
+<h1>ECLIPSE Unlimited — релизы v1.202–v1.205</h1>
+<p class="sub">Готовый текст для описания релиза на GitHub. Откройте «HTML для GitHub» и нажмите «Копировать».</p>
+
+<section id="r1202">
+<h2>v1.202 — открыть в AmneziaVPN</h2>
+<ul>
+<li>Кнопка «📲 Открыть в AmneziaVPN» у каждого подключения AmneziaWG: импорт одним касанием.</li>
+<li>Ключ не попадает в адрес страницы: используется короткоживущий токен на 15 минут.</li>
+<li>Страница не кэшируется и не индексируется. Работает только с лицензией.</li>
+<li>Для отдельного приложения AmneziaWG остаются файл <code>.conf</code> и QR.</li>
+</ul>
+<details><summary>HTML для GitHub</summary><pre id="c1202"></pre><button data-copy="c1202">Копировать</button></details>
+</section>
+
+<section id="r1203">
+<h2>v1.203 — ключ в формате Amnezia</h2>
+<ul>
+<li>Исправлена ошибка импорта в AmneziaVPN «ErrorCode: 900».</li>
+<li>Панель 3x-ui отдаёт ключ как простой <code>.conf</code>, а приложению нужен свой формат. Бот конвертирует конфиг в официальный ключ Amnezia: контейнер AmneziaWG, параметры обфускации, ключи, DNS.</li>
+<li>Если конвертация не удалась, используется прежний ключ.</li>
+</ul>
+<details><summary>HTML для GitHub</summary><pre id="c1203"></pre><button data-copy="c1203">Копировать</button></details>
+</section>
+
+<section id="r1204">
+<h2>v1.204 — где скачать</h2>
+<ul>
+<li>На экране «🛡 AmneziaWG» добавлены кнопки загрузки AmneziaVPN: Google Play, App Store, Windows / macOS / Linux, APK и все версии.</li>
+<li>Обновлена инструкция: рекомендуем AmneziaVPN (импорт одной кнопкой) или отдельное AmneziaWG.</li>
+</ul>
+<details><summary>HTML для GitHub</summary><pre id="c1204"></pre><button data-copy="c1204">Копировать</button></details>
+</section>
+
+<section id="r1205">
+<h2>v1.205 — инструкции AmneziaWG</h2>
+<ul>
+<li>Предупреждение «Один файл — одно устройство»: на экране AmneziaWG, в подписи к файлу и на странице импорта.</li>
+<li>Шаги импорта по платформам: AmneziaVPN, AmneziaWG на Android, iPhone, Windows и macOS.</li>
+<li>Кнопки загрузки отдельного AmneziaWG (Android, Windows) рядом с AmneziaVPN.</li>
+<li>Страница «Открыть в AmneziaVPN» показывает точные шаги вставки ключа.</li>
+</ul>
+<details><summary>HTML для GitHub</summary><pre id="c1205"></pre><button data-copy="c1205">Копировать</button></details>
+</section>
+
+<p class="hint">Заголовок релиза на GitHub — «v1.202» и т. д., тег тот же. GitHub понимает этот HTML внутри описания релиза.</p>
+</main>
+<script>
+(function () {
+  // Код для вставки на GitHub берётся из самих карточек, чтобы текст не расходился.
+  document.querySelectorAll('section').forEach(function (sec) {
+    var pre = sec.querySelector('pre');
+    var title = sec.querySelector('h2').textContent;
+    var tag = title.split(' — ')[0];
+    var items = Array.prototype.map.call(sec.querySelectorAll('ul > li'), function (li) {
+      return '  <li>' + li.innerHTML + '</li>';
+    }).join('\n');
+    pre.textContent = '<h3>' + title + '</h3>\n<ul>\n' + items + '\n</ul>';
+  });
+  document.querySelectorAll('button[data-copy]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = document.getElementById(btn.dataset.copy).textContent;
+      var done = function () { btn.textContent = '✓ Скопировано'; setTimeout(function () { btn.textContent = 'Копировать'; }, 1500); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      } else {
+        var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) {} document.body.removeChild(ta);
+      }
+    });
+  });
+})();
+</script>
+</body>
+</html>
