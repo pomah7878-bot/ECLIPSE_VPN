@@ -1291,17 +1291,24 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     # запрос неавторизованным и отдаёт 404 (пустое тело) независимо от
     # проброса выше, поскольку пробрасывать просто нечего. Чтобы не
     # блокировать таких пользователей, подставляем панели СИНТЕТИЧЕСКИЙ
-    # HWID, устойчиво рассчитанный из связки sub_id + IP клиента +
-    # User-Agent — благодаря этому одно и то же реальное устройство при
-    # повторных запросах попадает в один и тот же "слот" на панели (не
-    # плодит новые записи в client_hwids на каждый запрос), а разные
-    # устройства/IP всё равно получают разные значения.
+    # HWID, устойчиво рассчитанный из связки sub_id + User-Agent (режим
+    # "device", по умолчанию) — благодаря этому одно и то же устройство при
+    # повторных запросах, в том числе из разных сетей (Wi-Fi/мобильная), попадает
+    # в один и тот же "слот" на панели и не съедает лимит устройств. Режим "ip"
+    # (/sub_mode seed ip) добавляет в расчёт ещё и IP клиента — прежнее
+    # поведение: разные IP считаются разными устройствами.
     if "X-HWID" not in forward_headers:
-        _synthetic_seed = f"{sub_id}:{_get_client_ip(request)}:{forward_headers.get('User-Agent', '')}"
+        from database.requests import get_setting as _get_setting_seed
+        _client_ip = _get_client_ip(request)
+        _ua_for_seed = forward_headers.get('User-Agent', '')
+        if (_get_setting_seed("synthetic_hwid_seed", "device") or "device") == "ip":
+            _synthetic_seed = f"{sub_id}:{_client_ip}:{_ua_for_seed}"
+        else:
+            _synthetic_seed = f"{sub_id}:{_ua_for_seed}"
         forward_headers["X-HWID"] = hashlib.sha256(_synthetic_seed.encode("utf-8")).hexdigest()
         logger.info(
             f"handle_happ_subscription: клиент не прислал X-HWID (sub_id={sub_id[:8]}..., "
-            f"UA={forward_headers.get('User-Agent', '')!r}) — подставляю синтетический HWID, "
+            f"ip={_client_ip}, UA={_ua_for_seed!r}) — подставляю синтетический HWID, "
             f"чтобы панель в режиме HWID-лимита не блокировала подписку"
         )
     served_from_cache = False

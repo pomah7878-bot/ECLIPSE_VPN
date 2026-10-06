@@ -2242,11 +2242,14 @@ async def sub_mode_cmd(message: Message):
             set_setting("incy_headers_mode", val)
         elif what == "hwid" and val in ("strict", "friendly"):
             set_setting("sub_cache_on_4xx", "0" if val == "strict" else "1")
+        elif what == "seed" and val in ("device", "ip"):
+            set_setting("synthetic_hwid_seed", val)
         else:
-            await message.answer("❌ Не понял. Примеры: /sub_mode incy strict, /sub_mode hwid friendly")
+            await message.answer("❌ Не понял. Примеры: /sub_mode incy strict, /sub_mode hwid friendly, /sub_mode seed device")
             return
     incy = (get_setting("incy_headers_mode", "strict") or "strict")
     hwid = "friendly" if (get_setting("sub_cache_on_4xx", "0") or "0") != "0" else "strict"
+    seed = "ip" if (get_setting("synthetic_hwid_seed", "device") or "device") == "ip" else "device"
     await message.answer(
         "⚙️ <b>Режимы подписки</b>\n\n"
         f"INCY: <b>{'только свои заголовки (по умолчанию)' if incy == 'strict' else 'все заголовки панели'}</b>\n"
@@ -2254,6 +2257,9 @@ async def sub_mode_cmd(message: Message):
         "  /sub_mode incy all — как раньше\n\n"
         f"Лимит устройств: <b>{'строгий (по умолчанию)' if hwid == 'strict' else 'мягкий'}</b>\n"
         "  /sub_mode hwid strict — если панель отказала (404/403), не подменять ответ сохранённой копией\n"
-        "  /sub_mode hwid friendly — как раньше",
+        "  /sub_mode hwid friendly — как раньше\n\n"
+        f"Идентификатор для клиентов без HWID (Karing и т.п.): <b>{'по устройству (по умолчанию)' if seed == 'device' else 'по IP'}</b>\n"
+        "  /sub_mode seed device — не зависит от сети, смена Wi-Fi/мобильной сети не занимает новое место\n"
+        "  /sub_mode seed ip — прежнее поведение: каждый новый IP считается новым устройством",
         parse_mode="HTML",
     )
