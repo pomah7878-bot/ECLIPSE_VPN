@@ -574,6 +574,17 @@ def integrations_limits_menu_kb() -> InlineKeyboardMarkup:
         text=f"📱 Ограничение устройств: {DEVICE_LIMIT_TYPES[get_device_limit_type()]['label']}",
         callback_data='admin_device_limit_type_menu',
     ))
+    from database.requests import get_setting as _get_setting
+    _notify_user_on = (_get_setting('device_limit_notify_user', '1') or '1') != '0'
+    _notify_admin_on = (_get_setting('device_limit_notify_admin', '1') or '1') != '0'
+    builder.row(InlineKeyboardButton(
+        text=f"🔔 Клиентам о лимите: {'🟢 Вкл' if _notify_user_on else '⚪ Выкл'}",
+        callback_data='admin_toggle_devlimit_notify:user',
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🔔 Мне о лимите: {'🟢 Вкл' if _notify_admin_on else '⚪ Выкл'}",
+        callback_data='admin_toggle_devlimit_notify:admin',
+    ))
     from bot.services.panel_only_cleanup import get_panel_cleanup_delay_days
     builder.row(InlineKeyboardButton(
         text=f"🧹 Удаление с панели через: {get_panel_cleanup_delay_days()} дн.",

@@ -358,6 +358,15 @@ async def show_happ_setting_info(callback: CallbackQuery):
     await callback.answer(text, show_alert=True)
 
 
+_LIMITS_MENU_TEXT = (
+    "⚙️ <b>Ограничения устройств</b>\n\n"
+    "🔔 <b>Уведомления о лимите</b>\n"
+    "• Клиентам — сообщение, когда на их ключе исчерпан лимит устройств, с кнопкой управления устройствами\n"
+    "• Мне — такое же сообщение администратору\n\n"
+    "Работает в режимах «по устройствам» и «по IP»."
+)
+
+
 @router.callback_query(F.data == "admin_integrations_limits")
 async def show_integrations_limits_menu(callback: CallbackQuery):
     """Подменю «Ограничения устройств»."""
@@ -365,8 +374,28 @@ async def show_integrations_limits_menu(callback: CallbackQuery):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
     from bot.keyboards.admin_settings import integrations_limits_menu_kb
-    await safe_edit_or_send(callback.message, "⚙️ <b>Ограничения устройств</b>", reply_markup=integrations_limits_menu_kb())
+    await safe_edit_or_send(callback.message, _LIMITS_MENU_TEXT, reply_markup=integrations_limits_menu_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_toggle_devlimit_notify:"))
+async def toggle_devlimit_notify(callback: CallbackQuery):
+    """Включает/выключает уведомления о лимите устройств: клиентам (user) или админу (admin)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    target = callback.data.split(":", 1)[1]
+    if target not in ("user", "admin"):
+        await callback.answer("❌ Неизвестная настройка", show_alert=True)
+        return
+    from database.requests import get_setting, set_setting
+    name = f"device_limit_notify_{target}"
+    current = (get_setting(name, "1") or "1") != "0"
+    set_setting(name, "0" if current else "1")
+    who = "клиентам" if target == "user" else "администратору"
+    await callback.answer(f"⚪ Уведомления {who} выключены" if current else f"✅ Уведомления {who} включены")
+    from bot.keyboards.admin_settings import integrations_limits_menu_kb
+    await safe_edit_or_send(callback.message, _LIMITS_MENU_TEXT, reply_markup=integrations_limits_menu_kb())
 
 
 # ============================================================
