@@ -9,6 +9,7 @@ aiohttp веб-сервер, который:
 Запускается параллельно с aiogram polling через asyncio.
 """
 import json
+import re
 import html as _html_module
 import logging
 import os
@@ -1213,6 +1214,13 @@ async def _trial_device_guard(request: web.Request, key: Dict[str, Any]):
     return web.Response(status=200, body=b"", headers=headers)
 
 
+_LINK_PREVIEW_UA_RE = re.compile(
+    r"(telegrambot|whatsapp|facebookexternalhit|twitterbot|slackbot|discordbot|vkshare|"
+    r"viber|skypeuripreview|linkedinbot|googlebot|bingbot|yandex(bot|accessibilities)|applebot|embedly)",
+    re.IGNORECASE,
+)
+
+
 async def handle_happ_subscription(request: web.Request) -> web.Response:
     """GET /happ-sub/{sub_id} — прокси-обёртка над реальной подпиской,
     отдаваемой панелью 3x-ui, добавляющая заголовки, которые понимает
@@ -1240,6 +1248,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     sub_id = request.match_info.get("sub_id", "")
     if not sub_id:
         return web.Response(status=404, text="Not Found")
+
+    # v1.206: бот предпросмотра ссылок (Telegram и т.п.) не должен доходить до панели —
+    # иначе он регистрируется как «устройство» и занимает слот лимита HWID.
+    if _LINK_PREVIEW_UA_RE.search(request.headers.get("User-Agent", "") or ""):
+        return web.Response(status=200, text="ECLIPSE VPN subscription link", content_type="text/plain")
 
     from database.requests import get_vpn_key_by_sub_id
     key = get_vpn_key_by_sub_id(sub_id)
