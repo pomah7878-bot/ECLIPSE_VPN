@@ -1246,12 +1246,16 @@ async def key_protocols_handler(callback: CallbackQuery):
             reply_markup=nav_only,
         )
         return
-    # v1.204: где скачать приложение (ссылки со страницы загрузок AmneziaVPN)
+    # v1.205: где скачать — AmneziaVPN и отдельное приложение AmneziaWG (ссылки из документации Amnezia)
     rows.append([
-        InlineKeyboardButton(text='🤖 Google Play', url='https://play.google.com/store/apps/details?id=org.amnezia.vpn'),
-        InlineKeyboardButton(text='🍎 App Store', url='https://apps.apple.com/us/app/amneziavpn/id1600529900'),
+        InlineKeyboardButton(text='🤖 AmneziaVPN: Android', url='https://play.google.com/store/apps/details?id=org.amnezia.vpn'),
+        InlineKeyboardButton(text='🍎 AmneziaVPN: iOS', url='https://apps.apple.com/us/app/amneziavpn/id1600529900'),
     ])
-    rows.append([InlineKeyboardButton(text='💻 Windows / macOS / Linux', url='https://amnezia.org/ru/downloads')])
+    rows.append([InlineKeyboardButton(text='💻 AmneziaVPN: Windows / macOS / Linux', url='https://amnezia.org/ru/downloads')])
+    rows.append([
+        InlineKeyboardButton(text='🤖 AmneziaWG: Android', url='https://play.google.com/store/apps/details?id=org.amnezia.awg'),
+        InlineKeyboardButton(text='🪟 AmneziaWG: Windows', url='https://github.com/amnezia-vpn/amneziawg-windows-client/releases'),
+    ])
     rows.append([InlineKeyboardButton(text='📦 APK и все версии (GitHub)', url='https://github.com/amnezia-vpn/amnezia-client/releases')])
     rows.append(_connections_nav(key_id))
     text = (
@@ -1260,11 +1264,18 @@ async def key_protocols_handler(callback: CallbackQuery):
         '<b>Как подключиться:</b>\n'
         '1. Установите <b>AmneziaVPN</b> (кнопки «где скачать» ниже) или отдельное приложение <b>AmneziaWG</b>\n'
         '2. Нажмите кнопку с подключением ниже — бот пришлёт файл .conf и QR-код\n'
-        '3. В приложении: «+» → «Импорт из файла» или «Сканировать QR-код»\n'
+        '3. Импорт в приложении:\n'
+        '   • <b>AmneziaVPN</b> — «+» → «Вставить» ключ или «Сканировать QR-код»\n'
+        '   • <b>AmneziaWG</b> на Android — «+» → «Импорт из файла или архива»\n'
+        '   • <b>AmneziaWG</b> на iPhone — нажмите на файл → «Поделиться» → AmneziaWG '
+        '(на iPhone и Mac приложение ищите в App Store по названию «AmneziaWG»)\n'
+        '   • <b>Windows / macOS</b> — «Добавить туннель» и выберите файл .conf\n'
         '4. Включите туннель\n\n'
         '📲 Есть AmneziaVPN? Под файлом будет кнопка «Открыть в AmneziaVPN» — импорт в одно касание '
         '(лучше всего работает на Android).\n\n'
-        '⚠️ Файл содержит ваш личный ключ — никому его не пересылайте.\n\n'
+        '⚠️ <b>Один файл — одно устройство.</b> Если поставить его на два устройства сразу, '
+        'соединения будут мешать друг другу — для второго устройства создайте отдельный ключ.\n'
+        '🔒 Файл содержит ваш личный ключ — никому его не пересылайте.\n\n'
         '<b>Выберите подключение:</b>'
     )
     await safe_edit_or_send(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
@@ -1330,7 +1341,7 @@ async def key_proto_handler(callback: CallbackQuery):
                 '1. Установите <b>AmneziaVPN</b> или <b>AmneziaWG</b> (ссылки — в разделе «🛡 AmneziaWG»)\n'
                 '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
                 '   или отсканируйте QR-код ниже\n'
-                '3. Никому не пересылайте файл: в нём ваш личный ключ'
+                '3. Один файл — одно устройство. Никому не пересылайте его: в нём ваш личный ключ'
             ) + (
                 '\n\n📲 Если установлен <b>AmneziaVPN</b> — нажмите «Открыть в AmneziaVPN» под сообщением'
                 if open_btn_added else ''
