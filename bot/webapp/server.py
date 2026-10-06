@@ -3904,6 +3904,36 @@ async def handle_import(request: web.Request) -> web.Response:
     return web.Response(text=html, content_type="text/html")
 
 
+async def handle_awg_open(request: web.Request) -> web.Response:
+    """GET /awg-open/{token} — v1.202: страница «Открыть в AmneziaVPN».
+
+    Токен выдаёт бот (bot.utils.awg_open_tokens), живёт 15 минут. Ключ vpn://
+    содержит личный ключ клиента, поэтому ответ не кэшируется и не индексируется."""
+    from bot.services.license import is_feature_available
+    if not is_feature_available("extra_protocols"):
+        return _import_error_page(
+            "Функция недоступна",
+            "Импорт AmneziaWG сейчас недоступен на этом тарифе.",
+        )
+    from bot.utils.awg_open_tokens import get_link
+    link = get_link(request.match_info.get("token", ""))
+    if not link or not link.startswith("vpn://"):
+        return _import_error_page(
+            "Ссылка устарела",
+            "Вернитесь в бот и нажмите кнопку «Открыть в AmneziaVPN» ещё раз.",
+        )
+    page_path = os.path.join(_TEMPLATES_DIR, "awg_open.html")
+    if not os.path.exists(page_path):
+        return web.Response(text="<h1>Template not found</h1>", status=404)
+    page = await asyncio.to_thread(lambda: open(page_path, encoding="utf-8").read())
+    page = page.replace("__VPN_LINK_JSON__", json.dumps(link).replace("</", "<\\/"))
+    resp = web.Response(text=page, content_type="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
 async def handle_app_page(request: web.Request) -> web.Response:
     """GET /app — страница скачивания Android-приложения.
 
@@ -3969,6 +3999,7 @@ async def cors_middleware(request: web.Request, handler):
 _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/happ-sub/",
     "/import",
+    "/awg-open/",
     "/api/status",
     "/api/ping",
     "/api/license/",
@@ -4043,6 +4074,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/site-info", handle_public_site_info)
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)
     app.router.add_get("/happ-sub/{sub_id}", handle_happ_subscription)
+    app.router.add_get("/awg-open/{token}", handle_awg_open)
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
     app.router.add_post("/api/public/pay/create", handle_public_pay_create)

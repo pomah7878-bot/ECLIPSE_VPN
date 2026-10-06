@@ -1255,6 +1255,8 @@ async def key_protocols_handler(callback: CallbackQuery):
         '2. Нажмите кнопку с подключением ниже — бот пришлёт файл .conf и QR-код\n'
         '3. В приложении: «+» → «Импорт из файла» или «Сканировать QR-код»\n'
         '4. Включите туннель\n\n'
+        '📲 Есть AmneziaVPN? Под файлом будет кнопка «Открыть в AmneziaVPN» — импорт в одно касание '
+        '(лучше всего работает на Android).\n\n'
         '⚠️ Файл содержит ваш личный ключ — никому его не пересылайте.\n\n'
         '<b>Выберите подключение:</b>'
     )
@@ -1292,6 +1294,21 @@ async def key_proto_handler(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     bot = callback.message.bot
     nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')])
+    # v1.202: «Открыть в AmneziaVPN» — только для vpn://-ключа и при настроенном https-сайте
+    open_btn_added = False
+    if item.get('kind') == 'conf' and str(item.get('link') or '').startswith('vpn://'):
+        try:
+            from database.requests import get_effective_webapp_url
+            from bot.utils.awg_open_tokens import create_token
+            _wb = (get_effective_webapp_url() or '').rstrip('/')
+            if _wb.startswith('https://'):
+                nav = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text='📲 Открыть в AmneziaVPN', url=f"{_wb}/awg-open/{create_token(item['link'])}")],
+                    _connections_nav(key_id, f'key_protocols:{key_id}'),
+                ])
+                open_btn_added = True
+        except Exception as e:
+            logger.warning(f'Кнопка AmneziaVPN для ключа {key_id}: {e}')
     qr = item.get('qr_png') or ''
     png = base64.b64decode(qr.split(',', 1)[1]) if qr.startswith('data:image/png;base64,') else None
     if item.get('kind') == 'conf':
@@ -1306,6 +1323,9 @@ async def key_proto_handler(callback: CallbackQuery):
                 '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
                 '   или отсканируйте QR-код ниже\n'
                 '3. Никому не пересылайте файл: в нём ваш личный ключ'
+            ) + (
+                '\n\n📲 Если установлен <b>AmneziaVPN</b> — нажмите «Открыть в AmneziaVPN» под сообщением'
+                if open_btn_added else ''
             ),
             parse_mode='HTML',
             reply_markup=None if png else nav,
