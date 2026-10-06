@@ -1246,12 +1246,19 @@ async def key_protocols_handler(callback: CallbackQuery):
             reply_markup=nav_only,
         )
         return
+    # v1.204: где скачать приложение (ссылки со страницы загрузок AmneziaVPN)
+    rows.append([
+        InlineKeyboardButton(text='🤖 Google Play', url='https://play.google.com/store/apps/details?id=org.amnezia.vpn'),
+        InlineKeyboardButton(text='🍎 App Store', url='https://apps.apple.com/us/app/amneziavpn/id1600529900'),
+    ])
+    rows.append([InlineKeyboardButton(text='💻 Windows / macOS / Linux', url='https://amnezia.org/ru/downloads')])
+    rows.append([InlineKeyboardButton(text='📦 APK и все версии (GitHub)', url='https://github.com/amnezia-vpn/amnezia-client/releases')])
     rows.append(_connections_nav(key_id))
     text = (
         '🛡 <b>AmneziaWG</b>\n\n'
         'Быстрый протокол, который хорошо работает там, где обычный VPN блокируют.\n\n'
         '<b>Как подключиться:</b>\n'
-        '1. Установите приложение <b>AmneziaWG</b> (или AmneziaVPN) из App Store / Google Play\n'
+        '1. Установите <b>AmneziaVPN</b> (кнопки «где скачать» ниже) или отдельное приложение <b>AmneziaWG</b>\n'
         '2. Нажмите кнопку с подключением ниже — бот пришлёт файл .conf и QR-код\n'
         '3. В приложении: «+» → «Импорт из файла» или «Сканировать QR-код»\n'
         '4. Включите туннель\n\n'
@@ -1320,7 +1327,7 @@ async def key_proto_handler(callback: CallbackQuery):
                 f"⬇️ <b>СКАЧАЙТЕ ЭТОТ ФАЙЛ</b> — конфиг {item['protocol_label']}\n"
                 f"📄 <code>{escape_html(item.get('filename') or 'config.conf')}</code>\n\n"
                 '<b>Как подключиться:</b>\n'
-                '1. Установите приложение <b>AmneziaWG</b> (или AmneziaVPN)\n'
+                '1. Установите <b>AmneziaVPN</b> или <b>AmneziaWG</b> (ссылки — в разделе «🛡 AmneziaWG»)\n'
                 '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
                 '   или отсканируйте QR-код ниже\n'
                 '3. Никому не пересылайте файл: в нём ваш личный ключ'
