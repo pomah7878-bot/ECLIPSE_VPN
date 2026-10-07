@@ -297,6 +297,12 @@ async def main():
         if is_expired_callback_error(exception):
             logger.warning("⚠️ Просроченный Telegram callback: %s", exception)
             return True
+        # v1.213: экран перерисован с тем же содержимым (например, повторное «Обновить») —
+        # это не ошибка, пользователю ничего показывать не нужно
+        from aiogram.exceptions import TelegramBadRequest as _TgBadRequest
+        if isinstance(exception, _TgBadRequest) and "message is not modified" in str(exception).lower():
+            logger.debug("Экран не изменился (message is not modified)")
+            return True
         # We log the rest of the errors as usual
         logger.error(f"Необработанная ошибка: {exception}", exc_info=True)
         return True
