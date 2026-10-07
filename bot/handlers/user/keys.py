@@ -1308,10 +1308,9 @@ async def key_proto_handler(callback: CallbackQuery):
             chat_id,
             BufferedInputFile(item['config_text'].encode('utf-8'), filename=item.get('filename') or 'config.conf'),
             caption=(
-                f"⬇️ <b>СКАЧАЙТЕ ЭТОТ ФАЙЛ</b> — конфиг {item['protocol_label']}\n"
-                f"📄 <code>{escape_html(item.get('filename') or 'config.conf')}</code>\n\n"
+                f"📎 <b>Конфиг {item['protocol_label']}</b> — файл .conf прикреплён выше, нажмите на него, чтобы скачать\n\n"
                 '<b>Как подключиться:</b>\n'
-                '1. Установите <b>AmneziaVPN</b> или <b>AmneziaWG</b> (ссылки — в разделе «🛡 AmneziaWG»)\n'
+                '1. Установите <b>AmneziaVPN</b> или <b>AmneziaWG</b> (кнопка «Скачать приложение» — в разделе «🛡 AmneziaWG»)\n'
                 '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
                 '   или отсканируйте QR-код ниже\n'
                 '3. Один файл — одно устройство. Никому не пересылайте его: в нём ваш личный ключ'
