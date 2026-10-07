@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Открыть в AmneziaVPN</title>
+<title>Скачать конфигурацию AmneziaWG</title>
 <style>
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -15,10 +15,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .icon { font-size: 48px; margin-bottom: 12px; }
 h1 { font-size: 20px; margin: 0 0 12px; font-weight: 700; }
 p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }
-.btn { display: block; width: 100%; padding: 14px; margin-top: 12px; border: 0; border-radius: 12px;
-       font-size: 16px; font-weight: 600; cursor: pointer; color: #fff; background: #10b981; }
-.btn-secondary { background: #334155; }
-.status { margin-top: 12px; font-size: 13px; color: #34d399; }
+.btn { display: block; width: 100%; padding: 14px; margin-top: 16px; border: 0; border-radius: 12px;
+       font-size: 16px; font-weight: 600; cursor: pointer; color: #fff; background: #10b981;
+       text-decoration: none; }
+.status { margin-top: 12px; font-size: 13px; color: #34d399; min-height: 18px; }
 .hint { margin-top: 18px; text-align: left; font-size: 13px; color: #94a3b8; }
 .hint b { color: #e2e8f0; }
 </style>
@@ -26,68 +26,32 @@ p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }
 <body>
 <div class="card">
   <div class="icon">🧱</div>
-  <h1>Импорт в AmneziaVPN</h1>
-  <p id="message">Сейчас откроется приложение <b>AmneziaVPN</b> с вашим подключением AmneziaWG.</p>
-  <button class="btn" id="open-btn">📲 Открыть AmneziaVPN</button>
-  <button class="btn btn-secondary" id="copy-btn">📋 Скопировать ключ</button>
+  <h1>Конфигурация AmneziaWG</h1>
+  <p>Скачайте файл и откройте его в приложении <b>AmneziaVPN</b> или <b>AmneziaWG</b>.</p>
+  <a class="btn" id="dl-btn" href="#">⬇️ Скачать конфигурацию</a>
   <div id="status" class="status"></div>
   <div class="hint">
-    <b>Не открылось?</b><br>
-    1. Установите приложение <b>AmneziaVPN</b> (Google Play / App Store).<br>
-    2. Нажмите «Скопировать ключ».<br>
-    3. В приложении нажмите «+» (или «Начать») → «Вставить» → «Продолжить» → «Подключиться».<br>
-    Ключ нужно вставлять целиком — иначе приложение покажет ошибку.<br><br>
-    ⚠️ Ключ личный — никому его не отправляйте. Один ключ — одно устройство.
+    <b>Как подключиться:</b><br>
+    <b>iPhone:</b> после загрузки откройте файл → «Поделиться» → AmneziaVPN (или AmneziaWG).<br>
+    <b>Android:</b> откройте файл → «Открыть с помощью» → AmneziaVPN, либо в приложении «+» → «Файл».<br>
+    <b>Компьютер:</b> в приложении «+» → «Файл» → выберите скачанный .conf.<br><br>
+    ⚠️ Файл личный — никому его не отправляйте. Один файл — одно устройство.
   </div>
 </div>
 <script>
 (function () {
-    var link = __VPN_LINK_JSON__;
+    var url = __FILE_URL_JSON__;
     var statusEl = document.getElementById('status');
+    var btn = document.getElementById('dl-btn');
     var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    function ok() { statusEl.textContent = '✓ Ключ скопирован'; }
-    function fail() { statusEl.textContent = 'Нажмите «Скопировать ключ», чтобы скопировать его вручную'; }
-    function fallbackCopy() {
-        var done = false;
-        var ta = document.createElement('textarea');
-        ta.value = link;
-        ta.setAttribute('readonly', '');
-        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
-        document.body.appendChild(ta);
-        try {
-            ta.focus(); ta.select(); ta.setSelectionRange(0, link.length);
-            done = document.execCommand('copy');
-        } catch (e) { done = false; }
-        document.body.removeChild(ta);
-        if (done) { ok(); } else { fail(); }
+    function start() {
+        statusEl.textContent = '✓ Загрузка началась. Если ничего не произошло — нажмите кнопку ещё раз.';
+        window.location.href = url;
     }
-    function copyNow() {
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(link).then(ok).catch(fallbackCopy);
-            } else { fallbackCopy(); }
-        } catch (e) { fallbackCopy(); }
-    }
-    function openApp() {
-        copyNow();
-        window.location.href = link;
-        setTimeout(function () {
-            if (!document.hidden) {
-                statusEl.textContent = 'Приложение не открылось. Ключ скопирован — откройте AmneziaVPN, нажмите «+» → «Вставить».';
-            }
-        }, 1800);
-    }
-    document.getElementById('open-btn').onclick = openApp;
-    document.getElementById('copy-btn').onclick = copyNow;
-    if (isIOS) {
-        // iOS блокирует автозапуск и автокопирование без нажатия — только по кнопкам.
-        document.getElementById('message').innerHTML =
-            'Нажмите «Скопировать ключ», затем откройте <b>AmneziaVPN</b> → «+» → «Вставить».';
-    } else {
-        copyNow();
-        setTimeout(openApp, 900);
-    }
+    btn.href = url;
+    btn.onclick = function (e) { e.preventDefault(); start(); };
+    if (!isIOS) { setTimeout(start, 500); }
 })();
 </script>
 </body>

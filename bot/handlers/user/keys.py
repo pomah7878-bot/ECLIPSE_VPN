@@ -1314,7 +1314,7 @@ async def key_proto_handler(callback: CallbackQuery):
     nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')])
     # v1.202: «Открыть в AmneziaVPN» — только для vpn://-ключа и при настроенном https-сайте
     open_btn_added = False
-    if item.get('kind') == 'conf' and str(item.get('link') or '').startswith('vpn://'):
+    if item.get('kind') == 'conf' and (item.get('config_text') or '').strip():
         try:
             from database.requests import get_effective_webapp_url
             from bot.utils.awg_open_tokens import create_token
@@ -1322,7 +1322,7 @@ async def key_proto_handler(callback: CallbackQuery):
             _wb = (get_effective_webapp_url() or '').rstrip('/')
             if _wb.startswith('https://'):
                 nav = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text='📲 Открыть в AmneziaVPN', url=f"{_wb}/awg-open/{create_token(conf_to_amnezia_vpn(item.get('config_text') or '', item.get('name') or 'ECLIPSE') or item['link'])}")],
+                    [InlineKeyboardButton(text='⬇️ Скачать конфигурацию', url=f"{_wb}/awg-open/{create_token({'conf': item['config_text'], 'filename': item.get('filename') or 'ECLIPSE_AWG.conf'})}")],
                     _connections_nav(key_id, f'key_protocols:{key_id}'),
                 ])
                 open_btn_added = True
@@ -1343,7 +1343,7 @@ async def key_proto_handler(callback: CallbackQuery):
                 '   или отсканируйте QR-код ниже\n'
                 '3. Один файл — одно устройство. Никому не пересылайте его: в нём ваш личный ключ'
             ) + (
-                '\n\n📲 Если установлен <b>AmneziaVPN</b> — нажмите «Открыть в AmneziaVPN» под сообщением'
+                '\n\n⬇️ Если файл не открывается — нажмите «Скачать конфигурацию» под сообщением'
                 if open_btn_added else ''
             ),
             parse_mode='HTML',

@@ -3978,10 +3978,10 @@ async def handle_import(request: web.Request) -> web.Response:
 
 
 async def handle_awg_open(request: web.Request) -> web.Response:
-    """GET /awg-open/{token} — v1.202: страница «Открыть в AmneziaVPN».
+    """GET /awg-open/{token} — v1.217: страница скачивания конфигурации AmneziaWG.
 
-    Токен выдаёт бот (bot.utils.awg_open_tokens), живёт 15 минут. Ключ vpn://
-    содержит личный ключ клиента, поэтому ответ не кэшируется и не индексируется."""
+    Токен выдаёт бот (bot.utils.awg_open_tokens), живёт 15 минут. В токене лежит
+    текст .conf (личный ключ клиента), поэтому ответ не кэшируется и не индексируется."""
     from bot.services.license import is_feature_available
     if not is_feature_available("extra_protocols"):
         return _import_error_page(
@@ -3989,21 +3989,44 @@ async def handle_awg_open(request: web.Request) -> web.Response:
             "Импорт AmneziaWG сейчас недоступен на этом тарифе.",
         )
     from bot.utils.awg_open_tokens import get_link
-    link = get_link(request.match_info.get("token", ""))
-    if not link or not link.startswith("vpn://"):
+    token = request.match_info.get("token", "")
+    payload = get_link(token)
+    if not isinstance(payload, dict) or not payload.get("conf"):
         return _import_error_page(
             "Ссылка устарела",
-            "Вернитесь в бот и нажмите кнопку «Открыть в AmneziaVPN» ещё раз.",
+            "Вернитесь в бот и нажмите кнопку «Скачать конфигурацию» ещё раз.",
         )
     page_path = os.path.join(_TEMPLATES_DIR, "awg_open.html")
     if not os.path.exists(page_path):
         return web.Response(text="<h1>Template not found</h1>", status=404)
     page = await asyncio.to_thread(lambda: open(page_path, encoding="utf-8").read())
-    page = page.replace("__VPN_LINK_JSON__", json.dumps(link).replace("</", "<\\/"))
+    file_url = f"/awg-open/{token}/file"
+    page = page.replace("__FILE_URL_JSON__", json.dumps(file_url).replace("</", "<\\/"))
     resp = web.Response(text=page, content_type="text/html")
     resp.headers["Cache-Control"] = "no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"
     resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
+async def handle_awg_file(request: web.Request) -> web.Response:
+    """GET /awg-open/{token}/file — v1.217: отдаёт .conf как вложение (начинается загрузка)."""
+    from bot.services.license import is_feature_available
+    if not is_feature_available("extra_protocols"):
+        return web.Response(text="Функция недоступна", status=403)
+    from bot.utils.awg_open_tokens import get_link
+    payload = get_link(request.match_info.get("token", ""))
+    if not isinstance(payload, dict) or not payload.get("conf"):
+        return web.Response(text="Ссылка устарела", status=404)
+    name = re.sub(r"[^A-Za-z0-9._-]", "_", str(payload.get("filename") or "ECLIPSE_AWG.conf"))
+    if not name.lower().endswith(".conf"):
+        name += ".conf"
+    resp = web.Response(body=str(payload["conf"]).encode("utf-8"), content_type="application/octet-stream")
+    resp.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
     return resp
 
 
@@ -4149,6 +4172,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)
     app.router.add_get("/happ-sub/{sub_id}", handle_happ_subscription)
     app.router.add_get("/awg-open/{token}", handle_awg_open)
+    app.router.add_get("/awg-open/{token}/file", handle_awg_file)
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
     app.router.add_post("/api/public/pay/create", handle_public_pay_create)
