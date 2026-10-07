@@ -11,6 +11,7 @@ from .extension_commands import router as extension_commands_router
 from .support import router as support_router
 from .ai_handler import router as ai_handler_router
 from .promo import router as promo_router
+from .roulette import router as roulette_router
 
 # These are packages/modules that were explicitly standalone
 from .referral import router as referral_router
@@ -30,6 +31,7 @@ router.include_router(referral_router)
 router.include_router(support_router)
 router.include_router(ai_handler_router)
 router.include_router(promo_router)
+router.include_router(roulette_router)
 router.include_router(extension_callbacks_router)
 router.include_router(page_routes_router)
 router.include_router(start_router)

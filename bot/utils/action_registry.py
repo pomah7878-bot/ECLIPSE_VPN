@@ -35,6 +35,7 @@ ACTION_REGISTRY: Dict[str, str] = {
     "cmd_show_profile":   "route:profile",
     "cmd_show_id":        "show_id",
     "cmd_ai_support":     "ai_support_open",
+    "cmd_roulette":       "roulette_spin",
     "cmd_import_happ":    "import_happ",
     "cmd_import_incy":    "import_incy",
     "cmd_import_karing":  "import_karing",

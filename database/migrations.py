@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 143
+LATEST_VERSION = 144
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3310,6 +3310,63 @@ def migration_143(conn: sqlite3.Connection) -> None:
     logger.info("Migration v143 applied: индексы vpn_keys(sub_id), vpn_keys(client_uuid)")
 
 
+def migration_144(conn: sqlite3.Connection) -> None:
+    """Версия 1.218: прокрутки рулетки."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS roulette_spins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            telegram_id INTEGER NOT NULL,
+            dice_value INTEGER,
+            tier TEXT,
+            prize_type TEXT,
+            prize_amount INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_roulette_spins_user ON roulette_spins(user_id, created_at)")
+    # Платная функция «roulette»: лицензиям и тарифам tier='full' добавляется
+    # автоматически (как в миграции 114), custom-наборам — включать вручную.
+    for table in ("partner_licenses", "license_tariffs"):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not {"tier", "features"} <= columns:
+            continue
+        for row in conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall():
+            current = {f for f in (row[1] or "").split(",") if f}
+            current.add("roulette")
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), row[0]))
+    # Кнопка «🎰 Рулетка» на главной странице (скрыта по умолчанию, показывается
+    # кодом только когда рулетка включена и есть лицензия). Добавляется и в
+    # стандартный набор, и в набор, изменённый админом через редактор.
+    try:
+        for col in ("buttons_default", "buttons_custom"):
+            page = conn.execute(f"SELECT {col} FROM pages WHERE page_key = 'main'").fetchone()
+            if not page or not page[0]:
+                continue
+            try:
+                buttons = json.loads(page[0])
+            except (TypeError, ValueError):
+                continue
+            if any(b.get("id") == "btn_roulette" for b in buttons):
+                continue
+            last_row = max((b.get("row", 0) for b in buttons), default=-1)
+            buttons.append({
+                "id": "btn_roulette", "label": "🎰 Рулетка", "color": "secondary",
+                "row": last_row + 1, "col": 0, "is_hidden": True,
+                "action_type": "internal", "action_value": "cmd_roulette",
+            })
+            conn.execute(f"UPDATE pages SET {col} = ? WHERE page_key = 'main'",
+                         (json.dumps(buttons, ensure_ascii=False),))
+    except sqlite3.Error as e:
+        logger.warning("Migration v144: не удалось добавить кнопку рулетки на главную: %s", e)
+    logger.info("Migration v144 applied: таблица roulette_spins, функция roulette для full-лицензий")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3380,6 +3437,7 @@ MIGRATIONS = {
     141: migration_141,
     142: migration_142,
     143: migration_143,
+    144: migration_144,
 }
 
 

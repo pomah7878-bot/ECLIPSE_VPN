@@ -144,8 +144,15 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     # (bot/utils/action_registry.py, _import_scheme_allowed): лицензионная
     # фича app_import И персональный переключатель для конкретного
     # приложения (📲 Кнопки импорта в кабинете в меню админа).
+    try:
+        from bot.handlers.user.roulette import is_enabled as _roulette_enabled
+        show_roulette = _roulette_enabled()
+    except Exception:
+        show_roulette = False
+
     visibility = {
         'btn_trial': show_trial,
+        'btn_roulette': show_roulette,
         'btn_referral': show_referral,
         'btn_balance_topup': show_balance_button,
         'btn_ai_support': show_ai_support,

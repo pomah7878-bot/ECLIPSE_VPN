@@ -50,6 +50,7 @@ GATED_FEATURES = {
     "app_import": "📲 Импорт в Happ/INCY/Karing",
     "extra_protocols": "🛡 AmneziaWG / WireGuard / TUIC в списке подключений",
     "domain_autoprovision": "🌐 Автонастройка резервного домена (DNS+nginx+SSL)",
+    "roulette": "🎰 Рулетка (розыгрыш призов для клиентов)",
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
 }
 
