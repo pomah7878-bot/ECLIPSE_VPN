@@ -44,30 +44,50 @@ p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }
 (function () {
     var link = __VPN_LINK_JSON__;
     var statusEl = document.getElementById('status');
+    var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    function ok() { statusEl.textContent = '✓ Ключ скопирован'; }
+    function fail() { statusEl.textContent = 'Нажмите «Скопировать ключ», чтобы скопировать его вручную'; }
     function fallbackCopy() {
+        var done = false;
         var ta = document.createElement('textarea');
         ta.value = link;
+        ta.setAttribute('readonly', '');
         ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
         document.body.appendChild(ta);
-        ta.focus(); ta.select();
-        try { document.execCommand('copy'); } catch (e) {}
+        try {
+            ta.focus(); ta.select(); ta.setSelectionRange(0, link.length);
+            done = document.execCommand('copy');
+        } catch (e) { done = false; }
         document.body.removeChild(ta);
-        statusEl.textContent = '✓ Ключ скопирован';
+        if (done) { ok(); } else { fail(); }
     }
     function copyNow() {
         try {
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(link).then(function () {
-                    statusEl.textContent = '✓ Ключ скопирован';
-                }).catch(fallbackCopy);
+                navigator.clipboard.writeText(link).then(ok).catch(fallbackCopy);
             } else { fallbackCopy(); }
         } catch (e) { fallbackCopy(); }
     }
-    function openApp() { window.location.href = link; }
+    function openApp() {
+        copyNow();
+        window.location.href = link;
+        setTimeout(function () {
+            if (!document.hidden) {
+                statusEl.textContent = 'Приложение не открылось. Ключ скопирован — откройте AmneziaVPN, нажмите «+» → «Вставить».';
+            }
+        }, 1800);
+    }
     document.getElementById('open-btn').onclick = openApp;
     document.getElementById('copy-btn').onclick = copyNow;
-    copyNow();
-    setTimeout(openApp, 900);
+    if (isIOS) {
+        // iOS блокирует автозапуск и автокопирование без нажатия — только по кнопкам.
+        document.getElementById('message').innerHTML =
+            'Нажмите «Скопировать ключ», затем откройте <b>AmneziaVPN</b> → «+» → «Вставить».';
+    } else {
+        copyNow();
+        setTimeout(openApp, 900);
+    }
 })();
 </script>
 </body>
