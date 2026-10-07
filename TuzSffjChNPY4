@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""v1.217: имя файла .conf = «<Бренд>-<название ключа>.conf».
+
+Бренд — из «🏷 Название бренда», название ключа — то, что пользователь задал
+в «Мои ключи» (если не задано — Key-<номер>). Пример: ECLIPSE_Unlimited-Мой_телефон.conf
+Приложения Amnezia показывают это имя как название туннеля. Любая ошибка — прежнее имя.
+Идемпотентно."""
+import sys
+from pathlib import Path
+
+ROOT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
+p = ROOT / "bot/handlers/user/keys.py"
+s = p.read_text(encoding="utf-8")
+if "_brand_conf_filename" in s:
+    print("keys.py: уже применено"); sys.exit(0)
+
+HELPER = '''def _brand_conf_filename(key: dict, key_id: int, fallback: str) -> str:
+    """v1.217: имя .conf — «<Бренд>-<название ключа>.conf». Ошибка — прежнее имя."""
+    import re as _re
+    try:
+        from database.requests import get_effective_brand_name
+        def _clean(text: str, limit: int) -> str:
+            return _re.sub(r"[^\\w.-]+", "_", (text or "").strip(), flags=_re.UNICODE).strip("._-")[:limit]
+        brand = _clean(get_effective_brand_name(), 40)
+        name = _clean(key.get('custom_name') or '', 40) or f"Key-{key_id}"
+        return f"{brand}-{name}.conf" if brand else fallback
+    except Exception:
+        return fallback
+
+
+'''
+ANCHOR_H = "@router.callback_query(F.data.startswith('key_proto:'))\n"
+ANCHOR_U = "    qr = item.get('qr_png') or ''\n"
+if s.count(ANCHOR_H) != 1 or s.count(ANCHOR_U) != 1:
+    print("keys.py: не найден ожидаемый фрагмент"); sys.exit(1)
+USE = ("    if item.get('kind') == 'conf':\n"
+       "        item['filename'] = _brand_conf_filename(key, key_id, item.get('filename') or 'config.conf')\n")
+s = s.replace(ANCHOR_H, HELPER + ANCHOR_H, 1).replace(ANCHOR_U, USE + ANCHOR_U, 1)
+p.write_text(s, encoding="utf-8")
+print("keys.py: ок")

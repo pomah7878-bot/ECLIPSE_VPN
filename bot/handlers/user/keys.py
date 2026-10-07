@@ -1270,6 +1270,20 @@ async def key_protocols_handler(callback: CallbackQuery):
     await safe_edit_or_send(callback.message, text, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
 
 
+def _brand_conf_filename(key: dict, key_id: int, fallback: str) -> str:
+    """v1.217: имя .conf — «<Бренд>-<название ключа>.conf». Ошибка — прежнее имя."""
+    import re as _re
+    try:
+        from database.requests import get_effective_brand_name
+        def _clean(text: str, limit: int) -> str:
+            return _re.sub(r"[^\w.-]+", "_", (text or "").strip(), flags=_re.UNICODE).strip("._-")[:limit]
+        brand = _clean(get_effective_brand_name(), 40)
+        name = _clean(key.get('custom_name') or '', 40) or f"Key-{key_id}"
+        return f"{brand}-{name}.conf" if brand else fallback
+    except Exception:
+        return fallback
+
+
 @router.callback_query(F.data.startswith('key_proto:'))
 async def key_proto_handler(callback: CallbackQuery):
     """Отправляет выбранное подключение: .conf + QR для WG/AWG, ссылка для остальных.
@@ -1301,6 +1315,8 @@ async def key_proto_handler(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     bot = callback.message.bot
     nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')])
+    if item.get('kind') == 'conf':
+        item['filename'] = _brand_conf_filename(key, key_id, item.get('filename') or 'config.conf')
     qr = item.get('qr_png') or ''
     png = base64.b64decode(qr.split(',', 1)[1]) if qr.startswith('data:image/png;base64,') else None
     if item.get('kind') == 'conf':
