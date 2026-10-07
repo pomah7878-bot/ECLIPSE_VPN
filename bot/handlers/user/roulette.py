@@ -68,6 +68,20 @@ def is_enabled() -> bool:
     return is_licensed() and _setting("roulette_enabled", "0") == "1"
 
 
+def can_spin(telegram_id: int) -> bool:
+    """Показывать ли кнопку на главной: рулетка включена и у клиента нет паузы."""
+    if not is_enabled():
+        return False
+    try:
+        from database.requests import get_user_internal_id, get_roulette_wait_seconds
+        user_id = get_user_internal_id(telegram_id)
+        if not user_id:
+            return False
+        return get_roulette_wait_seconds(user_id, period_days()) == 0
+    except Exception:
+        return False
+
+
 def period_days() -> int:
     try:
         return min(365, max(1, int(_setting("roulette_period_days", "7"))))

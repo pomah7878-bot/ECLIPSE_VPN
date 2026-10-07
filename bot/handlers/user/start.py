@@ -145,8 +145,8 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     # фича app_import И персональный переключатель для конкретного
     # приложения (📲 Кнопки импорта в кабинете в меню админа).
     try:
-        from bot.handlers.user.roulette import is_enabled as _roulette_enabled
-        show_roulette = _roulette_enabled()
+        from bot.handlers.user.roulette import can_spin as _roulette_can_spin
+        show_roulette = _roulette_can_spin(user_id)
     except Exception:
         show_roulette = False
 

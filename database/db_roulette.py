@@ -33,6 +33,24 @@ def reserve_roulette_spin(user_id: int, telegram_id: int, period_days: int) -> d
         return {"spin_id": int(cur.lastrowid)}
 
 
+def get_roulette_wait_seconds(user_id: int, period_days: int) -> int:
+    """0 — можно крутить сейчас, иначе секунд до следующей попытки (ничего не пишет)."""
+    period_days = max(1, int(period_days))
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT MAX(created_at) AS last FROM roulette_spins "
+            "WHERE user_id = ? AND status IN ('pending','granting','done') "
+            "AND created_at > datetime('now', ?)",
+            (user_id, f"-{period_days} days"),
+        ).fetchone()
+    last = row["last"] if row else None
+    if not last:
+        return 0
+    last_dt = datetime.strptime(str(last)[:19], "%Y-%m-%d %H:%M:%S")
+    wait = (last_dt + timedelta(days=period_days) - datetime.utcnow()).total_seconds()
+    return max(0, int(wait))
+
+
 def claim_roulette_spin(spin_id: int, dice_value: int) -> bool:
     """Атомарно переводит pending -> granting (приз выдаётся ровно один раз)."""
     with get_db() as conn:
