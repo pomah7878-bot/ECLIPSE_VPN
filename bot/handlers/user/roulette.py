@@ -123,9 +123,16 @@ def _wait_text(seconds: int) -> str:
     return " ".join(parts) or "1 мин"
 
 
+def _home_kb():
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
+    ])
+
+
 async def _say(bot, chat_id: int, text: str) -> None:
     try:
-        await bot.send_message(chat_id, text, parse_mode="HTML")
+        await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=_home_kb())
     except Exception as e:
         logger.warning("Рулетка: не удалось отправить сообщение %s: %s", chat_id, e)
 
