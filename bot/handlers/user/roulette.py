@@ -123,26 +123,36 @@ def _wait_text(seconds: int) -> str:
     return " ".join(parts) or "1 мин"
 
 
-def _home_kb():
+def _home_kb(close_dice_id: int = 0, via_button: bool = False):
+    """Кнопка «На главную». Если рулетку открыли кнопкой с главной страницы —
+    сообщения рулетки просто закрываются и пользователь остаётся на прежней
+    странице. Если вызвали командой /spin — открывается главная страница."""
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    cb = f"roulette_close:{int(close_dice_id)}" if via_button else "start"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
+        [InlineKeyboardButton(text="🈴 На главную", callback_data=cb)],
     ])
 
 
-async def _say(bot, chat_id: int, text: str) -> None:
+async def _say_base(bot, chat_id: int, text: str, dice_id: int = 0, via_button: bool = False) -> None:
     try:
-        await bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=_home_kb())
+        await bot.send_message(chat_id, text, parse_mode="HTML",
+                               reply_markup=_home_kb(dice_id, via_button))
     except Exception as e:
         logger.warning("Рулетка: не удалось отправить сообщение %s: %s", chat_id, e)
 
 
-async def run_spin(bot, chat_id: int, telegram_id: int) -> None:
+async def run_spin(bot, chat_id: int, telegram_id: int, via_button: bool = False) -> None:
     from bot.services.user_locks import user_locks
     from database.requests import (
         get_first_active_key_for_user, get_user_internal_id,
         reserve_roulette_spin, claim_roulette_spin, finish_roulette_spin, fail_roulette_spin,
     )
+
+    dice_id = 0
+
+    async def _say(bot, chat_id, text):  # noqa: F811 — локальная обёртка с контекстом
+        await _say_base(bot, chat_id, text, dice_id, via_button)
 
     if not is_enabled():
         await _say(bot, chat_id, "🎰 <b>Рулетка</b>\n\nСейчас рулетка недоступна.")
@@ -171,6 +181,7 @@ async def run_spin(bot, chat_id: int, telegram_id: int) -> None:
     try:
         dice_msg = await bot.send_dice(chat_id, emoji="🎰")
         value = int(dice_msg.dice.value)
+        dice_id = dice_msg.message_id
     except Exception as e:
         logger.warning("Рулетка: не удалось запустить барабан user=%s: %s", telegram_id, e)
         fail_roulette_spin(spin_id)
@@ -235,7 +246,24 @@ async def cmd_spin(message: Message):
 @router.callback_query(F.data == "roulette_spin")
 async def cb_spin(callback: CallbackQuery):
     await callback.answer()
-    await run_spin(callback.message.bot, callback.message.chat.id, callback.from_user.id)
+    await run_spin(callback.message.bot, callback.message.chat.id, callback.from_user.id, via_button=True)
+
+
+@router.callback_query(F.data.startswith("roulette_close"))
+async def cb_close(callback: CallbackQuery):
+    """Убирает сообщения рулетки — под ними остаётся прежняя страница."""
+    await callback.answer()
+    chat_id = callback.message.chat.id
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    parts = callback.data.split(":")
+    if len(parts) == 2 and parts[1].isdigit() and int(parts[1]) > 0:
+        try:
+            await callback.message.bot.delete_message(chat_id, int(parts[1]))
+        except Exception:
+            pass
 
 
 # ===== Управление для админа: «📣 Маркетинг» → «🎰 Рулетка» =====
