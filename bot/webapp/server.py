@@ -1221,6 +1221,39 @@ _LINK_PREVIEW_UA_RE = re.compile(
 )
 
 
+# v1.215: общий HTTP-сеанс к панели для подписок — соединения и TLS переиспользуются.
+# DummyCookieJar: cookies панели не должны попадать от одного клиента к другому.
+_UPSTREAM_SESSION = None
+
+
+def _get_upstream_session():
+    global _UPSTREAM_SESSION
+    import aiohttp as _ah
+    if _UPSTREAM_SESSION is None or _UPSTREAM_SESSION.closed:
+        _UPSTREAM_SESSION = _ah.ClientSession(
+            cookie_jar=_ah.DummyCookieJar(),
+            connector=_ah.TCPConnector(limit=50, ttl_dns_cache=300, keepalive_timeout=30),
+        )
+    return _UPSTREAM_SESSION
+
+
+async def _close_upstream_session(app=None) -> None:
+    global _UPSTREAM_SESSION
+    session, _UPSTREAM_SESSION = _UPSTREAM_SESSION, None
+    if session is not None and not session.closed:
+        await session.close()
+
+
+class _upstream_session:
+    """async with _upstream_session() as session — выдаёт общий сеанс и НЕ закрывает его."""
+
+    async def __aenter__(self):
+        return _get_upstream_session()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
 async def handle_happ_subscription(request: web.Request) -> web.Response:
     """GET /happ-sub/{sub_id} — прокси-обёртка над реальной подпиской,
     отдаваемой панелью 3x-ui, добавляющая заголовки, которые понимает
@@ -1313,7 +1346,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         )
     served_from_cache = False
     try:
-        async with _aiohttp.ClientSession() as session:
+        async with _upstream_session() as session:
             async with session.get(
                 raw_url, timeout=_aiohttp.ClientTimeout(total=10), headers=forward_headers
             ) as upstream:
@@ -4092,6 +4125,7 @@ async def license_gate_middleware(request: web.Request, handler):
 def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
     app = web.Application(middlewares=[cors_middleware, license_gate_middleware])
+    app.on_cleanup.append(_close_upstream_session)
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
     app.router.add_get("/favicon.ico", handle_favicon)

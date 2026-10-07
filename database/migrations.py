@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 142
+LATEST_VERSION = 143
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3300,6 +3300,16 @@ def migration_142(conn: sqlite3.Connection) -> None:
     logger.info("Migration v142 applied: кнопка btn_key_protocols переименована в AmneziaWG")
 
 
+def migration_143(conn: sqlite3.Connection) -> None:
+    """Версия 1.215: индексы для поиска ключа по sub_id (каждое обновление подписки) и client_uuid."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(vpn_keys)")}
+    if "sub_id" in columns:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vpn_keys_sub_id ON vpn_keys(sub_id)")
+    if "client_uuid" in columns:
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vpn_keys_client_uuid ON vpn_keys(client_uuid)")
+    logger.info("Migration v143 applied: индексы vpn_keys(sub_id), vpn_keys(client_uuid)")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3369,6 +3379,7 @@ MIGRATIONS = {
     140: migration_140,
     141: migration_141,
     142: migration_142,
+    143: migration_143,
 }
 
 

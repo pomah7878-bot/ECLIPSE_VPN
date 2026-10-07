@@ -3,7 +3,9 @@ SQLite database connection module.
 
 Provides a context manager for secure work with the database.
 """
+import atexit
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -99,6 +101,43 @@ def _apply_connection_pragmas(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
 
 
+# v1.215: постоянное «якорное» соединение. Пока оно открыто, SQLite не делает контрольную
+# точку и не удаляет файлы WAL при закрытии каждого короткого соединения — запросы заметно
+# быстрее, особенно на медленных дисках. Само по себе якорь никаких запросов не выполняет.
+_ANCHOR = None
+_ANCHOR_LOCK = threading.Lock()
+
+
+def _ensure_anchor() -> None:
+    global _ANCHOR
+    if _ANCHOR is not None:
+        return
+    with _ANCHOR_LOCK:
+        if _ANCHOR is not None:
+            return
+        try:
+            anchor = sqlite3.connect(
+                DB_PATH, timeout=get_sqlite_busy_timeout_ms() / 1000, check_same_thread=False
+            )
+            _apply_connection_pragmas(anchor)
+            _ANCHOR = anchor
+        except Exception:
+            _ANCHOR = False  # не повторяем попытки, работаем как раньше
+
+
+def _close_anchor() -> None:
+    global _ANCHOR
+    anchor, _ANCHOR = _ANCHOR, None
+    if anchor:
+        try:
+            anchor.close()
+        except Exception:
+            pass
+
+
+atexit.register(_close_anchor)
+
+
 def get_connection() -> sqlite3.Connection:
     """
     Creates a new connection to the database.
@@ -106,6 +145,7 @@ def get_connection() -> sqlite3.Connection:
     Returns:
         sqlite3.Connection: Connection to the database
     """
+    _ensure_anchor()
     timeout_seconds = get_sqlite_busy_timeout_ms() / 1000
     conn = sqlite3.connect(DB_PATH, timeout=timeout_seconds)
     conn.row_factory = sqlite3.Row  # Access fields by name
