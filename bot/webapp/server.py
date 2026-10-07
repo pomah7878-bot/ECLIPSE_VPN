@@ -3459,8 +3459,18 @@ async def handle_public_account_lookup(request: web.Request) -> web.Response:
     if not code:
         return web.json_response({"ok": False, "message": "Введите код."}, status=400)
 
+    # v1.212: как у session-login — не более 10 неудачных попыток с одного IP за 10 минут
+    _lk_ip = _get_client_ip(request)
+    if not _rl_allowed(f"lookup-fail:{_lk_ip}", 10, 600):
+        return web.json_response(
+            {"ok": False, "message": "Слишком много неудачных попыток. Попробуйте через 10 минут."},
+            status=429,
+        )
+
     from bot.services.anonymous_purchase import get_account_info_by_claim_code
     result = await get_account_info_by_claim_code(code)
+    if not (isinstance(result, dict) and result.get("ok")):
+        _rl_record(f"lookup-fail:{_lk_ip}")
     return web.json_response(result)
 
 
