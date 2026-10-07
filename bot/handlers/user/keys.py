@@ -1246,23 +1246,14 @@ async def key_protocols_handler(callback: CallbackQuery):
             reply_markup=nav_only,
         )
         return
-    # v1.205: где скачать — AmneziaVPN и отдельное приложение AmneziaWG (ссылки из документации Amnezia)
-    rows.append([
-        InlineKeyboardButton(text='🤖 AmneziaVPN: Android', url='https://play.google.com/store/apps/details?id=org.amnezia.vpn'),
-        InlineKeyboardButton(text='🍎 AmneziaVPN: iOS', url='https://apps.apple.com/us/app/amneziavpn/id1600529900'),
-    ])
-    rows.append([InlineKeyboardButton(text='💻 AmneziaVPN: Windows / macOS / Linux', url='https://amnezia.org/ru/downloads')])
-    rows.append([
-        InlineKeyboardButton(text='🤖 AmneziaWG: Android', url='https://play.google.com/store/apps/details?id=org.amnezia.awg'),
-        InlineKeyboardButton(text='🪟 AmneziaWG: Windows', url='https://github.com/amnezia-vpn/amneziawg-windows-client/releases'),
-    ])
-    rows.append([InlineKeyboardButton(text='📦 APK и все версии (GitHub)', url='https://github.com/amnezia-vpn/amnezia-client/releases')])
+    # v1.217: одна ссылка на официальную страницу загрузки
+    rows.append([InlineKeyboardButton(text='⬇️ Скачать приложение', url='https://amnezia.org/ru/downloads')])
     rows.append(_connections_nav(key_id))
     text = (
         '🛡 <b>AmneziaWG</b>\n\n'
         'Быстрый протокол, который хорошо работает там, где обычный VPN блокируют.\n\n'
         '<b>Как подключиться:</b>\n'
-        '1. Установите <b>AmneziaVPN</b> (кнопки «где скачать» ниже) или отдельное приложение <b>AmneziaWG</b>\n'
+        '1. Установите <b>AmneziaVPN</b> или отдельное приложение <b>AmneziaWG</b> (кнопка «Скачать приложение» ниже)\n'
         '2. Нажмите кнопку с подключением ниже — бот пришлёт файл .conf и QR-код\n'
         '3. Импорт в приложении:\n'
         '   • <b>AmneziaVPN</b> — «+» → «Вставить» ключ или «Сканировать QR-код»\n'
@@ -1271,8 +1262,6 @@ async def key_protocols_handler(callback: CallbackQuery):
         '(на iPhone и Mac приложение ищите в App Store по названию «AmneziaWG»)\n'
         '   • <b>Windows / macOS</b> — «Добавить туннель» и выберите файл .conf\n'
         '4. Включите туннель\n\n'
-        '📲 Есть AmneziaVPN? Под файлом будет кнопка «Открыть в AmneziaVPN» — импорт в одно касание '
-        '(лучше всего работает на Android).\n\n'
         '⚠️ <b>Один файл — одно устройство.</b> Если поставить его на два устройства сразу, '
         'соединения будут мешать друг другу — для второго устройства создайте отдельный ключ.\n'
         '🔒 Файл содержит ваш личный ключ — никому его не пересылайте.\n\n'
@@ -1312,22 +1301,6 @@ async def key_proto_handler(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     bot = callback.message.bot
     nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')])
-    # v1.202: «Открыть в AmneziaVPN» — только для vpn://-ключа и при настроенном https-сайте
-    open_btn_added = False
-    if item.get('kind') == 'conf' and (item.get('config_text') or '').strip():
-        try:
-            from database.requests import get_effective_webapp_url
-            from bot.utils.awg_open_tokens import create_token
-            from bot.utils.inbound_links import conf_to_amnezia_vpn
-            _wb = (get_effective_webapp_url() or '').rstrip('/')
-            if _wb.startswith('https://'):
-                nav = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text='⬇️ Скачать конфигурацию', url=f"{_wb}/awg-open/{create_token({'conf': item['config_text'], 'filename': item.get('filename') or 'ECLIPSE_AWG.conf'})}")],
-                    _connections_nav(key_id, f'key_protocols:{key_id}'),
-                ])
-                open_btn_added = True
-        except Exception as e:
-            logger.warning(f'Кнопка AmneziaVPN для ключа {key_id}: {e}')
     qr = item.get('qr_png') or ''
     png = base64.b64decode(qr.split(',', 1)[1]) if qr.startswith('data:image/png;base64,') else None
     if item.get('kind') == 'conf':
@@ -1342,9 +1315,6 @@ async def key_proto_handler(callback: CallbackQuery):
                 '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
                 '   или отсканируйте QR-код ниже\n'
                 '3. Один файл — одно устройство. Никому не пересылайте его: в нём ваш личный ключ'
-            ) + (
-                '\n\n⬇️ Если файл не открывается — нажмите «Скачать конфигурацию» под сообщением'
-                if open_btn_added else ''
             ),
             parse_mode='HTML',
             reply_markup=None if png else nav,
