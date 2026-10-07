@@ -981,7 +981,7 @@ async def admin_update_cmd(message: Message, state: FSMContext):
         "Загружаю изменения с GitHub..."
     )
     
-    success, log_message = pull_updates()
+    success, log_message = await asyncio.to_thread(pull_updates)
     
     if not success:
         await safe_edit_or_send(message,
@@ -1059,7 +1059,7 @@ async def show_update_confirm(callback: CallbackQuery, state: FSMContext):
     )
     
     # Checking for updates
-    success, commits_behind, log_text, has_blocking, blocking_commit, is_beta_only = check_for_updates()
+    success, commits_behind, log_text, has_blocking, blocking_commit, is_beta_only = await asyncio.to_thread(check_for_updates)
     
     if not success:
         await safe_edit_or_send(callback.message, 
@@ -1169,7 +1169,7 @@ async def update_bot_confirmed(callback: CallbackQuery, state: FSMContext):
             "Загружаю изменения с GitHub..."
         )
         
-        success, message = pull_updates()
+        success, message = await asyncio.to_thread(pull_updates)
     
     if not success:
         await safe_edit_or_send(callback.message, 
@@ -1261,7 +1261,7 @@ async def force_overwrite_confirmed(callback: CallbackQuery, state: FSMContext):
     # Checking for blocking commits before rewriting
     from bot.utils.git_utils import get_pending_commits_list, find_first_blocking_commit
     
-    success_fetch, pending_commits = get_pending_commits_list()
+    success_fetch, pending_commits = await asyncio.to_thread(get_pending_commits_list)
     blocking_commit = find_first_blocking_commit(pending_commits) if success_fetch else None
     
     if blocking_commit:
@@ -1290,7 +1290,7 @@ async def force_overwrite_confirmed(callback: CallbackQuery, state: FSMContext):
         )
     else:
         # No blocking commits - full rewrite
-        success, message = force_pull_updates()
+        success, message = await asyncio.to_thread(force_pull_updates)
         
         if not success:
             await safe_edit_or_send(callback.message, 

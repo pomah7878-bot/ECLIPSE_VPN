@@ -980,7 +980,7 @@ async def check_and_notify_updates(bot: Bot) -> None:
         
     try:
         # Checking for updates
-        success, commits_behind, log_text, has_blocking, blocking_commit, is_beta_only = check_for_updates()
+        success, commits_behind, log_text, has_blocking, blocking_commit, is_beta_only = await asyncio.to_thread(check_for_updates)
         
         if success and commits_behind > 0:
             if is_beta_only:
