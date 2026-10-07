@@ -287,6 +287,8 @@ async def main():
     from aiogram.types import ErrorEvent
     from bot.utils.callbacks import is_expired_callback_error
     
+    _ERR_NOTICE_AT: dict = {}
+
     @dp.errors()
     async def global_error_handler(event: ErrorEvent):
         """Intercepts safe Telegram network/callback errors with short warnings."""
@@ -305,11 +307,31 @@ async def main():
             return True
         # We log the rest of the errors as usual
         logger.error(f"Необработанная ошибка: {exception}", exc_info=True)
+        # v1.214: человек не должен гадать, «висит» бот или нет — коротко сообщаем и просим повторить
+        try:
+            import time as _t
+            _upd = event.update
+            _msg = getattr(_upd, "message", None)
+            _cb = getattr(_upd, "callback_query", None)
+            _uid = (_msg.from_user.id if _msg and _msg.from_user else (_cb.from_user.id if _cb and _cb.from_user else None))
+            _last = _ERR_NOTICE_AT.get(_uid, 0)
+            if _uid and _t.time() - _last > 30:
+                _ERR_NOTICE_AT[_uid] = _t.time()
+                if _cb:
+                    await _cb.answer("⚠️ Что-то пошло не так. Попробуйте ещё раз.", show_alert=False)
+                elif _msg:
+                    await _msg.answer("⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start.")
+        except Exception:
+            pass
         return True
     
     # Registering startup/shutdown
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
+
+    # v1.214: сторож цикла событий (пишет в журнал, где завис бот)
+    from bot.utils.loop_watchdog import start_loop_watchdog
+    start_loop_watchdog()
     
     # Remove old updates and run polling
     await bot.delete_webhook(drop_pending_updates=True)
