@@ -402,7 +402,17 @@ def conf_to_amnezia_vpn(conf_text: str, description: str = "ECLIPSE") -> Optiona
     if not match or not interface.get("PrivateKey") or not peer.get("PublicKey"):
         return None
     host, port = match.group(1), int(match.group(2))
-    awg = {_AWG_CANON[k.lower()]: v for k, v in interface.items() if k.lower() in _AWG_CANON}
+    # v1.217: переносим все не-WireGuard параметры (AWG 2.0 и 3.x), а не только
+    # заранее известные — иначе новые поля 3.x теряются и ключ не работает.
+    _wg_std = {"privatekey", "address", "dns", "mtu", "listenport", "table",
+               "preup", "postup", "predown", "postdown", "saveconfig", "fwmark"}
+    awg = {}
+    for _k, _v in interface.items():
+        _kl = _k.lower()
+        if _kl in _AWG_CANON:
+            awg[_AWG_CANON[_kl]] = _v
+        elif _kl not in _wg_std:
+            awg[_k] = _v
     is_awg = bool(awg)
     dns = [d.strip() for d in interface.get("DNS", "").split(",") if d.strip()]
     last_config: dict[str, Any] = dict(awg)
