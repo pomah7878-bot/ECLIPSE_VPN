@@ -1328,6 +1328,16 @@ async def _ensure_subscription_keys_on_server_impl(
 
             if uses_clients_api and presence:
                 sorted_presence = sorted(presence.items())
+                # flow сверяем только у inbound, которым он нужен: у остальных
+                # (WireGuard/AmneziaWG и др.) панель всегда отдаёт пустой flow.
+                inbound_has_flow = {}
+                for _inb in inbounds:
+                    try:
+                        inbound_has_flow[_inb['id']] = bool(
+                            await _get_inbound_flow_safe(client, _inb['id'], server_id, _inb)
+                        )
+                    except Exception:
+                        inbound_has_flow[_inb['id']] = True
                 needs_update = [
                     (inb_id, cl)
                     for inb_id, cl in sorted_presence
@@ -1338,7 +1348,7 @@ async def _ensure_subscription_keys_on_server_impl(
                         enable=target_enable,
                         sub_id=sub_id,
                         limit_ip=limit_ip,
-                        flow=clients_api_flow,
+                        flow=clients_api_flow if inbound_has_flow.get(inb_id, True) else None,
                     )
                 ]
 
