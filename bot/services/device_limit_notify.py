@@ -167,9 +167,10 @@ def _user_text(key: Dict[str, Any], counts: Optional[Tuple[int, int]]) -> str:
 
 def _user_markup(key_id: int):
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="📱 Устройства ключа", callback_data=f"key_devices:{key_id}")
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 Устройства ключа", callback_data=f"key_devices:{key_id}")],
+        [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
+    ])
 
 
 async def _notify(bot, key: Dict[str, Any], reason: str, counts: Optional[Tuple[int, int]] = None) -> None:
