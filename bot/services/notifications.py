@@ -240,7 +240,10 @@ async def notify_referrers_new_referral(bot: Bot, referral_id: int) -> None:
                         mode='html',
                     )
                     try:
-                        await bot.send_message(referrer['telegram_id'], text, parse_mode='HTML')
+                        await bot.send_message(
+                            referrer['telegram_id'], text, parse_mode='HTML',
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
+                        )
                     except Exception as e:
                         logger.warning(
                             f"Не удалось отправить уведомление о реферале user={referrer_id}: {e}"
@@ -324,7 +327,10 @@ async def notify_referrers_purchase(
             )
 
             try:
-                await bot.send_message(referrer['telegram_id'], text, parse_mode='HTML')
+                await bot.send_message(
+                    referrer['telegram_id'], text, parse_mode='HTML',
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
+                )
             except Exception as e:
                 logger.warning(
                     f"Не удалось отправить уведомление о покупке referrer={event.get('referrer_id')}: {e}"

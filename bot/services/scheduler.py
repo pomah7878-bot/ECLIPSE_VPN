@@ -665,6 +665,7 @@ async def process_auto_renewals(bot: Bot) -> None:
                             f"иначе ключ истечёт по расписанию."
                         ),
                         parse_mode="HTML",
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
                     )
                 except Exception as e:
                     logger.warning(f"Не удалось отправить уведомление о неудачном автопродлении {telegram_id}: {e}")
@@ -686,6 +687,7 @@ async def process_auto_renewals(bot: Bot) -> None:
                     f"Новый срок действия: +{duration_days} дн."
                 ),
                 parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
             )
         except Exception as e:
             logger.warning(f"Не удалось отправить уведомление об автопродлении {telegram_id}: {e}")
@@ -1293,7 +1295,8 @@ async def sync_traffic_stats(
                         await bot.send_message(
                             chat_id=telegram_id,
                             text=msg,
-                            parse_mode="HTML"
+                            parse_mode="HTML",
+                            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
                         )
                     except Exception as e:
                         logger.warning(f"Не удалось отправить уведомление о трафике пользователю {telegram_id}: {e}")
