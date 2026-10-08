@@ -461,6 +461,9 @@ def _panel_bool(value: Any, default: bool = True) -> bool:
     return bool(value)
 
 
+_PANEL_DIFF_LOGGED: list = []
+
+
 def _client_needs_panel_update(
     client: Dict[str, Any],
     *,
@@ -475,22 +478,30 @@ def _client_needs_panel_update(
     """True if the panel client is different from the target state from the database."""
     from bot.services.panels.xui import _build_device_limit_fields
     expected_limits = _build_device_limit_fields(limit_ip)
+    # Поле, которого нет в ответе панели, означает «0» (нет лимита / нет сброса).
     checks = (
-        (_panel_int(client.get('expiryTime')), int(expiry_time_ms)),
-        (_panel_int(client.get('totalGB')), int(total_gb_bytes)),
-        (_panel_int(client.get('limitIp')), expected_limits['limitIp']),
-        (_panel_int(client.get('limitHwid')), expected_limits['limitHwid']),
-        (_panel_int(client.get('reset')), 0),
+        ('expiryTime', _panel_int(client.get('expiryTime')), int(expiry_time_ms)),
+        ('totalGB', _panel_int(client.get('totalGB')), int(total_gb_bytes)),
+        ('limitIp', _panel_int(client.get('limitIp'), 0), expected_limits['limitIp']),
+        ('limitHwid', _panel_int(client.get('limitHwid'), 0), expected_limits['limitHwid']),
+        ('reset', _panel_int(client.get('reset'), 0), 0),
+        ('enable', _panel_bool(client.get('enable'), True), bool(enable)),
     )
-    if any(current != expected for current, expected in checks):
-        return True
-    if _panel_bool(client.get('enable'), True) != bool(enable):
-        return True
-    if compare_sub_id and (client.get('subId') or '') != (sub_id or ''):
-        return True
-    if flow is not None and (client.get('flow') or '') != flow:
-        return True
-    return False
+    if compare_sub_id:
+        checks += (('subId', client.get('subId') or '', sub_id or ''),)
+    if flow is not None:
+        checks += (('flow', client.get('flow') or '', flow),)
+    diffs = [(name, cur, exp) for name, cur, exp in checks if cur != exp]
+    if not diffs:
+        return False
+    if len(_PANEL_DIFF_LOGGED) < 30:
+        _PANEL_DIFF_LOGGED.append(1)
+        logger.info(
+            "panel_diff: клиент %s отличается от БД: %s",
+            client.get('email') or client.get('id') or '?',
+            "; ".join(f"{n}: панель={c!r}, ожидается={e!r}" for n, c, e in diffs),
+        )
+    return True
 
 
 def _client_uses_clients_api(client: BaseVPNClient) -> bool:
