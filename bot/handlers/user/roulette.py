@@ -2,7 +2,9 @@
 
 Результат барабана определяет сам Telegram (send_dice), бот его не выбирает.
 Приз зависит от комбинации. Одна попытка за период, нужен активный ключ.
-Админ управляет в «📣 Маркетинг» → «🎰 Рулетка». По умолчанию рулетка выключена."""
+Админ управляет в «📣 Маркетинг» → «🎰 Рулетка». По умолчанию рулетка выключена.
+
+v1.222: клиенту только с пробными ключами доступна одна прокрутка, приз ограничен."""
 import asyncio
 import json
 import logging
@@ -77,9 +79,61 @@ def can_spin(telegram_id: int) -> bool:
         user_id = get_user_internal_id(telegram_id)
         if not user_id:
             return False
-        return get_roulette_wait_seconds(user_id, period_days()) == 0
+        if get_roulette_wait_seconds(user_id, period_days()) != 0:
+            return False
+        from database.requests import count_roulette_spins
+        if count_roulette_spins(user_id) >= 1 and is_trial_only(user_id):
+            return False
+        return True
     except Exception:
         return False
+
+
+TRIAL_MAX_DAYS_CHOICES = (1, 2, 3, 5, 7)
+
+
+def trial_max_days() -> int:
+    """v1.222: максимум дней в призе для клиентов только с пробными ключами."""
+    try:
+        return min(30, max(1, int(_setting("roulette_trial_max_days", "3"))))
+    except ValueError:
+        return 3
+
+
+def _trial_tariff_ids() -> set:
+    ids = set()
+    try:
+        from database.requests import get_trial_tariff_id, get_groups_with_trial
+        t = get_trial_tariff_id()
+        if t:
+            ids.add(int(t))
+        for g in get_groups_with_trial():
+            if g.get("trial_tariff_id"):
+                ids.add(int(g["trial_tariff_id"]))
+    except Exception:
+        pass
+    return ids
+
+
+def is_trial_only(user_id: int) -> bool:
+    """v1.222: True, если ВСЕ активные ключи клиента пробные.
+    Купленный ключ или ключ, выданный админом, делают клиента обычным."""
+    try:
+        from database.requests import get_user_active_tariff_ids
+        tariffs = get_user_active_tariff_ids(user_id)
+        trial_ids = _trial_tariff_ids()
+        if not tariffs or not trial_ids:
+            return False
+        return all(t is not None and int(t) in trial_ids for t in tariffs)
+    except Exception:
+        return False
+
+
+def limit_prize_for_trial(prize: dict) -> dict:
+    """v1.222: ограничивает приз для пробных ключей: дни не больше лимита, рубли убираем."""
+    if prize.get("type") == "days":
+        return {"type": "days", "amount": min(int(prize["amount"]), trial_max_days())}
+    return {"type": "none", "amount": 0}
 
 
 def period_days() -> int:
@@ -180,8 +234,24 @@ async def run_spin(bot, chat_id: int, telegram_id: int, via_button: bool = False
         return
 
     period = period_days()
+    trial_only = is_trial_only(user_id)
     async with user_locks[user_id]:
-        reservation = reserve_roulette_spin(user_id, telegram_id, period)
+        if trial_only:
+            from database.requests import count_roulette_spins
+            if count_roulette_spins(user_id) >= 1:
+                reservation = {"trial_used": True}
+            else:
+                reservation = reserve_roulette_spin(user_id, telegram_id, period)
+        else:
+            reservation = reserve_roulette_spin(user_id, telegram_id, period)
+    if reservation.get("trial_used"):
+        await _say(
+            bot, chat_id,
+            "🎰 <b>Рулетка</b>\n\n"
+            "Пробному ключу доступна одна прокрутка, и вы её уже использовали.\n"
+            f"🔑 Оформите подписку, и рулетка будет доступна каждые <b>{period} {_plural_days(period)}</b>.",
+        )
+        return
     if "wait_seconds" in reservation:
         await _say(
             bot, chat_id,
@@ -206,6 +276,8 @@ async def run_spin(bot, chat_id: int, telegram_id: int, via_button: bool = False
 
     tier = classify(value)
     prize = get_prizes()[tier]
+    if trial_only:
+        prize = limit_prize_for_trial(prize)
     if not claim_roulette_spin(spin_id, value):
         return
 
@@ -234,6 +306,8 @@ async def run_spin(bot, chat_id: int, telegram_id: int, via_button: bool = False
 
     finish_roulette_spin(spin_id, "done" if ok else "failed", tier, prize["type"], prize["amount"])
     next_try = f"⏳ Следующая попытка — через <b>{period} {_plural_days(period)}</b>."
+    if trial_only:
+        next_try = "🔑 Оформите подписку, и рулетка станет доступна регулярно, с полными призами."
     if not ok:
         await _say(bot, chat_id,
                    "🎰 <b>Рулетка</b>\n\n"
@@ -309,6 +383,7 @@ def _status_text() -> str:
         f"Статус: {'✅ включена' if is_enabled() else '⛔ выключена'}",
         f"Период: 1 прокрутка в <b>{period_days()} {_plural_days(period_days())}</b>",
         "Условие: активный ключ. Клиенты крутят командой /spin",
+        f"Пробные ключи: 1 прокрутка, приз до <b>{trial_max_days()} {_plural_days(trial_max_days())}</b>",
         "",
         "<b>Призы</b> (шанс · комбинация):",
     ]
@@ -327,7 +402,8 @@ def _main_kb():
         text="⛔ Выключить" if is_enabled() else "✅ Включить", callback_data="adm_rl_toggle"))
     b.row(InlineKeyboardButton(text="⏱ Период", callback_data="adm_rl_period"),
           InlineKeyboardButton(text="🎁 Призы", callback_data="adm_rl_prizes"))
-    b.row(InlineKeyboardButton(text="📊 Статистика", callback_data="adm_rl_stats"))
+    b.row(InlineKeyboardButton(text=f"🧪 Пробные ключи: до {trial_max_days()} дн.", callback_data="adm_rl_trial"),
+          InlineKeyboardButton(text="📊 Статистика", callback_data="adm_rl_stats"))
     b.row(back_button("admin_marketing"), home_button())
     return b.as_markup()
 
@@ -508,6 +584,20 @@ async def cb_rl_amount(callback: CallbackQuery):
     await _save_prize(callback, parts[1], parts[2], amount)
     await callback.answer("Сохранено")
     await cb_rl_prizes(callback)
+
+
+@router.callback_query(F.data == "adm_rl_trial")
+async def cb_rl_trial(callback: CallbackQuery):
+    """v1.222: по кругу меняет максимум дней в призе для пробных ключей."""
+    if not await _guard(callback):
+        return
+    from database.requests import set_setting
+    cur = trial_max_days()
+    choices = TRIAL_MAX_DAYS_CHOICES
+    nxt = next((n for n in choices if n > cur), choices[0])
+    set_setting("roulette_trial_max_days", str(nxt))
+    await _show_main(callback)
+    await callback.answer(f"Пробные ключи: приз до {nxt} дн.")
 
 
 @router.callback_query(F.data == "adm_rl_stats")

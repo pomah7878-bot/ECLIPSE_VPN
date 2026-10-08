@@ -93,3 +93,24 @@ def get_roulette_stats() -> dict[str, Any]:
         ).fetchone()["c"]
     return {"by_status": by_status, "by_tier": by_tier, "days": int(days), "rub": int(rub),
             "users": int(users), "week": int(week)}
+
+
+def get_user_active_tariff_ids(user_id: int) -> list:
+    """v1.222: tariff_id всех неистёкших ключей клиента (None для ключей без тарифа)."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT tariff_id FROM vpn_keys WHERE user_id = ? AND expires_at > datetime('now')",
+            (int(user_id),),
+        ).fetchall()
+    return [r["tariff_id"] for r in rows]
+
+
+def count_roulette_spins(user_id: int) -> int:
+    """v1.222: сколько прокруток клиент уже сделал за всё время (без сорвавшихся)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM roulette_spins "
+            "WHERE user_id = ? AND status IN ('pending','granting','done')",
+            (int(user_id),),
+        ).fetchone()
+    return int(row["c"]) if row else 0
