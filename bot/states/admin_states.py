@@ -172,6 +172,8 @@ class AdminStates(StatesGroup):
 
     # Импорт вручную созданных клиентов панели
     import_orphan_telegram_id = State()  # Ввод Telegram ID/username для привязки
+    cdn_setting_value = State()      # Ввод значения настройки CDN
+    cdn_key_volume = State()         # Ввод объёма CDN-пакета ключа (ГБ)
 
     # Whitelabel-лицензии партнёров (визуальный раздел меню админки)
     license_create_name = State()          # Ввод имени партнёра

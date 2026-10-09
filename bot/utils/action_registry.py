@@ -567,6 +567,24 @@ def _resolve_key_devices(ctx: dict) -> Optional[dict]:
     return {"callback_data": f"key_devices:{key_id}"}
 
 
+def _resolve_key_cdn(ctx: dict) -> Optional[dict]:
+    """v1.226: «🌐 CDN (обход белых списков)» на карточке ключа. Показывается только
+    для ключей с подпиской, если админ настроил CDN-инбаунд и цену пакета (или у
+    ключа уже есть пакет)."""
+    key_id = _get_key_details_id(ctx)
+    if not key_id:
+        return None
+    if _key_details_is_unconfigured(ctx) or not ctx.get('has_sub_id'):
+        return None
+    try:
+        from bot.services.cdn import is_cdn_offered_for_key
+        if not is_cdn_offered_for_key(int(key_id)):
+            return None
+    except Exception:
+        return None
+    return {"callback_data": f"key_cdn:{key_id}"}
+
+
 def _resolve_balance_topup(ctx: dict) -> Optional[dict]:
     """Кнопка пополнения личного баланса."""
     return {"callback_data": "balance_topup_menu"}
@@ -780,6 +798,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_auto_renew_toggle": _resolve_key_auto_renew_toggle,
     "btn_key_devices": _resolve_key_devices,
     "btn_key_protocols": _resolve_key_protocols,
+    "btn_key_cdn": _resolve_key_cdn,
     "btn_balance_topup": _resolve_balance_topup,
     "btn_key_traffic_chart": _resolve_key_traffic_chart,
     "btn_key_import_happ": _resolve_key_import_happ,

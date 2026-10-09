@@ -44,7 +44,12 @@ async def _get_orphan_emails(server_id: int) -> tuple[list, dict]:
         for k in all_keys
         if k.get('panel_email') and int(k.get('server_id') or 0) == server_id
     }
-    orphan_emails = sorted(e for e in snap.clients.keys() if e not in db_emails)
+    from database.db_cdn import get_cdn_emails
+    cdn_emails = get_cdn_emails()
+    orphan_emails = sorted(
+        e for e in snap.clients.keys()
+        if e not in db_emails and e not in cdn_emails and not e.startswith('cdn_')
+    )
     return orphan_emails, snap.clients
 
 

@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 144
+LATEST_VERSION = 145
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3310,6 +3310,37 @@ def migration_143(conn: sqlite3.Connection) -> None:
     logger.info("Migration v143 applied: индексы vpn_keys(sub_id), vpn_keys(client_uuid)")
 
 
+def migration_145(conn: sqlite3.Connection) -> None:
+    """Версия 1.226: CDN-пакеты (обход белых списков) — таблица cdn_packs и кнопка
+    «🌐 CDN» на карточке ключа (key_details). Идемпотентно."""
+    from database.db_cdn import create_table
+    create_table(conn)
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if row:
+        for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+            raw = row[column_index]
+            if not raw:
+                continue
+            try:
+                buttons = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if any(b.get("id") == "btn_key_cdn" for b in buttons):
+                continue
+            next_row = max([int(b.get("row", 0)) for b in buttons] + [-1]) + 1
+            buttons.append({
+                "id": "btn_key_cdn", "label": "🌐 CDN (обход белых списков)", "color": "secondary",
+                "row": next_row, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None,
+            })
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+    logger.info("Migration v145 applied: cdn_packs и кнопка btn_key_cdn")
+
+
 def migration_144(conn: sqlite3.Connection) -> None:
     """Версия 1.218: прокрутки рулетки."""
     conn.execute(
@@ -3438,6 +3469,7 @@ MIGRATIONS = {
     142: migration_142,
     143: migration_143,
     144: migration_144,
+    145: migration_145,
 }
 
 

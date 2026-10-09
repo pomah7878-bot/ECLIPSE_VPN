@@ -352,10 +352,12 @@ async def main():
     ip_limit_tasks = asyncio.create_task(run_ip_limit_scheduler(bot))
     license_check_tasks = asyncio.create_task(run_license_check_scheduler(bot))
     license_purchase_tasks = asyncio.create_task(run_license_purchase_sweeper(bot))
+    from bot.services.cdn import run_cdn_scheduler
+    cdn_tasks = asyncio.create_task(run_cdn_scheduler(bot))
     webapp_task = asyncio.create_task(
         run_webapp(host="127.0.0.1", port=3000)
     )
-    background_tasks = [daily_tasks, update_tasks, traffic_tasks, payment_check_tasks, anonymous_payment_check_tasks, channel_posts_tasks, duplicate_detection_tasks, ip_limit_tasks, license_check_tasks, license_purchase_tasks, webapp_task]
+    background_tasks = [daily_tasks, update_tasks, traffic_tasks, payment_check_tasks, anonymous_payment_check_tasks, channel_posts_tasks, duplicate_detection_tasks, ip_limit_tasks, license_check_tasks, license_purchase_tasks, cdn_tasks, webapp_task]
     
     try:
         await dp.start_polling(bot)
