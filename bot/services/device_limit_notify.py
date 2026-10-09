@@ -173,6 +173,13 @@ def _user_markup(key_id: int):
     ])
 
 
+def _admin_markup():
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
+    ])
+
+
 async def _notify(bot, key: Dict[str, Any], reason: str, counts: Optional[Tuple[int, int]] = None) -> None:
     """reason: 'limit' | 'missing' | 'unknown'. counts: (занято, лимит) для режима IP."""
     key_id = int(key["id"])
@@ -227,7 +234,7 @@ async def _notify(bot, key: Dict[str, Any], reason: str, counts: Optional[Tuple[
         from config import ADMIN_IDS
         for admin_id in ADMIN_IDS:
             try:
-                await bot.send_message(admin_id, text, parse_mode="HTML")
+                await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=_admin_markup())
             except Exception:
                 pass
 
