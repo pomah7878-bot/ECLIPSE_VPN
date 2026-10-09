@@ -99,7 +99,7 @@ def _get_payment_action(order: Dict[str, Any]) -> str:
         return 'trial'
 
     explicit_action = order.get('_payment_action')
-    if explicit_action in ('new_key', 'renewal', 'trial'):
+    if explicit_action in ('new_key', 'renewal', 'trial', 'cdn_pack'):
         return explicit_action
 
     return 'renewal' if order.get('vpn_key_id') else 'new_key'
@@ -118,6 +118,8 @@ def _get_action_text(order: Dict[str, Any]) -> str:
     action = _get_payment_action(order)
     if action == 'trial':
         return '🎁 Пробная подписка'
+    if action == 'cdn_pack':
+        return '🈴 Пакет CDN'
     if action == 'renewal':
         return '🔄 Продление'
     return '🆕 Новый ключ'
@@ -401,6 +403,8 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
         # Title - depends on the action
         if action == 'trial':
             header = '🎁 <b>Пробная подписка</b>'
+        elif action == 'cdn_pack':
+            header = '🈴 <b>Пакет CDN</b>'
         elif action == 'renewal':
             header = '🔄 <b>Продление</b>'
         else:

@@ -136,6 +136,12 @@ def _tariff_purchasable(tariff, key_id=None) -> bool:
         return True
     if key_id:
         try:
+            from bot.services.cdn import is_cdn_tariff
+            if is_cdn_tariff(tariff.get('id')):
+                return True
+        except Exception:
+            pass
+        try:
             from database.requests import get_vpn_key_by_id
             _k = get_vpn_key_by_id(int(key_id))
             return bool(_k and _k.get('tariff_id') == tariff.get('id'))
@@ -3177,6 +3183,7 @@ def _cdn_key_info(key_id: int, account: Optional[dict] = None) -> dict:
             "days": _cdn.get_cdn_pack_days(),
             "pack": pack_view,
             "balance_cents": balance_cents,
+            "tariff_id": (_cdn.ensure_cdn_tariff() if _cdn.get_cdn_price_cents() > 0 else 0) or None,
         }
     except Exception as e:
         logger.warning(f"CDN info для ключа {key_id}: {e}")

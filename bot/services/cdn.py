@@ -61,6 +61,81 @@ def set_cdn_setting(key: str, value: str) -> None:
     set_setting(key, value)
     if key == "cdn_inbound_ids":
         reset_cdn_inbound_ids_cache()
+    if key in ("cdn_price_cents", "cdn_pack_gb", "cdn_pack_days"):
+        try:
+            ensure_cdn_tariff()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("CDN: не удалось обновить служебный тариф: %s", e)
+
+
+# ------------------------------------------------- служебный тариф для оплаты --
+# Пакет CDN оплачивается теми же способами, что и подписка (ЮKassa, карты, Stars,
+# WATA, Platega, Cardlink), поэтому у него есть скрытый тариф (is_active=0):
+# заказ на этот тариф с ключом выдаёт пакет, а не продлевает подписку.
+
+CDN_TARIFF_NAME = "CDN-пакет"
+
+
+def get_cdn_tariff_id() -> int:
+    return _int_setting("cdn_tariff_id", 0)
+
+
+def is_cdn_tariff(tariff_id: Any) -> bool:
+    try:
+        tid = int(tariff_id or 0)
+    except (TypeError, ValueError):
+        return False
+    return tid > 0 and tid == get_cdn_tariff_id()
+
+
+def ensure_cdn_tariff() -> int:
+    """Создаёт/обновляет скрытый тариф под текущую цену пакета. 0 — покупка выключена."""
+    from database import db_tariffs
+    from database.db_settings import set_setting
+    price = get_cdn_price_cents()
+    if price <= 0:
+        return 0
+    rub = max(1, int(round(price / 100)))
+    gb, days = get_cdn_pack_gb(), get_cdn_pack_days()
+    try:
+        from bot.services.stars_pricing import rate_rub
+        rate = rate_rub()
+    except Exception:  # noqa: BLE001
+        rate = None
+    usd_cents = int(round(rub / rate * 100)) if rate else 0
+    fields = {
+        "name": CDN_TARIFF_NAME, "duration_days": days, "price_rub": rub,
+        "traffic_limit_gb": gb, "is_active": 0,
+    }
+    tid = get_cdn_tariff_id()
+    current = db_tariffs.get_tariff_by_id(tid) if tid else None
+    if current:
+        changed = {k: v for k, v in fields.items() if current.get(k) != v}
+        if usd_cents and current.get("price_cents") != usd_cents:
+            changed["price_cents"] = usd_cents
+        if changed:
+            db_tariffs.update_tariff(tid, **changed)
+        return tid
+    tid = db_tariffs.add_tariff(
+        CDN_TARIFF_NAME, days, usd_cents, 0, price_rub=rub, display_order=998,
+        traffic_limit_gb=gb,
+    )
+    db_tariffs.update_tariff(tid, is_active=0)
+    set_setting("cdn_tariff_id", str(tid))
+    return tid
+
+
+async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
+    """Выдача пакета по оплаченному заказу (вызывается один раз на заказ)."""
+    result = await activate_pack(key_id, gb=get_cdn_pack_gb(), days=get_cdn_pack_days(), is_free=False)
+    if not result.get("ok"):
+        raise RuntimeError(f"Пакет CDN не выдан для заказа {order_id}: {result.get('error')}")
+    return result
+
+
+def paid_message(gb: int, days: int) -> str:
+    return (f"✅ Пакет CDN подключён: {gb} ГБ на {days} дн. "
+            "Обновите подписку в приложении, чтобы появились новые подключения.")
 
 
 def format_price(cents: int) -> str:

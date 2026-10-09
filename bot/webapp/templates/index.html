@@ -1079,7 +1079,10 @@
                 const label = pack ? '🔄 Купить новый пакет' : '🛒 Купить пакет';
                 const bal = cdn.balance_cents != null ? ` (на балансе ${escapeHtml((cdn.balance_cents / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 }))} ₽)` : '';
                 html += `<div class="text-[11px] text-mist mb-2">Пакет: <span class="text-ink font-semibold">${cdn.gb} ГБ на ${cdn.days} дн. — ${escapeHtml(cdn.price_text)}</span>, оплата с баланса${bal}.</div>`;
-                html += `<button id="cdn-buy-${keyId}" onclick="buyCdnPack(${keyId})" class="w-full py-2.5 btn-primary rounded-xl font-bold text-xs transition">${label} за ${escapeHtml(cdn.price_text)}</button>`;
+                html += `<button id="cdn-buy-${keyId}" onclick="buyCdnPack(${keyId})" class="w-full py-2.5 btn-primary rounded-xl font-bold text-xs transition mb-2">${label} с баланса — ${escapeHtml(cdn.price_text)}</button>`;
+                if (cdn.tariff_id) {
+                    html += `<button onclick="payCdnPackQR(${keyId})" class="w-full py-2.5 btn-secondary rounded-xl font-bold text-xs transition">💳 Банк / СБП — ${escapeHtml(cdn.price_text)}</button>`;
+                }
             }
             html += '</div>';
             return html;
@@ -1092,6 +1095,14 @@
             if (!isHidden) { box.style.display = 'none'; return; }
             box.innerHTML = renderCdnPanel(keyId);
             box.style.display = 'block';
+        }
+
+        function payCdnPackQR(keyId) {
+            const cdn = _cdnState[keyId];
+            if (!cdn || !cdn.tariff_id) return;
+            _payVpnKeyId = keyId;
+            document.getElementById('payOverlay').classList.add('active');
+            selectTariffAndPay(cdn.tariff_id);
         }
 
         async function buyCdnPack(keyId) {

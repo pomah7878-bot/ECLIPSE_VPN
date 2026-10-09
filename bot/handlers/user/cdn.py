@@ -1,4 +1,4 @@
-"""Экран клиента «CDN — обход белых списков»: статус пакета и покупка с баланса."""
+"""Экран клиента «CDN — обход белых списков»: статус пакета и покупка (баланс и платёжные системы)."""
 import logging
 
 from aiogram import F, Router
@@ -26,6 +26,36 @@ async def _load_key(callback: CallbackQuery, key_id: int):
         await callback.answer('Ключ не найден или у него нет подписки', show_alert=True)
         return None
     return key
+
+
+def _payment_rows(key_id: int):
+    """Кнопки оплаты пакета теми же способами, что и подписка (через служебный тариф CDN)."""
+    from bot.services import cdn
+    try:
+        tariff_id = cdn.ensure_cdn_tariff()
+    except Exception as e:  # noqa: BLE001
+        logger.warning('CDN: служебный тариф недоступен: %s', e)
+        return []
+    if not tariff_id:
+        return []
+    from database import db_settings as st
+    methods = [
+        (st.is_yookassa_qr_configured, 'renew_pay_qr', '📱 СБП / банк (ЮKassa)'),
+        (st.is_cards_configured, 'renew_pay_cards', '💳 Банковской картой'),
+        (st.is_stars_enabled, 'renew_pay_stars', '⭐ Telegram Stars'),
+        (st.is_wata_configured, 'renew_pay_wata', '🌊 WATA'),
+        (st.is_platega_configured, 'renew_pay_platega', '💠 Platega'),
+        (st.is_cardlink_configured, 'renew_pay_cardlink', '🔗 Cardlink'),
+    ]
+    rows = []
+    for check, prefix, text in methods:
+        try:
+            enabled = bool(check())
+        except Exception:  # noqa: BLE001
+            enabled = False
+        if enabled:
+            rows.append([InlineKeyboardButton(text=text, callback_data=f'{prefix}:{key_id}:{tariff_id}')])
+    return rows
 
 
 async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '') -> None:
@@ -57,7 +87,8 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
     rows = []
     if price > 0:
         label = '🔄 Купить новый пакет' if pack else '🛒 Купить пакет'
-        rows.append([InlineKeyboardButton(text=f'{label} за {cdn.format_price(price)}', callback_data=f'key_cdn_buy:{key_id}')])
+        rows.append([InlineKeyboardButton(text=f'{label} с баланса — {cdn.format_price(price)}', callback_data=f'key_cdn_buy:{key_id}')])
+        rows.extend(_payment_rows(key_id))
         rows.append([InlineKeyboardButton(text='💳 Пополнить баланс', callback_data='balance_topup_menu')])
     rows.append(_back_row(key_id))
     await safe_edit_or_send(callback.message, '\n'.join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))

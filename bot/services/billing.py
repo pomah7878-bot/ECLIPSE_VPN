@@ -1568,6 +1568,15 @@ async def _process_payment_order_inner(
         text = f"✅ Баланс пополнен на {amount_rub:.2f} ₽!"
         return True, text, order
 
+    if tariff_id and vpn_key_id:
+        from bot.services import cdn as _cdn
+        if _cdn.is_cdn_tariff(tariff_id):
+            # Оплачен пакет CDN: выдаём пакет, подписка не продлевается
+            if order['_payment_processed_now']:
+                await _cdn.fulfil_paid_order(int(vpn_key_id), order_id)
+            order["_payment_action"] = "cdn_pack"
+            return True, _cdn.paid_message(_cdn.get_cdn_pack_gb(), _cdn.get_cdn_pack_days()), order
+
     if vpn_key_id:
         # Продление уже существующего ключа. Используем тот же надёжный путь,
         # что и продление из личного кабинета на сайте (renew_anonymous_vpn_key):
