@@ -3107,6 +3107,13 @@ class XUIClient(BaseVPNClient):
                 port = int(port) if port else None
             except (TypeError, ValueError):
                 port = None
+            alpn_raw = group.get("alpn")
+            if isinstance(alpn_raw, str):
+                alpn_list = [a.strip() for a in alpn_raw.split(",") if a.strip()]
+            elif isinstance(alpn_raw, list):
+                alpn_list = [str(a).strip() for a in alpn_raw if str(a).strip()]
+            else:
+                alpn_list = []
             return {
                 "host": addr,
                 "port": port,
@@ -3114,6 +3121,10 @@ class XUIClient(BaseVPNClient):
                 "sni": str(group.get("sni") or "").strip(),
                 "host_header": str(group.get("hostHeader") or "").strip(),
                 "path": str(group.get("path") or "").strip(),
+                "fingerprint": str(group.get("fingerprint") or "").strip(),
+                "alpn": alpn_list,
+                "sni_from_address": bool(group.get("overrideSniFromAddress")),
+                "keep_sni_blank": bool(group.get("keepSniBlank")),
             }
         return None
 
@@ -3203,12 +3214,25 @@ class XUIClient(BaseVPNClient):
                             stream_settings["security"] = link_security
                             if link_security == "tls":
                                 tls_cfg = dict(stream_settings.get("tlsSettings") or {})
-                                tls_cfg["serverName"] = (
-                                    override.get("sni")
-                                    or tls_cfg.get("serverName")
-                                    or net_cfg.get("host")
-                                    or link_host
-                                )
+                                if override.get("keep_sni_blank"):
+                                    tls_cfg["serverName"] = ""
+                                elif override.get("sni_from_address"):
+                                    tls_cfg["serverName"] = link_host
+                                else:
+                                    tls_cfg["serverName"] = (
+                                        override.get("sni")
+                                        or tls_cfg.get("serverName")
+                                        or net_cfg.get("host")
+                                        or link_host
+                                    )
+                                host_fp = override.get("fingerprint")
+                                if host_fp:
+                                    tls_inner = dict(tls_cfg.get("settings") or {})
+                                    tls_inner["fingerprint"] = host_fp
+                                    tls_cfg["settings"] = tls_inner
+                                    tls_cfg["fingerprint"] = host_fp
+                                if override.get("alpn"):
+                                    tls_cfg["alpn"] = list(override["alpn"])
                                 stream_settings["tlsSettings"] = tls_cfg
 
                     result = {
