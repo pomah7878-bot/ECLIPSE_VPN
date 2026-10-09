@@ -1472,6 +1472,7 @@
                     <div id="inbounds-${key.key_id}" style="display:none;"></div>
                     <button onclick="toggleDevices(${key.key_id})" class="w-full py-2 text-xs text-mist-dim hover:text-ink transition text-center">📱 Устройства</button>
                     <div id="devices-${key.key_id}" style="display:none;"></div>
+                    ${renderCdnBlock(key)}
                     ${key.is_trial ? '<div class="mt-4 rounded-xl p-3 text-xs" style="border:1px solid var(--gold);">🎁 <b>Пробный период.</b> Нажмите «Продлить» и выберите тариф — оставшиеся дни добавятся, ключ и подписка в приложении не изменятся.</div>' : ''}
                     <button onclick="openRenewForKey(${key.key_id})" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mt-4">Продлить</button>
                 </div>
@@ -1576,6 +1577,92 @@
                 if (!refreshed.error) box.innerHTML = renderDevicesList(keyId, refreshed);
             } catch (e) {
                 showToast('Не удалось отключить устройство');
+            }
+        }
+
+        const _cdnState = {};
+
+        function renderCdnBlock(key) {
+            const cdn = key.cdn;
+            if (!cdn || !cdn.offered) return '';
+            _cdnState[key.key_id] = cdn;
+            const active = cdn.pack && cdn.pack.status === 'active' ? ' 🟢' : '';
+            return `<button onclick="toggleCdn(${key.key_id})" class="w-full py-2 text-xs text-mist-dim hover:text-ink transition text-center">🌐 CDN — обход белых списков${active}</button>
+                    <div id="cdn-${key.key_id}" style="display:none;"></div>`;
+        }
+
+        function cdnStatusLabel(status) {
+            return ({
+                active: '🟢 Активен',
+                exhausted: '🔴 Объём исчерпан',
+                expired: '🔴 Срок вышел',
+                suspended: '⏸ Приостановлен (ключ неактивен)',
+                revoked: '⛔ Отключён'
+            })[status] || status;
+        }
+
+        function cdnFormatUntil(value) {
+            if (!value) return '—';
+            const d = new Date(String(value).replace(' ', 'T') + 'Z');
+            return isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderCdnPanel(keyId) {
+            const cdn = _cdnState[keyId];
+            if (!cdn) return '';
+            const pack = cdn.pack;
+            let html = '<div class="card rounded-xl p-3 mt-2" style="background:var(--panel-2);">';
+            html += '<div class="text-xs text-mist mb-2">Дополнительный ключ в вашей подписке, который работает через CDN. Нужен там, где мобильный интернет пропускает только «белые» адреса. Обычные ключи работают как раньше.</div>';
+            if (pack) {
+                const pct = pack.limit_bytes > 0 ? Math.min(100, Math.round((pack.used_bytes / pack.limit_bytes) * 100)) : 0;
+                const fillClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
+                html += `<div class="text-xs mb-1">Статус: <span class="text-ink font-semibold">${cdnStatusLabel(pack.status)}</span></div>`;
+                html += `<div class="flex justify-between text-xs text-mist mb-1.5"><span>Объём</span><span>${formatBytes(pack.used_bytes)} / ${formatBytes(pack.limit_bytes)}</span></div>`;
+                html += `<div class="traffic-bar-bg mb-2"><div class="traffic-fill ${fillClass}" style="width:${pct}%"></div></div>`;
+                html += `<div class="text-xs text-mist mb-2">Действует до: <span class="text-ink">${cdnFormatUntil(pack.expires_at)}</span>${pack.is_free ? ' · 🎁 выдан администратором' : ''}</div>`;
+                if (pack.status === 'active') {
+                    html += '<div class="text-[11px] text-mist mb-2">Новый пакет заменит текущий: остаток объёма и срока не суммируется.</div>';
+                }
+            } else {
+                html += '<div class="text-xs mb-2">Пакет не подключён.</div>';
+            }
+            if (cdn.price_cents > 0) {
+                const label = pack ? '🔄 Купить новый пакет' : '🛒 Купить пакет';
+                html += `<div class="text-xs text-mist mb-2">Пакет: <span class="text-ink font-semibold">${cdn.gb} ГБ на ${cdn.days} дн. — ${escapeHtml(cdn.price_text)}</span>, оплата с баланса${cdn.balance_cents != null ? ` (на балансе ${escapeHtml((cdn.balance_cents / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 }))} ₽)` : ''}.</div>`;
+                html += `<button id="cdn-buy-${keyId}" onclick="buyCdnPack(${keyId})" class="w-full py-2.5 btn-primary rounded-xl font-bold text-xs transition">${label} за ${escapeHtml(cdn.price_text)}</button>`;
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function toggleCdn(keyId) {
+            const box = document.getElementById('cdn-' + keyId);
+            if (!box) return;
+            const isHidden = box.style.display === 'none' || !box.style.display;
+            if (!isHidden) { box.style.display = 'none'; return; }
+            box.innerHTML = renderCdnPanel(keyId);
+            box.style.display = 'block';
+        }
+
+        async function buyCdnPack(keyId) {
+            const cdn = _cdnState[keyId];
+            if (!cdn) return;
+            if (!confirm(`Купить CDN-пакет: ${cdn.gb} ГБ на ${cdn.days} дн. за ${cdn.price_text}? Оплата спишется с баланса.`)) return;
+            const btn = document.getElementById('cdn-buy-' + keyId);
+            if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+            try {
+                const res = await postAPISafe('account/key/cdn/buy', { key_id: keyId });
+                if (res.error) {
+                    showToast(res.message || 'Не удалось оформить пакет');
+                    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+                    return;
+                }
+                showToast(res.message || 'Пакет CDN подключён');
+                if (res.cdn) _cdnState[keyId] = res.cdn;
+                refreshAccountDashboard();
+            } catch (e) {
+                showToast('Не удалось оформить пакет');
+                if (btn) { btn.disabled = false; btn.style.opacity = ''; }
             }
         }
 

@@ -2961,6 +2961,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
                 "traffic_limit": k["traffic_limit"] or 0, "is_active": bool(k["is_active"]),
                 "server_name": k.get("server_name"), "sub_url": sub_url,
                 "is_trial": _is_trial_key(k),
+                "cdn": _cdn_key_info(k["id"], account),
             }
 
         keys_with_urls = await asyncio.gather(*[_with_sub_url(k) for k in keys])
@@ -3008,6 +3009,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "sub_url": purchase.get("sub_url"),
             "claim_code": purchase.get("claim_code"),
             "is_trial": _is_trial_key(key),
+            "cdn": _cdn_key_info(key["id"], account),
         }],
     })
 
@@ -3137,6 +3139,100 @@ def _resolve_site_account_internal_user_id(account: dict) -> Optional[int]:
         return get_user_internal_id(account["telegram_id"])
     from database.db_accounts import get_or_create_placeholder_user_for_site_account
     return get_or_create_placeholder_user_for_site_account(account["id"])
+
+
+def _cdn_key_info(key_id: int, account: Optional[dict] = None) -> dict:
+    """Состояние CDN-пакета ключа для личного кабинета (сайт и WebApp)."""
+    try:
+        from bot.services import cdn as _cdn
+        from database import db_cdn
+        key_id = int(key_id)
+        pack = db_cdn.get_pack(key_id)
+        pack_view = None
+        if pack:
+            pack_view = {
+                "status": pack["status"],
+                "used_bytes": int(pack["used_bytes"] or 0),
+                "limit_bytes": int(pack["limit_bytes"] or 0),
+                "expires_at": pack["expires_at"],
+                "is_free": bool(pack.get("is_free")),
+            }
+        balance_cents = None
+        if account:
+            try:
+                from database.requests import get_user_balance
+                internal_id = _resolve_site_account_internal_user_id(account)
+                if internal_id:
+                    balance_cents = int(get_user_balance(internal_id) or 0)
+            except Exception:
+                balance_cents = None
+        return {
+            "offered": bool(_cdn.is_cdn_offered_for_key(key_id)),
+            "price_cents": _cdn.get_cdn_price_cents(),
+            "price_text": _cdn.format_price(_cdn.get_cdn_price_cents()),
+            "gb": _cdn.get_cdn_pack_gb(),
+            "days": _cdn.get_cdn_pack_days(),
+            "pack": pack_view,
+            "balance_cents": balance_cents,
+        }
+    except Exception as e:
+        logger.warning(f"CDN info для ключа {key_id}: {e}")
+        return {"offered": False}
+
+
+async def handle_public_account_key_cdn_buy(request: web.Request) -> web.Response:
+    """POST /api/public/account/key/cdn/buy — покупка CDN-пакета для ключа
+    личного кабинета с личного баланса (обход белых списков).
+    Body JSON: {"key_id": int}"""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    key_id = data.get("key_id")
+    if not key_id:
+        return web.json_response({"error": "key_id_required"}, status=400)
+
+    from database.requests import get_site_account_by_id
+    account = get_site_account_by_id(account_id)
+    if not account or not _verify_key_belongs_to_account(int(key_id), account):
+        return web.json_response({"error": "key_not_found"}, status=404)
+
+    info = _cdn_key_info(int(key_id), account)
+    if not info.get("offered") or int(info.get("price_cents") or 0) <= 0:
+        return web.json_response({"error": "cdn_unavailable", "message": "Покупка CDN сейчас недоступна."}, status=400)
+
+    internal_user_id = _resolve_site_account_internal_user_id(account)
+    if not internal_user_id:
+        return web.json_response({"error": "account_not_linked", "message": "Аккаунт не привязан к балансу."}, status=400)
+
+    from bot.services import cdn as _cdn
+    from bot.services.panel_sync_coordinator import panel_sync_coordinator
+    try:
+        async with panel_sync_coordinator.regular():
+            result = await _cdn.purchase_pack(int(key_id), int(internal_user_id))
+    except Exception as e:
+        logger.warning(f"CDN buy с сайта, ключ {key_id}: {e}")
+        return web.json_response({"error": "internal_error", "message": "Не удалось оформить пакет. Попробуйте позже."}, status=502)
+
+    if not result.get("ok"):
+        if result.get("error") == "insufficient_funds":
+            return web.json_response({
+                "error": "insufficient_balance",
+                "message": f"Недостаточно средств на балансе. Нужно {_cdn.format_price(result.get('need', 0))}.",
+            }, status=400)
+        extra = " Деньги возвращены на баланс." if result.get("refunded") else ""
+        return web.json_response({"error": "cdn_failed", "message": f"{result.get('error')}.{extra}"}, status=502)
+
+    return web.json_response({
+        "ok": True,
+        "message": "Пакет CDN подключён. Обновите подписку в приложении, чтобы появился CDN-ключ.",
+        "cdn": _cdn_key_info(int(key_id), account),
+    })
 
 
 async def handle_public_account_key_renew_create(request: web.Request) -> web.Response:
@@ -4225,6 +4321,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/key/renew/balance", handle_public_account_key_renew_balance)
     app.router.add_post("/api/public/account/key/devices", handle_public_account_key_devices)
     app.router.add_post("/api/public/account/key/device_disconnect", handle_public_account_key_device_disconnect)
+    app.router.add_post("/api/public/account/key/cdn/buy", handle_public_account_key_cdn_buy)
     app.router.add_post("/api/public/account/buy/balance", handle_public_account_buy_balance)
     app.router.add_post("/api/rename", handle_rename)
     app.router.add_post("/api/delete", handle_delete)
