@@ -1452,6 +1452,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if served_from_cache:
         headers["X-Eclipse-Cache-Fallback"] = "1"
 
+    # CDN-пакет клиента: ссылки CDN лежат у отдельного клиента панели (свой subId)
+    try:
+        from bot.services import cdn as _cdn_service
+        body = await _cdn_service.merge_cdn_into_subscription(
+            body, key, forward_headers, _upstream_session
+        )
+    except Exception as _cdn_err:
+        logger.warning(f"handle_happ_subscription: CDN-ссылки не добавлены ({sub_id[:8]}...): {_cdn_err}")
+
     from database.requests import get_effective_brand_name, get_effective_webapp_url
     if "Content-Type" not in headers:
         headers["Content-Type"] = "text/plain; charset=utf-8"

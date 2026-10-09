@@ -73,6 +73,66 @@ def cdn_email(panel_email: str) -> str:
     return f"cdn_{panel_email}"
 
 
+def cdn_sub_id(sub_id: str) -> str:
+    """Отдельный subId CDN-клиента: панель 3x-ui не даёт двум клиентам один subId."""
+    return f"{sub_id}cdn"
+
+
+def _split_links(raw: bytes):
+    """(список ссылок, был ли base64) или (None, False), если формат не распознан."""
+    import base64
+    text = (raw or b"").decode("utf-8", "ignore").strip()
+    if not text or text[0] in "{[":
+        return None, False
+    if "://" in text:
+        return [line.strip() for line in text.splitlines() if line.strip()], False
+    try:
+        decoded = base64.b64decode(text + "=" * (-len(text) % 4), validate=True).decode("utf-8", "ignore")
+    except Exception:  # noqa: BLE001
+        return None, False
+    if "://" not in decoded:
+        return None, False
+    return [line.strip() for line in decoded.splitlines() if line.strip()], True
+
+
+def merge_subscription_bodies(main: bytes, extra: bytes) -> bytes:
+    """Добавляет ссылки из extra к подписке main в том же формате (base64 или текст)."""
+    import base64
+    main_links, main_b64 = _split_links(main)
+    extra_links, _ = _split_links(extra)
+    if not main_links or not extra_links:
+        return main
+    merged = main_links + [link for link in extra_links if link not in main_links]
+    text = "\n".join(merged)
+    if main_b64:
+        return base64.b64encode(text.encode("utf-8"))
+    return text.encode("utf-8")
+
+
+async def merge_cdn_into_subscription(body: bytes, key: Dict[str, Any], forward_headers: Dict[str, str], session_factory) -> bytes:
+    """Если у ключа активен CDN-пакет, добавляет CDN-ссылки в подписку клиента.
+
+    CDN-клиент панели имеет собственный subId, поэтому его ссылки берём отдельным запросом."""
+    if not key or not key.get("id") or not key.get("sub_id") or not key.get("server_id"):
+        return body
+    pack = db_cdn.get_pack(int(key["id"]))
+    if not pack or pack["status"] != db_cdn.STATUS_ACTIVE:
+        return body
+    import aiohttp
+    from bot.services.vpn_api import get_client
+    client = await get_client(int(key["server_id"]))
+    url = await client.build_subscription_url(cdn_sub_id(key["sub_id"]))
+    if not url:
+        return body
+    async with session_factory() as session:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=8), headers=forward_headers) as resp:
+            if resp.status != 200:
+                logger.info("CDN: подписка CDN-клиента вернула %s для ключа %s", resp.status, key.get("id"))
+                return body
+            extra = await resp.read()
+    return merge_subscription_bodies(body, extra)
+
+
 def is_cdn_offered_for_key(key_id: int) -> bool:
     """Показывать ли клиенту кнопку CDN: CDN настроен и цена задана, либо пакет уже есть."""
     pack = db_cdn.get_pack(key_id)
@@ -152,7 +212,7 @@ async def _provision(key: Dict[str, Any], *, total_gb: int, expire_days: int) ->
                 client, None,
                 inbound_id=inbound["id"], email=email, total_gb=int(total_gb),
                 expire_days=int(expire_days), limit_ip=limit_ip, enable=True,
-                tg_id=str(key.get("telegram_id") or ""), flow=flow, sub_id=key["sub_id"],
+                tg_id=str(key.get("telegram_id") or ""), flow=flow, sub_id=cdn_sub_id(key["sub_id"]),
             )
             added += 1
         except Exception as e:  # noqa: BLE001
