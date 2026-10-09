@@ -400,6 +400,8 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
         sync_stats = await sync_key_to_panel_state(key_id)
         if not sync_stats.get('ok'):
             logger.warning(f"subscription_final: ключ {key_id} синхронизирован не полностью: {sync_stats}")
+        from bot.services import cdn as _cdn
+        await _cdn.grant_tariff_pack(key_id)
         from bot.services.key_lifecycle import emit_key_lifecycle_event_safe
 
         await emit_key_lifecycle_event_safe(
@@ -520,6 +522,8 @@ async def process_new_key_final(target, state: FSMContext, server_id: int, inbou
         client_uuid = res['uuid']
         update_vpn_key_config(key_id=key_id, server_id=server_id, panel_inbound_id=inbound_id, panel_email=panel_email, client_uuid=client_uuid)
         update_payment_key_id(order_id, key_id)
+        from bot.services import cdn as _cdn
+        await _cdn.grant_tariff_pack(key_id)
         from bot.services.key_lifecycle import emit_key_lifecycle_event_safe
 
         await emit_key_lifecycle_event_safe(

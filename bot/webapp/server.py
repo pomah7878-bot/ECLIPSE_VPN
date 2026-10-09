@@ -128,6 +128,14 @@ def _rl_record(key: str) -> None:
     _RL_BUCKETS.setdefault(key, []).append(_t.time())
 
 
+def _tariff_cdn_gb(tariff_id) -> int:
+    try:
+        from bot.services.cdn import get_tariff_cdn_gb
+        return get_tariff_cdn_gb(tariff_id)
+    except Exception:
+        return 0
+
+
 def _tariff_purchasable(tariff, key_id=None) -> bool:
     """v1.194: тариф можно купить, если он активен либо это текущий тариф продлеваемого ключа."""
     if not tariff:
@@ -651,6 +659,7 @@ async def handle_tariffs_list(request: web.Request) -> web.Response:
                 "duration_days": t["duration_days"],
                 "price_rub": float(t.get("price_rub") or 0),
                 "traffic_limit_gb": t.get("traffic_limit_gb"),
+                "cdn_gb": _tariff_cdn_gb(t["id"]),
                 "is_current": current_tariff_id is not None and t["id"] == current_tariff_id,
             }
             for t in tariffs
@@ -1751,6 +1760,7 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
                 "duration_days": t["duration_days"],
                 "price_rub": float(t.get("price_rub") or 0),
                 "traffic_limit_gb": t.get("traffic_limit_gb"),
+                "cdn_gb": _tariff_cdn_gb(t["id"]),
                 "is_current": current_tariff_id is not None and t["id"] == current_tariff_id,
             }
             for t in tariffs

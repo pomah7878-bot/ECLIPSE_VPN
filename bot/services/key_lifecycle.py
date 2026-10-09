@@ -73,6 +73,10 @@ async def renew_key_access(
         logger.warning(f"renew_key_access: панель не синхронизирована для ключа {key_id}: {e}")
         result['sync_stats'] = {'errors': 1, 'ok': 0}
 
+    if tariff_id:
+        from bot.services import cdn as _cdn
+        await _cdn.grant_tariff_pack(key_id)
+
     await emit_key_lifecycle_event_safe(
         'key_renewed',
         {

@@ -109,6 +109,16 @@ def balance_payment_kb(
     return builder.as_markup()
 
 
+def _cdn_badge(tariff) -> str:
+    """«+CDN 10 ГБ » (с пробелом на конце) для кнопок тарифов; пусто, если CDN в тариф не входит."""
+    try:
+        from bot.services.cdn import cdn_badge
+        badge = cdn_badge(tariff)
+    except Exception:
+        badge = ''
+    return f'{badge} ' if badge else ''
+
+
 def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: str = None, is_cards: bool = False, is_crypto: bool = False, is_balance: bool = False, is_qr: bool = False, groups_data: list = None, is_demo: bool = False, is_wata: bool = False, is_platega: bool = False, is_cardlink: bool = False) -> InlineKeyboardMarkup:
     """
     Keyboard for choosing a tariff for paying with Stars, Cards, Crypto or Balance.
@@ -198,7 +208,7 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
             
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{emoji} {tariff['name']} — {price_display}".strip(),
+                    text=f"{emoji} {tariff['name']} {_cdn_badge(tariff)}— {price_display}".replace('  ', ' ').strip(),
                     callback_data=cb_data
                 )
             )
@@ -344,7 +354,7 @@ def renew_tariff_select_kb(tariffs: list, key_id: int, order_id: str = None, is_
             cb_data += f":{order_id}"
             
         is_current = current_tariff_id is not None and tariff['id'] == current_tariff_id
-        button_label = f"{emoji} {tariff['name']} — {price_display}".strip()
+        button_label = f"{emoji} {tariff['name']} {_cdn_badge(tariff)}— {price_display}".replace('  ', ' ').strip()
         if is_current:
             button_label = f"✅ {button_label} (текущий)"
 

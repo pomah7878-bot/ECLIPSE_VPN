@@ -44,7 +44,7 @@ def tariffs_list_kb(tariffs: List[Dict[str, Any]], include_hidden: bool=True) ->
     builder.row(back_button('admin_payments'), home_button())
     return builder.as_markup()
 
-def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=False) -> InlineKeyboardMarkup:
+def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=False, cdn_gb: int=0) -> InlineKeyboardMarkup:
     """
     Tariff viewing keyboard.
     
@@ -62,6 +62,8 @@ def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=Fals
     builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f'admin_tariff_toggle:{tariff_id}'))
     if show_group_button:
         builder.row(InlineKeyboardButton(text='📂 Изменить группу', callback_data=f'admin_tariff_change_group:{tariff_id}'))
+    cdn_text = f'🌐 CDN в тарифе: {cdn_gb} ГБ' if cdn_gb else '🌐 CDN в тарифе: нет'
+    builder.row(InlineKeyboardButton(text=cdn_text, callback_data=f'admin_tariff_cdn:{tariff_id}'))
     builder.row(back_button('admin_tariffs'), home_button())
     return builder.as_markup()
 

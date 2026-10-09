@@ -766,6 +766,7 @@
                 <button onclick="${disabled ? '' : `selectTariffCard(${t.id})`}" ${disabled ? 'disabled' : ''} class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center transition active:scale-[0.98]${disabled ? ' opacity-40' : ''}" style="animation-delay:${i * 0.07}s">
                     <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
                     <div class="text-xs text-mist mb-4">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
+                    ${t.cdn_gb ? `<div class="text-[11px] text-gold mb-3">🌐 + CDN ${t.cdn_gb} ГБ (обход белых списков)</div>` : ''}
                     <div class="text-gold font-display font-bold text-2xl mt-auto">${t.price_rub.toFixed(0)} ₽</div>
                     <div class="text-[11px] text-mist-dim mt-1">≈ ${dailyPrice.toFixed(dailyPrice < 10 ? 1 : 0)} ₽/день</div>
                     ${savingsBadge}

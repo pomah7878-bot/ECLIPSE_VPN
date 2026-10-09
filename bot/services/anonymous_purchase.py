@@ -116,6 +116,9 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str, site_accoun
     except Exception as e:
         logger.warning(f"anonymous provisioning: sync_key_to_panel_state упал для ключа {key_id}: {e}")
 
+    from bot.services import cdn as _cdn
+    await _cdn.grant_tariff_pack(key_id)
+
     sub_url = None
     try:
         sub_url = await get_public_subscription_url_for_key({"sub_id": sub_id, "server_id": server_id})

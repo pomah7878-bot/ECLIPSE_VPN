@@ -125,6 +125,74 @@ def ensure_cdn_tariff() -> int:
     return tid
 
 
+# ----------------------------------------------- CDN, входящий в обычный тариф --
+# Админ может указать для тарифа объём CDN (ГБ): при покупке и продлении подписки
+# по такому тарифу пакет подключается сразу, на срок тарифа. Хранится в настройке
+# cdn_tariff_gb как JSON {"<id тарифа>": ГБ}.
+
+def _tariff_gb_map() -> Dict[str, int]:
+    import json
+    try:
+        from database.db_settings import get_setting
+        raw = json.loads(get_setting("cdn_tariff_gb", "{}") or "{}")
+        return {str(k): int(v) for k, v in raw.items() if int(v) > 0}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def get_tariff_cdn_gb(tariff_id: Any) -> int:
+    try:
+        return int(_tariff_gb_map().get(str(int(tariff_id or 0)), 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def set_tariff_cdn_gb(tariff_id: int, gb: int) -> None:
+    import json
+    from database.db_settings import set_setting
+    data = _tariff_gb_map()
+    if gb > 0:
+        data[str(int(tariff_id))] = int(gb)
+    else:
+        data.pop(str(int(tariff_id)), None)
+    set_setting("cdn_tariff_gb", json.dumps(data))
+
+
+def cdn_badge(tariff: Optional[Dict[str, Any]]) -> str:
+    """Пометка для кнопок и карточек тарифа: «+CDN 10 ГБ» (пусто, если CDN в тариф не входит)."""
+    gb = get_tariff_cdn_gb((tariff or {}).get("id"))
+    return f"+CDN {gb} ГБ" if gb > 0 else ""
+
+
+async def grant_tariff_pack(key_id: int) -> None:
+    """Подключает пакет CDN, входящий в тариф ключа. Никогда не бросает исключений:
+    сбой CDN не должен ломать покупку или продление подписки."""
+    try:
+        from database.db_tariffs import get_tariff_by_id
+        from database.requests import get_vpn_key_by_id
+        key = get_vpn_key_by_id(int(key_id))
+        if not key or not key.get("tariff_id") or is_cdn_tariff(key.get("tariff_id")):
+            return
+        gb = get_tariff_cdn_gb(key["tariff_id"])
+        if gb <= 0 or not get_cdn_inbound_ids():
+            return
+        tariff = get_tariff_by_id(int(key["tariff_id"])) or {}
+        days = int(tariff.get("duration_days") or 0) or get_cdn_pack_days()
+        pack = db_cdn.get_pack(int(key_id))
+        if pack and pack["status"] == db_cdn.STATUS_ACTIVE and int(pack["limit_bytes"] or 0) >= gb * GB:
+            try:
+                until = datetime.fromisoformat(str(pack["expires_at"]))
+            except ValueError:
+                until = None
+            if until and until >= datetime.utcnow() + timedelta(days=days):
+                return  # уже есть пакет не хуже
+        result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False)
+        if not result.get("ok"):
+            logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, result.get("error"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, e)
+
+
 async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
     """Выдача пакета по оплаченному заказу (вызывается один раз на заказ)."""
     result = await activate_pack(key_id, gb=get_cdn_pack_gb(), days=get_cdn_pack_days(), is_free=False)

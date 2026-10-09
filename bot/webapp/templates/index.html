@@ -766,15 +766,16 @@
             tariffs.forEach(t => {
                 const currentBadge = t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : '';
                 const currentClass = t.is_current ? ' ring-2 ring-teal' : '';
+                const cdnBadge = t.cdn_gb ? ` <span class="text-gold text-[11px] font-bold">🌐 +CDN ${t.cdn_gb} ГБ</span>` : '';
                 const priceCents = Math.round(t.price_rub * 100);
                 if (_payMethod === 'balance' && priceCents > userBalanceCents) {
                     html += `<button disabled class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold opacity-40 flex justify-between items-center${currentClass}">
-                        <span>${escapeHtml(t.name)}${currentBadge}</span>
+                        <span>${escapeHtml(t.name)}${currentBadge}${cdnBadge}</span>
                         <span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>
                     </button>`;
                 } else {
                     html += `<button onclick="selectTariff(${t.id})" class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold transition flex justify-between items-center${currentClass}">
-                        <span>${escapeHtml(t.name)}${currentBadge}</span>
+                        <span>${escapeHtml(t.name)}${currentBadge}${cdnBadge}</span>
                         <span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>
                     </button>`;
                 }

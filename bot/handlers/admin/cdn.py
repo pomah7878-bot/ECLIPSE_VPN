@@ -293,3 +293,41 @@ async def admin_cdn_volume_save(message: Message, state: FSMContext):
     await state.clear()
     notice = f'✅ Объём пакета: {gb} ГБ' if result['ok'] else f"❌ {escape_html(str(result['error']))}"
     await _show_key_cdn(message, key_id, notice)
+
+
+# ---------------------------------------------------- CDN, входящий в тариф --
+
+@router.callback_query(F.data.startswith('admin_tariff_cdn:'))
+async def admin_tariff_cdn_start(callback: CallbackQuery, state: FSMContext):
+    from bot.services import cdn
+    tariff_id = int(callback.data.split(':')[1])
+    await state.set_state(AdminStates.cdn_tariff_gb)
+    await state.update_data(cdn_tariff_id=tariff_id)
+    current = cdn.get_tariff_cdn_gb(tariff_id)
+    await safe_edit_or_send(
+        callback.message,
+        '🌐 <b>CDN в тарифе</b>\n\n'
+        'Сколько ГБ CDN получает клиент вместе с этим тарифом. Пакет подключается сам при покупке '
+        'и при каждом продлении, на срок тарифа.\n'
+        f'Сейчас: <b>{f"{current} ГБ" if current else "не входит"}</b>\n\n'
+        'Отправьте целое число ГБ, либо <code>0</code>, чтобы убрать CDN из тарифа. '
+        'Отдельная покупка пакета остаётся доступной.',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text='❌ Отмена', callback_data=f'admin_tariff_view:{tariff_id}')]]),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.cdn_tariff_gb, F.text, ~F.text.startswith('/'))
+async def admin_tariff_cdn_save(message: Message, state: FSMContext):
+    from bot.services import cdn
+    data = await state.get_data()
+    tariff_id = int(data.get('cdn_tariff_id') or 0)
+    text = (message.text or '').strip()
+    if not tariff_id or not text.isdigit():
+        await message.answer('❌ Введите целое число ГБ (0 — убрать CDN из тарифа)')
+        return
+    cdn.set_tariff_cdn_gb(tariff_id, int(text))
+    await state.clear()
+    from bot.handlers.admin.tariffs import render_tariff_view
+    await render_tariff_view(message, tariff_id, state)

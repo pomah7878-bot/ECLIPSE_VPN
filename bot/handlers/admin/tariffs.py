@@ -160,6 +160,10 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
         group_name = group['name'] if group else 'Основная'
         lines.append(f"📂 Группа: <code>{group_name}</code>")
     
+    from bot.services.cdn import get_tariff_cdn_gb
+    cdn_gb = get_tariff_cdn_gb(tariff_id)
+    lines.append(f"🌐 CDN в тарифе: <code>{f'{cdn_gb} ГБ' if cdn_gb else 'нет'}</code>")
+
     lines.extend([
         f"📊 Порядок: <code>{tariff.get('display_order', 0)}</code>",
         f"\n{status_emoji}",
@@ -167,7 +171,7 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
     
     await safe_edit_or_send(message, 
         "\n".join(lines),
-        reply_markup=tariff_view_kb(tariff_id, tariff['is_active'], groups_count > 1)
+        reply_markup=tariff_view_kb(tariff_id, tariff['is_active'], groups_count > 1, cdn_gb)
     )
 
 
