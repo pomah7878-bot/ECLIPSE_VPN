@@ -102,8 +102,8 @@ from bot.services.panel_sync_coordinator import panel_sync_coordinator
 from bot.utils.inbounds import (
     filter_regular_inbounds,
     filter_visible_inbounds,
-    is_ignored_inbound,
     is_mtproto_inbound,
+    is_prefix_ignored_inbound,
 )
 
 
@@ -1765,7 +1765,7 @@ class XUIClient(BaseVPNClient):
             )
         if target_inbound is None:
             raise VPNAPIError(f"Inbound {inbound_id} не найден в панели")
-        if is_ignored_inbound(target_inbound):
+        if is_prefix_ignored_inbound(target_inbound):
             raise VPNAPIError(f"Inbound {inbound_id} исключён из управления префиксом --!")
 
         protocol = str(target_inbound.get("protocol") or "").strip().lower()

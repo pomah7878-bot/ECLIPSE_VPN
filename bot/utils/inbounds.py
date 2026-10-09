@@ -70,6 +70,16 @@ def is_cdn_inbound(inbound: Dict[str, Any]) -> bool:
         return False
 
 
+def is_prefix_ignored_inbound(inbound: Dict[str, Any]) -> bool:
+    """True только для инбаундов с префиксом --! (запрет на любое добавление клиентов).
+
+    CDN-инбаунды сюда не входят: в них клиентов создаёт модуль CDN-пакетов."""
+    if not isinstance(inbound, dict):
+        return False
+    remark = inbound.get("remark") or ""
+    return str(remark).lstrip().startswith(IGNORED_INBOUND_PREFIX)
+
+
 def is_ignored_inbound(inbound: Dict[str, Any]) -> bool:
     """True if inbound is hidden from the bot through the prefix at the beginning of remark.
 
