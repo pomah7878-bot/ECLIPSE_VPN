@@ -1496,27 +1496,41 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
 
     if provider_id and detected_app == "happ":
         from database.requests import is_client_toggle_enabled
+        # Happ ЗАПОМИНАЕТ полученные значения: если просто не слать заголовок,
+        # ранее включённая настройка остаётся. Поэтому выключенное явно шлём «0»
+        # (и затираем то, что могла прислать панель).
+        _happ_off_defaults = {
+            "autoconnect": ("subscription-autoconnect", "0"),
+            "hide_settings": ("hide-settings", "0"),
+            "notify_expire": ("notification-subs-expire", "0"),
+            "auto_update": ("subscription-auto-update-enable", "0"),
+        }
         if is_client_toggle_enabled("happ", "autoconnect"):
-            # "Advanced parameter" — официально работает только при заданном
-            # Provider ID (см. happ.su/main/dev-docs/app-management). Клиент
-            # сам измеряет отклик каждого сервера в подписке и подключается
-            # к самому быстрому при запуске приложения.
             headers["subscription-autoconnect"] = "1"
             headers["subscription-autoconnect-type"] = "lowestdelay"
-            # v1.160: для выбора сервера с наименьшей задержкой Happ должен
-            # замерить отклик серверов при открытии приложения.
             if "subscription-ping-onopen-enabled" not in headers:
                 headers["subscription-ping-onopen-enabled"] = "1"
-        if is_client_toggle_enabled("happ", "hide_settings"):
-            headers["hide-settings"] = "1"
-        if is_client_toggle_enabled("happ", "notify_expire"):
-            headers["notification-subs-expire"] = "1"
+        else:
+            headers["subscription-autoconnect"] = "0"
+            if "subscription-autoconnect-type" in headers:
+                del headers["subscription-autoconnect-type"]
+        for _tg, (_hdr, _off) in _happ_off_defaults.items():
+            if _tg == "autoconnect":
+                continue
+            if is_client_toggle_enabled("happ", _tg):
+                headers[_hdr] = "1"
+            else:
+                headers[_hdr] = _off
         if is_client_toggle_enabled("happ", "sort_ping"):
             headers["subscriptions-sort-type"] = "ping"
             if "subscription-ping-onopen-enabled" not in headers:
                 headers["subscription-ping-onopen-enabled"] = "1"
-        if is_client_toggle_enabled("happ", "auto_update"):
-            headers["subscription-auto-update-enable"] = "1"
+        elif "subscriptions-sort-type" in headers:
+            del headers["subscriptions-sort-type"]
+        if (not is_client_toggle_enabled("happ", "autoconnect")
+                and not is_client_toggle_enabled("happ", "sort_ping")
+                and "subscription-ping-onopen-enabled" in headers):
+            del headers["subscription-ping-onopen-enabled"]
 
     elif detected_app == "incy":
         # У INCY СВОИ имена заголовков и своя семантика — не переиспользуем
