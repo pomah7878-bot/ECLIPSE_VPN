@@ -1,4 +1,4 @@
-"""Админ: CDN-пакеты ключей и настройки CDN (/cdn)."""
+"""Админ: CDN-пакеты ключей и настройки CDN (⚙️ Настройки бота → 🌐 CDN, а также /cdn)."""
 import logging
 
 from aiogram import F, Router
@@ -17,35 +17,97 @@ router = Router()
 router.callback_query.filter(lambda c: _is_admin_guard(c.from_user.id))
 router.message.filter(lambda m: m.from_user is not None and _is_admin_guard(m.from_user.id))
 
+# поле -> (ключ настройки, название, подробное объяснение, пример)
 SETTING_FIELDS = {
-    'ids': ('cdn_inbound_ids', 'ID CDN-инбаунда (через запятую, например 301)'),
-    'price': ('cdn_price_cents', 'Цена пакета в рублях (0 — покупка выключена)'),
-    'gb': ('cdn_pack_gb', 'Объём пакета по умолчанию, ГБ'),
-    'days': ('cdn_pack_days', 'Срок пакета по умолчанию, дней'),
+    'ids': (
+        'cdn_inbound_ids', 'ID CDN-инбаунда',
+        'Номер инбаунда в панели 3x-ui, через который идёт трафик клиентов через CDN.\n'
+        'Где взять: панель 3x-ui → Inbounds, число в колонке ID.\n'
+        'Можно несколько через запятую. Бот перестаёт добавлять в этот инбаунд обычных '
+        'клиентов: туда попадают только те, у кого есть CDN-пакет.\n'
+        'Номера инбаундов у разных серверов могут совпадать. Если у вас несколько серверов, '
+        'удобнее написать в панели в начале названия инбаунда метку <code>[CDN]</code>: '
+        'тогда бот узнает его сам на любом сервере.',
+        '301',
+    ),
+    'price': (
+        'cdn_price_cents', 'Цена пакета, ₽',
+        'Сколько клиент платит с баланса бота за один пакет.\n'
+        'Считайте от своих расходов: CDN тарифицируется по исходящему трафику '
+        '(цена за ГБ у Yandex × объём пакета), плюс ваша наценка.\n'
+        '0 — покупка выключена, кнопка клиентам не показывается (админ по-прежнему '
+        'может выдавать пакеты бесплатно).',
+        '150',
+    ),
+    'gb': (
+        'cdn_pack_gb', 'Объём пакета, ГБ',
+        'Сколько трафика получает клиент в одном пакете. Когда объём выбран, CDN-ключ '
+        'отключается, а обычные ключи подписки работают как раньше.\n'
+        'Для отдельного клиента админ может задать другой объём в карточке его ключа.',
+        '10',
+    ),
+    'days': (
+        'cdn_pack_days', 'Срок пакета, дней',
+        'Через сколько дней пакет заканчивается, даже если объём не выбран. '
+        'Новая покупка заменяет текущий пакет: остаток объёма и срока не суммируется.',
+        '30',
+    ),
 }
+
+
+def _stats_line() -> str:
+    from database import db_cdn
+    packs = db_cdn.list_packs()
+    if not packs:
+        return 'Пакетов пока нет.'
+    active = sum(1 for p in packs if p['status'] == db_cdn.STATUS_ACTIVE)
+    free = sum(1 for p in packs if p['status'] == db_cdn.STATUS_ACTIVE and p['is_free'])
+    return f'Пакетов всего: {len(packs)}, активных: {active} (из них бесплатных: {free}).'
 
 
 def _settings_text() -> str:
     from bot.services import cdn
     ids = ', '.join(str(i) for i in sorted(cdn.get_cdn_inbound_ids())) or 'не задан'
     price = cdn.get_cdn_price_cents()
-    price_text = cdn.format_price(price) if price > 0 else 'не задана (покупка выключена)'
+    price_text = cdn.format_price(price) if price > 0 else 'не задана'
+    ready_ids = '✅' if cdn.get_cdn_inbound_ids() else '❌'
+    ready_price = '✅' if price > 0 else '❌'
     return (
-        '🌐 <b>Настройки CDN-пакетов</b>\n\n'
-        f'• CDN-инбаунд (ID): <b>{escape_html(ids)}</b>\n'
-        f'• Цена пакета: <b>{price_text}</b>\n'
-        f'• Объём по умолчанию: <b>{cdn.get_cdn_pack_gb()} ГБ</b>\n'
-        f'• Срок по умолчанию: <b>{cdn.get_cdn_pack_days()} дн.</b>\n\n'
-        'Клиенты видят кнопку «🌐 CDN» в карточке ключа, когда задан ID инбаунда и цена. '
-        'Инбаунд можно также пометить в панели меткой <code>[CDN]</code> в начале названия. '
-        'Выдать пакет бесплатно или изменить объём: карточка ключа → «🌐 CDN-пакет».'
+        '🌐 <b>CDN-пакеты (обход белых списков)</b>\n\n'
+        '<b>Что это.</b> Дополнительный ключ в подписке клиента, который идёт через CDN. '
+        'Он нужен там, где мобильный интернет пропускает только «белые» адреса. '
+        'Клиент сам решает, нужен ли ему CDN, и покупает пакет с баланса бота.\n\n'
+        '<b>Как работает.</b> Покупка или выдача создаёт отдельного клиента в CDN-инбаунде '
+        'панели с лимитом ГБ и сроком. Закончился объём или срок: CDN-ключ отключается, '
+        'остальные ключи подписки не затрагиваются. CDN платный для вас, поэтому в обычную '
+        'подписку он по умолчанию не попадает.\n\n'
+        '<b>Настройки</b>\n'
+        f'{ready_ids} CDN-инбаунд (ID): <b>{escape_html(ids)}</b>\n'
+        f'{ready_price} Цена пакета: <b>{price_text}</b>\n'
+        f'• Объём пакета: <b>{cdn.get_cdn_pack_gb()} ГБ</b>\n'
+        f'• Срок пакета: <b>{cdn.get_cdn_pack_days()} дн.</b>\n\n'
+        'Клиенты видят кнопку «🌐 CDN» в карточке ключа, когда отмечены оба пункта ✅.\n\n'
+        '<b>Выдать бесплатно или изменить объём</b> для одного клиента: '
+        'Пользователи → ключ → «🌐 CDN-пакет».\n\n'
+        f'📊 {_stats_line()}'
     )
 
 
 def _settings_kb() -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text=f'✏️ {label}', callback_data=f'admin_cdn_set:{field}')]
-            for field, (_, label) in SETTING_FIELDS.items()]
-    rows.append([InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
+    from bot.services import cdn
+    values = {
+        'ids': ', '.join(str(i) for i in sorted(cdn.get_cdn_inbound_ids())) or 'не задан',
+        'price': cdn.format_price(cdn.get_cdn_price_cents()) if cdn.get_cdn_price_cents() > 0 else 'не задана',
+        'gb': f'{cdn.get_cdn_pack_gb()} ГБ',
+        'days': f'{cdn.get_cdn_pack_days()} дн.',
+    }
+    rows = [[InlineKeyboardButton(text=f'✏️ {meta[1]}: {values[field]}', callback_data=f'admin_cdn_set:{field}')]
+            for field, meta in SETTING_FIELDS.items()]
+    rows.append([InlineKeyboardButton(text='🔍 Проверить инбаунд на серверах', callback_data='admin_cdn_check')])
+    rows.append([
+        InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_bot_settings'),
+        InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -62,17 +124,44 @@ async def cdn_settings_callback(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == 'admin_cdn_check')
+async def cdn_check_servers(callback: CallbackQuery):
+    """Показывает, на каких серверах бот нашёл CDN-инбаунд (чтобы проверить ID/метку)."""
+    from bot.services import cdn
+    from database.requests import get_active_servers
+    await callback.answer('⏳ Проверяю серверы…')
+    lines = ['🔍 <b>Проверка CDN-инбаунда</b>\n']
+    for server in get_active_servers():
+        name = escape_html(str(server.get('name') or server.get('id')))
+        try:
+            _, _, found = await cdn._server_context(int(server['id']))
+            if found:
+                items = ', '.join(f"#{i.get('id')} «{escape_html(str(i.get('remark') or ''))}»" for i in found)
+                lines.append(f'✅ {name}: {items}')
+            else:
+                lines.append(f'⚠️ {name}: CDN-инбаунд не найден (проверьте ID или метку [CDN])')
+        except Exception as e:  # noqa: BLE001
+            lines.append(f'❌ {name}: нет связи с панелью ({escape_html(str(e)[:80])})')
+    await safe_edit_or_send(
+        callback.message, '\n'.join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='⬅️ К настройкам CDN', callback_data='admin_cdn_settings')]]),
+    )
+
+
 @router.callback_query(F.data.startswith('admin_cdn_set:'))
 async def cdn_setting_edit(callback: CallbackQuery, state: FSMContext):
     field = callback.data.split(':')[1]
     if field not in SETTING_FIELDS:
         await callback.answer('Неизвестная настройка', show_alert=True)
         return
+    _, title, help_text, example = SETTING_FIELDS[field]
     await state.set_state(AdminStates.cdn_setting_value)
     await state.update_data(cdn_field=field)
     await safe_edit_or_send(
         callback.message,
-        f'✏️ <b>{SETTING_FIELDS[field][1]}</b>\n\nОтправьте новое значение сообщением.',
+        f'✏️ <b>{title}</b>\n\n{help_text}\n\nПример: <code>{example}</code>\n\n'
+        'Отправьте новое значение сообщением.',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text='❌ Отмена', callback_data='admin_cdn_settings')]]),
     )

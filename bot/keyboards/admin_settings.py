@@ -23,6 +23,7 @@ def bot_settings_kb(current_mode: str = 'subscription') -> InlineKeyboardMarkup:
     ))
     builder.row(InlineKeyboardButton(text='🔄 Обновления', callback_data='admin_update_bot'))
     builder.row(InlineKeyboardButton(text='🌐 Интеграции (сайт, AI, вход)', callback_data='admin_integrations'))
+    builder.row(InlineKeyboardButton(text='🌐 CDN-пакеты (обход белых списков)', callback_data='admin_cdn_settings'))
     builder.row(InlineKeyboardButton(text='✏️ Изменить тексты', callback_data='admin_edit_texts'))
     builder.row(InlineKeyboardButton(text='🔒 Обязательная подписка', callback_data='admin_channel_gate'))
     try:
