@@ -3098,12 +3098,37 @@ class XUIClient(BaseVPNClient):
                         reality = stream_settings.get("realitySettings", {})
                         logger.info(f"Reality settings for {email}: pbk={reality.get('publicKey')}, sni={reality.get('serverName')}, fp={reality.get('fingerprint')}, shortIds={reality.get('shortIds')}")
                     
+                    # External Proxy инбаунда (CDN и т.п.): адрес, порт и TLS берём
+                    # оттуда — так же, как формирует ссылку сама панель 3x-ui
+                    link_host = self.server["host"]
+                    link_port = inbound["port"]
+                    ext_proxies = stream_settings.get("externalProxy")
+                    if isinstance(ext_proxies, list) and ext_proxies and isinstance(ext_proxies[0], dict):
+                        ext = ext_proxies[0]
+                        ext_dest = str(ext.get("dest") or "").strip()
+                        if ext_dest:
+                            link_host = ext_dest
+                            try:
+                                link_port = int(ext.get("port") or link_port)
+                            except (TypeError, ValueError):
+                                pass
+                            force_tls = ext.get("forceTls", "same")
+                            if force_tls in ("tls", "none"):
+                                stream_settings = dict(stream_settings)
+                                stream_settings["security"] = force_tls
+                                if force_tls == "tls":
+                                    tls_cfg = dict(stream_settings.get("tlsSettings") or {})
+                                    if not tls_cfg.get("serverName"):
+                                        xh_host = (stream_settings.get("xhttpSettings") or {}).get("host", "")
+                                        tls_cfg["serverName"] = xh_host or ext_dest
+                                    stream_settings["tlsSettings"] = tls_cfg
+
                     result = {
                         "uuid": target_client.get("id", ""),
                         "email": target_client.get("email", ""),
-                        "port": inbound["port"],
+                        "port": link_port,
                         "protocol": protocol,
-                        "host": self.server["host"],
+                        "host": link_host,
                         "stream_settings": stream_settings,
                         "inbound_name": inbound.get("remark", "VPN"),
                         "sub_id": target_client.get("subId", ""),
