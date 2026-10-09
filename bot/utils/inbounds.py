@@ -58,11 +58,11 @@ def reset_cdn_inbound_ids_cache() -> None:
 
 
 def is_cdn_inbound(inbound: Dict[str, Any]) -> bool:
-    """True, если инбаунд — платный CDN: ID из настройки или метка [CDN] в начале remark."""
+    """True, если инбаунд — платный CDN: ID из настройки или слово CDN в названии (remark)."""
     if not isinstance(inbound, dict):
         return False
     remark = str(inbound.get("remark") or "").lstrip()
-    if remark.upper().startswith(CDN_INBOUND_MARKER):
+    if "CDN" in remark.upper():
         return True
     try:
         return int(inbound.get("id")) in get_cdn_inbound_ids()

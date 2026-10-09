@@ -26,7 +26,7 @@ SETTING_FIELDS = {
         'Можно несколько через запятую. Бот перестаёт добавлять в этот инбаунд обычных '
         'клиентов: туда попадают только те, у кого есть CDN-пакет.\n'
         'Номера инбаундов у разных серверов могут совпадать. Если у вас несколько серверов, '
-        'удобнее написать в панели в начале названия инбаунда метку <code>[CDN]</code>: '
+        'удобнее написать в панели в названии инбаунда слово <code>CDN</code> (например «DE CDN»): '
         'тогда бот узнает его сам на любом сервере.',
         '301',
     ),
@@ -139,7 +139,7 @@ async def cdn_check_servers(callback: CallbackQuery):
                 items = ', '.join(f"#{i.get('id')} «{escape_html(str(i.get('remark') or ''))}»" for i in found)
                 lines.append(f'✅ {name}: {items}')
             else:
-                lines.append(f'⚠️ {name}: CDN-инбаунд не найден (проверьте ID или метку [CDN])')
+                lines.append(f'⚠️ {name}: CDN-инбаунд не найден (проверьте ID или слово CDN в названии)')
         except Exception as e:  # noqa: BLE001
             lines.append(f'❌ {name}: нет связи с панелью ({escape_html(str(e)[:80])})')
     await safe_edit_or_send(
