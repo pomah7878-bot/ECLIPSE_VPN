@@ -14,7 +14,7 @@ router = Router()
 
 def _back_row(key_id: int):
     return [
-        InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}'),
+        InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'),
         InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
     ]
 
