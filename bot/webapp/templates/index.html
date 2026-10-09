@@ -1023,6 +1023,104 @@
             }
         }
 
+        const _cdnState = {};
+
+        function cdnBytes(bytes) {
+            const n = Number(bytes) || 0;
+            if (n >= 1024 ** 3) return (n / 1024 ** 3).toFixed(2).replace(/\.?0+$/, '') + ' ГБ';
+            if (n >= 1024 ** 2) return (n / 1024 ** 2).toFixed(1).replace(/\.0$/, '') + ' МБ';
+            return Math.round(n / 1024) + ' КБ';
+        }
+
+        function renderCdnBlock(key) {
+            const cdn = key.cdn;
+            if (!cdn || !cdn.offered) return '';
+            _cdnState[key.id] = cdn;
+            const active = cdn.pack && cdn.pack.status === 'active' ? ' 🟢' : '';
+            return `<button onclick="toggleCdn(${key.id})" class="w-full py-2 text-[11px] text-mist-dim hover:text-ink transition text-center">🌐 CDN — обход белых списков${active}</button>
+                    <div id="cdn-${key.id}" style="display:none;"></div>`;
+        }
+
+        function cdnStatusLabel(status) {
+            return ({
+                active: '🟢 Активен',
+                exhausted: '🔴 Объём исчерпан',
+                expired: '🔴 Срок вышел',
+                suspended: '⏸ Приостановлен (ключ неактивен)',
+                revoked: '⛔ Отключён'
+            })[status] || status;
+        }
+
+        function cdnFormatUntil(value) {
+            if (!value) return '—';
+            const d = new Date(String(value).replace(' ', 'T') + 'Z');
+            return isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+
+        function renderCdnPanel(keyId) {
+            const cdn = _cdnState[keyId];
+            if (!cdn) return '';
+            const pack = cdn.pack;
+            let html = '<div class="card rounded-xl p-3 mt-2" style="background:var(--panel-2);">';
+            html += '<div class="text-[11px] text-mist mb-2">Дополнительный ключ в вашей подписке, который работает через CDN. Нужен там, где мобильный интернет пропускает только «белые» адреса. Обычные ключи работают как раньше.</div>';
+            if (pack) {
+                const pct = pack.limit_bytes > 0 ? Math.min(100, Math.round((pack.used_bytes / pack.limit_bytes) * 100)) : 0;
+                html += `<div class="text-xs mb-1">Статус: <span class="font-semibold">${cdnStatusLabel(pack.status)}</span></div>`;
+                html += `<div class="flex justify-between text-[11px] text-mist mb-1.5"><span>Объём</span><span>${cdnBytes(pack.used_bytes)} / ${cdnBytes(pack.limit_bytes)}</span></div>`;
+                html += `<div class="traffic-bar-bg mb-2"><div class="traffic-fill" style="width:${pct}%"></div></div>`;
+                html += `<div class="text-[11px] text-mist mb-2">Действует до: <span class="text-ink">${cdnFormatUntil(pack.expires_at)}</span>${pack.is_free ? ' · 🎁 выдан администратором' : ''}</div>`;
+                if (pack.status === 'active') {
+                    html += '<div class="text-[11px] text-mist mb-2">Новый пакет заменит текущий: остаток объёма и срока не суммируется.</div>';
+                }
+            } else {
+                html += '<div class="text-xs mb-2">Пакет не подключён.</div>';
+            }
+            if (cdn.price_cents > 0) {
+                const label = pack ? '🔄 Купить новый пакет' : '🛒 Купить пакет';
+                const bal = cdn.balance_cents != null ? ` (на балансе ${escapeHtml((cdn.balance_cents / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 }))} ₽)` : '';
+                html += `<div class="text-[11px] text-mist mb-2">Пакет: <span class="text-ink font-semibold">${cdn.gb} ГБ на ${cdn.days} дн. — ${escapeHtml(cdn.price_text)}</span>, оплата с баланса${bal}.</div>`;
+                html += `<button id="cdn-buy-${keyId}" onclick="buyCdnPack(${keyId})" class="w-full py-2.5 btn-primary rounded-xl font-bold text-xs transition">${label} за ${escapeHtml(cdn.price_text)}</button>`;
+            }
+            html += '</div>';
+            return html;
+        }
+
+        function toggleCdn(keyId) {
+            const box = document.getElementById('cdn-' + keyId);
+            if (!box) return;
+            const isHidden = box.style.display === 'none' || !box.style.display;
+            if (!isHidden) { box.style.display = 'none'; return; }
+            box.innerHTML = renderCdnPanel(keyId);
+            box.style.display = 'block';
+        }
+
+        async function buyCdnPack(keyId) {
+            const cdn = _cdnState[keyId];
+            if (!cdn) return;
+            if (!confirm(`Купить CDN-пакет: ${cdn.gb} ГБ на ${cdn.days} дн. за ${cdn.price_text}? Оплата спишется с баланса.`)) return;
+            const btn = document.getElementById('cdn-buy-' + keyId);
+            if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+            try {
+                const res = await fetch(`/api/key/${keyId}/cdn/buy?initData=${encodeURIComponent(initData)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
+                });
+                let data = {};
+                try { data = await res.json(); } catch (e) { data = { error: 'unknown' }; }
+                if (data.error) {
+                    showToast(data.message || 'Не удалось оформить пакет');
+                    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+                    return;
+                }
+                showToast(data.message || 'Пакет CDN подключён');
+                init();
+            } catch (e) {
+                showToast('Не удалось оформить пакет');
+                if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+            }
+        }
+
         async function clientPing(host, port) {
             // Реальная задержка от УСТРОЙСТВА пользователя до сервера — не от
             // сервера бота. Браузер не умеет "чистый" TCP-пинг, поэтому засекаем
@@ -1246,6 +1344,7 @@
                     ${isActive ? `
                     <button onclick="toggleInbounds(${key.id})" class="w-full py-2 mt-2 text-[11px] text-mist-dim hover:text-ink transition text-center">🔌 Все подключения</button>
                     <div id="inbounds-${key.id}" style="display:none;"></div>
+                    ${renderCdnBlock(key)}
                     ` : ''}
                 </div>
             `;

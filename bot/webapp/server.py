@@ -404,6 +404,7 @@ async def handle_keys(request: web.Request) -> web.Response:
                 "expiry": expiry,
                 "is_active": key.get("is_active", 0) == 1,
                 "is_trial": _is_trial_key(key),
+                "cdn": _cdn_key_info(key["id"], {"telegram_id": telegram_id}),
             })
 
         return web.json_response({"keys": result})
@@ -3182,6 +3183,57 @@ def _cdn_key_info(key_id: int, account: Optional[dict] = None) -> dict:
         return {"offered": False}
 
 
+async def _cdn_buy_response(key_id: int, account: dict) -> web.Response:
+    """Покупка CDN-пакета с баланса: общая логика сайта и WebApp."""
+    info = _cdn_key_info(key_id, account)
+    if not info.get("offered") or int(info.get("price_cents") or 0) <= 0:
+        return web.json_response({"error": "cdn_unavailable", "message": "Покупка CDN сейчас недоступна."}, status=400)
+
+    internal_user_id = _resolve_site_account_internal_user_id(account)
+    if not internal_user_id:
+        return web.json_response({"error": "account_not_linked", "message": "Аккаунт не привязан к балансу."}, status=400)
+
+    from bot.services import cdn as _cdn
+    from bot.services.panel_sync_coordinator import panel_sync_coordinator
+    try:
+        async with panel_sync_coordinator.regular():
+            result = await _cdn.purchase_pack(key_id, int(internal_user_id))
+    except Exception as e:
+        logger.warning(f"CDN buy с сайта, ключ {key_id}: {e}")
+        return web.json_response({"error": "internal_error", "message": "Не удалось оформить пакет. Попробуйте позже."}, status=502)
+
+    if not result.get("ok"):
+        if result.get("error") == "insufficient_funds":
+            return web.json_response({
+                "error": "insufficient_balance",
+                "message": f"Недостаточно средств на балансе. Нужно {_cdn.format_price(result.get('need', 0))}.",
+            }, status=400)
+        extra = " Деньги возвращены на баланс." if result.get("refunded") else ""
+        return web.json_response({"error": "cdn_failed", "message": f"{result.get('error')}.{extra}"}, status=502)
+
+    return web.json_response({
+        "ok": True,
+        "message": "Пакет CDN подключён. Обновите подписку в приложении, чтобы появился CDN-ключ.",
+        "cdn": _cdn_key_info(key_id, account),
+    })
+
+
+async def handle_key_cdn_buy(request: web.Request) -> web.Response:
+    """POST /api/key/{key_id}/cdn/buy — покупка CDN-пакета в Telegram WebApp
+    (авторизация по initData), оплата с баланса бота."""
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        key_id = int(request.match_info["key_id"])
+    except (KeyError, ValueError):
+        return web.json_response({"error": "invalid_key_id"}, status=400)
+    from database.requests import get_key_details_for_user
+    if not get_key_details_for_user(key_id, telegram_id):
+        return web.json_response({"error": "key_not_found"}, status=404)
+    return await _cdn_buy_response(key_id, {"telegram_id": telegram_id})
+
+
 async def handle_public_account_key_cdn_buy(request: web.Request) -> web.Response:
     """POST /api/public/account/key/cdn/buy — покупка CDN-пакета для ключа
     личного кабинета с личного баланса (обход белых списков).
@@ -3204,37 +3256,7 @@ async def handle_public_account_key_cdn_buy(request: web.Request) -> web.Respons
     if not account or not _verify_key_belongs_to_account(int(key_id), account):
         return web.json_response({"error": "key_not_found"}, status=404)
 
-    info = _cdn_key_info(int(key_id), account)
-    if not info.get("offered") or int(info.get("price_cents") or 0) <= 0:
-        return web.json_response({"error": "cdn_unavailable", "message": "Покупка CDN сейчас недоступна."}, status=400)
-
-    internal_user_id = _resolve_site_account_internal_user_id(account)
-    if not internal_user_id:
-        return web.json_response({"error": "account_not_linked", "message": "Аккаунт не привязан к балансу."}, status=400)
-
-    from bot.services import cdn as _cdn
-    from bot.services.panel_sync_coordinator import panel_sync_coordinator
-    try:
-        async with panel_sync_coordinator.regular():
-            result = await _cdn.purchase_pack(int(key_id), int(internal_user_id))
-    except Exception as e:
-        logger.warning(f"CDN buy с сайта, ключ {key_id}: {e}")
-        return web.json_response({"error": "internal_error", "message": "Не удалось оформить пакет. Попробуйте позже."}, status=502)
-
-    if not result.get("ok"):
-        if result.get("error") == "insufficient_funds":
-            return web.json_response({
-                "error": "insufficient_balance",
-                "message": f"Недостаточно средств на балансе. Нужно {_cdn.format_price(result.get('need', 0))}.",
-            }, status=400)
-        extra = " Деньги возвращены на баланс." if result.get("refunded") else ""
-        return web.json_response({"error": "cdn_failed", "message": f"{result.get('error')}.{extra}"}, status=502)
-
-    return web.json_response({
-        "ok": True,
-        "message": "Пакет CDN подключён. Обновите подписку в приложении, чтобы появился CDN-ключ.",
-        "cdn": _cdn_key_info(int(key_id), account),
-    })
+    return await _cdn_buy_response(int(key_id), account)
 
 
 async def handle_public_account_key_renew_create(request: web.Request) -> web.Response:
@@ -4278,6 +4300,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/app", handle_app_page)
     app.router.add_get("/api/keys", handle_keys)
     app.router.add_get("/api/key/{key_id}/inbounds", handle_key_inbounds)
+    app.router.add_post("/api/key/{key_id}/cdn/buy", handle_key_cdn_buy)
     app.router.add_get("/api/public/key/{key_id}/inbounds", handle_public_key_inbounds)
     app.router.add_get("/api/status", handle_status)
     app.router.add_get("/api/ping", handle_ping)
