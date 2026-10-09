@@ -3065,6 +3065,81 @@ class XUIClient(BaseVPNClient):
             logger.debug(f"get_clients_by_tg_id: не удалось получить данные (панель < 3.6.0?): {e}")
             return []
 
+    async def _get_share_host_override(self, inbound_id: Any) -> Optional[Dict[str, Any]]:
+        """
+        Hosts панели 3x-ui v3.4+ (заменили External Proxy): первый включённый
+        хост инбаунда. Возвращает адрес, порт и переопределения TLS/SNI/host/path
+        или None, если хостов нет или панель старая (эндпоинта нет).
+        """
+        if inbound_id in (None, ""):
+            return None
+        try:
+            result = await self._request(
+                "GET",
+                f"/panel/api/hosts/byInbound/{inbound_id}",
+                retry=False,
+                log_error=False,
+            )
+        except Exception as e:
+            logger.debug(f"hosts API недоступен для инбаунда {inbound_id}: {e}")
+            return None
+        groups = result.get("obj") if isinstance(result, dict) else None
+        if isinstance(groups, dict):
+            groups = [groups]
+        if not isinstance(groups, list):
+            return None
+        for group in groups:
+            if not isinstance(group, dict) or group.get("isDisabled"):
+                continue
+            addrs = group.get("hosts")
+            if not isinstance(addrs, list):
+                continue
+            addr = next((str(a).strip() for a in addrs if str(a).strip()), "")
+            if not addr:
+                continue
+            port = group.get("port") or None
+            if addr.count(":") == 1:
+                addr_only, _, addr_port = addr.partition(":")
+                if addr_port.isdigit():
+                    addr = addr_only
+                    port = port or int(addr_port)
+            try:
+                port = int(port) if port else None
+            except (TypeError, ValueError):
+                port = None
+            return {
+                "host": addr,
+                "port": port,
+                "security": str(group.get("security") or "same").strip().lower(),
+                "sni": str(group.get("sni") or "").strip(),
+                "host_header": str(group.get("hostHeader") or "").strip(),
+                "path": str(group.get("path") or "").strip(),
+            }
+        return None
+
+    @staticmethod
+    def _legacy_external_proxy_override(stream_settings: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Старый External Proxy из streamSettings (3x-ui до v3.4)."""
+        ext_proxies = stream_settings.get("externalProxy")
+        if not (isinstance(ext_proxies, list) and ext_proxies and isinstance(ext_proxies[0], dict)):
+            return None
+        ext = ext_proxies[0]
+        dest = str(ext.get("dest") or "").strip()
+        if not dest:
+            return None
+        try:
+            port = int(ext.get("port")) if ext.get("port") else None
+        except (TypeError, ValueError):
+            port = None
+        return {
+            "host": dest,
+            "port": port,
+            "security": str(ext.get("forceTls") or "same").strip().lower(),
+            "sni": "",
+            "host_header": "",
+            "path": "",
+        }
+
     async def get_client_config(self, email: str) -> Optional[Dict[str, Any]]:
         """
         Retrieves the complete client configuration for the connection.
@@ -3098,30 +3173,43 @@ class XUIClient(BaseVPNClient):
                         reality = stream_settings.get("realitySettings", {})
                         logger.info(f"Reality settings for {email}: pbk={reality.get('publicKey')}, sni={reality.get('serverName')}, fp={reality.get('fingerprint')}, shortIds={reality.get('shortIds')}")
                     
-                    # External Proxy инбаунда (CDN и т.п.): адрес, порт и TLS берём
-                    # оттуда — так же, как формирует ссылку сама панель 3x-ui
+                    # Адрес ссылки для клиента (CDN и т.п.): Hosts панели (3x-ui v3.4+),
+                    # а если их нет — старый External Proxy; так же ссылку формирует панель
                     link_host = self.server["host"]
                     link_port = inbound["port"]
-                    ext_proxies = stream_settings.get("externalProxy")
-                    if isinstance(ext_proxies, list) and ext_proxies and isinstance(ext_proxies[0], dict):
-                        ext = ext_proxies[0]
-                        ext_dest = str(ext.get("dest") or "").strip()
-                        if ext_dest:
-                            link_host = ext_dest
-                            try:
-                                link_port = int(ext.get("port") or link_port)
-                            except (TypeError, ValueError):
-                                pass
-                            force_tls = ext.get("forceTls", "same")
-                            if force_tls in ("tls", "none"):
-                                stream_settings = dict(stream_settings)
-                                stream_settings["security"] = force_tls
-                                if force_tls == "tls":
-                                    tls_cfg = dict(stream_settings.get("tlsSettings") or {})
-                                    if not tls_cfg.get("serverName"):
-                                        xh_host = (stream_settings.get("xhttpSettings") or {}).get("host", "")
-                                        tls_cfg["serverName"] = xh_host or ext_dest
-                                    stream_settings["tlsSettings"] = tls_cfg
+                    override = await self._get_share_host_override(inbound.get("id"))
+                    if override is None:
+                        override = self._legacy_external_proxy_override(stream_settings)
+                    if override:
+                        link_host = override["host"]
+                        if override.get("port"):
+                            link_port = override["port"]
+                        stream_settings = dict(stream_settings)
+                        net_key = {
+                            "ws": "wsSettings",
+                            "xhttp": "xhttpSettings",
+                            "httpupgrade": "httpupgradeSettings",
+                        }.get(stream_settings.get("network", "tcp"))
+                        net_cfg = {}
+                        if net_key:
+                            net_cfg = dict(stream_settings.get(net_key) or {})
+                            if override.get("host_header"):
+                                net_cfg["host"] = override["host_header"]
+                            if override.get("path"):
+                                net_cfg["path"] = override["path"]
+                            stream_settings[net_key] = net_cfg
+                        link_security = override.get("security")
+                        if link_security in ("tls", "none"):
+                            stream_settings["security"] = link_security
+                            if link_security == "tls":
+                                tls_cfg = dict(stream_settings.get("tlsSettings") or {})
+                                tls_cfg["serverName"] = (
+                                    override.get("sni")
+                                    or tls_cfg.get("serverName")
+                                    or net_cfg.get("host")
+                                    or link_host
+                                )
+                                stream_settings["tlsSettings"] = tls_cfg
 
                     result = {
                         "uuid": target_client.get("id", ""),
