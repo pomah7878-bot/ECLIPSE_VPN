@@ -330,7 +330,8 @@ async def handle_key_inbounds(request: web.Request) -> web.Response:
         from bot.services.vpn_api import get_client
         from bot.utils.inbound_links import build_connection_groups, add_ping_to_groups
         client = await get_client(key["server_id"])
-        raw = await client.get_subscription_link(key["sub_id"])
+        from bot.services.cdn import get_connection_links
+        raw = await get_connection_links(client, key_id, key["sub_id"])
         groups = build_connection_groups(raw)  # v1.197: + AmneziaWG/WireGuard/TUIC (по лицензии)
         groups = await add_ping_to_groups(groups)
         return web.json_response({"groups": groups})
@@ -3120,7 +3121,8 @@ async def handle_public_key_inbounds(request: web.Request) -> web.Response:
         from bot.services.vpn_api import get_client
         from bot.utils.inbound_links import build_connection_groups, add_ping_to_groups
         client = await get_client(key["server_id"])
-        raw = await client.get_subscription_link(key["sub_id"])
+        from bot.services.cdn import get_connection_links
+        raw = await get_connection_links(client, key_id, key["sub_id"])
         groups = build_connection_groups(raw)  # v1.197: + AmneziaWG/WireGuard/TUIC (по лицензии)
         groups = await add_ping_to_groups(groups)
         return web.json_response({"groups": groups})

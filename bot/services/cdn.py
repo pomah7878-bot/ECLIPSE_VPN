@@ -109,6 +109,20 @@ def merge_subscription_bodies(main: bytes, extra: bytes) -> bytes:
     return text.encode("utf-8")
 
 
+async def get_connection_links(client, key_id: int, sub_id: str) -> str:
+    """Ссылки подключений ключа для списка «Все подключения»: основные + CDN, если пакет активен."""
+    raw = await client.get_subscription_link(sub_id) or ""
+    try:
+        pack = db_cdn.get_pack(int(key_id))
+        if pack and pack["status"] == db_cdn.STATUS_ACTIVE:
+            extra = await client.get_subscription_link(cdn_sub_id(sub_id))
+            if extra:
+                raw = f"{raw}\n{extra}".strip()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("CDN: ссылки CDN-клиента не добавлены в список подключений: %s", e)
+    return raw
+
+
 async def merge_cdn_into_subscription(body: bytes, key: Dict[str, Any], forward_headers: Dict[str, str], session_factory) -> bytes:
     """Если у ключа активен CDN-пакет, добавляет CDN-ссылки в подписку клиента.
 

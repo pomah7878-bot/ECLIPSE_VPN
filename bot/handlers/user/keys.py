@@ -1202,7 +1202,8 @@ async def _load_key_connections(key: dict) -> list:
     from bot.services.vpn_api import get_client
     from bot.utils.inbound_links import build_connection_groups
     client = await get_client(key['server_id'])
-    raw = await client.get_subscription_link(key['sub_id'])
+    from bot.services.cdn import get_connection_links
+    raw = await get_connection_links(client, key['id'], key['sub_id'])
     return build_connection_groups(raw)
 
 
