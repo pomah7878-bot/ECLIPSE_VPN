@@ -135,6 +135,7 @@ def _settings_kb() -> InlineKeyboardMarkup:
                 text=f"{'🟢' if g['id'] in chosen else '⚪'} Группа: {g['name']}",
                 callback_data=f"admin_cdn_group:{g['id']}")])
     rows[0:0] = mode_rows
+    rows.append([InlineKeyboardButton(text='📊 CDN у провайдера: трафик и расход', callback_data='admin_cdn_provider')])
     rows.append([InlineKeyboardButton(text='🔍 Проверить инбаунд на серверах', callback_data='admin_cdn_check')])
     rows.append([
         InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_tariffs'),
@@ -350,3 +351,123 @@ async def admin_cdn_volume_save(message: Message, state: FSMContext):
     await state.clear()
     notice = f'✅ Объём пакета: {gb} ГБ' if result['ok'] else f"❌ {escape_html(str(result['error']))}"
     await _show_key_cdn(message, key_id, notice)
+
+
+# ------------------------------------------------ CDN у провайдера (Yandex Cloud) --
+
+PROVIDER_FIELDS = {
+    'key': ('yc_api_key', '🔑 Ключ API',
+            'API-ключ сервисного аккаунта Yandex Cloud с ролью <code>monitoring.viewer</code> '
+            '(только чтение статистики). Сообщение с ключом бот сразу удалит.'),
+    'folder': ('yc_folder_id', '📁 ID каталога',
+               'ID каталога Yandex Cloud, где работает CDN (в консоли виден в шапке под названием каталога).'),
+    'price': ('yc_price_per_gb_cents', '💵 Цена за ГБ, ₽',
+              'Сколько вы платите провайдеру за 1 ГБ исходящего трафика CDN (по тарифу Yandex Cloud). '
+              'Нужна только для оценки расхода. Пример: <code>2.5</code>'),
+}
+
+
+def _mask(value: str) -> str:
+    return f'{value[:4]}…{value[-3:]}' if len(value) > 10 else ('задан' if value else 'не задан')
+
+
+def _provider_kb() -> InlineKeyboardMarkup:
+    from bot.services import yc_cdn
+    price = yc_cdn.get_price_per_gb_cents()
+    rows = []
+    if yc_cdn.is_configured():
+        rows.append([InlineKeyboardButton(text='🔄 Обновить', callback_data='admin_cdn_provider_refresh')])
+    rows.append([InlineKeyboardButton(text=f'🔑 Ключ API: {_mask(yc_cdn.get_api_key())}', callback_data='admin_cdn_pset:key')])
+    rows.append([InlineKeyboardButton(text=f'📁 ID каталога: {yc_cdn.get_folder_id() or "не задан"}', callback_data='admin_cdn_pset:folder')])
+    rows.append([InlineKeyboardButton(
+        text=f'💵 Цена за ГБ: {str(price / 100).rstrip("0").rstrip(".").replace(".", ",") + " ₽" if price else "не задана"}',
+        callback_data='admin_cdn_pset:price')])
+    if yc_cdn.get_api_key():
+        rows.append([InlineKeyboardButton(text='🗑 Удалить ключ API', callback_data='admin_cdn_pclear')])
+    rows.append([InlineKeyboardButton(text='⬅️ К настройкам CDN', callback_data='admin_cdn_settings')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def _provider_text(force: bool = False) -> str:
+    from bot.services import yc_cdn
+    from database import db_cdn
+    head = '📊 <b>CDN у провайдера</b>\n\n'
+    if not yc_cdn.is_configured():
+        return head + (
+            'Здесь будет трафик и расход CDN по данным Yandex Cloud.\n\n'
+            '<b>Как подключить</b>\n'
+            '1. В консоли Yandex Cloud создайте сервисный аккаунт и дайте ему роль <code>monitoring.viewer</code>.\n'
+            '2. Создайте для него API-ключ и вставьте ниже («Ключ API»).\n'
+            '3. Укажите ID каталога и цену за ГБ.\n\n'
+            'Ключ даёт только чтение статистики.'
+        )
+    summary = await yc_cdn.fetch_summary(force=force)
+    return head + yc_cdn.format_summary(summary, db_cdn.list_packs())
+
+
+@router.callback_query(F.data.in_({'admin_cdn_provider', 'admin_cdn_provider_refresh'}))
+async def cdn_provider_screen(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer('⏳ Запрашиваю данные…')
+    text = await _provider_text(force=callback.data.endswith('refresh'))
+    await safe_edit_or_send(callback.message, text, reply_markup=_provider_kb())
+
+
+@router.callback_query(F.data.startswith('admin_cdn_pset:'))
+async def cdn_provider_edit(callback: CallbackQuery, state: FSMContext):
+    field = callback.data.split(':')[1]
+    if field not in PROVIDER_FIELDS:
+        await callback.answer('Неизвестная настройка', show_alert=True)
+        return
+    _, title, help_text = PROVIDER_FIELDS[field]
+    await state.set_state(AdminStates.cdn_provider_value)
+    await state.update_data(cdn_pfield=field)
+    await safe_edit_or_send(
+        callback.message, f'<b>{title}</b>\n\n{help_text}\n\nОтправьте значение сообщением.',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text='❌ Отмена', callback_data='admin_cdn_provider')]]),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.cdn_provider_value, F.text, ~F.text.startswith('/'))
+async def cdn_provider_save(message: Message, state: FSMContext):
+    from bot.services import yc_cdn
+    data = await state.get_data()
+    field = data.get('cdn_pfield')
+    if field not in PROVIDER_FIELDS:
+        await state.clear()
+        return
+    raw = ''.join((message.text or '').split())
+    setting = PROVIDER_FIELDS[field][0]
+    if field == 'key':
+        try:  # ключ нельзя оставлять в переписке
+            await message.delete()
+        except Exception:  # noqa: BLE001
+            pass
+    if field == 'price':
+        try:
+            value = str(int(round(float(raw.replace(',', '.')) * 100)))
+            if int(value) < 0:
+                raise ValueError
+        except ValueError:
+            await message.answer('❌ Введите цену числом, например 2.5')
+            return
+    else:
+        value = raw
+        if len(value) < 8:
+            await message.answer('❌ Значение слишком короткое, проверьте и отправьте ещё раз')
+            return
+    yc_cdn.set_setting_value(setting, value)
+    await state.clear()
+    text = await _provider_text(force=True)
+    await message.answer('✅ Сохранено.\n\n' + text, reply_markup=_provider_kb(), parse_mode='HTML')
+
+
+@router.callback_query(F.data == 'admin_cdn_pclear')
+async def cdn_provider_clear(callback: CallbackQuery, state: FSMContext):
+    from bot.services import yc_cdn
+    yc_cdn.set_setting_value('yc_api_key', '')
+    await callback.answer('Ключ удалён')
+    await safe_edit_or_send(callback.message, await _provider_text(), reply_markup=_provider_kb())
+
