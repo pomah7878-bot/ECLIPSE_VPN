@@ -259,7 +259,8 @@ def get_tariffs_by_group(group_id: int) -> List[Dict[str, Any]]:
             WHERE group_id = ? AND is_active = 1 AND id != ?
             ORDER BY display_order, id
         """, (group_id, _service_tariff_id()))
-        return [dict(row) for row in cursor.fetchall()]
+        from .db_tariffs import _with_cdn
+        return [_with_cdn(dict(row)) for row in cursor.fetchall()]
 
 def get_active_servers_by_group(group_id: int) -> List[Dict[str, Any]]:
     """

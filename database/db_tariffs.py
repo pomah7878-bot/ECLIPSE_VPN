@@ -28,6 +28,15 @@ def _service_tariff_id() -> int:
         return 0
 
 
+def _with_cdn(tariff):
+    """Цена тарифа для клиента: к ней прибавляется CDN, если он входит в тариф группы."""
+    try:
+        from bot.services.cdn import apply_cdn_surcharge
+        return apply_cdn_surcharge(tariff)
+    except Exception:  # noqa: BLE001
+        return tariff
+
+
 def get_all_tariffs(include_hidden: bool = False) -> List[Dict[str, Any]]:
     """
     Gets a list of all tariffs.
@@ -54,9 +63,10 @@ def get_all_tariffs(include_hidden: bool = False) -> List[Dict[str, Any]]:
                 WHERE is_active = 1 AND id != ?
                 ORDER BY display_order, id
             """, (_service_tariff_id(),))
+            return [_with_cdn(dict(row)) for row in cursor.fetchall()]
         return [dict(row) for row in cursor.fetchall()]
 
-def get_tariff_by_id(tariff_id: int) -> Optional[Dict[str, Any]]:
+def get_tariff_by_id(tariff_id: int, raw: bool = False) -> Optional[Dict[str, Any]]:
     """
     Receives tariff by ID.
     
@@ -74,7 +84,9 @@ def get_tariff_by_id(tariff_id: int) -> Optional[Dict[str, Any]]:
             WHERE id = ?
         """, (tariff_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        return dict(row) if raw else _with_cdn(dict(row))
 
 def add_tariff(
     name: str,
