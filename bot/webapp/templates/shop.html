@@ -980,7 +980,7 @@
             box.innerHTML = `
                 <div class="text-4xl mb-3">✅</div>
                 <h3 class="font-display text-base font-bold mb-3">${_renewIsCdn ? 'Готово!' : 'Продлено!'}</h3>
-                <p class="text-sm text-mist mb-4">${escapeHtml(message || (_renewIsCdn ? 'Пакет CDN подключён.' : 'Ключ успешно продлён.'))}</p>
+                <p class="text-sm text-mist mb-4">${escapeHtml(message || (_renewIsCdn ? 'Услуга CDN активирована. Откройте Happ и обновите подписку кнопкой 🔄: появится подключение CDN.' : 'Ключ успешно продлён.'))}</p>
                 <button onclick="closePay();refreshAccountDashboard()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Обновить личный кабинет</button>
             `;
         }
@@ -1672,7 +1672,7 @@
                     if (btn) { btn.disabled = false; btn.style.opacity = ''; }
                     return;
                 }
-                showToast(res.message || 'Пакет CDN подключён');
+                showToast(res.message || 'Услуга CDN активирована. Обновите подписку в Happ 🔄');
                 if (res.cdn) _cdnState[keyId] = res.cdn;
                 refreshAccountDashboard();
             } catch (e) {

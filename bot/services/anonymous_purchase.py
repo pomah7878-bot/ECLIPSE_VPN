@@ -185,7 +185,7 @@ async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str
         res = await _cdn.activate_pack(key_id, gb=_cdn.get_cdn_pack_gb(), days=_cdn.get_cdn_pack_days(), is_free=False)
         if not res.get("ok"):
             return {"ok": False, "message": "Не удалось подключить пакет CDN. Обратитесь в поддержку."}
-        return {"ok": True, "message": _cdn.paid_message(res["gb"], res["days"])}
+        return {"ok": True, "message": _cdn.paid_message_short()}
 
     days = tariff.get("duration_days") or 30
     result = await renew_key_access(key_id, days, reset_traffic=True, tariff_id=tariff_id)

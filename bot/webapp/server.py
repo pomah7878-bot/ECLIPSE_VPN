@@ -3229,7 +3229,7 @@ async def _cdn_buy_response(key_id: int, account: dict) -> web.Response:
 
     return web.json_response({
         "ok": True,
-        "message": "Пакет CDN подключён. Обновите подписку в приложении, чтобы появился CDN-ключ.",
+        "message": _cdn.paid_message_short(),
         "cdn": _cdn_key_info(key_id, account),
     })
 

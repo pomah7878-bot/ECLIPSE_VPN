@@ -231,7 +231,7 @@ def cdn_badge(tariff: Optional[Dict[str, Any]]) -> str:
     """Пометка для кнопок и карточек тарифа: «+CDN 10 ГБ» (пусто, если CDN в тариф не входит
     или CDN выключен)."""
     gb = effective_tariff_cdn_gb((tariff or {}).get("id"))
-    return f"+CDN {gb} ГБ" if gb > 0 else ""
+    return f"+CDN (обход БС) {gb} ГБ" if gb > 0 else ""
 
 
 async def grant_tariff_pack(key_id: int) -> None:
@@ -264,6 +264,14 @@ async def grant_tariff_pack(key_id: int) -> None:
         result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False, to_key_end=bool(end))
         if not result.get("ok"):
             logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, result.get("error"))
+        else:
+            try:
+                from bot.utils.runtime_state import get_bot_instance
+                bot = get_bot_instance()
+                if bot:
+                    await _notify(bot, key, paid_message(result["gb"], result["days"]))
+            except Exception as e:  # noqa: BLE001
+                logger.debug("CDN: уведомление о пакете из тарифа не отправлено: %s", e)
     except Exception as e:  # noqa: BLE001
         logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, e)
 
@@ -277,8 +285,22 @@ async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
 
 
 def paid_message(gb: int, days: int) -> str:
-    return (f"✅ Пакет CDN подключён: {gb} ГБ на {days} дн. "
-            "Обновите подписку в приложении, чтобы появились новые подключения.")
+    """Сообщение клиенту после подключения пакета: что произошло и что делать дальше."""
+    return (
+        f"✅ Услуга «CDN — обход белых списков» активирована: {gb} ГБ на {days} дн.\n\n"
+        "🔄 Что сделать сейчас:\n"
+        "1. Откройте приложение Happ.\n"
+        "2. Обновите подписку: нажмите кнопку 🔄 рядом с её названием.\n"
+        "3. В списке появится подключение CDN. Включайте его, когда мобильный интернет "
+        "работает только на «белых» адресах.\n\n"
+        "Обычные подключения работают как раньше."
+    )
+
+
+def paid_message_short() -> str:
+    """Короткий вариант для всплывающих уведомлений сайта и WebApp."""
+    return ("✅ Услуга «CDN — обход белых списков» активирована. Откройте Happ и обновите "
+            "подписку кнопкой 🔄: появится подключение CDN.")
 
 
 def is_cdn_enabled() -> bool:

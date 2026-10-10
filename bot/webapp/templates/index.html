@@ -766,7 +766,7 @@
             tariffs.forEach(t => {
                 const currentBadge = t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : '';
                 const currentClass = t.is_current ? ' ring-2 ring-teal' : '';
-                const cdnBadge = t.cdn_gb ? ` <span class="text-gold text-[11px] font-bold">🌐 +CDN ${t.cdn_gb} ГБ</span>` : '';
+                const cdnBadge = t.cdn_gb ? ` <span class="text-gold text-[11px] font-bold">🌐 +CDN (обход белых списков) ${t.cdn_gb} ГБ</span>` : '';
                 const priceCents = Math.round(t.price_rub * 100);
                 if (_payMethod === 'balance' && priceCents > userBalanceCents) {
                     html += `<button disabled class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold opacity-40 flex justify-between items-center${currentClass}">
@@ -1125,7 +1125,7 @@
                     if (btn) { btn.disabled = false; btn.style.opacity = ''; }
                     return;
                 }
-                showToast(data.message || 'Пакет CDN подключён');
+                showToast(data.message || 'Услуга CDN активирована. Обновите подписку в Happ 🔄');
                 init();
             } catch (e) {
                 showToast('Не удалось оформить пакет');
