@@ -58,6 +58,22 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
     cardlink_enabled = is_cardlink_configured()
     demo_enabled = is_demo_payment_enabled()
 
+    cdn_seen = [False]
+
+    def _cdn_gb(tariff: dict) -> int:
+        try:
+            from bot.services.cdn import effective_tariff_cdn_gb
+            return int(effective_tariff_cdn_gb(tariff.get('id')) or 0)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _finish(lines: list) -> str:
+        """Склеивает блок; если в списке есть тарифы с CDN — добавляет одну строку-пояснение."""
+        if cdn_seen[0]:
+            lines = list(lines) + ['', '🌐 <i>CDN (обход белых списков) — дополнительное подключение в подписке '
+                                    'для сетей, где работают только «белые» адреса. Его цена уже включена в тариф.</i>']
+        return '\n'.join(lines)
+
     def _format_tariff_line(tariff: dict) -> str:
         prices = []
         if crypto_enabled:
@@ -76,7 +92,12 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
         ) and tariff.get('price_rub', 0) > 0:
             prices.append(f"{int(tariff['price_rub'])} ₽")
         price_display = ' / '.join(prices) if prices else 'Цена не установлена'
-        return f"• {escape_html(tariff['name'])} — <b>{price_display}</b>"
+        line = f"• {escape_html(tariff['name'])} — <b>{price_display}</b>"
+        gb = _cdn_gb(tariff)
+        if gb > 0 and tariff.get('price_rub', 0) > 1:
+            cdn_seen[0] = True
+            line += f"\n   🌐 <b>+ CDN (обход белых списков): {gb} ГБ</b>"
+        return line
 
     group_id = _optional_int(group_id)
 
@@ -88,7 +109,7 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
             return ''
         lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
         lines.extend(_format_tariff_line(t) for t in tariffs)
-        return '\n'.join(lines)
+        return _finish(lines)
 
     # Группировка: если групп больше одной — показываем тарифы под заголовками групп
     if get_groups_count() > 1:
@@ -106,14 +127,14 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
             any_group_shown = True
         if not any_group_shown:
             return ''
-        return '\n'.join(lines)
+        return _finish(lines)
 
     tariffs = get_all_tariffs()
     if not tariffs:
         return ''
     lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
     lines.extend(_format_tariff_line(t) for t in tariffs)
-    return '\n'.join(lines)
+    return _finish(lines)
 
 
 def build_referral_stats_text(user_internal_id: int) -> str:
