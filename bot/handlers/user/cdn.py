@@ -94,7 +94,7 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
             lines.append('ℹ️ Новый пакет добавится к текущему: остаток объёма и срока сохранится.')
     rows = []
     if price > 0:
-        label = '🔄 Купить новый пакет' if pack else '🛒 Купить пакет'
+        label = f'➕ Докупить {gb} ГБ' if pack else f'🛒 Купить {gb} ГБ'
         rows.append([InlineKeyboardButton(text=f'{label} с баланса — {cdn.format_price(price)}', callback_data=f'key_cdn_buy:{key_id}')])
         rows.extend(_payment_rows(key_id))
         rows.append([InlineKeyboardButton(text='💳 Пополнить баланс', callback_data='balance_topup_menu')])

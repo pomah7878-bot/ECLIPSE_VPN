@@ -1623,13 +1623,13 @@
                 html += `<div class="traffic-bar-bg mb-2"><div class="traffic-fill ${fillClass}" style="width:${pct}%"></div></div>`;
                 html += `<div class="text-xs text-mist mb-2">Действует до: <span class="text-ink">${cdnFormatUntil(pack.expires_at)}</span>${pack.is_free ? ' · 🎁 выдан администратором' : ''}</div>`;
                 if (pack.status === 'active') {
-                    html += '<div class="text-[11px] text-mist mb-2">Новый пакет заменит текущий: остаток объёма и срока не суммируется.</div>';
+                    html += '<div class="text-[11px] text-mist mb-2">Докупленный объём прибавится к остатку, срок тоже суммируется (не дольше подписки).</div>';
                 }
             } else {
                 html += '<div class="text-xs mb-2">Пакет не подключён.</div>';
             }
             if (cdn.price_cents > 0) {
-                const label = pack ? '🔄 Купить новый пакет' : '🛒 Купить пакет';
+                const label = pack ? `➕ Докупить ${cdn.gb} ГБ` : `🛒 Купить ${cdn.gb} ГБ`;
                 html += `<div class="text-xs text-mist mb-2">Пакет: <span class="text-ink font-semibold">${cdn.gb} ГБ на ${cdn.days} дн. — ${escapeHtml(cdn.price_text)}</span>, оплата с баланса${cdn.balance_cents != null ? ` (на балансе ${escapeHtml((cdn.balance_cents / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 }))} ₽)` : ''}.</div>`;
                 html += `<button id="cdn-buy-${keyId}" onclick="buyCdnPack(${keyId})" class="w-full py-2.5 btn-primary rounded-xl font-bold text-xs transition mb-2">${label} с баланса — ${escapeHtml(cdn.price_text)}</button>`;
                 if (cdn.tariff_id) {
