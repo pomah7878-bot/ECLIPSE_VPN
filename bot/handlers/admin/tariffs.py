@@ -212,6 +212,10 @@ async def toggle_tariff(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff_id = int(callback.data.split(":")[1])
+    from bot.services import cdn as _cdn
+    if _cdn.is_cdn_tariff(tariff_id):
+        await callback.answer("🌐 Служебный тариф CDN-пакета всегда скрыт. Цена и объём — в /cdn", show_alert=True)
+        return
     new_status = toggle_tariff_active(tariff_id)
     
     if new_status is None:

@@ -236,6 +236,11 @@ def get_groups_count() -> int:
         cursor = conn.execute("SELECT COUNT(*) FROM tariff_groups")
         return cursor.fetchone()[0]
 
+def _service_tariff_id() -> int:
+    from .db_tariffs import _service_tariff_id as _f
+    return _f()
+
+
 def get_tariffs_by_group(group_id: int) -> List[Dict[str, Any]]:
     """
     Retrieves active tariffs of the specified group.
@@ -251,9 +256,9 @@ def get_tariffs_by_group(group_id: int) -> List[Dict[str, Any]]:
             SELECT id, name, duration_days, price_cents, price_stars, price_rub, 
                    display_order, is_active, traffic_limit_gb, group_id
             FROM tariffs
-            WHERE group_id = ? AND is_active = 1
+            WHERE group_id = ? AND is_active = 1 AND id != ?
             ORDER BY display_order, id
-        """, (group_id,))
+        """, (group_id, _service_tariff_id()))
         return [dict(row) for row in cursor.fetchall()]
 
 def get_active_servers_by_group(group_id: int) -> List[Dict[str, Any]]:

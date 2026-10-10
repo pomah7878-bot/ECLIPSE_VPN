@@ -19,6 +19,15 @@ __all__ = [
     'get_admin_tariff',
 ]
 
+def _service_tariff_id() -> int:
+    """ID служебного тарифа «CDN-пакет» (0, если не создан). Он не продаётся как обычный."""
+    try:
+        from .db_settings import get_setting
+        return int(get_setting("cdn_tariff_id", "0") or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def get_all_tariffs(include_hidden: bool = False) -> List[Dict[str, Any]]:
     """
     Gets a list of all tariffs.
@@ -42,9 +51,9 @@ def get_all_tariffs(include_hidden: bool = False) -> List[Dict[str, Any]]:
                 SELECT id, name, duration_days, price_cents, price_stars, price_rub, 
                        display_order, is_active, traffic_limit_gb, group_id, max_ips
                 FROM tariffs
-                WHERE is_active = 1
+                WHERE is_active = 1 AND id != ?
                 ORDER BY display_order, id
-            """)
+            """, (_service_tariff_id(),))
         return [dict(row) for row in cursor.fetchall()]
 
 def get_tariff_by_id(tariff_id: int) -> Optional[Dict[str, Any]]:
@@ -164,6 +173,9 @@ def toggle_tariff_active(tariff_id: int) -> Optional[bool]:
     tariff = get_tariff_by_id(tariff_id)
     if not tariff:
         return None
+    if tariff_id == _service_tariff_id():
+        # Служебный тариф всегда скрыт: показать его в списках нельзя
+        return False
     
     new_status = 0 if tariff['is_active'] else 1
     
@@ -185,7 +197,7 @@ def get_tariffs_count() -> int:
         Number of active tariffs
     """
     with get_db() as conn:
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM tariffs WHERE is_active = 1")
+        cursor = conn.execute("SELECT COUNT(*) as cnt FROM tariffs WHERE is_active = 1 AND id != ?", (_service_tariff_id(),))
         row = cursor.fetchone()
         return row['cnt'] if row else 0
 
