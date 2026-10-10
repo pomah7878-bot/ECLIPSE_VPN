@@ -44,6 +44,8 @@ __all__ = [
     'CLIENT_TOGGLE_LABELS',
     'HAPP_TOGGLE_LABELS',
     'INCY_TOGGLE_LABELS',
+    'CLIENT_TOGGLE_DEFAULT_ON',
+    'INCY_AUTOROUTING_URL',
     'CLIENT_TOGGLE_LABELS_BY_APP',
     'get_incy_update_interval_hours',
     'set_incy_update_interval_hours',
@@ -788,6 +790,7 @@ _HAPP_ROUTING_DEFAULT_TEMPLATE = {
 
 # --- live geo profile v1.143 ---
 _LIVE_PROFILE_URL = "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/HAPP/DEFAULT.JSON"
+INCY_AUTOROUTING_URL = _LIVE_PROFILE_URL
 _LIVE_PROFILE_TTL = 6 * 3600
 _live_profile_cache = {"data": None, "ts": 0.0, "busy": False}
 
@@ -868,7 +871,14 @@ HAPP_TOGGLE_LABELS = {
 INCY_TOGGLE_LABELS = {
     'sort_ping': 'Автосортировка по пингу',
     'hide_url': 'Скрыть ссылку подписки',
+    'announce': 'Баннер о сроке и пробнике',
+    'hide_check': 'Скрыть кнопку «Проверка»',
+    'fragmentation': 'TCP-фрагментация (против DPI)',
+    'autorouting': 'Автообновление маршрутов',
 }
+
+# Переключатели, включённые по умолчанию (остальные — выключены).
+CLIENT_TOGGLE_DEFAULT_ON = {('incy', 'announce')}
 
 CLIENT_TOGGLE_LABELS_BY_APP = {'happ': HAPP_TOGGLE_LABELS, 'incy': INCY_TOGGLE_LABELS}
 
@@ -888,7 +898,8 @@ def is_client_toggle_enabled(app: str, toggle: str) -> bool:
     app: 'happ' или 'incy'. toggle: 'autoconnect' | 'sort_ping' |
     'notify_expire' | 'auto_update' | 'hide_settings'. Все выключены
     по умолчанию."""
-    return get_setting(f'{app}_{toggle}_enabled', '0') == '1'
+    default = '1' if (app, toggle) in CLIENT_TOGGLE_DEFAULT_ON else '0'
+    return get_setting(f'{app}_{toggle}_enabled', default) == '1'
 
 
 def set_client_toggle_enabled(app: str, toggle: str, enabled: bool) -> None:

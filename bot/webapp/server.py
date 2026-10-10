@@ -1577,6 +1577,13 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         update_interval = get_incy_update_interval_hours()
         if update_interval:
             headers["profile-update-interval"] = str(update_interval)
+        if is_client_toggle_enabled("incy", "hide_check"):
+            headers["hide-check"] = "1"
+        if is_client_toggle_enabled("incy", "fragmentation"):
+            headers["fragmentation-enable"] = "1"
+            headers["fragmentation-packets"] = "tlshello"
+            headers["fragmentation-length"] = "100-200"
+            headers["fragmentation-interval"] = "10-20"
 
     if detected_app in ("happ", "incy"):
         # Геонастройки / Routing — необязательный заголовок 'routing',
@@ -1595,7 +1602,18 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         from database.requests import get_happ_routing_mode, get_effective_happ_routing_profile_json
         routing_mode = get_happ_routing_mode()
         scheme = detected_app  # "happ" или "incy"
-        if routing_mode == "off":
+        _incy_auto = False
+        if detected_app == "incy" and routing_mode in ("add", "onadd"):
+            from database.requests import (
+                is_client_toggle_enabled as _tg_on, get_happ_routing_profile_json as _custom_rp,
+                INCY_AUTOROUTING_URL as _auto_url,
+            )
+            if _tg_on("incy", "autorouting") and not _custom_rp():
+                headers["autorouting"] = f"incy://autorouting/onadd/{_auto_url}"
+                _incy_auto = True
+        if _incy_auto:
+            pass
+        elif routing_mode == "off":
             if detected_app == "happ":
                 headers["routing"] = "happ://routing/off"
         elif routing_mode in ("add", "onadd"):
@@ -1686,6 +1704,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         headers["sub-expire"] = "0"
 
     if detected_app == "incy":
+        _ann = _incy_announce(is_expired, days_left, key, webapp_url, bot_username)
+        if _ann:
+            from database.requests import is_client_toggle_enabled as _ann_on
+            if _ann_on("incy", "announce"):
+                headers["announce"] = "base64:" + base64.b64encode(_ann[0][:200].encode("utf-8")).decode("ascii")
+                if _ann[1]:
+                    headers["announce-url"] = _ann[1]
+
+    if detected_app == "incy":
         from database.requests import get_setting as _get_setting_incy
         if (_get_setting_incy("incy_headers_mode", "strict") or "strict") == "strict":
             for _h in _INCY_STRIP_HEADERS:
@@ -1694,6 +1721,25 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp
+
+
+def _incy_announce(is_expired, days_left, key, webapp_url, bot_username):
+    """Текст и ссылка баннера INCY (заголовки announce/announce-url) или None.
+    Максимум 200 символов, кириллица передаётся как base64."""
+    try:
+        renew = _build_renew_link(key, webapp_url, bot_username)
+    except Exception:
+        renew = None
+    if is_expired:
+        return ("⛔ Подписка истекла. Нажмите, чтобы продлить", renew)
+    if _is_trial_key(key) and renew:
+        left = f" Осталось {days_left} дн." if days_left is not None and 0 <= days_left <= 3 else ""
+        return ("🎁 Пробный период." + left + " При продлении остаток дней сохранится", renew)
+    if days_left is not None and 0 <= days_left <= 3 and bot_username and key.get("id"):
+        word = "день" if days_left == 1 else ("дня" if 1 < days_left < 5 else "дней")
+        return (f"⚠️ Подписка истекает через {days_left} {word}. Нажмите, чтобы продлить",
+                f"https://t.me/{bot_username}?start=renew_{key['id']}")
+    return None
 
 
 async def handle_landing_tariffs(request: web.Request) -> web.Response:
