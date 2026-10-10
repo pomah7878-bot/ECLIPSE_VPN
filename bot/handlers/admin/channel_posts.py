@@ -59,6 +59,41 @@ async def _build_post_footer(bot) -> str:
     return footer
 
 
+async def _step(message: Message, state: FSMContext, text: str, reply_markup=None) -> None:
+    """Один диалог — одно сообщение бота.
+
+    Сообщение пользователя удаляется, а подсказка бота (id в FSM: cp_msg)
+    редактируется на месте. Так в чате не остаются «Дата публикации»,
+    «Время публикации» и кнопки «Отмена» после завершения.
+    """
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.types import LinkPreviewOptions
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    data = await state.get_data()
+    mid = data.get('cp_msg')
+    if mid:
+        try:
+            await message.bot.edit_message_text(
+                text=text, chat_id=message.chat.id, message_id=mid,
+                reply_markup=reply_markup, parse_mode='HTML',
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+            return
+        except TelegramBadRequest as e:
+            if 'message is not modified' in str(e).lower():
+                return
+        except Exception:
+            pass
+    sent = await message.answer(
+        text, reply_markup=reply_markup, parse_mode='HTML',
+        link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+    await state.update_data(cp_msg=sent.message_id)
+
+
 @router.callback_query(F.data == 'admin_channel_posts')
 async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
     """Главное меню раздела публикации постов в канал."""
@@ -169,6 +204,7 @@ async def start_channel_post_new(callback: CallbackQuery, state: FSMContext):
         )
         return
     await state.set_state(AdminStates.channel_post_text)
+    await state.update_data(cp_msg=callback.message.message_id)
     await safe_edit_or_send(
         callback.message,
         '✏️ <b>Текст поста</b>\n\n'
@@ -190,22 +226,20 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
     _n = _visible_len(text_with_footer)
     if _n > POST_TEXT_LIMIT:
-        await safe_edit_or_send(
-            message,
+        await _step(
+            message, state,
             f'❌ Пост слишком длинный: {_n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
             f'Сократите текст минимум на {_n - POST_TEXT_LIMIT} и отправьте его снова. '
             'Иначе Telegram обрежет конец поста вместе со ссылками.',
-            reply_markup=channel_post_cancel_kb(),
-            force_new=True,
+            channel_post_cancel_kb(),
         )
         return
     await state.update_data(post_text=text_with_footer)
     await state.set_state(AdminStates.channel_post_date)
-    await safe_edit_or_send(
-        message,
+    await _step(
+        message, state,
         '📅 <b>Дата публикации</b>\n\nВведите дату в формате ДД.ММ.ГГГГ (например, 15.08.2026).',
-        reply_markup=channel_post_cancel_kb(),
-        force_new=True,
+        channel_post_cancel_kb(),
     )
 
 
@@ -218,24 +252,18 @@ async def process_channel_post_date(message: Message, state: FSMContext):
     try:
         parsed_date = datetime.strptime(text, '%d.%m.%Y').date()
     except ValueError:
-        await safe_edit_or_send(
-            message,
+        await _step(
+            message, state,
             '❌ Неверный формат. Введите дату как ДД.ММ.ГГГГ, например 15.08.2026',
-            reply_markup=channel_post_cancel_kb(),
-            force_new=True,
+            channel_post_cancel_kb(),
         )
         return
     await state.update_data(post_date=parsed_date.isoformat())
     await state.set_state(AdminStates.channel_post_time)
-    try:
-        await message.delete()
-    except Exception:
-        pass
-    await safe_edit_or_send(
-        message,
+    await _step(
+        message, state,
         '🕐 <b>Время публикации (по Москве)</b>\n\nВведите время в формате ЧЧ:ММ (например, 14:00).',
-        reply_markup=channel_post_cancel_kb(),
-        force_new=True,
+        channel_post_cancel_kb(),
     )
 
 
@@ -248,18 +276,12 @@ async def process_channel_post_time(message: Message, state: FSMContext):
     try:
         parsed_time = datetime.strptime(text, '%H:%M').time()
     except ValueError:
-        await safe_edit_or_send(
-            message,
+        await _step(
+            message, state,
             '❌ Неверный формат. Введите время как ЧЧ:ММ, например 14:00',
-            reply_markup=channel_post_cancel_kb(),
-            force_new=True,
+            channel_post_cancel_kb(),
         )
         return
-
-    try:
-        await message.delete()
-    except Exception:
-        pass
 
     data = await state.get_data()
     post_date = datetime.fromisoformat(data['post_date']).date()
@@ -281,7 +303,7 @@ async def process_channel_post_time(message: Message, state: FSMContext):
         f"—————————\n\n"
         f"{post_text}"
     )
-    await safe_edit_or_send(message, preview_msg, reply_markup=channel_post_preview_kb(), force_new=True)
+    await _step(message, state, preview_msg, channel_post_preview_kb())
 
 
 @router.callback_query(AdminStates.channel_post_preview, F.data == 'admin_channel_post_confirm')
@@ -398,6 +420,7 @@ async def start_edit_post(callback: CallbackQuery, state: FSMContext):
     post_id = int(callback.data.split(':')[1])
     await state.update_data(editing_post_id=post_id)
     await state.set_state(AdminStates.channel_post_edit_text)
+    await state.update_data(cp_msg=callback.message.message_id)
     await safe_edit_or_send(
         callback.message,
         '✏️ <b>Новый текст поста</b>\n\n'
@@ -426,34 +449,25 @@ async def process_edit_post_text(message: Message, state: FSMContext):
 
     _n = _visible_len(text_with_footer)
     if _n > POST_TEXT_LIMIT:
-        await safe_edit_or_send(
-            message,
+        await _step(
+            message, state,
             f'❌ Пост слишком длинный: {_n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
             f'Сократите текст минимум на {_n - POST_TEXT_LIMIT} и отправьте его снова.',
-            reply_markup=channel_post_edit_cancel_kb(post_id),
-            force_new=True,
+            channel_post_edit_cancel_kb(post_id),
         )
         return
 
     from database.requests import update_scheduled_post_content
     updated = update_scheduled_post_content(post_id, text_with_footer)
-    await state.clear()
     logger.info(f"Админ {message.from_user.id} заменил текст поста #{post_id}: {updated}")
 
-    if updated:
-        await safe_edit_or_send(
-            message,
-            f'✅ Текст поста #{post_id} заменён.',
-            reply_markup=channel_posts_menu_kb(),
-            force_new=True,
-        )
-    else:
-        await safe_edit_or_send(
-            message,
-            '⚠️ Не удалось заменить — возможно, пост уже опубликован.',
-            reply_markup=channel_posts_menu_kb(),
-            force_new=True,
-        )
+    await _step(
+        message, state,
+        f'✅ Текст поста #{post_id} заменён.' if updated
+        else '⚠️ Не удалось заменить — возможно, пост уже опубликован.',
+        channel_posts_menu_kb(),
+    )
+    await state.clear()
 
 
 @router.message(AdminStates.channel_post_text, ~F.text)
@@ -462,9 +476,13 @@ async def channel_post_non_text(message: Message, state: FSMContext):
     """Фото, видео, пересланные медиа и т.п. сюда не подходят — раньше бот молча игнорировал."""
     if not is_admin(message.from_user.id):
         return
-    await message.answer(
+    data = await state.get_data()
+    pid = data.get('editing_post_id')
+    kb = channel_post_edit_cancel_kb(pid) if pid and await state.get_state() == AdminStates.channel_post_edit_text.state else channel_post_cancel_kb()
+    await _step(
+        message, state,
         '⚠️ Сейчас пост можно создать только из текста. Отправьте текст сообщением '
         '(форматирование Telegram и HTML-теги сохранятся). Фото и видео не поддерживаются — '
         'если нужна картинка, опубликуйте её в канале вручную.',
-        reply_markup=channel_post_cancel_kb(),
+        kb,
     )
