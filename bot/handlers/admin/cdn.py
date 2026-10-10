@@ -137,7 +137,7 @@ def _settings_kb() -> InlineKeyboardMarkup:
     rows[0:0] = mode_rows
     rows.append([InlineKeyboardButton(text='🔍 Проверить инбаунд на серверах', callback_data='admin_cdn_check')])
     rows.append([
-        InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_bot_settings'),
+        InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_tariffs'),
         InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)

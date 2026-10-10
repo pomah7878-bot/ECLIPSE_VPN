@@ -16,6 +16,14 @@ def tariffs_list_kb(tariffs: List[Dict[str, Any]], include_hidden: bool=True) ->
     from database.requests import get_groups_count, get_all_groups
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='➕ Добавить тариф', callback_data='admin_tariff_add'))
+    try:
+        from bot.services.cdn import get_cdn_mode
+        mode_text = {'off': 'выключен', 'addon': 'доп. функция', 'tariffs': 'в тарифах'}.get(get_cdn_mode(), '')
+    except Exception:
+        mode_text = ''
+    builder.row(InlineKeyboardButton(
+        text='🌐 CDN, обход белых списков' + (f': {mode_text}' if mode_text else ''),
+        callback_data='admin_cdn_settings'))
     groups_count = get_groups_count()
     if groups_count > 1:
         groups = {g['id']: g['name'] for g in get_all_groups()}
