@@ -122,7 +122,7 @@ async def show_tariffs_list(callback: CallbackQuery, state: FSMContext):
 
 async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext):
     """Draws the tariff viewing screen."""
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     
     if not tariff:
         return
@@ -160,11 +160,25 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
         group_name = group['name'] if group else 'Основная'
         lines.append(f"📂 Группа: <code>{group_name}</code>")
     
-    from bot.services.cdn import get_tariff_cdn_gb
+    from bot.services.cdn import is_cdn_tariff
+    if is_cdn_tariff(tariff_id):
+        # Служебный тариф: один и тот же экран независимо от вкл/выкл CDN, всё настраивается в /cdn
+        lines.append(f"📊 Порядок: <code>{tariff.get('display_order', 0)}</code>")
+        lines.append("\n🌐 Служебный тариф CDN-пакета. Всегда скрыт. Цена, объём и срок настраиваются в /cdn")
+        from bot.keyboards.admin_tariffs import service_tariff_view_kb
+        await safe_edit_or_send(message, "\n".join(lines), reply_markup=service_tariff_view_kb())
+        return
+
+    from bot.services.cdn import get_tariff_cdn_gb, tariff_cdn_surcharge_rub, is_cdn_active, get_cdn_mode, MODE_TARIFFS
     cdn_gb = get_tariff_cdn_gb(tariff_id)
-    from bot.services.cdn import is_cdn_active
-    cdn_note = ' (сейчас CDN выключен — не действует)' if cdn_gb and not is_cdn_active() else ''
-    lines.append(f"🌐 CDN в тарифе: <code>{f'{cdn_gb} ГБ' if cdn_gb else 'нет'}</code>{cdn_note}")
+    if cdn_gb:
+        add = tariff_cdn_surcharge_rub(tariff_id)
+        note = '' if is_cdn_active() else ' (CDN не настроен — не действует)'
+        lines.append(f"🌐 CDN в тарифе: <code>{cdn_gb} ГБ</code>{note}")
+        if add and (tariff.get('price_rub') or 0) > 1:
+            lines.append(f"💳 Клиент платит: <code>{tariff['price_rub'] + add} ₽</code> (тариф + {add} ₽ за CDN)")
+    elif get_cdn_mode() == MODE_TARIFFS:
+        lines.append("🌐 CDN в тарифе: <code>нет</code> (группа не выбрана в /cdn)")
 
     lines.extend([
         f"📊 Порядок: <code>{tariff.get('display_order', 0)}</code>",
@@ -173,7 +187,7 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
     
     await safe_edit_or_send(message, 
         "\n".join(lines),
-        reply_markup=tariff_view_kb(tariff_id, tariff['is_active'], groups_count > 1, cdn_gb)
+        reply_markup=tariff_view_kb(tariff_id, tariff['is_active'], groups_count > 1)
     )
 
 
@@ -189,7 +203,7 @@ async def show_tariff_view(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff_id = int(callback.data.split(":")[1])
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     
     if not tariff:
         await callback.answer("❌ Тариф не найден", show_alert=True)
@@ -635,7 +649,7 @@ async def start_edit_tariff(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff_id = int(callback.data.split(":")[1])
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     
     if not tariff:
         await callback.answer("❌ Тариф не найден", show_alert=True)
@@ -665,7 +679,7 @@ async def edit_tariff_prev(callback: CallbackQuery, state: FSMContext):
     tariff_id = data.get('tariff_id')
     current_param = data.get('edit_param', 0)
     
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     if not tariff:
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
@@ -694,7 +708,7 @@ async def edit_tariff_next(callback: CallbackQuery, state: FSMContext):
     tariff_id = data.get('tariff_id')
     current_param = data.get('edit_param', 0)
     
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     if not tariff:
         await callback.answer("❌ Тариф не найден", show_alert=True)
         return
@@ -749,7 +763,7 @@ async def edit_tariff_value(message: Message, state: FSMContext):
         pass
     
     # Refresh the screen with the new value
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     text = get_edit_tariff_text(tariff, current_param)
     total = get_total_tariff_params()
     
@@ -793,7 +807,7 @@ async def tariff_change_group_start(callback: CallbackQuery, state: FSMContext):
         return
     
     tariff_id = int(callback.data.split(":")[1])
-    tariff = get_tariff_by_id(tariff_id)
+    tariff = get_tariff_by_id(tariff_id, raw=True)
     
     if not tariff:
         await callback.answer("❌ Тариф не найден", show_alert=True)
