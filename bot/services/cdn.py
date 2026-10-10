@@ -306,7 +306,7 @@ async def grant_tariff_pack(key_id: int) -> None:
                 from bot.utils.runtime_state import get_bot_instance
                 bot = get_bot_instance()
                 if bot:
-                    await _notify(bot, key, paid_message(result["gb"], result["days"]))
+                    await _notify(bot, key, paid_message(result["gb"], result["days"], result, tariff=True))
             except Exception as e:  # noqa: BLE001
                 logger.debug("CDN: уведомление о пакете из тарифа не отправлено: %s", e)
     except Exception as e:  # noqa: BLE001
@@ -321,10 +321,33 @@ async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
     return result
 
 
-def paid_message(gb: int, days: int) -> str:
-    """Сообщение клиенту после подключения пакета: что произошло и что делать дальше."""
+def _fmt_until(value: Any) -> str:
+    try:
+        return value.strftime("%d.%m.%Y")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def paid_message(gb: int, days: int, result: Optional[Dict[str, Any]] = None, *, tariff: bool = False,
+                head: Optional[str] = None) -> str:
+    """Сообщение клиенту после подключения пакета: что произошло и что делать дальше.
+    result — ответ activate_pack: если к пакету прибавился остаток, пишем «пополнен»;
+    tariff=True — пакет выдан в составе тарифа (покупка или продление)."""
+    result = result or {}
+    until = _fmt_until(result.get("expires_at"))
+    until_txt = f" до {until}" if until else f" на {days} дн."
+    carried = int(result.get("carried_bytes") or 0)
+    if head:
+        pass
+    elif tariff:
+        head = f"✅ В ваш тариф входит CDN — обход белых списков: {gb} ГБ{until_txt}."
+    elif carried > 0:
+        added = max(1, int(round(gb - carried / GB)))
+        head = f"✅ Пакет CDN пополнен: +{added} ГБ. Теперь доступно {gb} ГБ{until_txt}."
+    else:
+        head = f"✅ Услуга «CDN — обход белых списков» активирована: {gb} ГБ{until_txt}."
     return (
-        f"✅ Услуга «CDN — обход белых списков» активирована: {gb} ГБ на {days} дн.\n\n"
+        f"{head}\n\n"
         "🔄 Что сделать сейчас:\n"
         "1. Откройте приложение Happ.\n"
         "2. Обновите подписку: нажмите кнопку 🔄 рядом с её названием.\n"
@@ -332,6 +355,15 @@ def paid_message(gb: int, days: int) -> str:
         "работает только на «белых» адресах.\n\n"
         "Обычные подключения работают как раньше."
     )
+
+
+def _refill_hint() -> str:
+    """Подсказка, как получить новый пакет, с учётом включённых способов."""
+    if get_sale_price_cents() > 0:
+        return " Докупить пакет можно на экране CDN."
+    if is_cdn_active() and is_tariffs_on():
+        return " Новый пакет выдаётся при продлении тарифа с CDN."
+    return ""
 
 
 def paid_message_short() -> str:
@@ -818,6 +850,24 @@ async def _notify(bot, key: Dict[str, Any], text: str) -> None:
         logger.debug("CDN: уведомление пользователю %s не доставлено: %s", telegram_id, e)
 
 
+async def notify_admin_grant(bot, key_id: int, result: Dict[str, Any]) -> None:
+    """Сообщает клиенту, что администратор подключил или изменил ему CDN. Не бросает исключений."""
+    try:
+        from database.requests import get_vpn_key_by_id
+        key = get_vpn_key_by_id(int(key_id))
+        if not key or not result.get("ok"):
+            return
+        until = _fmt_until(result.get("expires_at"))
+        gb = result.get("gb")
+        text = ("🎁 <b>Администратор обновил ваш CDN — обход белых списков"
+                + (f": {gb} ГБ" if gb else "") + (f" до {until}" if until else "") + ".</b>\n\n"
+                "Откройте Happ и обновите подписку кнопкой 🔄: появится подключение CDN. "
+                "Обычные подключения работают как раньше.")
+        await _notify(bot, key, text)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("CDN: уведомление о выдаче администратором не отправлено: %s", e)
+
+
 async def process_cdn_packs(bot) -> Dict[str, int]:
     """Раз в час: срок, расход, приостановка при неактивном ключе, уведомления."""
     from database.db_keys import get_vpn_key_by_id, is_key_active
@@ -838,7 +888,7 @@ async def process_cdn_packs(bot) -> Dict[str, int]:
             if expires and expires <= datetime.utcnow():
                 await deactivate_pack(key_id, db_cdn.STATUS_EXPIRED)
                 stats["expired"] += 1
-                await _notify(bot, key, "⏰ <b>Пакет CDN закончился по сроку.</b>\nОбычные ключи подписки работают как раньше.")
+                await _notify(bot, key, "⏰ <b>Пакет CDN закончился по сроку.</b>\nОбычные ключи подписки работают как раньше." + _refill_hint())
                 stats["notified"] += 1
                 continue
             key_ok = is_key_active(key) and not key.get("is_banned")
@@ -861,11 +911,11 @@ async def process_cdn_packs(bot) -> Dict[str, int]:
                 await deactivate_pack(key_id, db_cdn.STATUS_EXHAUSTED)
                 db_cdn.update_pack(key_id, used_bytes=limit)
                 stats["exhausted"] += 1
-                await _notify(bot, key, "📦 <b>Пакет CDN исчерпан.</b>\nОбычные ключи подписки работают как раньше. Докупить пакет можно на экране CDN.")
+                await _notify(bot, key, "📦 <b>Пакет CDN исчерпан.</b>\nОбычные ключи подписки работают как раньше." + _refill_hint())
                 stats["notified"] += 1
             elif limit > 0 and used * 100 // limit >= NOTIFY_PCT and int(pack["notified_pct"] or 0) < NOTIFY_PCT:
                 db_cdn.update_pack(key_id, notified_pct=NOTIFY_PCT)
-                await _notify(bot, key, f"⚠️ <b>Пакет CDN почти закончился.</b>\nИспользовано {used * 100 // limit}%.")
+                await _notify(bot, key, f"⚠️ <b>Пакет CDN почти закончился.</b>\nИспользовано {used * 100 // limit}%." + _refill_hint())
                 stats["notified"] += 1
         except Exception as e:  # noqa: BLE001
             stats["errors"] += 1

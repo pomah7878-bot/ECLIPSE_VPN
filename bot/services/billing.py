@@ -1457,6 +1457,22 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
     )
     markup = payment_auto_complete_kb()
     key_id = order.get('vpn_key_id')
+    # Оплачен пакет CDN: сообщаем, что услуга активирована, и что делать дальше
+    try:
+        from bot.services import cdn as _cdn
+        if key_id and order.get('tariff_id') and _cdn.is_cdn_tariff(order.get('tariff_id')):
+            from aiogram.types import InlineKeyboardButton as _Btn, InlineKeyboardMarkup as _Kb
+            text = _cdn.paid_message(
+                _cdn.get_cdn_pack_gb(), _cdn.get_cdn_pack_days(),
+                head='✅ Оплата получена: услуга «CDN — обход белых списков» активирована.',
+            )
+            markup = _Kb(inline_keyboard=[
+                [_Btn(text='🌐 Управление CDN', callback_data=f'key_cdn:{int(key_id)}')],
+                [_Btn(text='🈴 На главную', callback_data='start')],
+            ])
+            key_id = None  # карточка ключа ниже не нужна
+    except Exception as e:
+        logger.warning(f"Не удалось подготовить CDN-уведомление об автозавершении: {e}")
     if key_id:
         try:
             key = get_key_details_for_user(int(key_id), telegram_id)
@@ -1618,7 +1634,7 @@ async def _process_payment_order_inner(
                 _res = await _cdn.fulfil_paid_order(int(vpn_key_id), order_id)
             order["_payment_action"] = "cdn_pack"
             return True, _cdn.paid_message((_res or {}).get("gb") or _cdn.get_cdn_pack_gb(),
-                                           (_res or {}).get("days") or _cdn.get_cdn_pack_days()), order
+                                           (_res or {}).get("days") or _cdn.get_cdn_pack_days(), _res), order
 
     if vpn_key_id:
         # Продление уже существующего ключа. Используем тот же надёжный путь,

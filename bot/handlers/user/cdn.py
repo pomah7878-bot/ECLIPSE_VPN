@@ -147,7 +147,7 @@ async def key_cdn_buy_confirm(callback: CallbackQuery):
     await callback.answer('⏳ Оформляю пакет…')
     result = await cdn.purchase_pack(key_id, int(key['user_id']))
     if result.get('ok'):
-        notice = cdn.paid_message(result['gb'], result['days'])
+        notice = cdn.paid_message(result['gb'], result['days'], result)
     elif result.get('error') == 'insufficient_funds':
         notice = f"❌ Недостаточно средств на балансе. Нужно {cdn.format_price(result['need'])}."
     else:

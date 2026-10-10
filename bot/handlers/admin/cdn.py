@@ -322,6 +322,7 @@ async def admin_cdn_grant(callback: CallbackQuery):
     result = await cdn.activate_pack(key_id, is_free=True)
     notice = (f"✅ Пакет выдан: {result['gb']} ГБ на {result['days']} дн."
               if result['ok'] else f"❌ {escape_html(str(result['error']))}")
+    await cdn.notify_admin_grant(callback.bot, key_id, result)
     await _show_key_cdn(callback, key_id, notice)
 
 
@@ -370,6 +371,7 @@ async def admin_cdn_volume_save(message: Message, state: FSMContext):
     else:
         result = await cdn.activate_pack(key_id, gb=gb, is_free=True)
     await state.clear()
+    await cdn.notify_admin_grant(message.bot, key_id, result)
     notice = f'✅ Объём пакета: {gb} ГБ' if result['ok'] else f"❌ {escape_html(str(result['error']))}"
     await _show_key_cdn(message, key_id, notice)
 

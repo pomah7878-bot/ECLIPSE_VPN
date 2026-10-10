@@ -430,6 +430,18 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
         lines.append(f'🎫 Тариф: {escape_html(tariff_name)}')
         lines.append(f'💳 Метод: {payment_label}')
         lines.append(f'💵 Сумма: {amount_str}')
+        try:
+            from bot.services import cdn as _cdn
+            if action == 'cdn_pack':
+                lines.append(f'📦 Пакет: {_cdn.get_cdn_pack_gb()} ГБ на {_cdn.get_cdn_pack_days()} дн.')
+            elif action != 'trial' and tariff_id:
+                _gb = _cdn.effective_tariff_cdn_gb(tariff_id)
+                _paid = float(order.get('price_rub') or 0) > 1
+                if _gb > 0 and _paid:
+                    _add = _cdn.tariff_cdn_surcharge_rub(tariff_id)
+                    lines.append(f'🌐 CDN в тарифе: {_gb} ГБ' + (f' (доплата {_add} ₽ уже в сумме)' if _add else ''))
+        except Exception as _e:  # noqa: BLE001
+            logger.debug(f'Не удалось добавить CDN в уведомление админу: {_e}')
         if order.get('promo_code'):
             lines.append(
                 f"🎟 Промокод: {escape_html(str(order.get('promo_code')))} "

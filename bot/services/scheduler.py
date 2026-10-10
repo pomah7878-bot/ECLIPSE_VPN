@@ -635,7 +635,14 @@ async def process_auto_renewals(bot: Bot) -> None:
         key_id = key["id"]
         user_id = key["user_id"]
         telegram_id = key["telegram_id"]
-        price_cents = int(round(float(key.get("price_rub") or 0) * 100))  # копейки RUB
+        # Цена как у клиента в магазине: с доплатой за CDN, если он входит в тариф (в БД она не хранится)
+        try:
+            from database.db_tariffs import get_tariff_by_id as _tariff_by_id
+            _t = _tariff_by_id(int(key.get("tariff_id") or 0)) or {}
+            _price_rub = _t.get("price_rub") if _t.get("price_rub") is not None else key.get("price_rub")
+        except Exception:
+            _price_rub = key.get("price_rub")
+        price_cents = int(round(float(_price_rub or 0) * 100))  # копейки RUB
         duration_days = int(key.get("duration_days") or 0)
         keyname = key.get("custom_name") or f"Ключ #{key_id}"
 
@@ -682,6 +689,7 @@ async def process_auto_renewals(bot: Bot) -> None:
             logger.error(f"Автопродление ключа {key_id}: ошибка продления: {e}")
         if not renew_ok:
             # Деньги списаны, а ключ не продлён — возвращаем и идём к следующему
+            _refunded = False
             try:
                 from bot.services.balance import credit_user_balance
                 await credit_user_balance(
@@ -689,12 +697,35 @@ async def process_auto_renewals(bot: Bot) -> None:
                     reason=f"Возврат: автопродление ключа «{keyname}» не удалось",
                     reference_type="vpn_key", reference_id=str(key_id),
                 )
+                _refunded = True
             except Exception as e:
                 logger.error(f"Автопродление ключа {key_id}: не удалось вернуть списание: {e}")
             failed_count += 1
+            try:
+                await bot.send_message(
+                    chat_id=telegram_id,
+                    text=(
+                        f"⚠️ <b>Не удалось автопродлить ключ «{keyname}»</b>\n\n"
+                        + ("Произошла техническая ошибка, деньги возвращены на баланс. " if _refunded
+                           else "Произошла техническая ошибка, мы уже разбираемся со списанием. ")
+                        + "Можно продлить ключ вручную в разделе «Мои ключи»."
+                    ),
+                    parse_mode="HTML",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление о сбое автопродления {telegram_id}: {e}")
             continue
 
         renewed_count += 1
+        _cdn_line = ""
+        try:
+            from bot.services.cdn import effective_tariff_cdn_gb
+            _gb = effective_tariff_cdn_gb(key.get("tariff_id"))
+            if _gb > 0:
+                _cdn_line = f"\n🌐 CDN (обход белых списков): {_gb} ГБ входит в тариф"
+        except Exception:
+            _cdn_line = ""
         try:
             await bot.send_message(
                 chat_id=telegram_id,
@@ -702,6 +733,7 @@ async def process_auto_renewals(bot: Bot) -> None:
                     f"✅ <b>Ключ «{keyname}» автопродлён</b>\n\n"
                     f"Списано с баланса: {price_cents / 100:.2f} ₽\n"
                     f"Новый срок действия: +{duration_days} дн."
+                    f"{_cdn_line}"
                 ),
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
