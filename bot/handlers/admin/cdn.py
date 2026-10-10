@@ -361,9 +361,15 @@ PROVIDER_FIELDS = {
             '(только чтение статистики). Сообщение с ключом бот сразу удалит.'),
     'folder': ('yc_folder_id', '📁 ID каталога',
                'ID каталога Yandex Cloud, где работает CDN (в консоли виден в шапке под названием каталога).'),
-    'price': ('yc_price_per_gb_cents', '💵 Цена за ГБ, ₽',
-              'Сколько вы платите провайдеру за 1 ГБ исходящего трафика CDN (по тарифу Yandex Cloud). '
-              'Нужна только для оценки расхода. Пример: <code>2.5</code>'),
+    'price': ('yc_price_per_gb_cents', '💵 Цена за ГБ сверх лимита, ₽',
+              'Сколько вы платите провайдеру за 1 ГБ исходящего трафика сверх включённых в предоплату. '
+              'Нужна для оценки расхода. Пример: <code>2.5</code>'),
+    'prepay': ('yc_prepay_cents', '🧾 Предоплата за месяц, ₽',
+               'Ежемесячная предоплата за CDN-ресурс по тарифу Yandex Cloud. В неё входит 150 ГБ исходящего '
+               'трафика и 100 000 000 запросов. Пример: <code>500</code>'),
+    'included': ('yc_included_gb', '📦 Включено в предоплату, ГБ',
+                 'Сколько трафика входит в предоплату. По тарифу Yandex Cloud 150 ГБ на ресурс; '
+                 'если ресурсов несколько, умножьте. Пример: <code>150</code>'),
 }
 
 
@@ -380,7 +386,11 @@ def _provider_kb() -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(text=f'🔑 Ключ API: {_mask(yc_cdn.get_api_key())}', callback_data='admin_cdn_pset:key')])
     rows.append([InlineKeyboardButton(text=f'📁 ID каталога: {yc_cdn.get_folder_id() or "не задан"}', callback_data='admin_cdn_pset:folder')])
     rows.append([InlineKeyboardButton(
-        text=f'💵 Цена за ГБ: {str(price / 100).rstrip("0").rstrip(".").replace(".", ",") + " ₽" if price else "не задана"}',
+        text=f'🧾 Предоплата за месяц: {str(yc_cdn.get_prepay_cents() / 100).rstrip("0").rstrip(".").replace(".", ",") + " ₽" if yc_cdn.get_prepay_cents() else "не задана"}',
+        callback_data='admin_cdn_pset:prepay')])
+    rows.append([InlineKeyboardButton(text=f'📦 Включено в предоплату: {yc_cdn.get_included_gb()} ГБ', callback_data='admin_cdn_pset:included')])
+    rows.append([InlineKeyboardButton(
+        text=f'💵 Цена за ГБ сверх лимита: {str(price / 100).rstrip("0").rstrip(".").replace(".", ",") + " ₽" if price else "не задана"}',
         callback_data='admin_cdn_pset:price')])
     if yc_cdn.get_api_key():
         rows.append([InlineKeyboardButton(text='🗑 Удалить ключ API', callback_data='admin_cdn_pclear')])
@@ -398,7 +408,7 @@ async def _provider_text(force: bool = False) -> str:
             '<b>Как подключить</b>\n'
             '1. В консоли Yandex Cloud создайте сервисный аккаунт и дайте ему роль <code>monitoring.viewer</code>.\n'
             '2. Создайте для него API-ключ и вставьте ниже («Ключ API»).\n'
-            '3. Укажите ID каталога и цену за ГБ.\n\n'
+            '3. Укажите ID каталога, предоплату за месяц и цену за ГБ сверх лимита.\n\n'
             'Ключ даёт только чтение статистики.'
         )
     summary = await yc_cdn.fetch_summary(force=force)
@@ -445,14 +455,19 @@ async def cdn_provider_save(message: Message, state: FSMContext):
             await message.delete()
         except Exception:  # noqa: BLE001
             pass
-    if field == 'price':
+    if field in ('price', 'prepay'):
         try:
             value = str(int(round(float(raw.replace(',', '.')) * 100)))
             if int(value) < 0:
                 raise ValueError
         except ValueError:
-            await message.answer('❌ Введите цену числом, например 2.5')
+            await message.answer('❌ Введите сумму числом, например 2.5')
             return
+    elif field == 'included':
+        if not raw.isdigit():
+            await message.answer('❌ Введите целое число ГБ')
+            return
+        value = str(int(raw))
     else:
         value = raw
         if len(value) < 8:
