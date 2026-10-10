@@ -2,7 +2,7 @@
 
 Нужны сервисный аккаунт с ролью monitoring.viewer, его API-ключ и ID каталога. Читается только
 статистика (метрики сервиса yccdn), управлять CDN через этот ключ нельзя. Настройки хранятся
-в настройках бота: yc_api_key, yc_folder_id, yc_price_per_gb_cents (копейки за 1 ГБ).
+в настройках бота: yc_api_key, yc_folder_id, yc_price_per_gb (₽ за 1 ГБ сверх лимита), yc_prepay_cents, yc_included_gb.
 """
 from __future__ import annotations
 
@@ -42,15 +42,40 @@ def get_folder_id() -> str:
     return _setting("yc_folder_id").strip()
 
 
-def get_price_per_gb_cents() -> int:
-    try:
-        return max(0, int(_setting("yc_price_per_gb_cents", "0") or 0))
-    except ValueError:
-        return 0
-
-
+# Тариф Yandex Cloud CDN на момент написания (с НДС, в рублях): предоплата за ресурс в месяц,
+# в неё входит 150 ГБ исходящего трафика и 100 млн запросов; сверх лимита — за каждый ГБ
+# и за каждые 100 тыс. запросов. Значения можно изменить в настройках бота.
+DEFAULT_PREPAY_RUB = 150.0
+DEFAULT_PRICE_PER_GB_RUB = 1.054
 DEFAULT_INCLUDED_GB = 150
 INCLUDED_REQUESTS = 100_000_000
+PRICE_PER_100K_REQUESTS_RUB = 1.0
+
+
+def _float_setting(key: str, default: float) -> float:
+    raw = _setting(key, "").strip().replace(",", ".")
+    if raw == "":
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return default
+
+
+def get_price_per_gb() -> float:
+    """Цена 1 ГБ трафика сверх предоплаты, ₽."""
+    return _float_setting("yc_price_per_gb", DEFAULT_PRICE_PER_GB_RUB)
+
+
+def get_prepay_rub() -> float:
+    """Ежемесячная предоплата за ресурс, ₽."""
+    raw = _setting("yc_prepay_cents", "").strip()
+    if raw == "":
+        return DEFAULT_PREPAY_RUB
+    try:
+        return max(0, int(raw)) / 100
+    except ValueError:
+        return DEFAULT_PREPAY_RUB
 
 
 def get_included_gb() -> int:
@@ -62,39 +87,29 @@ def get_included_gb() -> int:
     return max(0, value)
 
 
-def get_prepay_cents() -> int:
-    """Ежемесячная предоплата за ресурс, копейки (0 — не задана)."""
-    try:
-        return max(0, int(_setting("yc_prepay_cents", "0") or 0))
-    except ValueError:
-        return 0
-
-
 def is_configured() -> bool:
     return bool(get_api_key() and get_folder_id())
 
 
-def cost_rub(total_bytes: float) -> Optional[float]:
-    """Стоимость трафика по цене за ГБ, ₽ (None, если цена не задана)."""
-    price = get_price_per_gb_cents()
-    if price <= 0:
-        return None
-    return total_bytes / GB * price / 100
+def cost_rub(total_bytes: float) -> float:
+    """Стоимость трафика по цене за ГБ, ₽."""
+    return total_bytes / GB * get_price_per_gb()
 
 
-def month_breakdown(month_bytes: float) -> Dict[str, Any]:
-    """Расход за месяц: предоплата (в неё входит часть трафика) + платный трафик сверх неё."""
+def month_breakdown(month_bytes: float, month_requests: float = 0) -> Dict[str, Any]:
+    """Расход за месяц по тарифу: предоплата (в неё входят 150 ГБ и 100 млн запросов)
+    + трафик сверх лимита + запросы сверх лимита. Гранты и скидки провайдера не учитываются."""
     included = get_included_gb() * GB
     over_bytes = max(0.0, month_bytes - included)
     over_cost = cost_rub(over_bytes)
-    prepay = get_prepay_cents() / 100
-    total = None
-    if over_cost is not None:
-        total = prepay + over_cost
-    elif over_bytes <= 0 and prepay > 0:
-        total = prepay
+    over_requests = max(0.0, month_requests - INCLUDED_REQUESTS)
+    requests_cost = math.ceil(over_requests / 100_000) * PRICE_PER_100K_REQUESTS_RUB if over_requests else 0.0
+    prepay = get_prepay_rub()
+    total = prepay + over_cost + requests_cost
     return {"included_bytes": included, "left_bytes": max(0.0, included - month_bytes),
-            "over_bytes": over_bytes, "over_cost": over_cost, "prepay": prepay, "total": total}
+            "over_bytes": over_bytes, "over_cost": over_cost, "over_requests": over_requests,
+            "requests_cost": requests_cost, "prepay": prepay, "total": total,
+            "per_gb": (total / (month_bytes / GB)) if month_bytes >= GB / 100 else None}
 
 
 async def _post(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Tuple[int, Any]:
@@ -188,12 +203,12 @@ def _money(value: Optional[float]) -> str:
     return "—" if value is None else f"{value:,.2f} ₽".replace(",", " ").replace(".", ",")
 
 
-def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]]) -> str:
+def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]], client_price_per_gb: Optional[float] = None) -> str:
     """Текст экрана «CDN у провайдера» (HTML) вместе с учётом пакетов клиентов."""
     from html import escape
     if not summary.get("ok"):
         return f"❌ Не удалось получить данные: {escape(str(summary.get('error')))}"
-    br = month_breakdown(summary["month_bytes"])
+    br = month_breakdown(summary["month_bytes"], summary["month_requests"])
     requests = int(summary["month_requests"])
     lines = [
         "<b>У провайдера (Yandex Cloud)</b>",
@@ -204,17 +219,19 @@ def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]]) -> str:
         if br["over_bytes"] <= 0:
             lines.append(f"В предоплату входит {_gb(br['included_bytes'])}, осталось {_gb(br['left_bytes'])}")
         else:
-            extra = f", ≈ {_money(br['over_cost'])}" if br["over_cost"] is not None else ", цена за ГБ не задана"
-            lines.append(f"⚠️ Сверх предоплаты ({_gb(br['included_bytes'])}): <b>{_gb(br['over_bytes'])}</b>{extra}")
-    if br["total"] is not None:
-        parts = []
-        if br["prepay"]:
-            parts.append(f"предоплата {_money(br['prepay'])}")
-        if br["over_cost"]:
-            parts.append(f"сверх лимита {_money(br['over_cost'])}")
-        lines.append(f"Расход за месяц: <b>≈ {_money(br['total'])}</b>" + (f" ({' + '.join(parts)})" if parts else ""))
-    elif not get_prepay_cents():
-        lines.append("Расход в рублях: укажите предоплату и цену за ГБ в настройках ниже")
+            lines.append(f"⚠️ Сверх предоплаты ({_gb(br['included_bytes'])}): <b>{_gb(br['over_bytes'])}</b>, "
+                         f"≈ {_money(br['over_cost'])}")
+    parts = [f"предоплата {_money(br['prepay'])}"]
+    if br["over_cost"]:
+        parts.append(f"трафик сверх лимита {_money(br['over_cost'])}")
+    if br["requests_cost"]:
+        parts.append(f"запросы сверх лимита {_money(br['requests_cost'])}")
+    lines.append(f"Расход за месяц по тарифу: <b>≈ {_money(br['total'])}</b> ({' + '.join(parts)})")
+    if br["per_gb"] is not None:
+        eff = f"Эффективная цена: ≈ {_money(br['per_gb'])} за ГБ (расход ÷ трафик)"
+        if client_price_per_gb:
+            eff += f"; клиентам вы продаёте по {_money(client_price_per_gb)} за ГБ"
+        lines.append(eff)
     lines.append(f"Запросов за месяц: {requests:,} из {INCLUDED_REQUESTS:,} включённых".replace(",", " "))
     lines.append(f"Забрано с вашего сервера: {_gb(summary['origin_bytes'])}")
     active = [p for p in packs if p.get("status") == "active"]
@@ -227,6 +244,7 @@ def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]]) -> str:
         f"Активных пакетов: {len(active)} (бесплатных: {free_count})",
         f"Выдано объёма: {_gb(limit)}, израсходовано: {_gb(used_active)}",
         "",
-        "<i>Период предоплаты у провайдера может начинаться не с 1 числа, поэтому границы месяца приблизительные.</i>",
+        "<i>Расчёт по тарифу, без грантов и скидок провайдера: в счёте он может быть меньше. "
+        "Период предоплаты может начинаться не с 1 числа, поэтому границы месяца приблизительные.</i>",
     ]
     return "\n".join(lines)

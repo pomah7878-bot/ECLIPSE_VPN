@@ -361,12 +361,12 @@ PROVIDER_FIELDS = {
             '(только чтение статистики). Сообщение с ключом бот сразу удалит.'),
     'folder': ('yc_folder_id', '📁 ID каталога',
                'ID каталога Yandex Cloud, где работает CDN (в консоли виден в шапке под названием каталога).'),
-    'price': ('yc_price_per_gb_cents', '💵 Цена за ГБ сверх лимита, ₽',
-              'Сколько вы платите провайдеру за 1 ГБ исходящего трафика сверх включённых в предоплату. '
-              'Нужна для оценки расхода. Пример: <code>2.5</code>'),
+    'price': ('yc_price_per_gb', '💵 Цена за ГБ сверх лимита, ₽',
+              'Сколько провайдер берёт за 1 ГБ исходящего трафика сверх включённых в предоплату '
+              '(по прайсу Yandex Cloud с НДС сейчас 1,054 ₽). Пример: <code>1.054</code>'),
     'prepay': ('yc_prepay_cents', '🧾 Предоплата за месяц, ₽',
-               'Ежемесячная предоплата за CDN-ресурс по тарифу Yandex Cloud. В неё входит 150 ГБ исходящего '
-               'трафика и 100 000 000 запросов. Пример: <code>500</code>'),
+               'Ежемесячная предоплата за CDN-ресурс по прайсу Yandex Cloud (сейчас 150 ₽ с НДС). '
+               'В неё входит 150 ГБ исходящего трафика и 100 000 000 запросов. Пример: <code>150</code>'),
     'included': ('yc_included_gb', '📦 Включено в предоплату, ГБ',
                  'Сколько трафика входит в предоплату. По тарифу Yandex Cloud 150 ГБ на ресурс; '
                  'если ресурсов несколько, умножьте. Пример: <code>150</code>'),
@@ -377,21 +377,22 @@ def _mask(value: str) -> str:
     return f'{value[:4]}…{value[-3:]}' if len(value) > 10 else ('задан' if value else 'не задан')
 
 
+def _fmt_rub(value: float) -> str:
+    return f'{value:.3f}'.rstrip('0').rstrip('.').replace('.', ',') + ' ₽'
+
+
 def _provider_kb() -> InlineKeyboardMarkup:
     from bot.services import yc_cdn
-    price = yc_cdn.get_price_per_gb_cents()
     rows = []
     if yc_cdn.is_configured():
         rows.append([InlineKeyboardButton(text='🔄 Обновить', callback_data='admin_cdn_provider_refresh')])
     rows.append([InlineKeyboardButton(text=f'🔑 Ключ API: {_mask(yc_cdn.get_api_key())}', callback_data='admin_cdn_pset:key')])
     rows.append([InlineKeyboardButton(text=f'📁 ID каталога: {yc_cdn.get_folder_id() or "не задан"}', callback_data='admin_cdn_pset:folder')])
     rows.append([InlineKeyboardButton(
-        text=f'🧾 Предоплата за месяц: {str(yc_cdn.get_prepay_cents() / 100).rstrip("0").rstrip(".").replace(".", ",") + " ₽" if yc_cdn.get_prepay_cents() else "не задана"}',
+        text=f'🧾 Предоплата за месяц: {_fmt_rub(yc_cdn.get_prepay_rub())}',
         callback_data='admin_cdn_pset:prepay')])
     rows.append([InlineKeyboardButton(text=f'📦 Включено в предоплату: {yc_cdn.get_included_gb()} ГБ', callback_data='admin_cdn_pset:included')])
-    rows.append([InlineKeyboardButton(
-        text=f'💵 Цена за ГБ сверх лимита: {str(price / 100).rstrip("0").rstrip(".").replace(".", ",") + " ₽" if price else "не задана"}',
-        callback_data='admin_cdn_pset:price')])
+    rows.append([InlineKeyboardButton(text=f'💵 Цена за ГБ сверх лимита: {_fmt_rub(yc_cdn.get_price_per_gb())}', callback_data='admin_cdn_pset:price')])
     if yc_cdn.get_api_key():
         rows.append([InlineKeyboardButton(text='🗑 Удалить ключ API', callback_data='admin_cdn_pclear')])
     rows.append([InlineKeyboardButton(text='⬅️ К настройкам CDN', callback_data='admin_cdn_settings')])
@@ -412,7 +413,14 @@ async def _provider_text(force: bool = False) -> str:
             'Ключ даёт только чтение статистики.'
         )
     summary = await yc_cdn.fetch_summary(force=force)
-    return head + yc_cdn.format_summary(summary, db_cdn.list_packs())
+    client_price = None
+    try:
+        from bot.services import cdn
+        if cdn.get_cdn_price_cents() > 0 and cdn.get_cdn_pack_gb() > 0:
+            client_price = cdn.get_cdn_price_cents() / 100 / cdn.get_cdn_pack_gb()
+    except Exception:  # noqa: BLE001
+        client_price = None
+    return head + yc_cdn.format_summary(summary, db_cdn.list_packs(), client_price)
 
 
 @router.callback_query(F.data.in_({'admin_cdn_provider', 'admin_cdn_provider_refresh'}))
@@ -457,9 +465,10 @@ async def cdn_provider_save(message: Message, state: FSMContext):
             pass
     if field in ('price', 'prepay'):
         try:
-            value = str(int(round(float(raw.replace(',', '.')) * 100)))
-            if int(value) < 0:
+            number = float(raw.replace(',', '.'))
+            if number < 0:
                 raise ValueError
+            value = f'{number:.3f}' if field == 'price' else str(int(round(number * 100)))
         except ValueError:
             await message.answer('❌ Введите сумму числом, например 2.5')
             return
