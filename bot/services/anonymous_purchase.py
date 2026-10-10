@@ -304,6 +304,41 @@ async def claim_anonymous_purchase(claim_code: str, telegram_id: int, username: 
     return {"ok": True, "message": "Готово! Ключ теперь в разделе «Мои ключи».", "key_id": key_id}
 
 
+async def _alert_admins(text: str) -> None:
+    """Короткое уведомление всем админам (сбой выдачи после оплаты и т.п.)."""
+    try:
+        from config import ADMIN_IDS
+        from bot.utils.runtime_state import get_bot_instance
+        bot_instance = get_bot_instance()
+        if not bot_instance:
+            return
+        for admin_id in list(ADMIN_IDS)[:5]:
+            try:
+                await bot_instance.send_message(admin_id, text, parse_mode="HTML")
+            except Exception:  # noqa: BLE001
+                pass
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Не удалось уведомить админов: {e}")
+
+
+async def complete_renewal_purchase(purchase: dict) -> dict:
+    """Оформляет уже оплаченное сайтовое ПРОДЛЕНИЕ. Если не вышло — заказ возвращается
+    в ожидание (ключ при сбое не продлевается, поэтому повтор безопасен).
+
+    Returns: {"ok": bool, "message": str}"""
+    from database.db_payments import reopen_anonymous_purchase
+    order_id = purchase["order_id"]
+    try:
+        result = await renew_anonymous_vpn_key(purchase["renewal_of_key_id"], purchase["tariff_id"])
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Продление по заказу {order_id} не оформлено: {e}")
+        result = {"ok": False, "message": "Не удалось оформить продление. Попробуйте ещё раз через минуту."}
+    if not result.get("ok"):
+        reopen_anonymous_purchase(order_id)
+        logger.warning(f"Сайтовое продление {order_id}: заказ возвращён в ожидание для повтора")
+    return result
+
+
 async def check_and_complete_anonymous_payment(order_id: str) -> dict:
     """Проверяет статус анонимного (сайтового) платежа в YooKassa и, если
     оплата прошла, провижинит рабочий VPN-ключ — идемпотентно (повторный
@@ -353,6 +388,13 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
             return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": purchase.get("sub_url")}
         return {"status": "pending"}
 
+    if purchase.get("renewal_of_key_id"):
+        # Продление существующего ключа: НЕ выпускаем новый (раньше автопроверка выпускала лишний ключ)
+        renewed = await complete_renewal_purchase(purchase)
+        if renewed.get("ok"):
+            return {"status": "paid", "message": renewed.get("message")}
+        return {"status": "pending", "message": renewed.get("message")}
+
     sub_url = None
     provisioned_key_id = None
     try:
@@ -364,6 +406,11 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
         logger.error(f"Автопроверка анонимного платежа {order_id}: ошибка провижининга ключа: {e}")
         # Оплата прошла успешно, но с выдачей ключа проблема — код привязки
         # у клиента всё равно есть, ключ можно довыдать вручную по order_id.
+        await _alert_admins(
+            "⚠️ <b>Оплачена покупка с сайта, ключ не выдан</b>\n\n"
+            f"Заказ: <code>{order_id}</code>\nОшибка: {str(e)[:200]}\n\n"
+            "Выдайте ключ вручную по этому заказу."
+        )
 
     # Реферальное начисление и уведомление админам — раньше НИ ОДНО из
     # этих двух действий не происходило для реальных покупок с сайта:
@@ -468,6 +515,9 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
 
     tariff = get_tariff_by_id(tariff_id)
     if not tariff:
+        return {"ok": False, "message": "Тариф не найден."}
+    from bot.services.cdn import is_cdn_tariff
+    if not tariff.get("is_active") or is_cdn_tariff(tariff_id):
         return {"ok": False, "message": "Тариф не найден."}
 
     price_cents = int(round(float(tariff.get("price_rub") or 0) * 100))

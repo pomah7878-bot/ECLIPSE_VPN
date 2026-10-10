@@ -1496,6 +1496,43 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
         return False
 
 
+async def _handle_late_payment(order: Dict[str, Any]) -> str:
+    """Оплата пришла по закрытому заказу: зачисляем сумму на баланс (идемпотентно) и
+    сообщаем админам. Если часть суммы уже оплачена балансом — только алерт."""
+    order_id = str(order.get('order_id'))
+    cents = 0
+    try:
+        if not int(order.get('balance_deduct_cents') or 0):
+            from bot.services.balance_reserve import credit_order_to_balance
+            cents = credit_order_to_balance(
+                order_id, 'late_payment', order_id, 'Оплата по закрытому заказу зачислена на баланс',
+            )
+    except Exception as e:
+        logger.error(f"Не удалось зачислить позднюю оплату {order_id} на баланс: {e}")
+    logger.warning(f"Поздняя оплата по закрытому заказу {order_id} (статус {order.get('status')}): зачислено {cents} коп")
+    try:
+        from bot.utils.runtime_state import get_bot_instance
+        from config import ADMIN_IDS
+        bot_instance = get_bot_instance()
+        if bot_instance:
+            for admin_id in list(ADMIN_IDS)[:5]:
+                try:
+                    await bot_instance.send_message(
+                        admin_id,
+                        "⚠️ <b>Оплата по закрытому заказу</b>\n\n"
+                        f"Заказ: <code>{order_id}</code>, статус: {order.get('status')}\n"
+                        + (f"Зачислено на баланс клиента: {cents / 100:.2f} ₽" if cents else "Сумма не зачислена автоматически — проверьте вручную."),
+                        parse_mode='HTML',
+                    )
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.warning(f"Не удалось уведомить админов о поздней оплате {order_id}: {e}")
+    if cents:
+        return f"✅ Платёж получен, но заказ уже был закрыт. Сумма {cents / 100:.2f} ₽ зачислена на ваш баланс."
+    return "⚠️ Платёж получен, но заказ уже был закрыт. Обратитесь в поддержку — мы разберёмся."
+
+
 async def _process_payment_order_inner(
     order_id: str,
     *,
@@ -1541,6 +1578,10 @@ async def _process_payment_order_inner(
         order['_payment_processed_now'] = bool(won_order)
         if won_order and _won is not None:
             _won.append(True)
+
+    if not already_paid and not order['_payment_processed_now'] and str(order.get('status') or '') == 'canceled':
+        # Деньги пришли, а заказ уже закрыт (отменён по таймауту/провайдеру) — не теряем платёж
+        return True, await _handle_late_payment(order), order
 
     days = order.get('duration_days') or order.get('period_days') or 30
     vpn_key_id = order.get('vpn_key_id')

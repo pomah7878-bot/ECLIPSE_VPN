@@ -186,6 +186,10 @@ def _pre_checkout_problem(pre_checkout: PreCheckoutQuery):
         return None  # не наш заказ (расширения и т.п.) — не вмешиваемся
     if order.get('status') != 'pending':
         return 'Этот заказ уже оплачен или отменён. Откройте оплату заново.'
+    if pre_checkout.currency == 'RUB' and order.get('payment_type') == 'cards':
+        expected_cents = order.get('final_amount_cents')
+        if expected_cents is None or int(expected_cents) != int(pre_checkout.total_amount):
+            return 'Цена изменилась. Откройте оплату заново.'
     if pre_checkout.currency == 'XTR' and order.get('payment_type') == 'stars':
         expected = order.get('final_amount_stars')
         if expected is None:

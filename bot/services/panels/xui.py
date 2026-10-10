@@ -2212,7 +2212,7 @@ class XUIClient(BaseVPNClient):
                     stats["remark"] = remark
                     return stats
 
-            inbounds = await self.get_inbounds()
+            inbounds = await self.get_inbounds(include_ignored=True)
             for inbound in inbounds:
                 client_stats = inbound.get("clientStats", [])
                 for stats in client_stats:

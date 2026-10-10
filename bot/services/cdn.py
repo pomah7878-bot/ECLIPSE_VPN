@@ -376,7 +376,8 @@ async def _provision(key: Dict[str, Any], *, total_gb: int, expire_days: int) ->
             errors.append(str(e))
             logger.warning("CDN: не удалось создать клиента %s в inbound %s: %s", email, inbound.get("id"), e)
     if not added:
-        return {"ok": False, "error": "Панель не приняла CDN-клиента: " + "; ".join(errors)[:200]}
+        logger.warning("CDN: панель не приняла клиента %s: %s", email, "; ".join(errors)[:300])
+        return {"ok": False, "error": "Сервер не принял подключение CDN. Попробуйте позже"}
     return {"ok": True, "added": added}
 
 
@@ -513,33 +514,62 @@ async def restore_suspended_pack(key_id: int) -> Dict[str, Any]:
 
 # ------------------------------------------------------------- user level --
 
+_buy_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
+def validate_key_for_purchase(key: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Покупать пакет можно только для рабочего, не просроченного ключа не забаненного владельца."""
+    problem = _validate_key(key)
+    if problem:
+        return problem
+    if key.get("is_banned"):
+        return "Аккаунт заблокирован"
+    expires = db_cdn.parse_time(key.get("expires_at")) if key.get("expires_at") else None
+    if expires and expires < datetime.utcnow():
+        return "Подписка ключа истекла: сначала продлите её"
+    return None
+
+
 async def purchase_pack(key_id: int, user_id: int) -> Dict[str, Any]:
-    """Покупка пакета с баланса: списание → выдача; при сбое выдачи деньги возвращаются."""
+    """Покупка пакета с баланса: списание → выдача; при ЛЮБОМ сбое выдачи деньги возвращаются.
+    Параллельные покупки на один ключ выстраиваются в очередь (двойной клик не списывает дважды)."""
     from bot.services.balance import credit_user_balance, debit_user_balance
+    from database.db_keys import get_vpn_key_by_id
     price = get_cdn_price_cents()
     if price <= 0:
         return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
     gb, days = get_cdn_pack_gb(), get_cdn_pack_days()
-    debit = await debit_user_balance(
-        user_id, price, source="cdn_pack", reason=f"Пакет CDN {gb} ГБ на {days} дн.",
-        reference_type="cdn_pack", reference_id=str(key_id),
-    )
-    if not debit.get("ok"):
-        if debit.get("status") == "insufficient_funds":
-            return {"ok": False, "error": "insufficient_funds", "need": price}
-        return {"ok": False, "error": "Не удалось списать оплату"}
-    result = await activate_pack(key_id, gb=gb, days=days, is_free=False)
-    if not result["ok"]:
+    async with _buy_locks[key_id]:
+        key = get_vpn_key_by_id(key_id)
+        if key and int(key.get("user_id") or 0) != int(user_id):
+            return {"ok": False, "error": "Ключ не найден"}
+        problem = validate_key_for_purchase(key)
+        if problem:
+            return {"ok": False, "error": problem}
+        debit = await debit_user_balance(
+            user_id, price, source="cdn_pack", reason=f"Пакет CDN {gb} ГБ на {days} дн.",
+            reference_type="cdn_pack", reference_id=str(key_id),
+        )
+        if not debit.get("ok"):
+            if debit.get("status") == "insufficient_funds":
+                return {"ok": False, "error": "insufficient_funds", "need": price}
+            return {"ok": False, "error": "Не удалось списать оплату"}
         try:
-            await credit_user_balance(
-                user_id, price, source="cdn_pack_refund", reason="Возврат: пакет CDN не выдан",
-                reference_type="cdn_pack", reference_id=str(key_id),
-            )
+            result = await activate_pack(key_id, gb=gb, days=days, is_free=False)
         except Exception as e:  # noqa: BLE001
-            logger.error("CDN: не удалось вернуть оплату user=%s key=%s: %s", user_id, key_id, e)
-        return {"ok": False, "error": result["error"], "refunded": True}
-    result["price"] = price
-    return result
+            logger.error("CDN: выдача пакета упала, key=%s: %s", key_id, e)
+            result = {"ok": False, "error": "Сервер сейчас недоступен. Попробуйте позже"}
+        if not result["ok"]:
+            try:
+                await credit_user_balance(
+                    user_id, price, source="cdn_pack_refund", reason="Возврат: пакет CDN не выдан",
+                    reference_type="cdn_pack", reference_id=str(key_id),
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.error("CDN: не удалось вернуть оплату user=%s key=%s: %s", user_id, key_id, e)
+            return {"ok": False, "error": result["error"], "refunded": True}
+        result["price"] = price
+        return result
 
 
 def describe_pack(pack: Optional[Dict[str, Any]]) -> str:

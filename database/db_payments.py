@@ -45,6 +45,7 @@ __all__ = [
     'find_order_by_yookassa_id',
     'create_anonymous_purchase',
     'mark_anonymous_purchase_paid',
+    'reopen_anonymous_purchase',
     'save_anonymous_purchase_payment_id',
     'save_anonymous_purchase_provisioning',
     'reassign_vpn_key_owner',
@@ -546,7 +547,18 @@ def create_pending_order(
         Tuple (payment_id, order_id)
     """
     tariff = get_tariff_by_id(tariff_id) if tariff_id else None
-    
+
+    # Защита от подделанных callback: служебный тариф CDN — только для существующего ключа,
+    # а ключ в заказе должен принадлежать плательщику.
+    from bot.services.cdn import is_cdn_tariff
+    if tariff_id and is_cdn_tariff(tariff_id) and not vpn_key_id:
+        raise ValueError("Тариф CDN можно оплатить только для существующего ключа")
+    if vpn_key_id:
+        with get_db() as _conn:
+            _row = _conn.execute("SELECT user_id FROM vpn_keys WHERE id = ?", (vpn_key_id,)).fetchone()
+        if not _row or int(_row['user_id']) != int(user_id):
+            raise ValueError("Ключ не принадлежит плательщику")
+
     with get_db() as conn:
         # Step 1: create a record with a temporary order_id
         cursor = conn.execute("""
@@ -761,12 +773,20 @@ def update_order_tariff(order_id: str, tariff_id: int, payment_type: Optional[st
     tariff = get_tariff_by_id(tariff_id)
     if not tariff:
         return False
-        
+
+    from bot.services.cdn import is_cdn_tariff
+    if is_cdn_tariff(tariff_id):
+        with get_db() as _conn:
+            _o = _conn.execute("SELECT vpn_key_id FROM payments WHERE order_id = ?", (order_id,)).fetchone()
+        if not _o or not _o['vpn_key_id']:
+            return False
+
     with get_db() as conn:
         # v1.194: менять можно только ожидающий заказ и только владельцу
         sql = (
             "UPDATE payments SET tariff_id = ?, amount_cents = ?, amount_stars = ?, "
-            "period_days = ?, payment_type = COALESCE(?, payment_type) "
+            "period_days = ?, payment_type = COALESCE(?, payment_type), "
+            "final_amount_cents = NULL, final_amount_stars = NULL "
             "WHERE order_id = ? AND status = 'pending'"
         )
         params = [tariff_id, tariff['price_cents'], _stars_amount(tariff),
@@ -1146,6 +1166,18 @@ def mark_anonymous_purchase_paid(order_id: str, yookassa_payment_id: str) -> boo
         cursor = conn.execute(
             "UPDATE anonymous_purchases SET status = 'paid', yookassa_payment_id = ? WHERE order_id = ? AND status = 'pending'",
             (yookassa_payment_id, order_id),
+        )
+        return cursor.rowcount > 0
+
+
+def reopen_anonymous_purchase(order_id: str) -> bool:
+    """Возвращает оплаченное, но не оформленное ПРОДЛЕНИЕ в ожидание — чтобы опрос
+    страницы или автопроверка оформили его повторно (ключ при этом не выдавался)."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE anonymous_purchases SET status = 'pending' "
+            "WHERE order_id = ? AND status = 'paid' AND renewal_of_key_id IS NOT NULL",
+            (order_id,),
         )
         return cursor.rowcount > 0
 

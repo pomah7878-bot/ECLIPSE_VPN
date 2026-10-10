@@ -38,6 +38,12 @@ def _payment_rows(key_id: int):
         return []
     if not tariff_id:
         return []
+    try:
+        from database.db_keys import get_vpn_key_by_id
+        if cdn.validate_key_for_purchase(get_vpn_key_by_id(key_id)):
+            return []
+    except Exception:  # noqa: BLE001
+        return []
     from database import db_settings as st
     methods = [
         (st.is_yookassa_qr_configured, 'renew_pay_qr', '📱 СБП / банк (ЮKassa)'),

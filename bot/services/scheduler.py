@@ -671,11 +671,28 @@ async def process_auto_renewals(bot: Bot) -> None:
                     logger.warning(f"Не удалось отправить уведомление о неудачном автопродлении {telegram_id}: {e}")
             continue
 
-        extend_vpn_key(key_id, duration_days)
+        renew_ok = False
         try:
-            await extend_key_on_server(key_id, duration_days)
+            from bot.services.key_lifecycle import renew_key_access
+            renew_result = await renew_key_access(
+                key_id, duration_days, reset_traffic=True, tariff_id=key.get("tariff_id"),
+            )
+            renew_ok = bool((renew_result or {}).get("db_updated"))
         except Exception as e:
-            logger.error(f"Автопродление ключа {key_id}: продлено в БД, но ошибка синхронизации с панелью: {e}")
+            logger.error(f"Автопродление ключа {key_id}: ошибка продления: {e}")
+        if not renew_ok:
+            # Деньги списаны, а ключ не продлён — возвращаем и идём к следующему
+            try:
+                from bot.services.balance import credit_user_balance
+                await credit_user_balance(
+                    user_id, price_cents, source="auto_renew_refund",
+                    reason=f"Возврат: автопродление ключа «{keyname}» не удалось",
+                    reference_type="vpn_key", reference_id=str(key_id),
+                )
+            except Exception as e:
+                logger.error(f"Автопродление ключа {key_id}: не удалось вернуть списание: {e}")
+            failed_count += 1
+            continue
 
         renewed_count += 1
         try:

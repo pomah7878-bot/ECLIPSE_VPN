@@ -1158,12 +1158,9 @@ def _build_renew_link(key: Dict[str, Any], webapp_url: str, bot_username: str) -
     telegram_id = key.get("telegram_id")
 
     if webapp_url and telegram_id and key_id:
-        try:
-            from database.requests import create_site_login_code
-            code = create_site_login_code(int(telegram_id), ttl_minutes=30)
-            return f"{webapp_url.rstrip('/')}/shop?code={code}&key_id={key_id}"
-        except Exception as e:
-            logger.warning(f"_build_renew_link: не удалось создать код входа на сайт: {e}")
+        # Без кода входа: ссылка подписки часто попадает в чужие руки, а заголовок
+        # ответа /happ-sub читается без авторизации. Клиент входит на сайт обычным способом.
+        return f"{webapp_url.rstrip('/')}/shop?key_id={key_id}"
 
     if bot_username and key_id:
         return f"https://t.me/{bot_username}?start=renew_{key_id}"
@@ -1942,7 +1939,7 @@ def _verify_session(cookie_value: Optional[str]) -> Optional[int]:
         if int(expires_str) < int(time.time()):
             return None
         return int(account_id_str)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return None
 
 
@@ -3387,6 +3384,11 @@ async def handle_public_account_key_renew_check(request: web.Request) -> web.Res
     if not purchase or not purchase.get("renewal_of_key_id"):
         return web.json_response({"error": "order_not_found"}, status=404)
 
+    from database.requests import get_site_account_by_id
+    _owner = get_site_account_by_id(account_id)
+    if not _owner or not _verify_key_belongs_to_account(int(purchase["renewal_of_key_id"]), _owner):
+        return web.json_response({"error": "order_not_found"}, status=404)
+
     if purchase["status"] == "paid":
         return web.json_response({"status": "paid", "message": "Ключ уже продлён."})
 
@@ -3410,9 +3412,11 @@ async def handle_public_account_key_renew_check(request: web.Request) -> web.Res
             return web.json_response({"status": "paid", "message": "Ключ уже продлён."})
         return web.json_response({"status": "pending", "message": "Обрабатываем платёж, попробуйте через несколько секунд."})
 
-    from bot.services.anonymous_purchase import renew_anonymous_vpn_key
-    result = await renew_anonymous_vpn_key(purchase["renewal_of_key_id"], purchase["tariff_id"])
-    return web.json_response({"status": "paid" if result.get("ok") else "failed", "message": result.get("message")})
+    from bot.services.anonymous_purchase import complete_renewal_purchase
+    result = await complete_renewal_purchase(purchase)
+    if not result.get("ok"):
+        return web.json_response({"status": "pending", "message": result.get("message")})
+    return web.json_response({"status": "paid", "message": result.get("message")})
 
 
 async def handle_public_account_key_renew_balance(request: web.Request) -> web.Response:
@@ -3789,9 +3793,11 @@ async def handle_public_account_renew_check(request: web.Request) -> web.Respons
             return web.json_response({"status": "paid", "message": "Ключ уже продлён."})
         return web.json_response({"status": "pending", "message": "Обрабатываем платёж, попробуйте через несколько секунд."})
 
-    from bot.services.anonymous_purchase import renew_anonymous_vpn_key
-    result = await renew_anonymous_vpn_key(purchase["renewal_of_key_id"], purchase["tariff_id"])
-    return web.json_response({"status": "paid" if result["ok"] else "failed", "message": result["message"]})
+    from bot.services.anonymous_purchase import complete_renewal_purchase
+    result = await complete_renewal_purchase(purchase)
+    if not result.get("ok"):
+        return web.json_response({"status": "pending", "message": result.get("message")})
+    return web.json_response({"status": "paid", "message": result.get("message")})
 
 
 
@@ -4307,7 +4313,7 @@ async def license_gate_middleware(request: web.Request, handler):
 
 def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
-    app = web.Application(middlewares=[cors_middleware, license_gate_middleware])
+    app = web.Application(middlewares=[cors_middleware, license_gate_middleware], client_max_size=12 * 1024 * 1024)
     app.on_cleanup.append(_close_upstream_session)
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
