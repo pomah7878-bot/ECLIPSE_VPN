@@ -71,7 +71,7 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
 
     key_id = int(key['id'])
     pack = db_cdn.get_pack(key_id)
-    price = cdn.get_cdn_price_cents()
+    price = cdn.get_sale_price_cents()
     gb, days = cdn.get_cdn_pack_gb(), cdn.get_cdn_pack_days()
 
     lines = []
@@ -117,8 +117,8 @@ async def key_cdn_buy_ask(callback: CallbackQuery):
     key = await _load_key(callback, key_id)
     if not key:
         return
-    price = cdn.get_cdn_price_cents()
-    if price <= 0 or not cdn.get_cdn_inbound_ids():
+    price = cdn.get_sale_price_cents()
+    if price <= 0:
         await callback.answer('Покупка CDN сейчас недоступна', show_alert=True)
         return
     text = (

@@ -162,7 +162,9 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
     
     from bot.services.cdn import get_tariff_cdn_gb
     cdn_gb = get_tariff_cdn_gb(tariff_id)
-    lines.append(f"🌐 CDN в тарифе: <code>{f'{cdn_gb} ГБ' if cdn_gb else 'нет'}</code>")
+    from bot.services.cdn import is_cdn_active
+    cdn_note = ' (сейчас CDN выключен — не действует)' if cdn_gb and not is_cdn_active() else ''
+    lines.append(f"🌐 CDN в тарифе: <code>{f'{cdn_gb} ГБ' if cdn_gb else 'нет'}</code>{cdn_note}")
 
     lines.extend([
         f"📊 Порядок: <code>{tariff.get('display_order', 0)}</code>",

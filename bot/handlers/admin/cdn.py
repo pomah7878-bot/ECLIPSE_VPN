@@ -72,8 +72,12 @@ def _settings_text() -> str:
     price_text = cdn.format_price(price) if price > 0 else 'не задана'
     ready_ids = '✅' if cdn.get_cdn_inbound_ids() else '❌'
     ready_price = '✅' if price > 0 else '❌'
+    enabled = cdn.is_cdn_enabled()
+    status = ('✅ <b>включён</b>' if enabled else
+              '⏸ <b>выключен</b>: тарифы без CDN, продаж нет, пакеты из тарифов не выдаются. '
+              'Настройки тарифов сохранены, действующие пакеты клиентов работают до конца срока.')
     return (
-        '🌐 <b>CDN-пакеты (обход белых списков)</b>\n\n'
+        f'🌐 <b>CDN-пакеты (обход белых списков)</b>\n\nСтатус: {status}\n\n'
         '<b>Что это.</b> Дополнительный ключ в подписке клиента, который идёт через CDN. '
         'Он нужен там, где мобильный интернет пропускает только «белые» адреса. '
         'Клиент сам решает, нужен ли ему CDN, и покупает пакет с баланса бота.\n\n'
@@ -103,6 +107,8 @@ def _settings_kb() -> InlineKeyboardMarkup:
     }
     rows = [[InlineKeyboardButton(text=f'✏️ {meta[1]}: {values[field]}', callback_data=f'admin_cdn_set:{field}')]
             for field, meta in SETTING_FIELDS.items()]
+    toggle_text = '⏸ Выключить CDN' if cdn.is_cdn_enabled() else '▶️ Включить CDN'
+    rows.insert(0, [InlineKeyboardButton(text=toggle_text, callback_data='admin_cdn_toggle')])
     rows.append([InlineKeyboardButton(text='🔍 Проверить инбаунд на серверах', callback_data='admin_cdn_check')])
     rows.append([
         InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_bot_settings'),
@@ -115,6 +121,14 @@ def _settings_kb() -> InlineKeyboardMarkup:
 async def cdn_settings_command(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(_settings_text(), reply_markup=_settings_kb(), parse_mode='HTML')
+
+
+@router.callback_query(F.data == 'admin_cdn_toggle')
+async def cdn_toggle(callback: CallbackQuery, state: FSMContext):
+    from bot.services import cdn
+    cdn.set_cdn_setting('cdn_enabled', '0' if cdn.is_cdn_enabled() else '1')
+    await callback.answer('CDN включён' if cdn.is_cdn_enabled() else 'CDN выключен')
+    await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
 
 
 @router.callback_query(F.data == 'admin_cdn_settings')

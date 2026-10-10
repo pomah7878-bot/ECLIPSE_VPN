@@ -130,8 +130,8 @@ def _rl_record(key: str) -> None:
 
 def _tariff_cdn_gb(tariff_id) -> int:
     try:
-        from bot.services.cdn import get_tariff_cdn_gb
-        return get_tariff_cdn_gb(tariff_id)
+        from bot.services.cdn import effective_tariff_cdn_gb
+        return effective_tariff_cdn_gb(tariff_id)
     except Exception:
         return 0
 
@@ -3184,13 +3184,13 @@ def _cdn_key_info(key_id: int, account: Optional[dict] = None) -> dict:
                 balance_cents = None
         return {
             "offered": bool(_cdn.is_cdn_offered_for_key(key_id)),
-            "price_cents": _cdn.get_cdn_price_cents(),
-            "price_text": _cdn.format_price(_cdn.get_cdn_price_cents()),
+            "price_cents": _cdn.get_sale_price_cents(),
+            "price_text": _cdn.format_price(_cdn.get_sale_price_cents()),
             "gb": _cdn.get_cdn_pack_gb(),
             "days": _cdn.get_cdn_pack_days(),
             "pack": pack_view,
             "balance_cents": balance_cents,
-            "tariff_id": (_cdn.ensure_cdn_tariff() if _cdn.get_cdn_price_cents() > 0 else 0) or None,
+            "tariff_id": (_cdn.ensure_cdn_tariff() if _cdn.get_sale_price_cents() > 0 else 0) or None,
         }
     except Exception as e:
         logger.warning(f"CDN info для ключа {key_id}: {e}")

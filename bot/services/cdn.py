@@ -158,9 +158,15 @@ def set_tariff_cdn_gb(tariff_id: int, gb: int) -> None:
     set_setting("cdn_tariff_gb", json.dumps(data))
 
 
+def effective_tariff_cdn_gb(tariff_id: Any) -> int:
+    """CDN в тарифе с учётом главного выключателя: 0, если CDN выключен или не настроен."""
+    return get_tariff_cdn_gb(tariff_id) if is_cdn_active() else 0
+
+
 def cdn_badge(tariff: Optional[Dict[str, Any]]) -> str:
-    """Пометка для кнопок и карточек тарифа: «+CDN 10 ГБ» (пусто, если CDN в тариф не входит)."""
-    gb = get_tariff_cdn_gb((tariff or {}).get("id"))
+    """Пометка для кнопок и карточек тарифа: «+CDN 10 ГБ» (пусто, если CDN в тариф не входит
+    или CDN выключен)."""
+    gb = effective_tariff_cdn_gb((tariff or {}).get("id"))
     return f"+CDN {gb} ГБ" if gb > 0 else ""
 
 
@@ -173,8 +179,8 @@ async def grant_tariff_pack(key_id: int) -> None:
         key = get_vpn_key_by_id(int(key_id))
         if not key or not key.get("tariff_id") or is_cdn_tariff(key.get("tariff_id")):
             return
-        gb = get_tariff_cdn_gb(key["tariff_id"])
-        if gb <= 0 or not get_cdn_inbound_ids():
+        gb = effective_tariff_cdn_gb(key["tariff_id"])
+        if gb <= 0:
             return
         tariff = get_tariff_by_id(int(key["tariff_id"])) or {}
         days = int(tariff.get("duration_days") or 0) or get_cdn_pack_days()
@@ -204,6 +210,26 @@ async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
 def paid_message(gb: int, days: int) -> str:
     return (f"✅ Пакет CDN подключён: {gb} ГБ на {days} дн. "
             "Обновите подписку в приложении, чтобы появились новые подключения.")
+
+
+def is_cdn_enabled() -> bool:
+    """Главный выключатель CDN (⚙️ /cdn). Выключен — тарифы без CDN, продаж нет;
+    настройки тарифов сохраняются, действующие пакеты работают до конца срока."""
+    try:
+        from database.db_settings import get_setting
+        return str(get_setting("cdn_enabled", "1") or "1").strip() != "0"
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def is_cdn_active() -> bool:
+    """CDN включён и настроен (есть CDN-инбаунд): только тогда он продаётся и выдаётся."""
+    return is_cdn_enabled() and bool(get_cdn_inbound_ids())
+
+
+def get_sale_price_cents() -> int:
+    """Цена для клиента: 0, если CDN выключен или не настроен (покупка недоступна)."""
+    return get_cdn_price_cents() if is_cdn_active() else 0
 
 
 def format_price(cents: int) -> str:
@@ -297,7 +323,7 @@ def is_cdn_offered_for_key(key_id: int) -> bool:
         db_cdn.STATUS_ACTIVE, db_cdn.STATUS_EXHAUSTED, db_cdn.STATUS_SUSPENDED, db_cdn.STATUS_EXPIRED,
     ):
         return True
-    return bool(get_cdn_inbound_ids()) and get_cdn_price_cents() > 0
+    return get_sale_price_cents() > 0
 
 
 # ------------------------------------------------------------- panel level --
@@ -537,6 +563,8 @@ async def purchase_pack(key_id: int, user_id: int) -> Dict[str, Any]:
     from database.db_keys import get_vpn_key_by_id
     price = get_cdn_price_cents()
     if price <= 0:
+        return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
+    if get_sale_price_cents() <= 0:
         return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
     gb, days = get_cdn_pack_gb(), get_cdn_pack_days()
     async with _buy_locks[key_id]:
