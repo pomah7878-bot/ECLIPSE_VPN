@@ -1,4 +1,4 @@
-"""CDN-пакеты: платный доступ к CDN-инбаунду (обход белых списков).
+"""CDN-пакеты (v1.256: остаток суммируется, докупка в тарифах): платный доступ к CDN-инбаунду (обход белых списков).
 
 Как это устроено:
   * CDN-инбаунд скрыт от обычной синхронизации (bot/utils/inbounds.py), основной
@@ -261,7 +261,7 @@ async def grant_tariff_pack(key_id: int) -> None:
                 until = None
             if until and until >= want_until - timedelta(hours=1):
                 return  # пакет уже действует до конца подписки
-        result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False, to_key_end=bool(end))
+        result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False, to_key_end=bool(end), carry=True)
         if not result.get("ok"):
             logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, result.get("error"))
         else:
@@ -278,7 +278,7 @@ async def grant_tariff_pack(key_id: int) -> None:
 
 async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
     """Выдача пакета по оплаченному заказу (вызывается один раз на заказ)."""
-    result = await activate_pack(key_id, gb=get_cdn_pack_gb(), days=get_cdn_pack_days(), is_free=False)
+    result = await activate_pack(key_id, gb=get_cdn_pack_gb(), days=get_cdn_pack_days(), is_free=False, carry=True)
     if not result.get("ok"):
         raise RuntimeError(f"Пакет CDN не выдан для заказа {order_id}: {result.get('error')}")
     return result
@@ -317,7 +317,7 @@ def is_cdn_active() -> bool:
 def get_sale_price_cents() -> int:
     """Цена платного пакета для клиента: 0 (покупка недоступна), если CDN выключен, не настроен
     или работает в режиме «в тарифах»."""
-    return get_cdn_price_cents() if is_cdn_active() and get_cdn_mode() == MODE_ADDON else 0
+    return get_cdn_price_cents() if is_cdn_active() and get_cdn_mode() in (MODE_ADDON, MODE_TARIFFS) else 0  # v1.256
 
 
 def format_price(cents: int) -> str:
@@ -411,7 +411,7 @@ def is_cdn_offered_for_key(key_id: int) -> bool:
         db_cdn.STATUS_ACTIVE, db_cdn.STATUS_EXHAUSTED, db_cdn.STATUS_SUSPENDED, db_cdn.STATUS_EXPIRED,
     ):
         return True
-    return get_sale_price_cents() > 0
+    return get_cdn_mode() == MODE_ADDON and get_sale_price_cents() > 0
 
 
 # ------------------------------------------------------------- panel level --
@@ -538,6 +538,7 @@ async def activate_pack(
     days: Optional[int] = None,
     is_free: bool = False,
     to_key_end: bool = False,
+    carry: bool = False,
 ) -> Dict[str, Any]:
     """Выдаёт/продлевает пакет: клиент панели создаётся заново, счётчик с нуля.
     Платный пакет не живёт дольше подписки; to_key_end — пакет действует ровно до конца подписки
@@ -554,6 +555,23 @@ async def activate_pack(
             return {"ok": False, "error": problem}
         now = datetime.utcnow()
         span = timedelta(days=days)
+        # v1.256: остаток действующего пакета (объём и срок) прибавляется к новому
+        carry_bytes = 0
+        if carry:
+            old = db_cdn.get_pack(key_id)
+            if old and old["status"] in (db_cdn.STATUS_ACTIVE, db_cdn.STATUS_EXHAUSTED, db_cdn.STATUS_SUSPENDED):
+                old_exp = db_cdn.parse_time(old["expires_at"])
+                if old_exp and old_exp > now:
+                    used = int(old.get("used_bytes") or 0)
+                    if old["status"] == db_cdn.STATUS_ACTIVE:
+                        try:
+                            live = await get_pack_usage(key)
+                            if live is not None:
+                                used = max(used, int(live))
+                        except Exception as e:  # noqa: BLE001
+                            logger.debug("CDN: расход для переноса остатка недоступен: %s", e)
+                    carry_bytes = max(0, int(old["limit_bytes"]) - used)
+                    span += old_exp - now
         end = _key_end(key)
         if end:
             left = end - now
@@ -564,16 +582,17 @@ async def activate_pack(
             if span.total_seconds() <= 0:
                 return {"ok": False, "error": "Подписка ключа истекла: сначала продлите её"}
         days = max(1, math.ceil(span.total_seconds() / 86400))
-        result = await _provision(key, total_gb=gb, expire_days=days)
+        total_gb = gb + math.ceil(carry_bytes / GB)
+        result = await _provision(key, total_gb=total_gb, expire_days=days)
         if not result["ok"]:
             return result
         expires_at = now + span
         db_cdn.save_pack(
             key_id, user_id=key.get("user_id"), server_id=key.get("server_id"),
-            panel_email=key["panel_email"], limit_bytes=gb * GB, expires_at=expires_at,
+            panel_email=key["panel_email"], limit_bytes=gb * GB + carry_bytes, expires_at=expires_at,
             is_free=is_free,
         )
-        return {"ok": True, "gb": gb, "days": days, "expires_at": expires_at}
+        return {"ok": True, "gb": total_gb, "days": days, "expires_at": expires_at, "carried_bytes": carry_bytes}
 
 
 async def set_pack_volume(key_id: int, gb: int) -> Dict[str, Any]:
@@ -684,6 +703,8 @@ async def purchase_pack(key_id: int, user_id: int) -> Dict[str, Any]:
         return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
     if get_sale_price_cents() <= 0:
         return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
+    if get_cdn_mode() == MODE_TARIFFS and not db_cdn.get_pack(key_id):
+        return {"ok": False, "error": "Докупка доступна после подключения CDN в тарифе"}
     gb, days = get_cdn_pack_gb(), get_cdn_pack_days()
     async with _buy_locks[key_id]:
         key = get_vpn_key_by_id(key_id)
@@ -702,7 +723,7 @@ async def purchase_pack(key_id: int, user_id: int) -> Dict[str, Any]:
                 return {"ok": False, "error": "insufficient_funds", "need": price}
             return {"ok": False, "error": "Не удалось списать оплату"}
         try:
-            result = await activate_pack(key_id, gb=gb, days=days, is_free=False)
+            result = await activate_pack(key_id, gb=gb, days=days, is_free=False, carry=True)
         except Exception as e:  # noqa: BLE001
             logger.error("CDN: выдача пакета упала, key=%s: %s", key_id, e)
             result = {"ok": False, "error": "Сервер сейчас недоступен. Попробуйте позже"}

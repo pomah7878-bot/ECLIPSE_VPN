@@ -91,7 +91,7 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
             lines.append('ℹ️ Срок пакета ограничен окончанием подписки. Продлите подписку, чтобы CDN работал дольше.')
         lines.append(f'💰 Баланс: {cdn.format_price(int(get_user_balance(key["user_id"]) or 0))}')
         if pack and pack['status'] == 'active':
-            lines.append('ℹ️ Новый пакет заменит текущий: остаток объёма и срока не суммируется.')
+            lines.append('ℹ️ Новый пакет добавится к текущему: остаток объёма и срока сохранится.')
     rows = []
     if price > 0:
         label = '🔄 Купить новый пакет' if pack else '🛒 Купить пакет'
