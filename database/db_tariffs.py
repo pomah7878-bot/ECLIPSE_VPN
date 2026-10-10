@@ -17,6 +17,9 @@ __all__ = [
     'toggle_tariff_active',
     'get_tariffs_count',
     'get_admin_tariff',
+    'is_protected_tariff',
+    'count_tariff_keys',
+    'delete_tariff',
 ]
 
 def _service_tariff_id() -> int:
@@ -255,3 +258,40 @@ def get_admin_tariff() -> Optional[Dict[str, Any]]:
         }
 
 
+
+
+def is_protected_tariff(tariff_id: int) -> bool:
+    """Служебные тарифы удалять нельзя: «CDN-пакет» и «Admin Tariff» (нужны для работы бота)."""
+    if tariff_id == _service_tariff_id():
+        return True
+    with get_db() as conn:
+        row = conn.execute("SELECT name FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()
+    return bool(row and row["name"] == "Admin Tariff")
+
+
+def count_tariff_keys(tariff_id: int) -> int:
+    """Сколько ключей привязано к тарифу."""
+    with get_db() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM vpn_keys WHERE tariff_id = ?", (tariff_id,)).fetchone()[0])
+
+
+def delete_tariff(tariff_id: int, move_keys_to: Optional[int] = None) -> Tuple[bool, str]:
+    """Удаляет тариф. Если к нему привязаны ключи, их нужно перенести на другой тариф
+    (срок и данные ключей не меняются). В истории платежей ссылка на тариф обнуляется."""
+    if is_protected_tariff(tariff_id):
+        return False, "Служебный тариф удалить нельзя"
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM tariffs WHERE id = ?", (tariff_id,)).fetchone():
+            return False, "Тариф не найден"
+        keys = int(conn.execute("SELECT COUNT(*) FROM vpn_keys WHERE tariff_id = ?", (tariff_id,)).fetchone()[0])
+        if keys:
+            if not move_keys_to or move_keys_to == tariff_id or is_protected_tariff(move_keys_to) \
+                    or not conn.execute("SELECT 1 FROM tariffs WHERE id = ?", (move_keys_to,)).fetchone():
+                return False, "Выберите тариф, на который перенести ключи"
+            conn.execute("UPDATE vpn_keys SET tariff_id = ? WHERE tariff_id = ?", (move_keys_to, tariff_id))
+        conn.execute("UPDATE payments SET tariff_id = NULL WHERE tariff_id = ?", (tariff_id,))
+        conn.execute("UPDATE tariff_groups SET trial_tariff_id = NULL WHERE trial_tariff_id = ?", (tariff_id,))
+        conn.execute("UPDATE settings SET value = '' WHERE key = 'trial_tariff_id' AND value = ?", (str(tariff_id),))
+        conn.execute("DELETE FROM tariffs WHERE id = ?", (tariff_id,))
+        logger.info(f"Тариф ID {tariff_id} удалён, ключей перенесено: {keys}")
+    return True, f"Тариф удалён. Перенесено ключей: {keys}" if keys else "Тариф удалён"

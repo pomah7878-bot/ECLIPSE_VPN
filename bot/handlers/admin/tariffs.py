@@ -245,6 +245,63 @@ async def toggle_tariff(callback: CallbackQuery, state: FSMContext):
 
 
 # ============================================================================
+# УДАЛЕНИЕ ТАРИФА
+# ============================================================================
+
+def _kb(rows):
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t, callback_data=d)] for t, d in rows])
+
+
+@router.callback_query(F.data.startswith("admin_tariff_delete:"))
+async def delete_tariff_ask(callback: CallbackQuery, state: FSMContext):
+    """Запрос на удаление: без ключей — подтверждение, с ключами — выбор тарифа для переноса."""
+    from database.db_tariffs import is_protected_tariff, count_tariff_keys
+    tariff_id = int(callback.data.split(":")[1])
+    tariff = get_tariff_by_id(tariff_id, raw=True)
+    if not tariff:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    if is_protected_tariff(tariff_id):
+        await callback.answer("Служебный тариф удалить нельзя. Его можно только скрыть или настроить в CDN.", show_alert=True)
+        return
+    from bot.utils.text import escape_html
+    name = escape_html(tariff['name'])
+    keys = count_tariff_keys(tariff_id)
+    cancel = ("❌ Отмена", f"admin_tariff_view:{tariff_id}")
+    if not keys:
+        text = (f"🗑 <b>Удалить тариф «{name}»?</b>\n\nК тарифу не привязано ни одного ключа. "
+                "Действие нельзя отменить. Если сомневаетесь, лучше скрыть тариф.")
+        rows = [("✅ Да, удалить", f"admin_tariff_del_ok:{tariff_id}:0"), cancel]
+    else:
+        others = [t for t in get_all_tariffs(include_hidden=True)
+                  if t['id'] != tariff_id and not is_protected_tariff(t['id'])]
+        if not others:
+            await callback.answer("Это единственный тариф: ключам некуда перейти", show_alert=True)
+            return
+        text = (f"🗑 <b>Удалить тариф «{name}»?</b>\n\nК нему привязано ключей: <b>{keys}</b>. "
+                "Выберите тариф, на который их перенести. Сроки и данные ключей не меняются, "
+                "изменится только тариф для продления.")
+        rows = [(f"➡️ {t['name']}", f"admin_tariff_del_ok:{tariff_id}:{t['id']}") for t in others[:20]]
+        rows.append(cancel)
+    await safe_edit_or_send(callback.message, text, reply_markup=_kb(rows))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_tariff_del_ok:"))
+async def delete_tariff_confirm(callback: CallbackQuery, state: FSMContext):
+    from database.db_tariffs import delete_tariff
+    _, tid, move = callback.data.split(":")
+    ok, msg = delete_tariff(int(tid), int(move) or None)
+    await callback.answer(("✅ " if ok else "❌ ") + msg, show_alert=not ok)
+    if ok:
+        await show_tariffs_list(callback, state)
+    else:
+        await render_tariff_view(callback.message, int(tid), state)
+
+
+# ============================================================================
 # ADDING A RATE
 # ============================================================================
 

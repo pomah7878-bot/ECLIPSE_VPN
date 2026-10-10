@@ -77,6 +77,7 @@ def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=Fals
     builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f'admin_tariff_toggle:{tariff_id}'))
     if show_group_button:
         builder.row(InlineKeyboardButton(text='📂 Изменить группу', callback_data=f'admin_tariff_change_group:{tariff_id}'))
+    builder.row(InlineKeyboardButton(text='🗑 Удалить тариф', callback_data=f'admin_tariff_delete:{tariff_id}'))
     builder.row(back_button('admin_tariffs'), home_button())
     return builder.as_markup()
 
