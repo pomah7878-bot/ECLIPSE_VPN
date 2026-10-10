@@ -18,7 +18,7 @@ def tariffs_list_kb(tariffs: List[Dict[str, Any]], include_hidden: bool=True) ->
     builder.row(InlineKeyboardButton(text='➕ Добавить тариф', callback_data='admin_tariff_add'))
     try:
         from bot.services.cdn import get_cdn_mode
-        mode_text = {'off': 'выключен', 'addon': 'доп. функция', 'tariffs': 'в тарифах'}.get(get_cdn_mode(), '')
+        mode_text = {'off': 'выключен', 'addon': 'платный пакет', 'tariffs': 'в тарифах', 'both': 'тарифы + пакет'}.get(get_cdn_mode(), '')
     except Exception:
         mode_text = ''
     builder.row(InlineKeyboardButton(

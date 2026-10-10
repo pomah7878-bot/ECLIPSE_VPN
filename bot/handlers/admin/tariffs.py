@@ -169,7 +169,7 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
         await safe_edit_or_send(message, "\n".join(lines), reply_markup=service_tariff_view_kb())
         return
 
-    from bot.services.cdn import get_tariff_cdn_gb, tariff_cdn_surcharge_rub, is_cdn_active, get_cdn_mode, MODE_TARIFFS
+    from bot.services.cdn import get_tariff_cdn_gb, tariff_cdn_surcharge_rub, is_cdn_active, is_tariffs_on
     cdn_gb = get_tariff_cdn_gb(tariff_id)
     if cdn_gb:
         add = tariff_cdn_surcharge_rub(tariff_id)
@@ -177,7 +177,7 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
         lines.append(f"🌐 CDN в тарифе: <code>{cdn_gb} ГБ</code>{note}")
         if add and (tariff.get('price_rub') or 0) > 1:
             lines.append(f"💳 Клиент платит: <code>{tariff['price_rub'] + add} ₽</code> (тариф + {add} ₽ за CDN)")
-    elif get_cdn_mode() == MODE_TARIFFS:
+    elif is_tariffs_on():
         lines.append("🌐 CDN в тарифе: <code>нет</code> (группа не выбрана в /cdn)")
 
     lines.extend([

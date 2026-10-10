@@ -129,21 +129,58 @@ def ensure_cdn_tariff() -> int:
 # Режим «в тарифах»: CDN входит во все платные тарифы выбранных групп. Объём один на всех
 # (cdn_pack_gb), срок пакета равен сроку тарифа, цена CDN прибавляется к цене тарифа.
 
-MODE_OFF, MODE_ADDON, MODE_TARIFFS = "off", "addon", "tariffs"
+MODE_OFF, MODE_ADDON, MODE_TARIFFS, MODE_BOTH = "off", "addon", "tariffs", "both"
 
 
-def get_cdn_mode() -> str:
-    """Режим CDN: off — выключен; addon — платный пакет отдельной кнопкой;
-    tariffs — CDN входит в тарифы выбранных групп (платный пакет не продаётся)."""
+def _legacy_mode() -> str:
+    """Старый одиночный режим (до v1.258): off / addon / tariffs."""
     try:
         from database.db_settings import get_setting
         mode = str(get_setting("cdn_mode", "") or "").strip()
         if mode in (MODE_OFF, MODE_ADDON, MODE_TARIFFS):
             return mode
-        # совместимость со старым выключателем
         return MODE_OFF if str(get_setting("cdn_enabled", "1") or "1").strip() == "0" else MODE_ADDON
     except Exception:  # noqa: BLE001
         return MODE_ADDON
+
+
+def _flag(key: str, legacy_on: str) -> bool:
+    try:
+        from database.db_settings import get_setting
+        raw = str(get_setting(key, "") or "").strip()
+        if raw in ("0", "1"):
+            return raw == "1"
+    except Exception:  # noqa: BLE001
+        pass
+    return _legacy_mode() in (legacy_on,)
+
+
+def is_tariffs_on() -> bool:
+    """CDN входит в платные тарифы выбранных групп (выключатель независим от доп. функции)."""
+    return _flag("cdn_tariffs_on", MODE_TARIFFS)
+
+
+def is_addon_on() -> bool:
+    """Платный пакет докупается отдельной кнопкой (независим от «CDN в тарифах»)."""
+    return _flag("cdn_addon_on", MODE_ADDON)
+
+
+def set_cdn_flags(*, tariffs: Optional[bool] = None, addon: Optional[bool] = None) -> None:
+    """Сохраняет оба выключателя явно (непереданный остаётся как был)."""
+    t = is_tariffs_on() if tariffs is None else bool(tariffs)
+    a = is_addon_on() if addon is None else bool(addon)
+    from database.db_settings import set_setting
+    set_setting("cdn_tariffs_on", "1" if t else "0")
+    set_setting("cdn_addon_on", "1" if a else "0")
+    set_setting("cdn_enabled", "1" if (t or a) else "0")  # для совместимости со старым кодом
+
+
+def get_cdn_mode() -> str:
+    """Сводка для отображения: off / addon / tariffs / both."""
+    t, a = is_tariffs_on(), is_addon_on()
+    if t and a:
+        return MODE_BOTH
+    return MODE_TARIFFS if t else MODE_ADDON if a else MODE_OFF
 
 
 def get_cdn_group_ids() -> List[int]:
@@ -171,7 +208,7 @@ def toggle_cdn_group(group_id: int) -> bool:
 
 def get_tariff_cdn_gb(tariff_id: Any) -> int:
     """Объём CDN, входящий в тариф (настройка, без учёта главного выключателя)."""
-    if get_cdn_mode() != MODE_TARIFFS:
+    if not is_tariffs_on():
         return 0
     try:
         tid = int(tariff_id or 0)
@@ -306,7 +343,7 @@ def paid_message_short() -> str:
 def is_cdn_enabled() -> bool:
     """Главный выключатель CDN (⚙️ /cdn). Выключен — тарифы без CDN, продаж нет;
     настройки тарифов сохраняются, действующие пакеты работают до конца срока."""
-    return get_cdn_mode() != MODE_OFF
+    return is_tariffs_on() or is_addon_on()
 
 
 def is_cdn_active() -> bool:
@@ -315,9 +352,9 @@ def is_cdn_active() -> bool:
 
 
 def get_sale_price_cents() -> int:
-    """Цена платного пакета для клиента: 0 (покупка недоступна), если CDN выключен, не настроен
-    или работает в режиме «в тарифах»."""
-    return get_cdn_price_cents() if is_cdn_active() and get_cdn_mode() in (MODE_ADDON, MODE_TARIFFS) else 0  # v1.256
+    """Цена платного пакета для клиента: 0 (покупка недоступна), если доп. функция выключена
+    или CDN не настроен. «CDN в тарифах» на продажу пакета не влияет."""
+    return get_cdn_price_cents() if is_cdn_active() and is_addon_on() else 0
 
 
 def format_price(cents: int) -> str:
@@ -411,7 +448,7 @@ def is_cdn_offered_for_key(key_id: int) -> bool:
         db_cdn.STATUS_ACTIVE, db_cdn.STATUS_EXHAUSTED, db_cdn.STATUS_SUSPENDED, db_cdn.STATUS_EXPIRED,
     ):
         return True
-    return get_cdn_mode() == MODE_ADDON and get_sale_price_cents() > 0
+    return get_sale_price_cents() > 0
 
 
 # ------------------------------------------------------------- panel level --
@@ -703,8 +740,6 @@ async def purchase_pack(key_id: int, user_id: int) -> Dict[str, Any]:
         return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
     if get_sale_price_cents() <= 0:
         return {"ok": False, "error": "Покупка CDN сейчас недоступна"}
-    if get_cdn_mode() == MODE_TARIFFS and not db_cdn.get_pack(key_id):
-        return {"ok": False, "error": "Докупка доступна после подключения CDN в тарифе"}
     gb, days = get_cdn_pack_gb(), get_cdn_pack_days()
     async with _buy_locks[key_id]:
         key = get_vpn_key_by_id(key_id)

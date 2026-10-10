@@ -78,18 +78,21 @@ def _settings_text() -> str:
     price_text = cdn.format_price(price) if price > 0 else 'не задана'
     ready_ids = '✅' if cdn.get_cdn_inbound_ids() else '❌'
     ready_price = '✅' if price > 0 else '❌'
-    mode = cdn.get_cdn_mode()
-    if mode == cdn.MODE_OFF:
+    t_on, a_on = cdn.is_tariffs_on(), cdn.is_addon_on()
+    parts = []
+    if t_on:
+        names = _group_names(cdn.get_cdn_group_ids())
+        parts.append('✅ <b>CDN в тарифах</b>. Группы: ' + (escape_html(names) if names else '<b>не выбраны</b>') +
+                     '.\nЦена CDN прибавляется к цене каждого платного тарифа этих групп, клиент получает '
+                     f'{cdn.get_cdn_pack_gb()} ГБ на срок тарифа.')
+    if a_on:
+        parts.append('✅ <b>Платный пакет (доп. функция)</b>: клиент докупает пакет кнопкой «🌐 CDN» в карточке '
+                     'ключа, любому ключу — с CDN из тарифа или без. Купленный объём и срок прибавляются к остатку.')
+    if not parts:
         status = ('⏸ <b>выключен</b>: в тарифах CDN нет, платный пакет не продаётся, пакеты из тарифов '
                   'не выдаются. Действующие пакеты клиентов работают до конца срока.')
-    elif mode == cdn.MODE_TARIFFS:
-        names = _group_names(cdn.get_cdn_group_ids())
-        status = ('✅ <b>CDN входит в тарифы</b>. Группы: ' + (escape_html(names) if names else '<b>не выбраны</b>') +
-                  '.\nЦена CDN прибавляется к цене каждого платного тарифа этих групп, клиент получает '
-                  f'{cdn.get_cdn_pack_gb()} ГБ на срок тарифа. Отдельная кнопка покупки пакета скрыта.')
     else:
-        status = ('✅ <b>доп. функция</b>: клиент покупает пакет отдельно кнопкой «🌐 CDN» в карточке ключа. '
-                  'В тарифах CDN нет.')
+        status = '\n'.join(parts)
     return (
         f'🌐 <b>CDN-пакеты (обход белых списков)</b>\n\nСтатус: {status}\n\n'
         '<b>Что это.</b> Дополнительный ключ в подписке клиента, который идёт через CDN. '
@@ -104,9 +107,10 @@ def _settings_text() -> str:
         f'{ready_price} Цена пакета: <b>{price_text}</b>\n'
         f'• Объём пакета: <b>{cdn.get_cdn_pack_gb()} ГБ</b>\n'
         f'• Срок пакета: <b>{cdn.get_cdn_pack_days()} дн.</b>\n\n'
-        '<b>Режимы</b> не пересекаются: «Доп. функция» — платный пакет отдельной кнопкой; «В тарифах» — '
-        'CDN входит в тарифы выбранных групп (цена и объём берутся из настроек выше), кнопка покупки скрыта.\n'
-        'В режиме «Доп. функция» клиенты видят кнопку «🌐 CDN» в карточке ключа, когда отмечены оба пункта ✅.\n\n'
+        '<b>Два независимых переключателя</b> (можно включить оба, один или ни одного):\n'
+        '• «В тарифах» — CDN входит в платные тарифы выбранных групп, цена CDN прибавляется к тарифу.\n'
+        '• «Платный пакет» — кнопка «🌐 CDN» в карточке ключа: докупка объёма отдельно от тарифа.\n'
+        'Цена и объём берутся из настроек выше и общие для обоих. Кнопка покупки видна, когда отмечены оба пункта ✅.\n\n'
         '<b>Выдать бесплатно или изменить объём</b> для одного клиента: '
         'Пользователи → ключ → «🌐 CDN-пакет».\n\n'
         f'📊 {_stats_line()}'
@@ -123,11 +127,14 @@ def _settings_kb() -> InlineKeyboardMarkup:
     }
     rows = [[InlineKeyboardButton(text=f'✏️ {meta[1]}: {values[field]}', callback_data=f'admin_cdn_set:{field}')]
             for field, meta in SETTING_FIELDS.items()]
-    mode = cdn.get_cdn_mode()
-    mode_rows = [[InlineKeyboardButton(text=f"{'🟢' if mode == m else '⚪'} {title}", callback_data=f'admin_cdn_mode:{m}')]
-                 for m, title in ((cdn.MODE_OFF, 'Выключен'), (cdn.MODE_ADDON, 'Доп. функция (платный пакет)'),
-                                  (cdn.MODE_TARIFFS, 'В тарифах группы'))]
-    if mode == cdn.MODE_TARIFFS:
+    t_on, a_on = cdn.is_tariffs_on(), cdn.is_addon_on()
+    mode_rows = [
+        [InlineKeyboardButton(text=f"{'🟢' if t_on else '⚪'} CDN в тарифах (выбранные группы)",
+                              callback_data='admin_cdn_toggle:tariffs')],
+        [InlineKeyboardButton(text=f"{'🟢' if a_on else '⚪'} Платный пакет (доп. функция)",
+                              callback_data='admin_cdn_toggle:addon')],
+    ]
+    if t_on:
         chosen = set(cdn.get_cdn_group_ids())
         from database.db_groups import get_all_groups
         for g in get_all_groups():
@@ -150,20 +157,34 @@ async def cdn_settings_command(message: Message, state: FSMContext):
     await message.answer(_settings_text(), reply_markup=_settings_kb(), parse_mode='HTML')
 
 
-@router.callback_query(F.data.startswith('admin_cdn_mode:'))
-async def cdn_set_mode(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith('admin_cdn_toggle:'))
+async def cdn_toggle_flag(callback: CallbackQuery, state: FSMContext):
     from bot.services import cdn
-    mode = callback.data.split(':')[1]
-    if mode not in (cdn.MODE_OFF, cdn.MODE_ADDON, cdn.MODE_TARIFFS):
+    which = callback.data.split(':')[1]
+    if which == 'tariffs':
+        cdn.set_cdn_flags(tariffs=not cdn.is_tariffs_on())
+        on, title = cdn.is_tariffs_on(), 'CDN в тарифах'
+    elif which == 'addon':
+        cdn.set_cdn_flags(addon=not cdn.is_addon_on())
+        on, title = cdn.is_addon_on(), 'Платный пакет'
+    else:
         await callback.answer()
         return
-    cdn.set_cdn_setting('cdn_mode', mode)
-    cdn.set_cdn_setting('cdn_enabled', '0' if mode == cdn.MODE_OFF else '1')
     note = ''
-    if mode == cdn.MODE_TARIFFS and not cdn.get_cdn_group_ids():
+    if which == 'tariffs' and on and not cdn.get_cdn_group_ids():
         note = ' Отметьте группы тарифов ниже.'
-    await callback.answer({'off': 'CDN выключен', 'addon': 'CDN: доп. функция',
-                           'tariffs': 'CDN входит в тарифы.' + note}[mode], show_alert=bool(note))
+    await callback.answer(f"{title}: {'включено' if on else 'выключено'}.{note}", show_alert=bool(note))
+    await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
+
+
+@router.callback_query(F.data.startswith('admin_cdn_mode:'))
+async def cdn_set_mode(callback: CallbackQuery, state: FSMContext):
+    """Старые кнопки режимов (из прежних сообщений): переводим в два переключателя."""
+    from bot.services import cdn
+    mode = callback.data.split(':')[1]
+    if mode in (cdn.MODE_OFF, cdn.MODE_ADDON, cdn.MODE_TARIFFS):
+        cdn.set_cdn_flags(tariffs=(mode == cdn.MODE_TARIFFS), addon=(mode == cdn.MODE_ADDON))
+    await callback.answer()
     await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
 
 
