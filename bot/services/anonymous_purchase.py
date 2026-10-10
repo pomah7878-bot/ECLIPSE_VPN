@@ -314,7 +314,8 @@ async def _alert_admins(text: str) -> None:
             return
         for admin_id in list(ADMIN_IDS)[:5]:
             try:
-                await bot_instance.send_message(admin_id, text, parse_mode="HTML")
+                from bot.utils.notify_kb import with_home
+                await bot_instance.send_message(admin_id, text, parse_mode="HTML", reply_markup=with_home())
             except Exception:  # noqa: BLE001
                 pass
     except Exception as e:  # noqa: BLE001

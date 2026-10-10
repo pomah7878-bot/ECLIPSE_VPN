@@ -49,6 +49,8 @@ from bot.utils.text import escape_html
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
+from bot.utils.notify_kb import with_home as _with_home
+
 logger = logging.getLogger(__name__)
 
 # Path to the bot database
@@ -631,6 +633,7 @@ async def process_auto_renewals(bot: Bot) -> None:
 
     renewed_count = 0
     failed_count = 0
+    tech_failed: list[str] = []
     for key in keys:
         key_id = key["id"]
         user_id = key["user_id"]
@@ -701,6 +704,7 @@ async def process_auto_renewals(bot: Bot) -> None:
             except Exception as e:
                 logger.error(f"Автопродление ключа {key_id}: не удалось вернуть списание: {e}")
             failed_count += 1
+            tech_failed.append(f"#{key_id} «{keyname}»")
             try:
                 await bot.send_message(
                     chat_id=telegram_id,
@@ -742,6 +746,42 @@ async def process_auto_renewals(bot: Bot) -> None:
             logger.warning(f"Не удалось отправить уведомление об автопродлении {telegram_id}: {e}")
 
     logger.info(f"🔄 Автопродление завершено: продлено {renewed_count}, не удалось {failed_count}")
+    if tech_failed:
+        # Нехватка денег — обычная ситуация и админу не интересна; технические сбои — интересна
+        _text = (f"⚠️ <b>Автопродление: технические сбои — {len(tech_failed)}</b>\n\n"
+                 + "\n".join(tech_failed[:15])
+                 + ("\n…" if len(tech_failed) > 15 else "")
+                 + f"\n\nПродлено успешно: {renewed_count}. Деньги клиентам возвращены (если возврат прошёл — см. логи).")
+        for _admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(chat_id=_admin_id, text=_text, parse_mode="HTML", reply_markup=_with_home())
+            except Exception as e:
+                logger.warning(f"Не удалось отправить админу {_admin_id} отчёт об автопродлении: {e}")
+
+
+def _auto_renew_note(key_id: int) -> str:
+    """Строка для напоминания об истечении: если у ключа включено автопродление — сколько спишется
+    и хватает ли баланса (с учётом доплаты за CDN, если он входит в тариф)."""
+    try:
+        from database.db_keys import get_vpn_key_by_id
+        from database.db_tariffs import get_tariff_by_id
+        from database.requests import get_user_balance
+        key = get_vpn_key_by_id(int(key_id))
+        if not key or not key.get("auto_renew"):
+            return ""
+        tariff = get_tariff_by_id(int(key.get("tariff_id") or 0)) or {}
+        price = float(tariff.get("price_rub") or 0)
+        if price <= 1:
+            return ""
+        balance = (get_user_balance(int(key["user_id"])) or 0) / 100
+        if balance + 1e-9 >= price:
+            return (f"\n\n🔁 <b>Автопродление включено:</b> с баланса спишется {price:g} ₽ "
+                    f"(сейчас на балансе {balance:.2f} ₽).")
+        return (f"\n\n🔁 <b>Автопродление включено, но на балансе не хватает денег:</b> нужно {price:g} ₽, "
+                f"сейчас {balance:.2f} ₽. Пополните баланс, иначе ключ истечёт.")
+    except Exception as e:
+        logger.debug(f"Не удалось добавить строку автопродления в напоминание: {e}")
+        return ""
 
 
 async def check_and_send_expiry_notifications(bot: Bot) -> None:
@@ -814,6 +854,7 @@ async def check_and_send_expiry_notifications(bot: Bot) -> None:
                 event_context,
                 mode='html',
             )
+            text += _auto_renew_note(vpn_key_id)
             
             # Keyboard with "My keys" and "Home" buttons
             builder = InlineKeyboardBuilder()
@@ -1022,7 +1063,7 @@ async def check_and_notify_updates(bot: Bot) -> None:
                 await bot.send_message(
                     chat_id=admin_id,
                     text=msg,
-                    reply_markup=kb,
+                    reply_markup=_with_home(kb),
                     parse_mode="HTML"
                 )
             except Exception as e:
@@ -1060,7 +1101,7 @@ async def check_and_notify_updates(bot: Bot) -> None:
                     await bot.send_message(
                         chat_id=admin_id,
                         text=notify_text,
-                        reply_markup=kb,
+                        reply_markup=_with_home(kb),
                         parse_mode="HTML"
                     )
                 except Exception as e:
@@ -1231,7 +1272,7 @@ async def _monthly_traffic_reset_impl(bot: Bot) -> None:
                 chat_id=admin_id,
                 text=report,
                 parse_mode="HTML",
-                reply_markup=ReplyKeyboardRemove()
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]])
             )
         except Exception as e:
             logger.warning(f"Не удалось отправить отчёт админу {admin_id}: {e}")
@@ -1477,6 +1518,7 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
                                 admin_id,
                                 f"✅ Пост #{post_id} опубликован в {channel_id}\n\n<i>{preview}...</i>",
                                 parse_mode='HTML',
+                                reply_markup=_with_home(),
                             )
                         except Exception:
                             pass
@@ -1495,6 +1537,7 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
                                     f"⏰ Пост #{post_id} в {channel_id} не удалось опубликовать до 21:00 МСК — "
                                     f"перенесён на то же время завтра.\n<pre>{error_text[:500]}</pre>",
                                     parse_mode='HTML',
+                                    reply_markup=_with_home(),
                                 )
                             except Exception:
                                 pass
@@ -1560,7 +1603,7 @@ async def run_duplicate_detection_scheduler(bot: Bot) -> None:
                         try:
                             await bot.send_message(
                                 admin_id, text, parse_mode='HTML',
-                                reply_markup=duplicate_pair_notification_kb(pair_row['id']),
+                                reply_markup=_with_home(duplicate_pair_notification_kb(pair_row['id'])),
                             )
                         except Exception:
                             pass
@@ -1603,6 +1646,14 @@ async def run_traffic_sync_scheduler(bot: Bot) -> None:
                     servers=cycle_servers,
                     snapshots=cycle_snapshots,
                 )
+                try:
+                    from bot.services.server_alerts import process_server_health
+                    await process_server_health(
+                        bot, cycle_servers, cycle_snapshots.errors,
+                        checked_ids=set(cycle_snapshots.snapshots.keys()),
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка проверки доступности серверов: {e}")
                 try:
                     from bot.services.key_lifecycle import process_expired_key_lifecycle_events
 

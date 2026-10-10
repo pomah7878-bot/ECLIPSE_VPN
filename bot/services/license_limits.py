@@ -88,7 +88,8 @@ async def process_license_notices(bot) -> None:
     async def _notify(text: str):
         for admin_id in ADMIN_IDS:
             try:
-                await bot.send_message(admin_id, text, parse_mode="HTML")
+                from bot.utils.notify_kb import with_home
+                await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=with_home())
             except Exception:
                 pass
 

@@ -300,7 +300,8 @@ async def _notify_admins_completion_failure(
     )
     for admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(admin_id, text, parse_mode='HTML')
+            from bot.utils.notify_kb import with_home
+            await bot.send_message(admin_id, text, parse_mode='HTML', reply_markup=with_home())
         except Exception as notify_error:
             logger.warning(
                 "Не удалось уведомить администратора %s о сбое order=%s: %s",

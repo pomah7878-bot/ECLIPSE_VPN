@@ -253,6 +253,13 @@ async def confirm_ban_toggle(callback: CallbackQuery, state: FSMContext):
         logger.warning(f"Не удалось синхронизировать панель после бана пользователя {telegram_id}: {e}")
         panel_status = 'панель: ошибка синхронизации'
 
+    from bot.services.user_notify import notify_user
+    await notify_user(
+        callback.bot, telegram_id,
+        '🚫 <b>Доступ к сервису ограничен администратором.</b>\n\nЕсли считаете это ошибкой, свяжитесь с администратором сервиса.'
+        if new_status else
+        '✅ <b>Доступ к сервису восстановлен.</b>\n\nМожно пользоваться ключами и подпиской как обычно.',
+    )
     await callback.answer(f'{icon} Пользователь {action_text}. {panel_status}', show_alert=True)
     await _show_user_view_edit(callback, state, telegram_id)
 
@@ -404,6 +411,9 @@ async def process_balance_amount(message: Message, state: FSMContext):
         new_balance = int(result.get('balance_after') or get_user_balance(user_id))
         new_balance_rub = new_balance / 100
         await safe_edit_or_send(message, f'✅ Баланс списан\n\nСписано: {amount_rub:.2f} ₽\nНовый баланс: {new_balance_rub:.2f} ₽')
+        from bot.services.user_notify import notify_user
+        await notify_user(message.bot, telegram_id,
+                          f'💸 <b>С вашего баланса списано {amount_rub:.2f} ₽</b>\n\nБаланс: {new_balance_rub:.2f} ₽.')
         logger.info(f'Админ {message.from_user.id} списал {amount_cents} коп с баланса user {user_id}')
     else:
         from bot.services.balance import credit_user_balance
@@ -422,6 +432,9 @@ async def process_balance_amount(message: Message, state: FSMContext):
         new_balance = int(result.get('balance_after') or get_user_balance(user_id))
         new_balance_rub = new_balance / 100
         await safe_edit_or_send(message, f'✅ Баланс пополнен\n\nПополнено: {amount_rub:.2f} ₽\nНовый баланс: {new_balance_rub:.2f} ₽')
+        from bot.services.user_notify import notify_user
+        await notify_user(message.bot, telegram_id,
+                          f'💰 <b>Ваш баланс пополнен на {amount_rub:.2f} ₽</b>\n\nБаланс: {new_balance_rub:.2f} ₽.')
         logger.info(f'Админ {message.from_user.id} пополнил баланс user {user_id} на {amount_cents} коп')
     try:
         await message.delete()

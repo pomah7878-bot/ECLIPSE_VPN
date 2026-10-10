@@ -126,7 +126,9 @@ async def process_abandoned_license_purchases(bot) -> None:
         status, info = await issue_license_for_order(purchase["order_id"])
         if status == "issued":
             try:
-                await bot.send_message(purchase["telegram_id"], build_issued_text(info), parse_mode="HTML")
+                from bot.utils.notify_kb import with_home
+                await bot.send_message(purchase["telegram_id"], build_issued_text(info), parse_mode="HTML",
+                                       reply_markup=with_home())
             except Exception as e:
                 logger.warning(
                     f"Ключ по заказу {purchase['order_id']} выдан, но сообщение покупателю не доставлено: {e}"
@@ -167,6 +169,7 @@ async def process_license_expiry_reminders(bot) -> None:
                 "Новый код заменит старый."
             )
         try:
-            await bot.send_message(lic["telegram_id"], text, parse_mode="HTML")
+            from bot.utils.notify_kb import with_home
+            await bot.send_message(lic["telegram_id"], text, parse_mode="HTML", reply_markup=with_home())
         except Exception as e:
             logger.warning(f"Напоминание о лицензии {mask_license_key(lic['license_key'])} не доставлено: {e}")

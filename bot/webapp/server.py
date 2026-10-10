@@ -1202,10 +1202,12 @@ async def _trial_device_guard(request: web.Request, key: Dict[str, Any]):
                 if bot_instance:
                     for admin_id in ADMIN_IDS:
                         try:
+                            from bot.utils.notify_kb import with_home
                             await bot_instance.send_message(
                                 admin_id,
                                 f"⚠️ Повторный пробник на том же устройстве: ключ #{key_id} заблокирован. "
                                 f"Список и исключения: /trial_devices",
+                                reply_markup=with_home(),
                             )
                         except Exception:
                             pass

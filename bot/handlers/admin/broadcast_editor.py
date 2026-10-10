@@ -55,6 +55,11 @@ def _state_error_text(state: dict[str, Any]) -> str:
     )
 
 
+
+def _preview_home():
+    from bot.utils.notify_kb import with_home
+    return with_home()
+
 async def _send_content_preview(bot: Bot, message: Message, content: dict[str, Any]) -> None:
     """Send a real Telegram preview of staged or saved material."""
     if content.get("kind") == BROADCAST_KIND_POLL:
@@ -73,9 +78,10 @@ async def _send_content_preview(bot: Bot, message: Message, content: dict[str, A
             photo=photo_file_id,
             caption=rendered,
             parse_mode="HTML",
+            reply_markup=_preview_home(),
         )
         return
-    await bot.send_message(chat_id=message.chat.id, text=rendered, parse_mode="HTML")
+    await bot.send_message(chat_id=message.chat.id, text=rendered, parse_mode="HTML", reply_markup=_preview_home())
 
 
 async def _finish_exit(callback: CallbackQuery, state: FSMContext) -> None:

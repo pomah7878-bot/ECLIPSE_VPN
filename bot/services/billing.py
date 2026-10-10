@@ -1395,10 +1395,12 @@ async def _run_payment_post_actions(
             from database.requests import get_user_by_id as _get_user
             _owner = _get_user(int(order['user_id'])) or {}
             if _owner.get('telegram_id'):
+                from bot.utils.notify_kb import with_home as _with_home
                 await bot.send_message(
                     int(_owner['telegram_id']),
                     format_auto_coupon_text(_coupon).strip(),
                     parse_mode='HTML',
+                    reply_markup=_with_home(),
                 )
     except Exception as coupon_err:
         logger.warning("Не удалось выдать автокупон order=%s: %s", order.get('order_id'), coupon_err)
@@ -1494,11 +1496,12 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
             logger.warning(f"Не удалось проверить черновой статус ключа {key_id} для уведомления: {e}")
 
     try:
+        from bot.utils.notify_kb import with_home as _with_home
         await bot.send_message(
             telegram_id,
             text,
             parse_mode='HTML',
-            reply_markup=markup,
+            reply_markup=_with_home(markup),
         )
         return True
     except Exception as error:
@@ -1510,6 +1513,11 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
             error,
         )
         return False
+
+
+def _notify_home():
+    from bot.utils.notify_kb import with_home
+    return with_home()
 
 
 async def _handle_late_payment(order: Dict[str, Any]) -> str:
@@ -1539,6 +1547,7 @@ async def _handle_late_payment(order: Dict[str, Any]) -> str:
                         f"Заказ: <code>{order_id}</code>, статус: {order.get('status')}\n"
                         + (f"Зачислено на баланс клиента: {cents / 100:.2f} ₽" if cents else "Сумма не зачислена автоматически — проверьте вручную."),
                         parse_mode='HTML',
+                        reply_markup=_notify_home(),
                     )
                 except Exception:
                     pass
@@ -1623,6 +1632,7 @@ async def _process_payment_order_inner(
                     raise RuntimeError(f"Не удалось зачислить пополнение по заказу {order_id}")
         amount_rub = int(order.get('final_amount_cents') or order.get('amount_cents') or 0) / 100
         text = f"✅ Баланс пополнен на {amount_rub:.2f} ₽!"
+        order["_payment_action"] = "topup"
         return True, text, order
 
     if tariff_id and vpn_key_id:
@@ -1704,7 +1714,7 @@ async def _notify_admins_unfulfilled(bot: Any, order_id: str, error: Exception) 
         )
         for admin_id in list(ADMIN_IDS)[:5]:
             try:
-                await bot.send_message(admin_id, text, parse_mode='HTML')
+                await bot.send_message(admin_id, text, parse_mode='HTML', reply_markup=_notify_home())
             except Exception:
                 pass
     except Exception as notify_err:

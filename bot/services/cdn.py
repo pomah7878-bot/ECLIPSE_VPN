@@ -271,17 +271,111 @@ def cdn_badge(tariff: Optional[Dict[str, Any]]) -> str:
     return f"+CDN (обход БС) {gb} ГБ" if gb > 0 else ""
 
 
+# ------------------------------------------- повтор невыданных пакетов из тарифа --
+# Если панель не приняла CDN-клиента при покупке/продлении тарифа, клиент уже заплатил за CDN.
+# Запоминаем ключ, предупреждаем клиента и админа один раз и повторяем попытку раз в час.
+
+_PENDING_KEY = "cdn_pending_grants"
+PENDING_MAX_TRIES = 24
+
+
+def _pending_load() -> Dict[str, Dict[str, Any]]:
+    try:
+        import json
+        from database.db_settings import get_setting
+        data = json.loads(get_setting(_PENDING_KEY, "{}") or "{}")
+        return data if isinstance(data, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _pending_save(data: Dict[str, Dict[str, Any]]) -> None:
+    import json
+    from database.db_settings import set_setting
+    set_setting(_PENDING_KEY, json.dumps(data, ensure_ascii=False))
+
+
+def _pending_add(key_id: int, error: str) -> bool:
+    """Запоминает невыданный пакет. True — ключ добавлен впервые (значит, надо оповестить)."""
+    data = _pending_load()
+    k = str(int(key_id))
+    is_new = k not in data
+    entry = data.get(k) or {"tries": 0, "since": datetime.utcnow().isoformat(timespec="seconds")}
+    entry["error"] = str(error)[:200]
+    data[k] = entry
+    _pending_save(data)
+    return is_new
+
+
+def _pending_remove(key_id: int) -> None:
+    data = _pending_load()
+    if data.pop(str(int(key_id)), None) is not None:
+        _pending_save(data)
+
+
+async def _notify_admins(bot, text: str) -> None:
+    try:
+        from config import ADMIN_IDS
+        from bot.utils.notify_kb import with_home
+        for admin_id in list(ADMIN_IDS)[:5]:
+            try:
+                await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=with_home())
+            except Exception as e:  # noqa: BLE001
+                logger.debug("CDN: уведомление админу %s не доставлено: %s", admin_id, e)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("CDN: не удалось уведомить админов: %s", e)
+
+
+async def _on_grant_failed(key: Dict[str, Any], error: str) -> None:
+    """Пакет из тарифа не выдан: оповещаем клиента и админа (один раз) и ставим повтор."""
+    key_id = int(key["id"])
+    first = _pending_add(key_id, error)
+    if not first:
+        return
+    try:
+        from bot.utils.runtime_state import get_bot_instance
+        bot = get_bot_instance()
+        if not bot:
+            return
+        await _notify(
+            bot, key,
+            "⚠️ <b>CDN из вашего тарифа пока не подключился.</b>\n\n"
+            "Оплата получена, мы повторяем подключение автоматически и сообщим, когда оно заработает. "
+            "Обычные подключения работают как раньше. Если CDN не появится в течение суток, напишите в поддержку.",
+        )
+        who = f"@{key.get('username')}" if key.get("username") else f"tg {key.get('telegram_id') or '—'}"
+        await _notify_admins(
+            bot,
+            "❌ <b>Не выдан CDN из тарифа</b>\n\n"
+            f"Ключ: #{key_id}, владелец: {who}\n"
+            f"Ошибка: {str(error)[:200]}\n"
+            "Повторяю подключение раз в час. Проверьте CDN-инбаунд на серверах: /cdn → «Проверить инбаунд».",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.debug("CDN: оповещение о сбое выдачи не отправлено: %s", e)
+
+
 async def grant_tariff_pack(key_id: int) -> None:
     """Подключает пакет CDN, входящий в тариф ключа. Никогда не бросает исключений:
-    сбой CDN не должен ломать покупку или продление подписки."""
+    сбой CDN не должен ломать покупку или продление подписки. При сбое клиент и админ
+    оповещаются, выдача повторяется раз в час (retry_pending_grants)."""
+    key = None
     try:
         from database.db_tariffs import get_tariff_by_id
         from database.requests import get_vpn_key_by_id
         key = get_vpn_key_by_id(int(key_id))
-        if not key or not key.get("tariff_id") or is_cdn_tariff(key.get("tariff_id")):
+        if not key:
+            _pending_remove(key_id)
             return
+        if not key.get("tariff_id") or is_cdn_tariff(key.get("tariff_id")):
+            return
+        _end = _key_end(key)
+        if _end and _end <= datetime.utcnow():
+            _pending_remove(key_id)
+            return  # подписка уже истекла: выдавать нечего
         gb = effective_tariff_cdn_gb(key["tariff_id"])
         if gb <= 0:
+            _pending_remove(key_id)
             return
         tariff = get_tariff_by_id(int(key["tariff_id"]), raw=True) or {}
         if (tariff.get("price_rub") or 0) <= 1 and (tariff.get("price_cents") or 0) <= 0 \
@@ -297,11 +391,14 @@ async def grant_tariff_pack(key_id: int) -> None:
             except ValueError:
                 until = None
             if until and until >= want_until - timedelta(hours=1):
+                _pending_remove(key_id)
                 return  # пакет уже действует до конца подписки
         result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False, to_key_end=bool(end), carry=True)
         if not result.get("ok"):
             logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, result.get("error"))
+            await _on_grant_failed(key, str(result.get("error") or "неизвестная ошибка"))
         else:
+            _pending_remove(key_id)
             try:
                 from bot.utils.runtime_state import get_bot_instance
                 bot = get_bot_instance()
@@ -311,6 +408,43 @@ async def grant_tariff_pack(key_id: int) -> None:
                 logger.debug("CDN: уведомление о пакете из тарифа не отправлено: %s", e)
     except Exception as e:  # noqa: BLE001
         logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, e)
+        if key:
+            try:
+                await _on_grant_failed(key, str(e))
+            except Exception:  # noqa: BLE001
+                pass
+
+
+async def retry_pending_grants(bot) -> Dict[str, int]:
+    """Раз в час повторяет невыданные пакеты из тарифов. После PENDING_MAX_TRIES попыток сдаётся
+    и сообщает админу."""
+    stats = {"retried": 0, "done": 0, "gave_up": 0}
+    data = _pending_load()
+    for k in list(data.keys()):
+        key_id = int(k)
+        entry = data.get(k) or {}
+        tries = int(entry.get("tries") or 0) + 1
+        stats["retried"] += 1
+        data = _pending_load()
+        if k in data:
+            data[k]["tries"] = tries
+            _pending_save(data)
+        await grant_tariff_pack(key_id)
+        data = _pending_load()
+        if k not in data:
+            stats["done"] += 1
+            continue
+        if tries >= PENDING_MAX_TRIES:
+            data.pop(k, None)
+            _pending_save(data)
+            stats["gave_up"] += 1
+            await _notify_admins(
+                bot,
+                f"🛑 <b>CDN из тарифа не выдан после {tries} попыток</b>\n\n"
+                f"Ключ: #{key_id}. Автоповтор остановлен. Выдайте пакет вручную: "
+                "Пользователи → ключ → «🌐 CDN-пакет».",
+            )
+    return stats
 
 
 async def fulfil_paid_order(key_id: int, order_id: str) -> Dict[str, Any]:
@@ -868,6 +1002,43 @@ async def notify_admin_grant(bot, key_id: int, result: Dict[str, Any]) -> None:
         logger.debug("CDN: уведомление о выдаче администратором не отправлено: %s", e)
 
 
+REMIND_DAYS = 3
+_REMIND_KEY = "cdn_expiry_notified"
+
+
+async def _remind_pack_expiry(bot, key: Dict[str, Any], pack: Dict[str, Any], expires: Optional[datetime]) -> bool:
+    """За REMIND_DAYS дней до конца пакета (если он заканчивается раньше подписки) напоминает клиенту.
+    Один раз на срок пакета. Пакеты, которые длятся до конца подписки, отдельно не напоминают:
+    о конце подписки клиент уже узнаёт из обычного напоминания."""
+    try:
+        if not expires:
+            return False
+        left = expires - datetime.utcnow()
+        if left.total_seconds() <= 0 or left > timedelta(days=REMIND_DAYS):
+            return False
+        end = _key_end(key)
+        if end and end - expires <= timedelta(days=1):
+            return False
+        import json
+        from database.db_settings import get_setting, set_setting
+        try:
+            sent = json.loads(get_setting(_REMIND_KEY, "{}") or "{}")
+        except ValueError:
+            sent = {}
+        token = str(pack.get("expires_at"))
+        if sent.get(str(key["id"])) == token:
+            return False
+        sent[str(key["id"])] = token
+        set_setting(_REMIND_KEY, json.dumps(sent))
+        days = max(1, math.ceil(left.total_seconds() / 86400))
+        await _notify(bot, key, f"⏳ <b>Пакет CDN закончится через {days} дн.</b>\n"
+                                "Обычные ключи подписки работают как раньше." + _refill_hint())
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.debug("CDN: напоминание о сроке пакета: %s", e)
+        return False
+
+
 async def process_cdn_packs(bot) -> Dict[str, int]:
     """Раз в час: срок, расход, приостановка при неактивном ключе, уведомления."""
     from database.db_keys import get_vpn_key_by_id, is_key_active
@@ -892,6 +1063,9 @@ async def process_cdn_packs(bot) -> Dict[str, int]:
                 stats["notified"] += 1
                 continue
             key_ok = is_key_active(key) and not key.get("is_banned")
+            if pack["status"] == db_cdn.STATUS_ACTIVE and key_ok:
+                if await _remind_pack_expiry(bot, key, pack, expires):
+                    stats["notified"] += 1
             if pack["status"] == db_cdn.STATUS_SUSPENDED:
                 if key_ok:
                     res = await restore_suspended_pack(key_id)
@@ -930,11 +1104,20 @@ async def run_cdn_scheduler(bot) -> None:
     await asyncio.sleep(90)
     while True:
         try:
+            if _pending_load():
+                async with panel_sync_coordinator.regular():
+                    rstats = await retry_pending_grants(bot)
+                logger.info("🌐 CDN: повтор невыданных пакетов: %s", rstats)
             if db_cdn.list_packs([db_cdn.STATUS_ACTIVE, db_cdn.STATUS_SUSPENDED]):
                 async with panel_sync_coordinator.regular():
                     stats = await process_cdn_packs(bot)
                 if any(stats.values()):
                     logger.info("🌐 CDN-пакеты: %s", stats)
+            try:
+                from bot.services import yc_cdn
+                await yc_cdn.check_limits(bot)
+            except Exception as e:  # noqa: BLE001
+                logger.debug("CDN: проверка лимитов провайдера: %s", e)
             await asyncio.sleep(3600)
         except asyncio.CancelledError:
             logger.info("Планировщик CDN-пакетов остановлен")

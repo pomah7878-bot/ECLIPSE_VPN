@@ -102,6 +102,46 @@ async def emit_key_lifecycle_event_safe(event: str, context: Dict[str, Any]) -> 
         return []
 
 
+async def _send_expired_notice(key: Dict[str, Any]) -> None:
+    """Клиенту — сообщение «срок ключа закончился» с кнопкой продления (только для свежих истечений,
+    чтобы при первом запуске не завалить сообщениями о давно истёкших ключах).
+    Отключается настройкой key_expired_notice_enabled = 0."""
+    try:
+        from datetime import datetime, timedelta
+        from database.requests import get_setting
+        if str(get_setting('key_expired_notice_enabled', '1') or '1').strip() == '0':
+            return
+        telegram_id = key.get('telegram_id')
+        if not telegram_id or int(telegram_id) <= 0 or key.get('is_banned'):
+            return
+        raw = str(key.get('expires_at') or '')
+        try:
+            expires = datetime.fromisoformat(raw.replace('T', ' ')[:19])
+        except ValueError:
+            return
+        if datetime.utcnow() - expires > timedelta(days=2):
+            return
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        from bot.services.user_notify import notify_user
+        from bot.utils.runtime_state import get_bot_instance
+        bot = get_bot_instance()
+        if not bot:
+            return
+        name = key.get('custom_name') or f"ключ #{key.get('id')}"
+        from bot.utils.text import escape_html
+        await notify_user(
+            bot, telegram_id,
+            f"⏰ <b>Срок действия ключа «{escape_html(str(name))}» закончился</b>\n\n"
+            "Доступ к VPN приостановлен. Продлите подписку: ключ и ссылка в приложении останутся "
+            "прежними, ничего настраивать заново не нужно.",
+            InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="💳 Продлить", callback_data=f"key_renew:{int(key['id'])}")
+            ]]),
+        )
+    except Exception as e:
+        logger.debug(f"Уведомление об истечении ключа не отправлено: {e}")
+
+
 async def process_expired_key_lifecycle_events(limit: Optional[int] = None) -> list[Dict[str, Any]]:
     """Issue key_expired once for each key_id+expires_at."""
     from database.requests import (
@@ -142,6 +182,7 @@ async def process_expired_key_lifecycle_events(limit: Optional[int] = None) -> l
         if not claimed:
             continue
 
+        await _send_expired_notice(key)
         hook_results = await emit_key_lifecycle_event_safe('key_expired', context)
         processed.append({
             'key_id': key_id,

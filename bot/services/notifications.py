@@ -99,7 +99,7 @@ def _get_payment_action(order: Dict[str, Any]) -> str:
         return 'trial'
 
     explicit_action = order.get('_payment_action')
-    if explicit_action in ('new_key', 'renewal', 'trial', 'cdn_pack'):
+    if explicit_action in ('new_key', 'renewal', 'trial', 'cdn_pack', 'topup'):
         return explicit_action
 
     return 'renewal' if order.get('vpn_key_id') else 'new_key'
@@ -405,6 +405,8 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
             header = '🎁 <b>Пробная подписка</b>'
         elif action == 'cdn_pack':
             header = '🈴 <b>Пакет CDN</b>'
+        elif action == 'topup':
+            header = '💳 <b>Пополнение баланса</b>'
         elif action == 'renewal':
             header = '🔄 <b>Продление</b>'
         else:
@@ -427,7 +429,8 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
         # We show the host only for a real renewal of an existing key.
         if action == 'renewal' and server_name != 'Не выбран':
             lines.append(f'🌐 Хост: {escape_html(server_name)}')
-        lines.append(f'🎫 Тариф: {escape_html(tariff_name)}')
+        if action != 'topup':
+            lines.append(f'🎫 Тариф: {escape_html(tariff_name)}')
         lines.append(f'💳 Метод: {payment_label}')
         lines.append(f'💵 Сумма: {amount_str}')
         try:
@@ -461,7 +464,8 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
         # Sent to all admins
         for admin_id in ADMIN_IDS:
             try:
-                await bot.send_message(admin_id, text, parse_mode='HTML', reply_markup=reply_markup)
+                from bot.utils.notify_kb import with_home
+                await bot.send_message(admin_id, text, parse_mode='HTML', reply_markup=with_home(reply_markup))
             except Exception as e:
                 logger.warning(f'Не удалось отправить уведомление админу {admin_id}: {e}')
 

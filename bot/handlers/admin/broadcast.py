@@ -144,6 +144,11 @@ def reset_broadcast_state() -> None:
     set_broadcast_stop_requested(False)
 
 
+
+def _broadcast_home():
+    from bot.utils.notify_kb import with_home
+    return with_home()
+
 async def try_mark_broadcast_started() -> bool:
     """Atomically reserves the right to launch a newsletter."""
     async with _broadcast_state_lock:
@@ -800,14 +805,16 @@ async def broadcast_confirm(callback: CallbackQuery, bot: Bot):
                         chat_id=user_id,
                         photo=photo_file_id,
                         caption=rendered_text,
-                        parse_mode="HTML"
+                        parse_mode="HTML",
+                        reply_markup=_broadcast_home(),
                     )
                 else:
                     rendered_text = render_broadcast_message_text(text, int(user_id))
                     await bot.send_message(
                         chat_id=user_id,
                         text=rendered_text,
-                        parse_mode="HTML"
+                        parse_mode="HTML",
+                        reply_markup=_broadcast_home(),
                     )
                 sent += 1
             except Exception as e:

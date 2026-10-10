@@ -248,3 +248,58 @@ def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]], client_
         "Период предоплаты может начинаться не с 1 числа, поэтому границы месяца приблизительные.</i>",
     ]
     return "\n".join(lines)
+
+
+# --------------------------------------------------- предупреждения о лимите --
+ALERT_STEPS = (70, 90, 100)
+_ALERT_KEY = "yc_alert_state"
+
+
+async def check_limits(bot) -> Optional[int]:
+    """Раз в час: предупреждает админов, когда месячный трафик подходит к включённым в прайс ГБ.
+    Каждый порог (70, 90, 100%) отправляется один раз за месяц. Возвращает порог или None."""
+    if not is_configured():
+        return None
+    summary = await fetch_summary(force=True)
+    if not summary.get("ok"):
+        return None
+    import json
+    included = float(get_included_gb()) * GB
+    if included <= 0:
+        return None
+    used = float(summary.get("month_bytes") or 0)
+    pct = used * 100.0 / included
+    month = str(summary.get("month_start") or "")
+    try:
+        state = json.loads(_setting(_ALERT_KEY, "{}") or "{}")
+    except ValueError:
+        state = {}
+    if state.get("month") != month:
+        state = {"month": month, "pct": 0}
+    step = max((s for s in ALERT_STEPS if pct >= s), default=0)
+    if step <= int(state.get("pct") or 0):
+        return None
+    br = month_breakdown(used, float(summary.get("month_requests") or 0))
+    extra = max(0.0, used - included)
+    text = (
+        f"📊 <b>CDN у провайдера: использовано {pct:.0f}% включённого трафика</b>\n\n"
+        f"За месяц с {month}: {_gb(used)} из {_gb(included)}.\n"
+        + (f"Сверх лимита уже {_gb(extra)}: каждый следующий ГБ стоит {get_price_per_gb():g} ₽.\n"
+           if extra > 0 else
+           f"Дальше каждый ГБ сверх лимита стоит {get_price_per_gb():g} ₽.\n")
+        + f"Ориентировочный расход за месяц: {_money(br.get('total'))}.\n\n"
+        "Что можно сделать: поднять цену или уменьшить объём пакета в /cdn, "
+        "посмотреть расход по клиентам в «CDN у провайдера»."
+    )
+    try:
+        from config import ADMIN_IDS
+        from bot.utils.notify_kb import with_home
+        for admin_id in list(ADMIN_IDS)[:5]:
+            try:
+                await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=with_home())
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Yandex CDN: алерт админу %s не доставлен: %s", admin_id, e)
+    finally:
+        state["pct"] = step
+        set_setting_value(_ALERT_KEY, json.dumps(state))
+    return step

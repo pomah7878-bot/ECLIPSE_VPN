@@ -94,6 +94,11 @@ def format_admin_support_card(
     return "\n".join(lines)
 
 
+
+def _with_home(markup):
+    from bot.utils.notify_kb import with_home
+    return with_home(markup)
+
 async def copy_support_message(
     bot: Bot,
     *,
@@ -152,7 +157,7 @@ async def send_user_message_to_admins(
                     user=user,
                     assigned_admin_id=assigned_admin_id,
                 ),
-                reply_markup=admin_support_reply_kb(thread["id"]),
+                reply_markup=_with_home(admin_support_reply_kb(thread["id"])),
             )
             if save_notification:
                 from database.requests import record_support_admin_notification
@@ -220,7 +225,7 @@ async def send_ai_escalation_to_admins(
                 bot,
                 chat_id=admin_id,
                 text=card_text,
-                reply_markup=admin_support_reply_kb(thread["id"]),
+                reply_markup=_with_home(admin_support_reply_kb(thread["id"])),
             )
             if save_notification:
                 from database.requests import record_support_admin_notification
@@ -252,7 +257,7 @@ async def send_admin_message_to_user(
         bot,
         chat_id=int(thread["user_telegram_id"]),
         source_message=source_message,
-        reply_markup=user_support_reply_kb(thread["id"]),
+        reply_markup=_with_home(user_support_reply_kb(thread["id"])),
     )
 
 
