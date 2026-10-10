@@ -116,6 +116,11 @@ async def my_keys_handler(callback: CallbackQuery):
     await callback.answer()
 
 
+_site_code_home_kb = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
+])
+
+
 @router.callback_query(F.data == 'site_login_code')
 async def site_login_code_handler(callback: CallbackQuery, state: FSMContext):
     """Генерирует одноразовый код для входа в личный кабинет на сайте
@@ -139,6 +144,7 @@ async def site_login_code_handler(callback: CallbackQuery, state: FSMContext):
         f"«Личный кабинет» — увидите все свои ключи, трафик и сможете продлить подписку.\n\n"
         f"⏳ Код действует 10 минут и одноразовый.",
         parse_mode='HTML',
+        reply_markup=_site_code_home_kb,
     )
 
     from bot.services.trial_phone_registry import has_telegram_id_linked_phone
