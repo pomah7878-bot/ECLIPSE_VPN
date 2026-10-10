@@ -2051,13 +2051,13 @@ async def query_full_customer_profile(telegram_id: int) -> dict:
         )
         profile["available_promo_codes"] = [dict(row) for row in cur.fetchall()]
 
-        cur.execute(
-            """SELECT name, duration_days, price_rub, traffic_limit_gb
-               FROM tariffs
-               WHERE is_active = 1
-               ORDER BY display_order, duration_days"""
-        )
-        profile["available_tariffs"] = [dict(row) for row in cur.fetchall()]
+        # Тарифы с теми же ценами, что видит клиент (с учётом CDN в тарифах группы, без служебного)
+        from database.db_tariffs import get_all_tariffs
+        profile["available_tariffs"] = [
+            {k: t.get(k) for k in ("name", "duration_days", "price_rub", "traffic_limit_gb")}
+            for t in sorted(get_all_tariffs(include_hidden=False),
+                            key=lambda t: (t.get("display_order") or 0, t.get("duration_days") or 0))
+        ]
 
         cur.execute("SELECT key, value FROM settings WHERE key IN ('referral_enabled', 'trial_enabled')")
         settings_rows = {row["key"]: row["value"] for row in cur.fetchall()}
