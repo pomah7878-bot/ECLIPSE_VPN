@@ -108,7 +108,7 @@ def ensure_cdn_tariff() -> int:
         "traffic_limit_gb": gb, "is_active": 0,
     }
     tid = get_cdn_tariff_id()
-    current = db_tariffs.get_tariff_by_id(tid) if tid else None
+    current = db_tariffs.get_tariff_by_id(tid, raw=True) if tid else None
     if current:
         changed = {k: v for k, v in fields.items() if current.get(k) != v}
         if usd_cents and current.get("price_cents") != usd_cents:
@@ -125,42 +125,106 @@ def ensure_cdn_tariff() -> int:
     return tid
 
 
-# ----------------------------------------------- CDN, входящий в обычный тариф --
-# Админ может указать для тарифа объём CDN (ГБ): при покупке и продлении подписки
-# по такому тарифу пакет подключается сразу, на срок тарифа. Хранится в настройке
-# cdn_tariff_gb как JSON {"<id тарифа>": ГБ}.
+# ----------------------------------------------- CDN, входящий в тарифы группы --
+# Режим «в тарифах»: CDN входит во все платные тарифы выбранных групп. Объём один на всех
+# (cdn_pack_gb), срок пакета равен сроку тарифа, цена CDN прибавляется к цене тарифа.
 
-def _tariff_gb_map() -> Dict[str, int]:
-    import json
+MODE_OFF, MODE_ADDON, MODE_TARIFFS = "off", "addon", "tariffs"
+
+
+def get_cdn_mode() -> str:
+    """Режим CDN: off — выключен; addon — платный пакет отдельной кнопкой;
+    tariffs — CDN входит в тарифы выбранных групп (платный пакет не продаётся)."""
     try:
         from database.db_settings import get_setting
-        raw = json.loads(get_setting("cdn_tariff_gb", "{}") or "{}")
-        return {str(k): int(v) for k, v in raw.items() if int(v) > 0}
+        mode = str(get_setting("cdn_mode", "") or "").strip()
+        if mode in (MODE_OFF, MODE_ADDON, MODE_TARIFFS):
+            return mode
+        # совместимость со старым выключателем
+        return MODE_OFF if str(get_setting("cdn_enabled", "1") or "1").strip() == "0" else MODE_ADDON
     except Exception:  # noqa: BLE001
-        return {}
+        return MODE_ADDON
+
+
+def get_cdn_group_ids() -> List[int]:
+    try:
+        from database.db_settings import get_setting
+        raw = str(get_setting("cdn_group_ids", "") or "")
+        return sorted({int(x) for x in raw.replace(";", ",").split(",") if x.strip().isdigit()})
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def toggle_cdn_group(group_id: int) -> bool:
+    """Включает/выключает CDN для группы тарифов. Возвращает новое состояние."""
+    from database.db_settings import set_setting
+    ids = set(get_cdn_group_ids())
+    if group_id in ids:
+        ids.discard(group_id)
+        on = False
+    else:
+        ids.add(group_id)
+        on = True
+    set_setting("cdn_group_ids", ",".join(str(i) for i in sorted(ids)))
+    return on
 
 
 def get_tariff_cdn_gb(tariff_id: Any) -> int:
+    """Объём CDN, входящий в тариф (настройка, без учёта главного выключателя)."""
+    if get_cdn_mode() != MODE_TARIFFS:
+        return 0
     try:
-        return int(_tariff_gb_map().get(str(int(tariff_id or 0)), 0))
+        tid = int(tariff_id or 0)
     except (TypeError, ValueError):
         return 0
-
-
-def set_tariff_cdn_gb(tariff_id: int, gb: int) -> None:
-    import json
-    from database.db_settings import set_setting
-    data = _tariff_gb_map()
-    if gb > 0:
-        data[str(int(tariff_id))] = int(gb)
-    else:
-        data.pop(str(int(tariff_id)), None)
-    set_setting("cdn_tariff_gb", json.dumps(data))
+    if tid <= 0 or is_cdn_tariff(tid):
+        return 0
+    try:
+        from database.db_groups import get_tariff_group_id
+        if int(get_tariff_group_id(tid)) not in get_cdn_group_ids():
+            return 0
+    except Exception:  # noqa: BLE001
+        return 0
+    return get_cdn_pack_gb()
 
 
 def effective_tariff_cdn_gb(tariff_id: Any) -> int:
-    """CDN в тарифе с учётом главного выключателя: 0, если CDN выключен или не настроен."""
+    """CDN в тарифе с учётом готовности CDN: 0, если выключен или не настроен инбаунд."""
     return get_tariff_cdn_gb(tariff_id) if is_cdn_active() else 0
+
+
+def tariff_cdn_surcharge_rub(tariff_id: Any) -> int:
+    """Доплата за CDN в цене тарифа, ₽ (0, если CDN в тариф не входит)."""
+    if effective_tariff_cdn_gb(tariff_id) <= 0:
+        return 0
+    cents = get_cdn_price_cents()
+    return max(1, int(round(cents / 100))) if cents > 0 else 0
+
+
+def apply_cdn_surcharge(tariff: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Прибавляет цену CDN к цене тарифа (₽, USDT и Stars), если CDN входит в тариф.
+    Бесплатные тарифы не трогает. Повторно не применяется."""
+    if not tariff or "cdn_surcharge_rub" in tariff:
+        return tariff
+    try:
+        add = tariff_cdn_surcharge_rub(tariff.get("id"))
+        paid = (tariff.get("price_rub") or 0) > 1 or (tariff.get("price_cents") or 0) > 0 \
+            or (tariff.get("price_stars") or 0) > 0
+        if add <= 0 or not paid:
+            return tariff
+        tariff["cdn_surcharge_rub"] = add
+        if (tariff.get("price_rub") or 0) > 1:
+            tariff["price_rub"] = int(tariff["price_rub"]) + add
+        from bot.services.stars_pricing import rate_rub, calc_stars
+        rate = rate_rub()
+        if rate:
+            tariff["price_cents"] = int(tariff.get("price_cents") or 0) + int(round(add / rate * 100))
+        if int(tariff.get("price_stars") or 0) > 0:
+            extra = calc_stars({"price_rub": add, "price_cents": 0}) or 0
+            tariff["price_stars"] = int(tariff["price_stars"]) + extra
+    except Exception as e:  # noqa: BLE001
+        logger.warning("CDN: не удалось добавить цену CDN к тарифу: %s", e)
+    return tariff
 
 
 def cdn_badge(tariff: Optional[Dict[str, Any]]) -> str:
@@ -182,17 +246,22 @@ async def grant_tariff_pack(key_id: int) -> None:
         gb = effective_tariff_cdn_gb(key["tariff_id"])
         if gb <= 0:
             return
-        tariff = get_tariff_by_id(int(key["tariff_id"])) or {}
+        tariff = get_tariff_by_id(int(key["tariff_id"]), raw=True) or {}
+        if (tariff.get("price_rub") or 0) <= 1 and (tariff.get("price_cents") or 0) <= 0 \
+                and (tariff.get("price_stars") or 0) <= 0:
+            return  # бесплатный и пробный тарифы CDN не получают
         days = int(tariff.get("duration_days") or 0) or get_cdn_pack_days()
         pack = db_cdn.get_pack(int(key_id))
+        end = _key_end(key)
+        want_until = end or (datetime.utcnow() + timedelta(days=days))
         if pack and pack["status"] == db_cdn.STATUS_ACTIVE and int(pack["limit_bytes"] or 0) >= gb * GB:
             try:
                 until = datetime.fromisoformat(str(pack["expires_at"]))
             except ValueError:
                 until = None
-            if until and until >= datetime.utcnow() + timedelta(days=days):
-                return  # уже есть пакет не хуже
-        result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False)
+            if until and until >= want_until - timedelta(hours=1):
+                return  # пакет уже действует до конца подписки
+        result = await activate_pack(int(key_id), gb=gb, days=days, is_free=False, to_key_end=bool(end))
         if not result.get("ok"):
             logger.warning("CDN: пакет из тарифа не выдан, ключ %s: %s", key_id, result.get("error"))
     except Exception as e:  # noqa: BLE001
@@ -215,11 +284,7 @@ def paid_message(gb: int, days: int) -> str:
 def is_cdn_enabled() -> bool:
     """Главный выключатель CDN (⚙️ /cdn). Выключен — тарифы без CDN, продаж нет;
     настройки тарифов сохраняются, действующие пакеты работают до конца срока."""
-    try:
-        from database.db_settings import get_setting
-        return str(get_setting("cdn_enabled", "1") or "1").strip() != "0"
-    except Exception:  # noqa: BLE001
-        return True
+    return get_cdn_mode() != MODE_OFF
 
 
 def is_cdn_active() -> bool:
@@ -228,8 +293,9 @@ def is_cdn_active() -> bool:
 
 
 def get_sale_price_cents() -> int:
-    """Цена для клиента: 0, если CDN выключен или не настроен (покупка недоступна)."""
-    return get_cdn_price_cents() if is_cdn_active() else 0
+    """Цена платного пакета для клиента: 0 (покупка недоступна), если CDN выключен, не настроен
+    или работает в режиме «в тарифах»."""
+    return get_cdn_price_cents() if is_cdn_active() and get_cdn_mode() == MODE_ADDON else 0
 
 
 def format_price(cents: int) -> str:
@@ -428,14 +494,32 @@ async def get_pack_usage(key: Dict[str, Any]) -> Optional[int]:
 
 # ------------------------------------------------------------- operations --
 
+def _key_end(key: Dict[str, Any]) -> Optional[datetime]:
+    return db_cdn.parse_time(key.get("expires_at")) if key.get("expires_at") else None
+
+
+def pack_term_days(key: Optional[Dict[str, Any]], days: Optional[int] = None) -> int:
+    """Срок платного пакета для ключа, дней: не дольше самой подписки (дни после её окончания
+    пакет всё равно не работает)."""
+    days = int(days if days is not None else get_cdn_pack_days())
+    end = _key_end(key or {})
+    if end:
+        left = (end - datetime.utcnow()).total_seconds()
+        days = min(days, max(1, math.ceil(left / 86400)))
+    return max(1, days)
+
+
 async def activate_pack(
     key_id: int,
     *,
     gb: Optional[int] = None,
     days: Optional[int] = None,
     is_free: bool = False,
+    to_key_end: bool = False,
 ) -> Dict[str, Any]:
-    """Выдаёт/продлевает пакет: клиент панели создаётся заново, счётчик с нуля."""
+    """Выдаёт/продлевает пакет: клиент панели создаётся заново, счётчик с нуля.
+    Платный пакет не живёт дольше подписки; to_key_end — пакет действует ровно до конца подписки
+    (CDN в тарифе). Бесплатный пакет админа срезается только если срок не указан явно."""
     from database.db_keys import get_vpn_key_by_id
     gb = int(gb if gb is not None else get_cdn_pack_gb())
     days = int(days if days is not None else get_cdn_pack_days())
@@ -446,10 +530,22 @@ async def activate_pack(
         problem = _validate_key(key)
         if problem:
             return {"ok": False, "error": problem}
+        now = datetime.utcnow()
+        span = timedelta(days=days)
+        end = _key_end(key)
+        if end:
+            left = end - now
+            if to_key_end:
+                span = left
+            elif not is_free:
+                span = min(span, left)
+            if span.total_seconds() <= 0:
+                return {"ok": False, "error": "Подписка ключа истекла: сначала продлите её"}
+        days = max(1, math.ceil(span.total_seconds() / 86400))
         result = await _provision(key, total_gb=gb, expire_days=days)
         if not result["ok"]:
             return result
-        expires_at = datetime.utcnow() + timedelta(days=days)
+        expires_at = now + span
         db_cdn.save_pack(
             key_id, user_id=key.get("user_id"), server_id=key.get("server_id"),
             panel_email=key["panel_email"], limit_bytes=gb * GB, expires_at=expires_at,
@@ -574,6 +670,7 @@ async def purchase_pack(key_id: int, user_id: int) -> Dict[str, Any]:
         problem = validate_key_for_purchase(key)
         if problem:
             return {"ok": False, "error": problem}
+        days = pack_term_days(key, days)
         debit = await debit_user_balance(
             user_id, price, source="cdn_pack", reason=f"Пакет CDN {gb} ГБ на {days} дн.",
             reference_type="cdn_pack", reference_id=str(key_id),

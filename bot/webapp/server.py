@@ -3163,6 +3163,8 @@ def _cdn_key_info(key_id: int, account: Optional[dict] = None) -> dict:
         from bot.services import cdn as _cdn
         from database import db_cdn
         key_id = int(key_id)
+        from database.db_keys import get_vpn_key_by_id as _get_key
+        _cdn_key = _get_key(key_id) or {}
         pack = db_cdn.get_pack(key_id)
         pack_view = None
         if pack:
@@ -3187,7 +3189,7 @@ def _cdn_key_info(key_id: int, account: Optional[dict] = None) -> dict:
             "price_cents": _cdn.get_sale_price_cents(),
             "price_text": _cdn.format_price(_cdn.get_sale_price_cents()),
             "gb": _cdn.get_cdn_pack_gb(),
-            "days": _cdn.get_cdn_pack_days(),
+            "days": _cdn.pack_term_days(_cdn_key),
             "pack": pack_view,
             "balance_cents": balance_cents,
             "tariff_id": (_cdn.ensure_cdn_tariff() if _cdn.get_sale_price_cents() > 0 else 0) or None,

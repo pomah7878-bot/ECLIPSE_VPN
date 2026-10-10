@@ -72,7 +72,7 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
     key_id = int(key['id'])
     pack = db_cdn.get_pack(key_id)
     price = cdn.get_sale_price_cents()
-    gb, days = cdn.get_cdn_pack_gb(), cdn.get_cdn_pack_days()
+    gb, days = cdn.get_cdn_pack_gb(), cdn.pack_term_days(key)
 
     lines = []
     if notice:
@@ -87,6 +87,8 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
         lines.append('\n<b>Ваш пакет</b>\n' + cdn.describe_pack(pack))
     if price > 0:
         lines.append(f'\n<b>Пакет:</b> {gb} ГБ на {days} дн. — <b>{cdn.format_price(price)}</b>')
+        if days < cdn.get_cdn_pack_days():
+            lines.append('ℹ️ Срок пакета ограничен окончанием подписки. Продлите подписку, чтобы CDN работал дольше.')
         lines.append(f'💰 Баланс: {cdn.format_price(int(get_user_balance(key["user_id"]) or 0))}')
         if pack and pack['status'] == 'active':
             lines.append('ℹ️ Новый пакет заменит текущий: остаток объёма и срока не суммируется.')
@@ -123,7 +125,7 @@ async def key_cdn_buy_ask(callback: CallbackQuery):
         return
     text = (
         '🌐 <b>Подтвердите покупку</b>\n\n'
-        f'Пакет CDN: {cdn.get_cdn_pack_gb()} ГБ на {cdn.get_cdn_pack_days()} дн.\n'
+        f'Пакет CDN: {cdn.get_cdn_pack_gb()} ГБ на {cdn.pack_term_days(key)} дн.\n'
         f'Оплата с баланса: <b>{cdn.format_price(price)}</b>'
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
