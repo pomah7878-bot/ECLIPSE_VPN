@@ -32,7 +32,8 @@ SETTING_FIELDS = {
     ),
     'price': (
         'cdn_price_cents', 'Цена пакета, ₽',
-        'Сколько клиент платит с баланса бота за один пакет.\n'
+        'Режим «Доп. функция»: сколько клиент платит за один пакет.\n'
+        'Режим «В тарифах»: доплата, которая прибавляется к цене каждого платного тарифа выбранных групп.\n'
         'Считайте от своих расходов: CDN тарифицируется по исходящему трафику '
         '(цена за ГБ у Yandex × объём пакета), плюс ваша наценка.\n'
         '0 — покупка выключена, кнопка клиентам не показывается (админ по-прежнему '
@@ -65,6 +66,11 @@ def _stats_line() -> str:
     return f'Пакетов всего: {len(packs)}, активных: {active} (из них бесплатных: {free}).'
 
 
+def _group_names(ids) -> str:
+    from database.db_groups import get_all_groups
+    return ', '.join(g['name'] for g in get_all_groups() if g['id'] in set(ids))
+
+
 def _settings_text() -> str:
     from bot.services import cdn
     ids = ', '.join(str(i) for i in sorted(cdn.get_cdn_inbound_ids())) or 'не задан'
@@ -72,10 +78,18 @@ def _settings_text() -> str:
     price_text = cdn.format_price(price) if price > 0 else 'не задана'
     ready_ids = '✅' if cdn.get_cdn_inbound_ids() else '❌'
     ready_price = '✅' if price > 0 else '❌'
-    enabled = cdn.is_cdn_enabled()
-    status = ('✅ <b>включён</b>' if enabled else
-              '⏸ <b>выключен</b>: тарифы без CDN, продаж нет, пакеты из тарифов не выдаются. '
-              'Настройки тарифов сохранены, действующие пакеты клиентов работают до конца срока.')
+    mode = cdn.get_cdn_mode()
+    if mode == cdn.MODE_OFF:
+        status = ('⏸ <b>выключен</b>: в тарифах CDN нет, платный пакет не продаётся, пакеты из тарифов '
+                  'не выдаются. Действующие пакеты клиентов работают до конца срока.')
+    elif mode == cdn.MODE_TARIFFS:
+        names = _group_names(cdn.get_cdn_group_ids())
+        status = ('✅ <b>CDN входит в тарифы</b>. Группы: ' + (escape_html(names) if names else '<b>не выбраны</b>') +
+                  '.\nЦена CDN прибавляется к цене каждого платного тарифа этих групп, клиент получает '
+                  f'{cdn.get_cdn_pack_gb()} ГБ на срок тарифа. Отдельная кнопка покупки пакета скрыта.')
+    else:
+        status = ('✅ <b>доп. функция</b>: клиент покупает пакет отдельно кнопкой «🌐 CDN» в карточке ключа. '
+                  'В тарифах CDN нет.')
     return (
         f'🌐 <b>CDN-пакеты (обход белых списков)</b>\n\nСтатус: {status}\n\n'
         '<b>Что это.</b> Дополнительный ключ в подписке клиента, который идёт через CDN. '
@@ -90,7 +104,9 @@ def _settings_text() -> str:
         f'{ready_price} Цена пакета: <b>{price_text}</b>\n'
         f'• Объём пакета: <b>{cdn.get_cdn_pack_gb()} ГБ</b>\n'
         f'• Срок пакета: <b>{cdn.get_cdn_pack_days()} дн.</b>\n\n'
-        'Клиенты видят кнопку «🌐 CDN» в карточке ключа, когда отмечены оба пункта ✅.\n\n'
+        '<b>Режимы</b> не пересекаются: «Доп. функция» — платный пакет отдельной кнопкой; «В тарифах» — '
+        'CDN входит в тарифы выбранных групп (цена и объём берутся из настроек выше), кнопка покупки скрыта.\n'
+        'В режиме «Доп. функция» клиенты видят кнопку «🌐 CDN» в карточке ключа, когда отмечены оба пункта ✅.\n\n'
         '<b>Выдать бесплатно или изменить объём</b> для одного клиента: '
         'Пользователи → ключ → «🌐 CDN-пакет».\n\n'
         f'📊 {_stats_line()}'
@@ -107,8 +123,18 @@ def _settings_kb() -> InlineKeyboardMarkup:
     }
     rows = [[InlineKeyboardButton(text=f'✏️ {meta[1]}: {values[field]}', callback_data=f'admin_cdn_set:{field}')]
             for field, meta in SETTING_FIELDS.items()]
-    toggle_text = '⏸ Выключить CDN' if cdn.is_cdn_enabled() else '▶️ Включить CDN'
-    rows.insert(0, [InlineKeyboardButton(text=toggle_text, callback_data='admin_cdn_toggle')])
+    mode = cdn.get_cdn_mode()
+    mode_rows = [[InlineKeyboardButton(text=f"{'🟢' if mode == m else '⚪'} {title}", callback_data=f'admin_cdn_mode:{m}')]
+                 for m, title in ((cdn.MODE_OFF, 'Выключен'), (cdn.MODE_ADDON, 'Доп. функция (платный пакет)'),
+                                  (cdn.MODE_TARIFFS, 'В тарифах группы'))]
+    if mode == cdn.MODE_TARIFFS:
+        chosen = set(cdn.get_cdn_group_ids())
+        from database.db_groups import get_all_groups
+        for g in get_all_groups():
+            mode_rows.append([InlineKeyboardButton(
+                text=f"{'🟢' if g['id'] in chosen else '⚪'} Группа: {g['name']}",
+                callback_data=f"admin_cdn_group:{g['id']}")])
+    rows[0:0] = mode_rows
     rows.append([InlineKeyboardButton(text='🔍 Проверить инбаунд на серверах', callback_data='admin_cdn_check')])
     rows.append([
         InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_bot_settings'),
@@ -123,11 +149,28 @@ async def cdn_settings_command(message: Message, state: FSMContext):
     await message.answer(_settings_text(), reply_markup=_settings_kb(), parse_mode='HTML')
 
 
-@router.callback_query(F.data == 'admin_cdn_toggle')
-async def cdn_toggle(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith('admin_cdn_mode:'))
+async def cdn_set_mode(callback: CallbackQuery, state: FSMContext):
     from bot.services import cdn
-    cdn.set_cdn_setting('cdn_enabled', '0' if cdn.is_cdn_enabled() else '1')
-    await callback.answer('CDN включён' if cdn.is_cdn_enabled() else 'CDN выключен')
+    mode = callback.data.split(':')[1]
+    if mode not in (cdn.MODE_OFF, cdn.MODE_ADDON, cdn.MODE_TARIFFS):
+        await callback.answer()
+        return
+    cdn.set_cdn_setting('cdn_mode', mode)
+    cdn.set_cdn_setting('cdn_enabled', '0' if mode == cdn.MODE_OFF else '1')
+    note = ''
+    if mode == cdn.MODE_TARIFFS and not cdn.get_cdn_group_ids():
+        note = ' Отметьте группы тарифов ниже.'
+    await callback.answer({'off': 'CDN выключен', 'addon': 'CDN: доп. функция',
+                           'tariffs': 'CDN входит в тарифы.' + note}[mode], show_alert=bool(note))
+    await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
+
+
+@router.callback_query(F.data.startswith('admin_cdn_group:'))
+async def cdn_toggle_group(callback: CallbackQuery, state: FSMContext):
+    from bot.services import cdn
+    cdn.toggle_cdn_group(int(callback.data.split(':')[1]))
+    await callback.answer()
     await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
 
 
@@ -307,41 +350,3 @@ async def admin_cdn_volume_save(message: Message, state: FSMContext):
     await state.clear()
     notice = f'✅ Объём пакета: {gb} ГБ' if result['ok'] else f"❌ {escape_html(str(result['error']))}"
     await _show_key_cdn(message, key_id, notice)
-
-
-# ---------------------------------------------------- CDN, входящий в тариф --
-
-@router.callback_query(F.data.startswith('admin_tariff_cdn:'))
-async def admin_tariff_cdn_start(callback: CallbackQuery, state: FSMContext):
-    from bot.services import cdn
-    tariff_id = int(callback.data.split(':')[1])
-    await state.set_state(AdminStates.cdn_tariff_gb)
-    await state.update_data(cdn_tariff_id=tariff_id)
-    current = cdn.get_tariff_cdn_gb(tariff_id)
-    await safe_edit_or_send(
-        callback.message,
-        '🌐 <b>CDN в тарифе</b>\n\n'
-        'Сколько ГБ CDN получает клиент вместе с этим тарифом. Пакет подключается сам при покупке '
-        'и при каждом продлении, на срок тарифа.\n'
-        f'Сейчас: <b>{f"{current} ГБ" if current else "не входит"}</b>\n\n'
-        'Отправьте целое число ГБ, либо <code>0</code>, чтобы убрать CDN из тарифа. '
-        'Отдельная покупка пакета остаётся доступной.',
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text='❌ Отмена', callback_data=f'admin_tariff_view:{tariff_id}')]]),
-    )
-    await callback.answer()
-
-
-@router.message(AdminStates.cdn_tariff_gb, F.text, ~F.text.startswith('/'))
-async def admin_tariff_cdn_save(message: Message, state: FSMContext):
-    from bot.services import cdn
-    data = await state.get_data()
-    tariff_id = int(data.get('cdn_tariff_id') or 0)
-    text = (message.text or '').strip()
-    if not tariff_id or not text.isdigit():
-        await message.answer('❌ Введите целое число ГБ (0 — убрать CDN из тарифа)')
-        return
-    cdn.set_tariff_cdn_gb(tariff_id, int(text))
-    await state.clear()
-    from bot.handlers.admin.tariffs import render_tariff_view
-    await render_tariff_view(message, tariff_id, state)
