@@ -1605,6 +1605,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         from database.requests import get_happ_routing_mode, get_effective_happ_routing_profile_json
         routing_mode = get_happ_routing_mode()
         scheme = detected_app  # "happ" или "incy"
+        if detected_app == "incy" and routing_mode != "disabled":
+            # INCY берёт маршрутизацию в порядке: заголовок autorouting →
+            # строка тела с URL → заголовок routing → строка тела с base64.
+            # Если админ управляет маршрутами из бота, чужие источники от
+            # панели (autorouting в заголовке или строки в теле подписки)
+            # перебили бы наш заголовок — убираем их.
+            headers.popall("autorouting", None)
+            headers.popall("routing", None)
+            body = _strip_routing_lines(body)
         _incy_auto = False
         if detected_app == "incy" and routing_mode in ("add", "onadd"):
             from database.requests import (
@@ -1727,6 +1736,37 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp
+
+
+_ROUTING_LINE_RE = re.compile(r"^\s*[A-Za-z][\w+.-]*://(autorouting|routing|onadd)(/|$)", re.I)
+
+
+def _strip_routing_lines(body: bytes) -> bytes:
+    """Убирает из тела подписки служебные строки маршрутизации
+    (incy://autorouting/..., happ://routing/..., ://onadd/...).
+    Тело может быть обычным текстом или base64 со списком ссылок."""
+    def _filter(text: str):
+        lines = text.splitlines()
+        kept = [ln for ln in lines if not _ROUTING_LINE_RE.match(ln)]
+        return None if len(kept) == len(lines) else "\n".join(kept)
+
+    try:
+        text = body.decode("utf-8")
+    except Exception:
+        return body
+    if "://" in text:
+        out = _filter(text)
+        return body if out is None else out.encode("utf-8")
+    try:
+        raw = text.strip().replace("-", "+").replace("_", "/")
+        raw += "=" * (-len(raw) % 4)
+        decoded = base64.b64decode(raw, validate=True).decode("utf-8")
+    except Exception:
+        return body
+    out = _filter(decoded)
+    if out is None:
+        return body
+    return base64.b64encode(out.encode("utf-8"))
 
 
 def _incy_announce(is_expired, days_left, key, webapp_url, bot_username):
