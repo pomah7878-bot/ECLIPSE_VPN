@@ -39,6 +39,7 @@ __all__ = [
     'get_default_happ_routing_profile_json',
     'get_effective_happ_routing_profile_json',
     'prepare_routing_profile',
+    'request_routing_publish',
     'is_client_toggle_enabled',
     'set_client_toggle_enabled',
     'CLIENT_APPS',
@@ -753,6 +754,7 @@ def get_happ_routing_profile_json() -> Optional[str]:
 
 def set_happ_routing_profile_json(profile_json: str) -> None:
     set_setting('happ_routing_profile_json', profile_json.strip())
+    set_setting('routing_force_publish', '1')
 
 
 def get_menu_min_width() -> int:
@@ -780,6 +782,7 @@ def get_happ_routing_profile_name() -> str:
 
 def set_happ_routing_profile_name(name: str) -> None:
     set_setting('happ_routing_profile_name', name.strip())
+    set_setting('routing_force_publish', '1')
 
 
 _HAPP_ROUTING_DEFAULT_TEMPLATE = {
@@ -828,9 +831,15 @@ def _live_profile_refresh():
             except Exception:
                 pass
             try:
-                # переживает перезапуск бота: иначе первые запросы после старта
-                # получали бы урезанный встроенный шаблон, а клиенты — смену профиля туда-обратно
-                set_setting('live_routing_profile', _json.dumps(data, ensure_ascii=False))
+                # версия geo-баз (ETag файлов в GitHub): когда базы обновились, профиль
+                # нужно «опубликовать» заново, чтобы клиенты перекачали их (см. prepare_routing_profile)
+                vers = []
+                for _u in (data.get("Geoipurl"), data.get("Geositeurl")):
+                    _rq_head = _rq.Request(_u, method="HEAD")
+                    with _rq.urlopen(_rq_head, timeout=8) as _hr:
+                        vers.append(_hr.headers.get("ETag") or _hr.headers.get("Last-Modified") or "")
+                if all(vers):
+                    set_setting('live_geo_version', "|".join(vers))
             except Exception:
                 pass
     except Exception:
@@ -886,6 +895,28 @@ def get_effective_happ_routing_profile_json() -> str:
     return custom if custom else get_default_happ_routing_profile_json()
 
 
+def _in_publish_window() -> bool:
+    """Ночное окно публикации изменений маршрутизации (по умолчанию 02:00–06:00
+    по Москве). Настройки: routing_publish_window = 'ч1-ч2' (или 'always' — без
+    ограничения), routing_publish_utc_offset — смещение часового пояса от UTC."""
+    import datetime as _dt
+    window = (get_setting('routing_publish_window', '2-6') or '2-6').strip().lower()
+    if window in ('always', 'any', '*', ''):
+        return True
+    try:
+        h1, h2 = (int(x) for x in window.split('-', 1))
+        off = int(get_setting('routing_publish_utc_offset', '3') or 3)
+    except Exception:
+        return True
+    hour = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=off)).hour
+    return (h1 <= hour < h2) if h1 < h2 else (hour >= h1 or hour < h2)
+
+
+def request_routing_publish() -> None:
+    """Опубликовать изменения профиля сразу (при ручной правке админом)."""
+    set_setting('routing_force_publish', '1')
+
+
 def prepare_routing_profile(profile_json: str, app: str) -> str:
     """Готовит JSON профиля маршрутизации к отправке клиенту.
 
@@ -893,8 +924,14 @@ def prepare_routing_profile(profile_json: str, app: str) -> str:
     профиль с тем же Name только если пришедшее LastUpdated БОЛЬШЕ сохранённого.
     Без него изменения профиля (новые правила, geo-ссылки) у клиентов не
     применяются. Время меняется ТОЛЬКО когда изменилось содержимое профиля
-    (отпечаток в настройках), а не на каждый запрос — иначе клиенты зря
-    перекачивали бы geo-файлы. Если админ сам указал LastUpdated — не трогаем.
+    или версия geo-баз, а не на каждый запрос.
+
+    Ночная публикация: клиенты перекачивают профиль и geo-базы, когда видят
+    новое LastUpdated. Чтобы это происходило не днём, новая версия
+    «публикуется» только в ночном окне (см. _in_publish_window), весь остальной
+    день клиентам отдаётся последняя опубликованная. Исключения: первая
+    публикация, ручная правка профиля админом (request_routing_publish),
+    окно 'always'. Если админ сам указал LastUpdated — не трогаем.
     Для INCY дополнительно useChunkFiles (булево, имя из его документации)."""
     import json as _json, hashlib as _hl, time as _time
     try:
@@ -905,12 +942,20 @@ def prepare_routing_profile(profile_json: str, app: str) -> str:
         return profile_json
     if not profile.get('LastUpdated'):
         body = {k: v for k, v in profile.items() if k != 'LastUpdated'}
-        digest = _hl.sha1(_json.dumps(body, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
-        if get_setting('routing_profile_hash', '') != digest:
-            set_setting('routing_profile_hash', digest)
-            set_setting('routing_profile_ts', str(int(_time.time())))
-        ts = get_setting('routing_profile_ts', '') or str(int(_time.time()))
-        profile['LastUpdated'] = ts
+        fingerprint = _json.dumps(body, sort_keys=True, ensure_ascii=False) + "|" + get_setting('live_geo_version', '')
+        digest = _hl.sha1(fingerprint.encode('utf-8')).hexdigest()
+        try:
+            pub = _json.loads(get_setting('routing_published', '') or '{}')
+        except Exception:
+            pub = {}
+        force = get_setting('routing_force_publish', '') == '1'
+        if not pub.get('profile') or (pub.get('digest') != digest and (force or _in_publish_window())):
+            pub = {'digest': digest, 'ts': str(int(_time.time())), 'profile': body}
+            set_setting('routing_published', _json.dumps(pub, ensure_ascii=False))
+        if force:
+            set_setting('routing_force_publish', '')
+        profile = dict(pub['profile'])
+        profile['LastUpdated'] = pub['ts']
     if app == 'incy' and 'useChunkFiles' not in profile:
         chunk = profile.get('UseChunkFiles')
         if chunk is not None:
