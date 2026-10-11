@@ -1620,8 +1620,12 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 is_client_toggle_enabled as _tg_on, get_happ_routing_profile_json as _custom_rp,
                 INCY_AUTOROUTING_URL as _auto_url,
             )
-            if _tg_on("incy", "autorouting") and not _custom_rp():
-                headers["autorouting"] = f"incy://autorouting/onadd/{_auto_url}"
+            _site = (get_effective_webapp_url() or "").rstrip("/")
+            # Ссылка ведёт на САМ бот (а не на файл в GitHub): так имя профиля —
+            # бренд/заданное админом, а не «ECLIPSE RU» из репозитория, и
+            # учитывается свой JSON-профиль админа.
+            if _tg_on("incy", "autorouting") and _site:
+                headers["autorouting"] = f"incy://autorouting/onadd/{_site}/routing/profile.json"
                 _incy_auto = True
         if _incy_auto:
             pass
@@ -1736,6 +1740,21 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp
+
+
+async def handle_routing_profile(request: web.Request) -> web.Response:
+    """GET /routing/profile.json — профиль маршрутизации бота (то же, что идёт
+    в заголовке routing) по ссылке: для автообновления в INCY (autorouting).
+    Имя профиля — бренд бота / заданное админом; персональных данных нет."""
+    from database.requests import (
+        get_effective_happ_routing_profile_json, prepare_routing_profile,
+    )
+    app_name = "incy" if request.query.get("app", "incy") == "incy" else "happ"
+    profile = prepare_routing_profile(get_effective_happ_routing_profile_json(), app_name)
+    return web.Response(
+        text=profile, content_type="application/json", charset="utf-8",
+        headers={"Cache-Control": "public, max-age=600"},
+    )
 
 
 _ROUTING_LINE_RE = re.compile(r"^\s*[A-Za-z][\w+.-]*://(autorouting|routing|onadd)(/|$)", re.I)
@@ -4362,6 +4381,7 @@ async def cors_middleware(request: web.Request, handler):
 
 _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/happ-sub/",
+    "/routing/",
     "/import",
     "/awg-open/",
     "/api/status",
@@ -4440,6 +4460,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/site-info", handle_public_site_info)
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)
     app.router.add_get("/happ-sub/{sub_id}", handle_happ_subscription)
+    app.router.add_get("/routing/profile.json", handle_routing_profile)
     app.router.add_get("/awg-open/{token}", handle_awg_open)
     app.router.add_get("/awg-open/{token}/file", handle_awg_file)
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
