@@ -48,6 +48,11 @@ def payments_menu_kb(stars_enabled: bool, cards_enabled: bool, qr_enabled: bool=
         InlineKeyboardButton(text=f'{cardlink_status} Cardlink', callback_data='admin_payments_cardlink'),
         InlineKeyboardButton(text=f'{demo_status} Демо оплата (РФ)', callback_data='admin_payments_toggle_demo'),
     )
+    from database.requests import is_balance_payment_enabled
+    builder.row(InlineKeyboardButton(
+        text=f'{_status_dot(is_balance_payment_enabled())} Оплата с баланса',
+        callback_data='admin_payments_toggle_balance',
+    ))
     notify_status = _status_dot(notify_enabled)
     builder.row(InlineKeyboardButton(text=f'{notify_status} Сообщать об оплатах', callback_data='admin_toggle_payment_notify'))
     reset_status = _status_dot(monthly_reset_enabled)

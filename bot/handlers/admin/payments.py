@@ -102,6 +102,8 @@ async def show_payments_menu(callback: CallbackQuery, state: FSMContext):
     else:
         text += "⚪ <b>Cardlink</b>\n"
 
+    from database.requests import is_balance_payment_enabled
+    text += ("🟢" if is_balance_payment_enabled() else "⚪") + " <b>Оплата с баланса</b>\n"
     if demo:
         text += "🟢 <b>Демо оплата (РФ)</b>\n"
     else:
@@ -306,6 +308,19 @@ async def admin_stars_net(callback: CallbackQuery, state: FSMContext):
 # ============================================================================
 # TOGGLE DEMO PAYMENT
 # ============================================================================
+
+@router.callback_query(F.data == "admin_payments_toggle_balance")
+async def toggle_balance_payment(callback: CallbackQuery, state: FSMContext):
+    """Оплата тарифов с личного баланса клиента (не зависит от рефералки)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import is_balance_payment_enabled, set_balance_payment_enabled
+    new_value = not is_balance_payment_enabled()
+    set_balance_payment_enabled(new_value)
+    await callback.answer("Оплата с баланса включена" if new_value else "Оплата с баланса выключена")
+    await show_payments_menu(callback, state)
+
 
 @router.callback_query(F.data == "admin_payments_toggle_demo")
 async def toggle_demo(callback: CallbackQuery, state: FSMContext):
