@@ -2,6 +2,7 @@
 Facade for working with VPN panel APIs.
 """
 import json
+import time
 import logging
 import uuid as _uuid
 from contextlib import asynccontextmanager
@@ -25,6 +26,10 @@ from bot.services.panel_sync_coordinator import (
 logger = logging.getLogger(__name__)
 
 _clients: Dict[int, BaseVPNClient] = {}
+
+# После отказа панели (например, пересечение адресов WireGuard) повтор не чаще раза в 6 часов
+_CREATE_FAIL_COOLDOWN = 6 * 3600
+_CREATE_FAIL_UNTIL: dict = {}
 
 # Per-key locks for ensure_subscription_keys_on_server (race protection)
 _ensure_locks: Dict[int, asyncio.Lock] = {}
@@ -1269,6 +1274,9 @@ async def _ensure_subscription_keys_on_server_impl(
             # Create in missing inbound
             missing = [inb for inb in inbounds if inb['id'] not in presence]
             for inb in missing:
+                _fail_key = (server_id, inb['id'], email)
+                if not dry_run and _CREATE_FAIL_UNTIL.get(_fail_key, 0) > time.time():
+                    continue  # недавно панель отказала — не долбим её каждый цикл
                 try:
                     flow = await _get_inbound_flow_safe(client, inb['id'], server_id, inb)
                     if dry_run:
@@ -1295,9 +1303,11 @@ async def _ensure_subscription_keys_on_server_impl(
                         sub_id,
                     )
                 except Exception as e:
+                    _CREATE_FAIL_UNTIL[_fail_key] = time.time() + _CREATE_FAIL_COOLDOWN
                     logger.warning(
                         f"ensure_subscription_keys: не удалось создать клиента {email} "
-                        f"в inbound {inb['id']} сервера {server_id}: {e}"
+                        f"в inbound {inb['id']} сервера {server_id}: {e} "
+                        f"(следующая попытка не раньше чем через {_CREATE_FAIL_COOLDOWN // 3600} ч)"
                     )
                     stats['errors'] += 1
 

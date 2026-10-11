@@ -715,8 +715,8 @@ async def handle_pay_create(request: web.Request) -> web.Response:
     action = "renewal" if vpn_key_id else "new_key"
 
     if payment_method == "balance":
-        from database.requests import get_setting as _gs_bp
-        if _gs_bp("balance_payment_enabled", "") == "0":
+        from database.requests import is_balance_payment_enabled as _bp_on
+        if not _bp_on():
             return web.json_response({"error": "balance_payment_disabled"}, status=403)
         debited_cents = 0
         try:
@@ -3562,8 +3562,8 @@ async def handle_public_account_key_renew_balance(request: web.Request) -> web.R
     except json.JSONDecodeError:
         return web.json_response({"error": "invalid_json"}, status=400)
 
-    from database.requests import get_setting as _gs_bp
-    if _gs_bp("balance_payment_enabled", "") == "0":
+    from database.requests import is_balance_payment_enabled as _bp_on
+    if not _bp_on():
         return web.json_response({"error": "balance_payment_disabled"}, status=403)
     key_id = data.get("key_id")
     tariff_id = data.get("tariff_id")
@@ -3747,8 +3747,8 @@ async def handle_public_account_buy_balance(request: web.Request) -> web.Respons
     except json.JSONDecodeError:
         return web.json_response({"error": "invalid_json"}, status=400)
 
-    from database.requests import get_setting as _gs_bp
-    if _gs_bp("balance_payment_enabled", "") == "0":
+    from database.requests import is_balance_payment_enabled as _bp_on
+    if not _bp_on():
         return web.json_response({"error": "balance_payment_disabled"}, status=403)
     tariff_id = data.get("tariff_id")
     if not tariff_id:

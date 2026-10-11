@@ -475,13 +475,10 @@ def set_start_import_buttons_enabled(enabled: bool) -> None:
 
 
 def is_balance_payment_enabled() -> bool:
-    """Оплата тарифов с личного баланса. Независимый переключатель.
-    Пока админ его не трогал — работает прежняя логика: включено, если
-    реферальная система включена и награда идёт на баланс."""
-    value = get_setting('balance_payment_enabled', '')
-    if value in ('0', '1'):
-        return value == '1'
-    return get_setting('referral_enabled', '0') == '1' and get_setting('referral_reward_type', 'days') == 'balance'
+    """Оплата тарифов с личного баланса. Независимый переключатель (Оплаты).
+    Пока админ его не трогал — включено: на баланс попадают возвраты, призы и ручные
+    пополнения, и потратить их клиент должен везде одинаково (бот, сайт, WebApp)."""
+    return get_setting('balance_payment_enabled', '') != '0'
 
 
 def set_balance_payment_enabled(enabled: bool) -> None:

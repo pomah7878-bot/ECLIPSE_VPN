@@ -648,6 +648,7 @@ async def process_auto_renewals(bot: Bot) -> None:
         price_cents = int(round(float(_price_rub or 0) * 100))  # копейки RUB
         duration_days = int(key.get("duration_days") or 0)
         keyname = key.get("custom_name") or f"Ключ #{key_id}"
+        keyname_html = escape_html(str(keyname))   # имя вводит клиент: в HTML-сообщения только экранированным
 
         if price_cents <= 0 or duration_days <= 0:
             logger.warning(f"Автопродление ключа {key_id}: у тарифа {key.get('tariff_name')} некорректная цена/срок, пропускаю")
@@ -669,7 +670,7 @@ async def process_auto_renewals(bot: Bot) -> None:
                     await bot.send_message(
                         chat_id=telegram_id,
                         text=(
-                            f"⚠️ <b>Не удалось автопродлить ключ «{keyname}»</b>\n\n"
+                            f"⚠️ <b>Не удалось автопродлить ключ «{keyname_html}»</b>\n\n"
                             f"Недостаточно средств на балансе. Пополните баланс "
                             f"или отключите автопродление в разделе «Мои ключи», "
                             f"иначе ключ истечёт по расписанию."
@@ -704,12 +705,12 @@ async def process_auto_renewals(bot: Bot) -> None:
             except Exception as e:
                 logger.error(f"Автопродление ключа {key_id}: не удалось вернуть списание: {e}")
             failed_count += 1
-            tech_failed.append(f"#{key_id} «{keyname}»")
+            tech_failed.append(f"#{key_id} «{keyname_html}»")
             try:
                 await bot.send_message(
                     chat_id=telegram_id,
                     text=(
-                        f"⚠️ <b>Не удалось автопродлить ключ «{keyname}»</b>\n\n"
+                        f"⚠️ <b>Не удалось автопродлить ключ «{keyname_html}»</b>\n\n"
                         + ("Произошла техническая ошибка, деньги возвращены на баланс. " if _refunded
                            else "Произошла техническая ошибка, мы уже разбираемся со списанием. ")
                         + "Можно продлить ключ вручную в разделе «Мои ключи»."
@@ -734,7 +735,7 @@ async def process_auto_renewals(bot: Bot) -> None:
             await bot.send_message(
                 chat_id=telegram_id,
                 text=(
-                    f"✅ <b>Ключ «{keyname}» автопродлён</b>\n\n"
+                    f"✅ <b>Ключ «{keyname_html}» автопродлён</b>\n\n"
                     f"Списано с баланса: {price_cents / 100:.2f} ₽\n"
                     f"Новый срок действия: +{duration_days} дн."
                     f"{_cdn_line}"

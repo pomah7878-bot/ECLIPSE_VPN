@@ -1029,6 +1029,12 @@ async def _remind_pack_expiry(bot, key: Dict[str, Any], pack: Dict[str, Any], ex
         if sent.get(str(key["id"])) == token:
             return False
         sent[str(key["id"])] = token
+        try:  # не копим записи по ключам, у которых пакета уже нет
+            live = {str(p["vpn_key_id"]) for p in db_cdn.list_packs([db_cdn.STATUS_ACTIVE, db_cdn.STATUS_SUSPENDED])}
+            sent = {k: v for k, v in sent.items() if k in live}
+            sent[str(key["id"])] = token
+        except Exception:  # noqa: BLE001
+            pass
         set_setting(_REMIND_KEY, json.dumps(sent))
         days = max(1, math.ceil(left.total_seconds() / 86400))
         await _notify(bot, key, f"⏳ <b>Пакет CDN закончится через {days} дн.</b>\n"
