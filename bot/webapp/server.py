@@ -1311,6 +1311,15 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if not key:
         return web.Response(status=404, text="Not Found")
 
+    # v1.277: учёт устройств Happ (предупреждение о лимите тарифа happ-proxy.com)
+    try:
+        if (request.headers.get("User-Agent", "") or "").startswith("Happ"):
+            from bot.services import happ_devices as _hd
+            if _hd.record(request.headers.get("X-HWID"), key.get("id")):
+                asyncio.create_task(_hd.check_and_alert())
+    except Exception as _hd_err:
+        logger.debug(f"happ_devices: {_hd_err}")
+
     # v1.190: учёт устройств для пробных ключей
     try:
         _blocked_resp = await _trial_device_guard(request, key)

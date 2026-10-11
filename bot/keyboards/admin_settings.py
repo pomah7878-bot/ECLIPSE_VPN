@@ -431,6 +431,10 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
             text="🗺 Маршрутизация (routing)",
             callback_data='admin_happ_routing_menu',
         ))
+        builder.row(InlineKeyboardButton(
+            text="📊 Устройства Happ (лимит тарифа)",
+            callback_data='admin_happ_devices',
+        ))
 
     _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒', 'hide_url': '🔗', 'announce': '📢', 'hide_check': '🙈', 'fragmentation': '🧩', 'autorouting': '🗺'}
     for toggle, label in CLIENT_TOGGLE_LABELS_BY_APP[app].items():
@@ -608,3 +612,23 @@ def integrations_edit_cancel_kb(back_callback: str = 'admin_integrations') -> In
     builder.row(back_button(back_callback), home_button())
     return builder.as_markup()
 
+
+
+def happ_devices_kb() -> InlineKeyboardMarkup:
+    """Экран «Устройства Happ»: выбор лимита тарифа и вкл/выкл предупреждений."""
+    from bot.services import happ_devices as hd
+    current = hd.get_limit()
+    builder = InlineKeyboardBuilder()
+    presets = [20, 50, 100, 200, 500]
+    builder.row(*[
+        InlineKeyboardButton(
+            text=f"{'✅ ' if n == current else ''}{n}",
+            callback_data=f'admin_happ_dev_limit:{n}',
+        ) for n in presets
+    ])
+    builder.row(InlineKeyboardButton(
+        text=f"🔔 Предупреждения: {'✅ вкл' if hd.alerts_enabled() else '❌ выкл'}",
+        callback_data='admin_happ_dev_alerts',
+    ))
+    builder.row(back_button('admin_integrations_happ'), home_button())
+    return builder.as_markup()

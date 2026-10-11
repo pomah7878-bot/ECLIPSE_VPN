@@ -2878,3 +2878,57 @@ async def edit_happ_routing_profile_save(message: Message, state: FSMContext):
     await state.set_state(AdminStates.integrations_menu)
     await message.answer(f"✅ Профиль «{parsed['Name']}» сохранён.")
     await message.answer(_happ_routing_menu_text(), parse_mode="HTML", reply_markup=happ_routing_menu_kb())
+
+
+# ---------------------------------------------------------------- v1.277: устройства Happ
+def _happ_devices_text() -> str:
+    from bot.services import happ_devices as hd
+    st = hd.stats()
+    return (
+        "📊 <b>Устройства Happ</b>\n\n"
+        f"За 30 дней: <b>{st['total']}</b> из {st['limit']} ({st['percent']}%)\n"
+        f"Активных за 7 дней: {st['active7']}\n\n"
+        "Это оценка бота по запросам подписки. Точное число показывает кабинет happ-proxy.com.\n"
+        "При превышении лимита тарифа Happ отключает премиум-функции "
+        "(скрытие настроек и др.) у всех клиентов.\n\n"
+        "Выберите лимит вашего тарифа Happ:"
+    )
+
+
+@router.callback_query(F.data == "admin_happ_devices")
+async def happ_devices_screen(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import happ_devices_kb
+    await safe_edit_or_send(callback.message, _happ_devices_text(), reply_markup=happ_devices_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_happ_dev_limit:"))
+async def happ_devices_set_limit(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    try:
+        value = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer()
+        return
+    from bot.services import happ_devices as hd
+    from bot.keyboards.admin_settings import happ_devices_kb
+    hd.set_limit(value)
+    await safe_edit_or_send(callback.message, _happ_devices_text(), reply_markup=happ_devices_kb())
+    await callback.answer("✅ Лимит сохранён")
+
+
+@router.callback_query(F.data == "admin_happ_dev_alerts")
+async def happ_devices_toggle_alerts(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import happ_devices as hd
+    from bot.keyboards.admin_settings import happ_devices_kb
+    hd.set_alerts_enabled(not hd.alerts_enabled())
+    await safe_edit_or_send(callback.message, _happ_devices_text(), reply_markup=happ_devices_kb())
+    await callback.answer("Готово")

@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 145
+LATEST_VERSION = 146
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3310,6 +3310,13 @@ def migration_143(conn: sqlite3.Connection) -> None:
     logger.info("Migration v143 applied: индексы vpn_keys(sub_id), vpn_keys(client_uuid)")
 
 
+def migration_146(conn: sqlite3.Connection) -> None:
+    """Версия 1.277: учёт устройств Happ (happ_devices) для предупреждений о лимите тарифа."""
+    from bot.services.happ_devices import ensure_table
+    ensure_table(conn)
+    logger.info("Migration v146 applied: happ_devices")
+
+
 def migration_145(conn: sqlite3.Connection) -> None:
     """Версия 1.226: CDN-пакеты (обход белых списков) — таблица cdn_packs и кнопка
     «🌐 CDN» на карточке ключа (key_details). Идемпотентно."""
@@ -3470,6 +3477,7 @@ MIGRATIONS = {
     143: migration_143,
     144: migration_144,
     145: migration_145,
+    146: migration_146,
 }
 
 
