@@ -175,14 +175,21 @@ def _values(response: Any) -> List[float]:
     return out
 
 
-async def _sum_metric(metric: str, start: datetime, end: datetime, grid_ms: int, extra: str = "") -> float:
+class NoDataError(ProviderError):
+    """Yandex ответил 200, но точек метрики нет."""
+
+
+async def _sum_metric(metric: str, start: datetime, end: datetime, grid_ms: int, extra: str = "",
+                      allow_empty: bool = False) -> float:
+    """Метрики CDN у Yandex — скорости (байт/с, запросов/с), а не накопленные суммы:
+    объём = среднее значение за интервал × длительность интервала в секундах."""
     iso = lambda d: d.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
     query = f'series_sum("{metric}"{{service="yccdn"{extra}}})'
     headers = {"Authorization": f"Api-Key {get_api_key()}", "Content-Type": "application/json"}
     url = f"{API_URL}?folderId={get_folder_id()}"
     body: Dict[str, Any] = {
         "query": query, "fromTime": iso(start), "toTime": iso(end),
-        "downsampling": {"gridInterval": grid_ms, "gridAggregation": "SUM"},
+        "downsampling": {"gridInterval": grid_ms, "gridAggregation": "AVG"},
     }
     status, data = await _post_retry(url, headers, body)
     if status == 400:  # на случай, если API не принял способ агрегации
@@ -195,7 +202,11 @@ async def _sum_metric(metric: str, start: datetime, end: datetime, grid_ms: int,
     if status != 200:
         msg = str((data or {}).get("message", "")) if isinstance(data, dict) else ""
         raise ProviderError(f"ответ {status}: {msg[:120]}")
-    return sum(_values(data))
+    values = _values(data)
+    if not values and not allow_empty:
+        raise NoDataError("Yandex вернул пустой ответ: проверьте ID каталога (20 символов, начинается с b1g) "
+                          "и что CDN-ресурс находится в этом каталоге")
+    return sum(values) * (grid_ms / 1000.0)
 
 
 _BG: Dict[str, Any] = {"task": None}
@@ -232,10 +243,10 @@ async def fetch_summary(force: bool = False) -> Dict[str, Any]:
     try:
         import asyncio
         day_bytes, month_bytes, month_requests, origin_bytes = await asyncio.gather(
-            _sum_metric("edge.bytes_sent", now - timedelta(hours=24), now, 3600_000),
+            _sum_metric("edge.bytes_sent", now - timedelta(hours=24), now, 3600_000, allow_empty=True),
             _sum_metric("edge.bytes_sent", month_start, now, 86400_000),
-            _sum_metric("edge.requests", month_start, now, 86400_000),
-            _sum_metric("origin.bytes_fetched", month_start, now, 86400_000),
+            _sum_metric("edge.requests", month_start, now, 86400_000, allow_empty=True),
+            _sum_metric("origin.bytes_fetched", month_start, now, 86400_000, allow_empty=True),
         )
     except TransientProviderError:
         stale = _load_last_good()
