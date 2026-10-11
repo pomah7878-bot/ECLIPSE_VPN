@@ -84,6 +84,8 @@ __all__ = [
     'is_start_import_buttons_enabled',
     'set_start_import_buttons_enabled',
     'is_start_balance_button_enabled',
+    'is_balance_payment_enabled',
+    'set_balance_payment_enabled',
     'set_start_balance_button_enabled',
     'is_welcome_page_enabled',
     'set_welcome_page_enabled',
@@ -468,6 +470,20 @@ def is_start_import_buttons_enabled() -> bool:
 def set_start_import_buttons_enabled(enabled: bool) -> None:
     """Включает/выключает кнопки быстрого импорта на главной странице."""
     set_setting('start_import_buttons_enabled', '1' if enabled else '0')
+
+
+def is_balance_payment_enabled() -> bool:
+    """Оплата тарифов с личного баланса. Независимый переключатель.
+    Пока админ его не трогал — работает прежняя логика: включено, если
+    реферальная система включена и награда идёт на баланс."""
+    value = get_setting('balance_payment_enabled', '')
+    if value in ('0', '1'):
+        return value == '1'
+    return get_setting('referral_enabled', '0') == '1' and get_setting('referral_reward_type', 'days') == 'balance'
+
+
+def set_balance_payment_enabled(enabled: bool) -> None:
+    set_setting('balance_payment_enabled', '1' if enabled else '0')
 
 
 def is_start_balance_button_enabled() -> bool:

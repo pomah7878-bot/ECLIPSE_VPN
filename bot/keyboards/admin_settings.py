@@ -255,6 +255,11 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
         text='💰 Кнопка пополнения баланса: ✅' if is_start_balance_button_enabled() else '💰 Кнопка пополнения баланса: ❌',
         callback_data='admin_toggle_start_balance_button',
     ))
+    from database.requests import is_balance_payment_enabled
+    builder.row(InlineKeyboardButton(
+        text='💎 Оплата с баланса: ✅' if is_balance_payment_enabled() else '💎 Оплата с баланса: ❌',
+        callback_data='admin_toggle_balance_payment',
+    ))
     builder.row(InlineKeyboardButton(
         text='🛬 Витрина для новых (/welcome): ✅' if is_welcome_page_enabled() else '🛬 Витрина для новых (/welcome): ❌',
         callback_data='admin_toggle_welcome_page',

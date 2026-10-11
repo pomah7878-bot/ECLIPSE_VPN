@@ -1329,6 +1329,20 @@ async def toggle_start_balance_button(callback: CallbackQuery, state: FSMContext
     await show_integrations_site_menu(callback)
 
 
+@router.callback_query(F.data == "admin_toggle_balance_payment")
+async def toggle_balance_payment(callback: CallbackQuery, state: FSMContext):
+    """Включает/выключает оплату тарифов с личного баланса клиента
+    (не зависит от реферальной системы)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import is_balance_payment_enabled, set_balance_payment_enabled
+    current = is_balance_payment_enabled()
+    set_balance_payment_enabled(not current)
+    await callback.answer("✅ Оплата с баланса включена" if not current else "⚪ Оплата с баланса выключена")
+    await show_integrations_site_menu(callback)
+
+
 @router.callback_query(F.data == "admin_toggle_welcome_page")
 async def toggle_welcome_page(callback: CallbackQuery, state: FSMContext):
     """Включает/выключает публичную страницу-витрину /welcome для новых

@@ -333,7 +333,8 @@ async def pay_use_balance_buy_handler(callback: CallbackQuery, state: FSMContext
     from bot.keyboards.admin import home_only_kb
     telegram_id = callback.from_user.id
     user_id = get_user_internal_id(telegram_id)
-    if not is_referral_enabled() or get_referral_reward_type() != 'balance':
+    from database.requests import is_balance_payment_enabled
+    if not is_balance_payment_enabled():
         await callback.answer('❌ Оплата с баланса недоступна', show_alert=True)
         return
     balance_cents = get_user_balance(user_id) if user_id else 0
@@ -379,7 +380,8 @@ async def pay_use_balance_renew_handler(callback: CallbackQuery, state: FSMConte
     if not key:
         await callback.answer('❌ Ключ не найден', show_alert=True)
         return
-    if not is_referral_enabled() or get_referral_reward_type() != 'balance':
+    from database.requests import is_balance_payment_enabled
+    if not is_balance_payment_enabled():
         await callback.answer('❌ Оплата с баланса недоступна', show_alert=True)
         return
     balance_cents = get_user_balance(user_id) if user_id else 0

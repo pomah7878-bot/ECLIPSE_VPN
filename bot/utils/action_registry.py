@@ -186,7 +186,8 @@ def _resolve_pay_balance(ctx: dict) -> Optional[dict]:
         get_user_balance, get_user_internal_id,
     )
 
-    if not is_referral_enabled() or get_referral_reward_type() != 'balance':
+    from database.requests import is_balance_payment_enabled
+    if not is_balance_payment_enabled():
         return None
 
     telegram_id = ctx.get('telegram_id')
@@ -324,7 +325,8 @@ def _resolve_renew_pay_balance(ctx: dict) -> Optional[dict]:
     if not key_id:
         return None
 
-    if not is_referral_enabled() or get_referral_reward_type() != 'balance':
+    from database.requests import is_balance_payment_enabled
+    if not is_balance_payment_enabled():
         return None
 
     telegram_id = ctx.get('telegram_id')
