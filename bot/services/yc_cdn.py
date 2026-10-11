@@ -114,7 +114,7 @@ def month_breakdown(month_bytes: float, month_requests: float = 0) -> Dict[str, 
 
 async def _post(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Tuple[int, Any]:
     import aiohttp
-    timeout = aiohttp.ClientTimeout(total=30)
+    timeout = aiohttp.ClientTimeout(total=15, connect=8)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(url, headers=headers, json=body) as resp:
             try:
@@ -126,6 +126,38 @@ async def _post(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Tupl
 
 class ProviderError(Exception):
     pass
+
+
+class TransientProviderError(ProviderError):
+    """Временный сбой на стороне провайдера или сети (5xx, 429, таймаут)."""
+
+
+RETRY_DELAYS = (2, 5)          # паузы между повторами, секунд
+_TRANSIENT_STATUSES = (429, 500, 502, 503, 504)
+_LAST_GOOD_KEY = "yc_last_summary"
+
+
+async def _post_retry(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Tuple[int, Any]:
+    """_post с повторами при временных сбоях: у Yandex шлюз изредка отвечает
+    503 «upstream connect error», через несколько секунд всё работает."""
+    import asyncio
+    attempts = len(RETRY_DELAYS) + 1
+    last: Optional[Exception] = None
+    for i in range(attempts):
+        try:
+            status, data = await _post(url, headers, body)
+            if status not in _TRANSIENT_STATUSES:
+                return status, data
+            last = TransientProviderError(f"ответ {status}")
+            logger.warning("Yandex Monitoring: ответ %s (попытка %d/%d): %s", status, i + 1, attempts, str(data)[:160])
+        except Exception as e:  # noqa: BLE001
+            last = e
+            logger.warning("Yandex Monitoring: %s (попытка %d/%d)", e, i + 1, attempts)
+        if i < attempts - 1:
+            await asyncio.sleep(RETRY_DELAYS[i])
+    if isinstance(last, TransientProviderError):
+        raise last
+    raise TransientProviderError("нет связи с Yandex Cloud")
 
 
 def _values(response: Any) -> List[float]:
@@ -152,10 +184,10 @@ async def _sum_metric(metric: str, start: datetime, end: datetime, grid_ms: int,
         "query": query, "fromTime": iso(start), "toTime": iso(end),
         "downsampling": {"gridInterval": grid_ms, "gridAggregation": "SUM"},
     }
-    status, data = await _post(url, headers, body)
+    status, data = await _post_retry(url, headers, body)
     if status == 400:  # на случай, если API не принял способ агрегации
         body["downsampling"] = {"gridInterval": grid_ms}
-        status, data = await _post(url, headers, body)
+        status, data = await _post_retry(url, headers, body)
     if status == 401:
         raise ProviderError("ключ API не принят (проверьте ключ)")
     if status == 403:
@@ -181,10 +213,18 @@ async def fetch_summary(force: bool = False) -> Dict[str, Any]:
         month_bytes = await _sum_metric("edge.bytes_sent", month_start, now, 86400_000)
         month_requests = await _sum_metric("edge.requests", month_start, now, 86400_000)
         origin_bytes = await _sum_metric("origin.bytes_fetched", month_start, now, 86400_000)
+    except TransientProviderError:
+        stale = _load_last_good()
+        if stale:
+            return stale
+        return {"ok": False, "error": "Yandex Cloud временно не отвечает, повторите через минуту"}
     except ProviderError as e:
         return {"ok": False, "error": str(e)}
     except Exception as e:  # noqa: BLE001
         logger.warning("Yandex Monitoring: %s", e)
+        stale = _load_last_good()
+        if stale:
+            return stale
         return {"ok": False, "error": "нет связи с Yandex Cloud"}
     result = {
         "ok": True, "day_bytes": day_bytes, "month_bytes": month_bytes,
@@ -192,7 +232,31 @@ async def fetch_summary(force: bool = False) -> Dict[str, Any]:
         "month_start": month_start.strftime("%d.%m.%Y"),
     }
     _CACHE[cache_key] = (time.time(), result)
+    _save_last_good(result)
     return result
+
+
+def _save_last_good(result: Dict[str, Any]) -> None:
+    try:
+        import json
+        from database.db_settings import set_setting   # напрямую: set_setting_value сбрасывает кэш
+        set_setting(_LAST_GOOD_KEY, json.dumps({**result, "saved_at": time.time()}))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _load_last_good() -> Optional[Dict[str, Any]]:
+    """Последние удачно полученные данные (переживают перезапуск) — показываем,
+    когда провайдер временно не отвечает, с пометкой о времени."""
+    try:
+        import json
+        data = json.loads(_setting(_LAST_GOOD_KEY, "") or "{}")
+        if data.get("ok") and data.get("saved_at"):
+            data["stale_at"] = data["saved_at"]
+            return data
+    except Exception:  # noqa: BLE001
+        pass
+    return None
 
 
 def _gb(value: float) -> str:
@@ -210,7 +274,12 @@ def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]], client_
         return f"❌ Не удалось получить данные: {escape(str(summary.get('error')))}"
     br = month_breakdown(summary["month_bytes"], summary["month_requests"])
     requests = int(summary["month_requests"])
-    lines = [
+    lines = []
+    if summary.get("stale_at"):
+        msk = datetime.fromtimestamp(float(summary["stale_at"]), tz=timezone(timedelta(hours=3)))
+        lines += [f"⚠️ Yandex Cloud сейчас не отвечает. Показаны данные от {msk:%d.%m %H:%M} МСК, "
+                  "нажмите «Обновить» через минуту.", ""]
+    lines += [
         "<b>У провайдера (Yandex Cloud)</b>",
         f"За 24 часа: <b>{_gb(summary['day_bytes'])}</b>",
         f"С {summary['month_start']} (месяц): <b>{_gb(summary['month_bytes'])}</b>",
@@ -261,8 +330,8 @@ async def check_limits(bot) -> Optional[int]:
     if not is_configured():
         return None
     summary = await fetch_summary(force=True)
-    if not summary.get("ok"):
-        return None
+    if not summary.get("ok") or summary.get("stale_at"):
+        return None   # по устаревшим данным не предупреждаем
     import json
     included = float(get_included_gb()) * GB
     if included <= 0:
