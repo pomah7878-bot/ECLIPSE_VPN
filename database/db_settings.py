@@ -808,7 +808,7 @@ _HAPP_ROUTING_DEFAULT_TEMPLATE = {
 # --- live geo profile v1.143 ---
 _LIVE_PROFILE_URL = "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/HAPP/DEFAULT.JSON"
 INCY_AUTOROUTING_URL = _LIVE_PROFILE_URL
-_LIVE_PROFILE_TTL = 6 * 3600
+_LIVE_PROFILE_TTL = 3600
 _live_profile_cache = {"data": None, "ts": 0.0, "busy": False}
 
 
@@ -821,6 +821,18 @@ def _live_profile_refresh():
               and isinstance(data.get("DirectSites"), list))
         if ok:
             _live_profile_cache["data"] = data
+            try:
+                # переживает перезапуск бота: иначе первые запросы после старта
+                # получали бы урезанный встроенный шаблон, а клиенты — смену профиля туда-обратно
+                set_setting('live_routing_profile', _json.dumps(data, ensure_ascii=False))
+            except Exception:
+                pass
+            try:
+                # переживает перезапуск бота: иначе первые запросы после старта
+                # получали бы урезанный встроенный шаблон, а клиенты — смену профиля туда-обратно
+                set_setting('live_routing_profile', _json.dumps(data, ensure_ascii=False))
+            except Exception:
+                pass
     except Exception:
         pass
     finally:
@@ -832,6 +844,14 @@ def _get_live_profile():
     """Свежий профиль из GitHub (кэш, фоновое обновление). None — пока нет данных."""
     import time as _time, threading as _th
     c = _live_profile_cache
+    if c["data"] is None and c["ts"] == 0.0:
+        try:
+            import json as _json
+            saved = get_setting('live_routing_profile', '')
+            if saved:
+                c["data"] = _json.loads(saved)
+        except Exception:
+            pass
     if (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
         c["busy"] = True
         _th.Thread(target=_live_profile_refresh, daemon=True).start()
@@ -854,7 +874,7 @@ def get_default_happ_routing_profile_json() -> str:
     live = _get_live_profile()
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
     if live:
-        profile.update({k: v for k, v in live.items() if k != 'Name'})
+        profile.update({k: v for k, v in live.items() if k not in ('Name', 'LastUpdated')})
     return _json.dumps(profile, ensure_ascii=False)
 
 

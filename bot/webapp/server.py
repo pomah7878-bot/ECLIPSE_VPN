@@ -1588,6 +1588,32 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             headers["fragmentation-length"] = "100-200"
             headers["fragmentation-interval"] = "10-20"
 
+    if detected_app in ("happ", "incy") and "profile-update-interval" not in headers:
+        # Как часто приложение перечитывает подписку: от этого зависит свежесть
+        # маршрутизации, срока, трафика и баннеров у клиента. Если интервал не
+        # задан ни панелью, ни админом (у INCY — в настройках), ставим по
+        # умолчанию 6 часов; 0 в настройке sub_default_update_hours — не слать.
+        try:
+            from database.requests import get_setting as _gs_ui
+            _hours = int(_gs_ui("sub_default_update_hours", "6") or 0)
+        except Exception:
+            _hours = 6
+        if _hours > 0:
+            headers["profile-update-interval"] = str(_hours)
+
+    if detected_app in ("happ", "incy") and "profile-update-interval" not in headers:
+        # Как часто приложение перечитывает подписку: от этого зависит свежесть
+        # маршрутизации, срока, трафика и баннеров у клиента. Если интервал не
+        # задан ни панелью, ни админом (у INCY — в настройках), ставим по
+        # умолчанию 6 часов; 0 в настройке sub_default_update_hours — не слать.
+        try:
+            from database.requests import get_setting as _gs_ui
+            _hours = int(_gs_ui("sub_default_update_hours", "6") or 0)
+        except Exception:
+            _hours = 6
+        if _hours > 0:
+            headers["profile-update-interval"] = str(_hours)
+
     if detected_app in ("happ", "incy"):
         # Геонастройки / Routing — необязательный заголовок 'routing',
         # отправляется, только если явно настроен (по умолчанию режим
