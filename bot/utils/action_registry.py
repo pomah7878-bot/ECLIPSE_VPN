@@ -752,15 +752,32 @@ def _resolve_key_import_incy(ctx: dict) -> Optional[dict]:
     return _import_fallback_callback(ctx, "import_incy")
 
 
+def _start_import_needs_choice(ctx: dict) -> bool:
+    """На главной странице нет «выбранного» ключа. Если у клиента несколько
+    активных ключей с подпиской, молча брать «последний» нельзя — он может
+    быть не тем, что нужен клиенту. Тогда сначала показываем выбор ключа."""
+    if ctx.get('key_id') not in (None, ''):
+        return False
+    telegram_id = ctx.get('telegram_id')
+    if not telegram_id:
+        return False
+    from database.db_keys import get_user_keys_for_display
+    keys = get_user_keys_for_display(telegram_id)
+    return len([k for k in keys if k.get('is_active') and k.get('sub_id')]) > 1
+
+
 def _resolve_start_import_happ(ctx: dict) -> Optional[dict]:
-    """Кнопка быстрого импорта в Happ на главной странице — тот же прямой
-    путь, что и у кнопки на карточке ключа (_resolve_key_import_happ)."""
+    """Кнопка быстрого импорта в Happ на главной странице. С одним ключом —
+    прямой путь, как на карточке ключа; с несколькими — сначала выбор ключа."""
+    if _import_scheme_allowed("happ") and _start_import_needs_choice(ctx):
+        return {"callback_data": "import_pick:happ"}
     return _resolve_key_import_happ(ctx)
 
 
 def _resolve_start_import_incy(ctx: dict) -> Optional[dict]:
-    """Кнопка быстрого импорта в INCY на главной странице — тот же прямой
-    путь, что и у кнопки на карточке ключа (_resolve_key_import_incy)."""
+    """Кнопка быстрого импорта в INCY на главной странице (см. выше)."""
+    if _import_scheme_allowed("incy") and _start_import_needs_choice(ctx):
+        return {"callback_data": "import_pick:incy"}
     return _resolve_key_import_incy(ctx)
 
 

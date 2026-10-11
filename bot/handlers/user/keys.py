@@ -1161,6 +1161,40 @@ def _parse_import_callback_key_id(callback_data: str, prefix: str) -> Optional[i
         return None
 
 
+@router.callback_query(F.data.startswith("import_pick:"))
+async def import_pick_key_handler(callback: CallbackQuery):
+    """Выбор ключа для импорта с главной страницы, когда у клиента несколько
+    активных ключей. Кнопка каждого ключа ведёт на import_<app>:{key_id} —
+    дальше импортируется СТРОГО выбранный ключ."""
+    scheme = callback.data.split(":", 1)[1]
+    app_names = {"happ": "Happ", "incy": "INCY", "karing": "Karing", "eclipse": "ECLIPSE VPN"}
+    if scheme not in app_names:
+        await callback.answer("Неизвестное приложение", show_alert=True)
+        return
+    from bot.utils.action_registry import _import_scheme_allowed
+    if not _import_scheme_allowed(scheme):
+        await callback.answer("Импорт в это приложение сейчас недоступен", show_alert=True)
+        return
+    from database.db_keys import get_user_keys_for_display
+    keys = [k for k in get_user_keys_for_display(callback.from_user.id) if k.get('is_active') and k.get('sub_id')]
+    if not keys:
+        await callback.answer("У вас нет активного ключа с подпиской для импорта.", show_alert=True)
+        return
+    keys.sort(key=lambda k: k.get('id') or 0, reverse=True)
+    rows = []
+    for k in keys[:20]:
+        name = k.get('display_name') or f"Ключ #{k['id']}"
+        until = str(k.get('expires_at') or '')[:10]
+        label = f"🔑 {name}" + (f" · до {until[8:10]}.{until[5:7]}" if len(until) == 10 else "")
+        rows.append([InlineKeyboardButton(text=label[:60], callback_data=f"import_{scheme}:{k['id']}")])
+    rows.append([InlineKeyboardButton(text="🈴 На главную", callback_data="start")])
+    await callback.answer()
+    await callback.message.answer(
+        f"Выберите ключ, который нужно импортировать в {app_names[scheme]}:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )
+
+
 @router.callback_query(F.data == "import_happ")
 @router.callback_query(F.data.startswith("import_happ:"))
 async def import_happ_handler(callback: CallbackQuery):
