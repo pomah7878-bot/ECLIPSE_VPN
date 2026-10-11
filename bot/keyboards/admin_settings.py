@@ -255,11 +255,6 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
         text='💰 Кнопка пополнения баланса: ✅' if is_start_balance_button_enabled() else '💰 Кнопка пополнения баланса: ❌',
         callback_data='admin_toggle_start_balance_button',
     ))
-    from database.requests import is_balance_payment_enabled
-    builder.row(InlineKeyboardButton(
-        text='💎 Оплата с баланса: ✅' if is_balance_payment_enabled() else '💎 Оплата с баланса: ❌',
-        callback_data='admin_toggle_balance_payment',
-    ))
     builder.row(InlineKeyboardButton(
         text='🛬 Витрина для новых (/welcome): ✅' if is_welcome_page_enabled() else '🛬 Витрина для новых (/welcome): ❌',
         callback_data='admin_toggle_welcome_page',
@@ -456,6 +451,10 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
         builder.row(InlineKeyboardButton(
             text="🗺 Маршрутизация (routing)",
             callback_data='admin_happ_routing_menu',
+        ))
+        builder.row(InlineKeyboardButton(
+            text="🧭 INCY из панели 3x-ui (что где настраивать)",
+            callback_data='admin_incy_panel_info',
         ))
 
     builder.row(back_button('admin_integrations'), home_button())

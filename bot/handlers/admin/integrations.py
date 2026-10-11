@@ -1329,20 +1329,6 @@ async def toggle_start_balance_button(callback: CallbackQuery, state: FSMContext
     await show_integrations_site_menu(callback)
 
 
-@router.callback_query(F.data == "admin_toggle_balance_payment")
-async def toggle_balance_payment(callback: CallbackQuery, state: FSMContext):
-    """Включает/выключает оплату тарифов с личного баланса клиента
-    (не зависит от реферальной системы)."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
-        return
-    from database.requests import is_balance_payment_enabled, set_balance_payment_enabled
-    current = is_balance_payment_enabled()
-    set_balance_payment_enabled(not current)
-    await callback.answer("✅ Оплата с баланса включена" if not current else "⚪ Оплата с баланса выключена")
-    await show_integrations_site_menu(callback)
-
-
 @router.callback_query(F.data == "admin_toggle_welcome_page")
 async def toggle_welcome_page(callback: CallbackQuery, state: FSMContext):
     """Включает/выключает публичную страницу-витрину /welcome для новых
@@ -2932,3 +2918,46 @@ async def happ_devices_toggle_alerts(callback: CallbackQuery):
     hd.set_alerts_enabled(not hd.alerts_enabled())
     await safe_edit_or_send(callback.message, _happ_devices_text(), reply_markup=happ_devices_kb())
     await callback.answer("Готово")
+
+
+# ---------------------------------------------------------------- v1.278: INCY из панели 3x-ui
+def _incy_panel_info_text() -> str:
+    from database.requests import is_client_toggle_enabled, get_incy_update_interval_hours
+    def mark(toggle: str) -> str:
+        return "бот ✅" if is_client_toggle_enabled("incy", toggle) else "бот ❌ (берётся из панели)"
+    interval = get_incy_update_interval_hours()
+    return (
+        "🧭 <b>INCY: что где настраивать</b>\n\n"
+        "Панель 3x-ui сама отдаёт заголовки INCY, если во вкладке «Incy» включено "
+        "«Автоопределение заголовков Incy». Бот пропускает их клиенту и добавляет поверх "
+        "только свои.\n\n"
+        "<b>Задаётся в панели (вкладка «Приложение»)</b>\n"
+        "• Описание профиля\n"
+        "• Email поддержки (кнопка «Email»)\n"
+        "• Ссылка объявления\n"
+        "• Ссылка Premium (кнопка в карточке; пусто — кнопки нет)\n\n"
+        "<b>Задаётся в боте (перебивает панель)</b>\n"
+        f"• Сортировка по пингу: {mark('sort_ping')}\n"
+        f"• Скрыть ссылку подписки: {mark('hide_url')}\n"
+        f"• Скрыть кнопку «Проверка»: {mark('hide_check')}\n"
+        f"• Фрагментация: {mark('fragmentation')}\n"
+        f"• Интервал обновления: {str(interval) + ' ч.' if interval else 'не задан (по умолчанию 6 ч.)'}\n"
+        "• Маршрутизация: раздел «Маршрутизация (routing)»\n\n"
+        "<b>Только с Premium INCY</b>\n"
+        "• Баннер («Баннеры» в панели): без Premium приложение его игнорирует\n"
+        "• Тема, принудительные настройки, push, доступ админа по HWID — через кабинет "
+        "web.incy-panel.com, не через панель 3x-ui\n\n"
+        "<b>Как применить изменения в панели</b>\n"
+        "Сохранить и перезапустить панель. Клиенты увидят их при следующем обновлении подписки."
+    )
+
+
+@router.callback_query(F.data == "admin_incy_panel_info")
+async def incy_panel_info_screen(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_misc import back_button, home_button
+    markup = InlineKeyboardMarkup(inline_keyboard=[[back_button('admin_integrations_incy'), home_button()]])
+    await safe_edit_or_send(callback.message, _incy_panel_info_text(), reply_markup=markup)
+    await callback.answer()
