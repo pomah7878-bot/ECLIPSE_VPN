@@ -114,7 +114,7 @@ def month_breakdown(month_bytes: float, month_requests: float = 0) -> Dict[str, 
 
 async def _post(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Tuple[int, Any]:
     import aiohttp
-    timeout = aiohttp.ClientTimeout(total=15, connect=8)
+    timeout = aiohttp.ClientTimeout(total=10, connect=5)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(url, headers=headers, json=body) as resp:
             try:
@@ -132,7 +132,7 @@ class TransientProviderError(ProviderError):
     """Временный сбой на стороне провайдера или сети (5xx, 429, таймаут)."""
 
 
-RETRY_DELAYS = (2, 5)          # паузы между повторами, секунд
+RETRY_DELAYS = (1.5,)          # паузы между повторами, секунд
 _TRANSIENT_STATUSES = (429, 500, 502, 503, 504)
 _LAST_GOOD_KEY = "yc_last_summary"
 
@@ -198,6 +198,27 @@ async def _sum_metric(metric: str, start: datetime, end: datetime, grid_ms: int,
     return sum(_values(data))
 
 
+_BG: Dict[str, Any] = {"task": None}
+
+
+async def fetch_summary_fast() -> Dict[str, Any]:
+    """Для открытия экрана: если есть свежий кэш или прошлые данные, отдаём сразу,
+    а обновление идёт в фоне. Ждём Yandex только при самом первом запросе."""
+    import asyncio
+    if not is_configured():
+        return await fetch_summary()
+    cached = _CACHE.get(get_folder_id())
+    if cached and time.time() - cached[0] < CACHE_SECONDS:
+        return cached[1]
+    last = _load_last_good()
+    if not last:
+        return await fetch_summary()
+    task = _BG.get("task")
+    if not task or task.done():
+        _BG["task"] = asyncio.ensure_future(fetch_summary(force=True))
+    return last
+
+
 async def fetch_summary(force: bool = False) -> Dict[str, Any]:
     """Трафик CDN у провайдера: за 24 часа и с начала месяца (UTC)."""
     if not is_configured():
@@ -209,10 +230,13 @@ async def fetch_summary(force: bool = False) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     try:
-        day_bytes = await _sum_metric("edge.bytes_sent", now - timedelta(hours=24), now, 3600_000)
-        month_bytes = await _sum_metric("edge.bytes_sent", month_start, now, 86400_000)
-        month_requests = await _sum_metric("edge.requests", month_start, now, 86400_000)
-        origin_bytes = await _sum_metric("origin.bytes_fetched", month_start, now, 86400_000)
+        import asyncio
+        day_bytes, month_bytes, month_requests, origin_bytes = await asyncio.gather(
+            _sum_metric("edge.bytes_sent", now - timedelta(hours=24), now, 3600_000),
+            _sum_metric("edge.bytes_sent", month_start, now, 86400_000),
+            _sum_metric("edge.requests", month_start, now, 86400_000),
+            _sum_metric("origin.bytes_fetched", month_start, now, 86400_000),
+        )
     except TransientProviderError:
         stale = _load_last_good()
         if stale:

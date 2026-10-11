@@ -435,7 +435,7 @@ async def _provider_text(force: bool = False) -> str:
             '3. Укажите ID каталога, предоплату за месяц и цену за ГБ сверх лимита.\n\n'
             'Ключ даёт только чтение статистики.'
         )
-    summary = await yc_cdn.fetch_summary(force=force)
+    summary = await (yc_cdn.fetch_summary(force=True) if force else yc_cdn.fetch_summary_fast())
     client_price = None
     try:
         from bot.services import cdn
