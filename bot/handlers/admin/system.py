@@ -1001,7 +1001,7 @@ async def admin_update_cmd(message: Message, state: FSMContext):
     await asyncio.sleep(2)
     
     # Install/update dependencies
-    success, req_message = install_requirements()
+    success, req_message = await asyncio.to_thread(install_requirements)  # pip не должен блокировать цикл событий
     if not success:
         logger.error(f"Ошибка установки зависимостей: {req_message}")
         await safe_edit_or_send(message,
@@ -1199,7 +1199,7 @@ async def update_bot_confirmed(callback: CallbackQuery, state: FSMContext):
     await asyncio.sleep(2)
     
     # Install/update dependencies
-    success, req_message = install_requirements()
+    success, req_message = await asyncio.to_thread(install_requirements)  # pip не должен блокировать цикл событий
     if not success:
         logger.error(f"Ошибка установки зависимостей: {req_message}")
         await safe_edit_or_send(callback.message,
@@ -1316,7 +1316,7 @@ async def force_overwrite_confirmed(callback: CallbackQuery, state: FSMContext):
     await asyncio.sleep(2)
     
     # Install/update dependencies
-    success, req_message = install_requirements()
+    success, req_message = await asyncio.to_thread(install_requirements)  # pip не должен блокировать цикл событий
     if not success:
         logger.error(f"Ошибка установки зависимостей: {req_message}")
         await safe_edit_or_send(callback.message,
