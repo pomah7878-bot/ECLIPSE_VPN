@@ -462,7 +462,7 @@ async def cdn_provider_edit(callback: CallbackQuery, state: FSMContext):
         return
     _, title, help_text = PROVIDER_FIELDS[field]
     await state.set_state(AdminStates.cdn_provider_value)
-    await state.update_data(cdn_pfield=field)
+    await state.update_data(cdn_pfield=field, cdn_pmsg=callback.message.message_id)
     await safe_edit_or_send(
         callback.message, f'<b>{title}</b>\n\n{help_text}\n\nОтправьте значение сообщением.',
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
@@ -479,13 +479,30 @@ async def cdn_provider_save(message: Message, state: FSMContext):
     if field not in PROVIDER_FIELDS:
         await state.clear()
         return
+    prompt_id = data.get('cdn_pmsg')
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text='❌ Отмена', callback_data='admin_cdn_provider')]])
+
+    async def show(text: str, kb) -> None:
+        """Показываем результат на месте вопроса бота, без новых сообщений в чате."""
+        if prompt_id:
+            try:
+                await message.bot.edit_message_text(
+                    chat_id=message.chat.id, message_id=prompt_id, text=text,
+                    reply_markup=kb, parse_mode='HTML')
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        await message.answer(text, reply_markup=kb, parse_mode='HTML')
+
     raw = ''.join((message.text or '').split())
+    try:  # ответ админа (особенно ключ) не оставляем в переписке
+        await message.delete()
+    except Exception:  # noqa: BLE001
+        pass
     setting = PROVIDER_FIELDS[field][0]
-    if field == 'key':
-        try:  # ключ нельзя оставлять в переписке
-            await message.delete()
-        except Exception:  # noqa: BLE001
-            pass
+    _, title, help_text = PROVIDER_FIELDS[field]
+    head = f'<b>{title}</b>\n\n{help_text}\n\n'
     if field in ('price', 'prepay'):
         try:
             number = float(raw.replace(',', '.'))
@@ -493,22 +510,22 @@ async def cdn_provider_save(message: Message, state: FSMContext):
                 raise ValueError
             value = f'{number:.3f}' if field == 'price' else str(int(round(number * 100)))
         except ValueError:
-            await message.answer('❌ Введите сумму числом, например 2.5')
+            await show(head + '❌ Введите сумму числом, например 2.5', cancel_kb)
             return
     elif field == 'included':
         if not raw.isdigit():
-            await message.answer('❌ Введите целое число ГБ')
+            await show(head + '❌ Введите целое число ГБ', cancel_kb)
             return
         value = str(int(raw))
     else:
         value = raw
         if len(value) < 8:
-            await message.answer('❌ Значение слишком короткое, проверьте и отправьте ещё раз')
+            await show(head + '❌ Значение слишком короткое, проверьте и отправьте ещё раз', cancel_kb)
             return
     yc_cdn.set_setting_value(setting, value)
     await state.clear()
-    text = await _provider_text(force=True)
-    await message.answer('✅ Сохранено.\n\n' + text, reply_markup=_provider_kb(), parse_mode='HTML')
+    text = await _provider_text()
+    await show('✅ Сохранено.\n\n' + text, _provider_kb())
 
 
 @router.callback_query(F.data == 'admin_cdn_pclear')
