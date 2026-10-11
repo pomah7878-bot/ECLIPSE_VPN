@@ -38,6 +38,7 @@ __all__ = [
     'set_happ_routing_profile_name',
     'get_default_happ_routing_profile_json',
     'get_effective_happ_routing_profile_json',
+    'prepare_routing_profile',
     'is_client_toggle_enabled',
     'set_client_toggle_enabled',
     'CLIENT_APPS',
@@ -863,6 +864,38 @@ def get_effective_happ_routing_profile_json() -> str:
     (см. get_default_happ_routing_profile_json)."""
     custom = get_happ_routing_profile_json()
     return custom if custom else get_default_happ_routing_profile_json()
+
+
+def prepare_routing_profile(profile_json: str, app: str) -> str:
+    """Готовит JSON профиля маршрутизации к отправке клиенту.
+
+    LastUpdated (Unix-время, строкой): Happ и INCY обновляют уже добавленный
+    профиль с тем же Name только если пришедшее LastUpdated БОЛЬШЕ сохранённого.
+    Без него изменения профиля (новые правила, geo-ссылки) у клиентов не
+    применяются. Время меняется ТОЛЬКО когда изменилось содержимое профиля
+    (отпечаток в настройках), а не на каждый запрос — иначе клиенты зря
+    перекачивали бы geo-файлы. Если админ сам указал LastUpdated — не трогаем.
+    Для INCY дополнительно useChunkFiles (булево, имя из его документации)."""
+    import json as _json, hashlib as _hl, time as _time
+    try:
+        profile = _json.loads(profile_json)
+    except Exception:
+        return profile_json
+    if not isinstance(profile, dict):
+        return profile_json
+    if not profile.get('LastUpdated'):
+        body = {k: v for k, v in profile.items() if k != 'LastUpdated'}
+        digest = _hl.sha1(_json.dumps(body, sort_keys=True, ensure_ascii=False).encode('utf-8')).hexdigest()
+        if get_setting('routing_profile_hash', '') != digest:
+            set_setting('routing_profile_hash', digest)
+            set_setting('routing_profile_ts', str(int(_time.time())))
+        ts = get_setting('routing_profile_ts', '') or str(int(_time.time()))
+        profile['LastUpdated'] = ts
+    if app == 'incy' and 'useChunkFiles' not in profile:
+        chunk = profile.get('UseChunkFiles')
+        if chunk is not None:
+            profile['useChunkFiles'] = str(chunk).lower() == 'true'
+    return _json.dumps(profile, ensure_ascii=False)
 
 
 CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}

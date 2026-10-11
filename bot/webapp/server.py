@@ -1617,11 +1617,14 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         if _incy_auto:
             pass
         elif routing_mode == "off":
-            if detected_app == "happ":
-                headers["routing"] = "happ://routing/off"
+            # off поддерживают оба приложения (Happ: happ://routing/off,
+            # INCY: incy://routing/off — docs.incy.cc/routing)
+            headers["routing"] = f"{detected_app}://routing/off"
         elif routing_mode in ("add", "onadd"):
             profile_json = get_effective_happ_routing_profile_json()
             if profile_json:
+                from database.requests import prepare_routing_profile
+                profile_json = prepare_routing_profile(profile_json, detected_app)
                 import base64 as _base64
                 profile_b64 = _base64.b64encode(profile_json.encode("utf-8")).decode("ascii")
                 headers["routing"] = f"{scheme}://routing/{routing_mode}/{profile_b64}"
