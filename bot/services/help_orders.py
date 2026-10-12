@@ -22,9 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-TERMS_VERSION = "1"
+TERMS_VERSION = "2"
 ACCEPT_AFTER_DAYS = 3
 MAX_DESC = 1200
+MAX_ITEMS = 40
+OTHER_CAT = "Другое"
 MAX_TITLE = 80
 MIN_PRICE = 100
 MAX_PRICE = 500_000
@@ -41,18 +43,42 @@ STATUS_TITLES = {
     "accepted": "🏁 Принято, заказ завершён",
     "canceled": "✖️ Отменён",
     "closed": "🔒 Закрыт",
+    "declined": "🚫 Отказано в выполнении",
 }
-FINAL_STATUSES = ("accepted", "canceled", "closed")
+FINAL_STATUSES = ("accepted", "canceled", "closed", "declined")
 
-DEFAULT_PRICE_LIST = """# Название | цена в рублях | пояснение (необязательно)
-Вопрос в чате (ответ или совет до 30 минут) | 1500
-Диагностика: разобраться и назвать цену решения | 3000 | не возвращается, засчитывается в заказ по желанию создателя
-Типовая настройка (домен, сертификат, оплата, включить функцию, обновление) | 4500
-Исправление проблемы (бот или сервер не работает, ошибка, откат) | 6000
-Настройка VPN-сервера (3x-ui, протоколы, CDN, подключение к боту) | 9000
-Миграция на другой сервер | 9000
-Новая функция или доработка бота (первый этап) | 15000
-Абонентская поддержка на месяц (мониторинг, обновления, до 3 часов) | 7000
+DEFAULT_PRICE_LIST = """# Формат: «## Категория», затем строки «Название | цена в рублях | пояснение для заказчика»
+## Консультации
+Быстрый вопрос | 1500 | Ответ или совет по настройке, до 30 минут переписки
+Консультация голосом | 3000 | Разбор задачи голосом или с показом экрана, до 1 часа
+Проверка настроек | 3500 | Просмотр настроек бота и сервера, письменные замечания и рекомендации без внесения изменений
+## Диагностика
+Диагностика проблемы | 3000 | Поиск причины неполадки и точная цена решения. Оплачивается отдельно, при заказе работ может быть засчитана в цену
+Аудит безопасности сервера | 7500 | Проверка доступов, обновлений, открытых портов, резервных копий и журналов, отчёт со списком исправлений
+## Настройка бота
+Установка бота с GitHub | 6000 | Установка и первичная настройка бота на ваш сервер
+Подключение оплаты | 4500 | Подключение и проверка одного способа оплаты (ЮKassa, СБП, криптовалюта и др.)
+Домен и сертификат | 4500 | Привязка домена, выпуск и автоматическое продление сертификата
+Оформление и тексты | 4500 | Название, оформление, приветствие, кнопки и тексты под ваш проект
+Обновление и восстановление | 4500 | Обновление до актуальной версии, откат неудачного обновления, восстановление из резервной копии
+## Сервер и VPN
+Настройка VPN-сервера | 9000 | Установка 3x-ui и протоколов, подключение сервера к боту
+Настройка CDN и белых списков | 9000 | Подключение CDN-режима и настройка работы при ограничениях мобильных сетей
+Добавление сервера в бот | 4500 | Подключение дополнительного сервера и проверка выдачи ключей
+Перенос на другой сервер | 9000 | Перенос бота, базы и настроек на новый сервер с проверкой работы
+Резервное копирование | 4500 | Автоматические копии базы и настроек с проверкой восстановления
+## Доработки
+Небольшая правка | 4500 | Изменение текста, кнопки или логики в одном месте, до 1,5 часа работы
+Новая функция (этап) | 15000 | Один этап доработки: описание, реализация, проверка. Следующие этапы оформляются отдельными заказами
+Интеграция с сервисом | 18000 | Подключение одного стороннего сервиса к боту через его API
+Сложная доработка (этап) | 30000 | Крупный этап: новый раздел бота или изменение схемы работы. Состав и срок указываются в предложении
+## Неполадки
+Исправление неполадки | 6000 | Бот или сервер не работает: поиск причины и исправление или откат. Без новых функций
+Срочное исправление | 9000 | То же с началом работы в течение 2 часов, включая ночь и выходные
+## Поддержка
+Поддержка на месяц | 7000 | Мониторинг, обновления и до 3 часов работы в течение месяца
+Расширенная поддержка на месяц | 15000 | Всё из обычной поддержки, до 8 часов работы и приоритетный ответ
+Обучение админа | 4500 | Как пользоваться ботом и панелью, до 1,5 часов, с записью инструкции
 """
 
 DEFAULT_EXECUTOR = "Исполнитель: владелец сервиса ECLIPSE Unlimited (реквизиты и чек — в сообщении об оплате)."
@@ -123,10 +149,14 @@ def ensure_tables(conn) -> None:
 
 # ------------------------------------------------------------ прайс и условия
 def parse_price_list(text: str) -> List[Dict[str, Any]]:
-    """Разбирает список «Название | цена | пояснение». Строки с # и пустые пропускаются."""
+    """Разбирает «## Категория» и строки «Название | цена | пояснение». Строки с # и пустые пропускаются."""
     items: List[Dict[str, Any]] = []
+    cat = ""
     for raw in (text or "").splitlines():
         line = raw.strip()
+        if line.startswith("##"):
+            cat = line.lstrip("#").strip()[:40]
+            continue
         if not line or line.startswith("#"):
             continue
         parts = [p.strip() for p in line.split("|")]
@@ -139,11 +169,10 @@ def parse_price_list(text: str) -> List[Dict[str, Any]]:
         if not (MIN_PRICE <= price <= MAX_PRICE):
             continue
         items.append({"title": parts[0][:MAX_TITLE], "price": price,
-                      "note": parts[2][:200] if len(parts) > 2 else ""})
-    return items[:12]
+                      "note": parts[2][:200] if len(parts) > 2 else "", "cat": cat})
+    return items[:MAX_ITEMS]
 
 
-MAX_ITEMS = 12
 
 
 def _load_items() -> List[Dict[str, Any]]:
@@ -154,7 +183,8 @@ def _load_items() -> List[Dict[str, Any]]:
         try:
             data = json.loads(raw)
             items = [{"title": str(i.get("title") or "")[:MAX_TITLE], "price": int(i.get("price")),
-                      "note": str(i.get("note") or "")[:200]} for i in data if isinstance(i, dict)]
+                      "note": str(i.get("note") or "")[:200], "cat": str(i.get("cat") or "")[:40]}
+                     for i in data if isinstance(i, dict)]
             return [i for i in items if i["title"] and MIN_PRICE <= i["price"] <= MAX_PRICE][:MAX_ITEMS]
         except (ValueError, TypeError):
             pass
@@ -183,12 +213,23 @@ def parse_price(raw: Any) -> Optional[int]:
     return price if MIN_PRICE <= price <= MAX_PRICE else None
 
 
-def add_price_item(title: str, price: int, note: str = "") -> bool:
+def categories(items: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+    """Категории в порядке появления в прайсе (позиции без категории идут в «Другое»)."""
+    out: List[str] = []
+    for it in (items if items is not None else _load_items()):
+        c = it.get("cat") or OTHER_CAT
+        if c not in out:
+            out.append(c)
+    return out
+
+
+def add_price_item(title: str, price: int, note: str = "", cat: str = "") -> bool:
     items = _load_items()
     title = (title or "").strip()[:MAX_TITLE]
     if not title or len(items) >= MAX_ITEMS or not (MIN_PRICE <= int(price) <= MAX_PRICE):
         return False
-    items.append({"title": title, "price": int(price), "note": (note or "").strip()[:200]})
+    items.append({"title": title, "price": int(price), "note": (note or "").strip()[:200],
+                  "cat": (cat or "").strip()[:40]})
     _save_items(items)
     return True
 
@@ -209,6 +250,8 @@ def update_price_item(idx: int, **fields: Any) -> bool:
         items[idx]["price"] = price
     if "note" in fields:
         items[idx]["note"] = str(fields["note"] or "").strip()[:200]
+    if "cat" in fields:
+        items[idx]["cat"] = str(fields["cat"] or "").strip()[:40]
     _save_items(items)
     return True
 
@@ -263,8 +306,10 @@ def terms_text() -> str:
         "5. <b>Если не вышло по нашей вине:</b> возвращаем деньги за невыполненное.\n"
         "6. <b>Если вы отказались сами:</b> оплачивается выполненная часть и понесённые расходы, "
         "остаток возвращается.\n"
-        "7. <b>Доступ.</b> Только временный. Пароли и ключи мы не сохраняем; после работ смените их.\n"
-        "8. <b>Результат.</b> Мы отвечаем за выполнение описанных действий, а не за внешние факторы: "
+        "7. <b>Отказ исполнителя.</b> Мы вправе отказаться от выполнения заказа, указав причину. "
+        "Тогда возвращаем деньги за невыполненную часть.\n"
+        "8. <b>Доступ.</b> Только временный. Пароли и ключи мы не сохраняем; после работ смените их.\n"
+        "9. <b>Результат.</b> Мы отвечаем за выполнение описанных действий, а не за внешние факторы: "
         "блокировки операторами, поведение сторонних сервисов, доход вашего проекта.\n\n"
         "<i>" + _esc(get_executor_info()) + "</i>"
     )
@@ -365,6 +410,37 @@ def close_order(order_no: int, refund_rub: float, reason: str) -> bool:
         return cur.rowcount == 1
 
 
+def decline_order(order_no: int, reason: str, refund_rub: Optional[float] = None) -> Tuple[bool, str]:
+    """Отказ исполнителя. До оплаты: просто отказ с причиной. После оплаты: возврат (по умолчанию полный;
+    если работа уже частично сделана, можно указать меньшую сумму). Сам возврат делается вручную в ЮKassa."""
+    order = get_order(order_no)
+    if not order:
+        return False, "Заказ не найден."
+    if order["status"] in FINAL_STATUSES:
+        return False, "Этот заказ уже завершён."
+    reason = (reason or "").strip()[:300]
+    if len(reason) < 3:
+        return False, "Укажите причину отказа: её увидит заказчик."
+    paid = order["status"] in ("paid", "in_progress", "delivered")
+    refund = 0.0
+    if paid:
+        amount = float(order["amount_rub"])
+        refund = amount if refund_rub is None else max(0.0, min(float(refund_rub), amount))
+    with _conn() as conn:
+        cur = conn.execute(
+            "UPDATE help_orders SET status = 'declined', closed_at = CURRENT_TIMESTAMP, refund_rub = ?, close_reason = ? "
+            "WHERE id = ? AND status NOT IN ('accepted','canceled','closed','declined')",
+            (refund, reason, order_no),
+        )
+        if cur.rowcount != 1:
+            return False, "Этот заказ уже завершён."
+    if paid and refund > 0:
+        return True, f"Отказ оформлен. Верните {money(refund)} в кабинете ЮKassa вручную."
+    if paid:
+        return True, "Отказ оформлен без возврата."
+    return True, "Отказ оформлен. Оплаты не было."
+
+
 def order_public(o: Dict[str, Any]) -> Dict[str, Any]:
     return {"no": o["id"], "title": o["title"], "description": o["description"],
             "amount": o["amount_rub"], "status": o["status"], "refund": o.get("refund_rub") or 0,
@@ -442,7 +518,7 @@ def orders_for_thread(thread_id: int) -> List[Dict[str, Any]]:
         ensure_tables(conn)
         _auto_accept(conn)
         rows = conn.execute(
-            "SELECT * FROM help_orders WHERE thread_id = ? AND (status NOT IN ('accepted','canceled','closed') "
+            "SELECT * FROM help_orders WHERE thread_id = ? AND (status NOT IN ('accepted','canceled','closed','declined') "
             "OR COALESCE(closed_at, created_at) >= datetime('now','-30 days')) ORDER BY id DESC LIMIT 20",
             (thread_id,),
         ).fetchall()
@@ -529,6 +605,17 @@ async def _check_payment(order: Dict[str, Any]) -> str:
             errored = True
             continue
         if status == "succeeded":
+            late = get_order(order["id"]) or order
+            if late["status"] in ("declined", "canceled"):
+                with _conn() as conn:
+                    cur = conn.execute(
+                        "UPDATE help_orders SET refund_rub = ? WHERE id = ? AND refund_rub = 0 "
+                        "AND status IN ('declined','canceled')", (amount, order["id"]))
+                if cur.rowcount == 1:
+                    await notify_creator_text(
+                        f"⚠️ <b>Заказ #{order['id']}</b>: после {'отказа' if late['status'] == 'declined' else 'отмены'} "
+                        f"поступила оплата {money(amount)}. Верните её в кабинете ЮKassa.", order["id"])
+                return "late"
             if _transition(order["id"], "paid", ("awaiting_payment", "offered"), "paid_at"):
                 fresh = get_order(order["id"]) or order
                 over = round(amount - float(fresh["amount_rub"]), 2)
@@ -574,7 +661,7 @@ async def api_order(instance_id: str, token: str, action: str, order_no: Any = N
     if action == "accept":
         if str(terms_version) != TERMS_VERSION:
             return {"ok": False, "reason": "terms_changed",
-                    "message": "Условия обновились. Откройте заказ заново и прочитайте их."}
+                    "message": "Условия обновились. Обновите бота (кнопка «🔄 Обновление») и откройте заказ заново."}
         if order["status"] not in ("offered", "awaiting_payment"):
             return {"ok": False, "reason": "state", "message": "Этот заказ уже нельзя оплатить."}
         if order["status"] == "awaiting_payment":
@@ -659,7 +746,7 @@ def _client_notice(o: Dict[str, Any]) -> Tuple[str, Optional[List[Tuple[str, str
             "\nСначала прочитайте условия, потом оплата. Работа начинается после оплаты."
         return body, [("📜 Условия и оплата", f"hlp_terms:{no}"), ("✖️ Отказаться", f"hlp_cancel:{no}")]
     if st == "awaiting_payment":
-        return head + "\n💳 Ждём оплату.", [("💳 Оплатить", f"hlp_pay:{no}"), ("✅ Я оплатил", f"hlp_check:{no}")]
+        return head + "\n💳 Ждём оплату.", [("💳 Оплатить", f"hlp_terms:{no}"), ("✅ Я оплатил", f"hlp_check:{no}")]
     if st == "paid":
         return head + "\n✅ Оплата получена. Создатель скоро начнёт.", None
     if st == "in_progress":
@@ -672,6 +759,13 @@ def _client_notice(o: Dict[str, Any]) -> Tuple[str, Optional[List[Tuple[str, str
         return head + "\n🏁 Заказ завершён. Спасибо!", None
     if st == "canceled":
         return head + "\n✖️ Заказ отменён.", None
+    if st == "declined":
+        extra = f"\nПричина: {_esc(o['reason'])}" if o.get("reason") else ""
+        if float(o.get("refund") or 0) > 0:
+            extra += f"\n💸 Возврат: {money(o['refund'])}. Деньги придут на ваш счёт в течение нескольких дней."
+        else:
+            extra += "\nОплата не списывалась или возврата не требуется."
+        return head + "\n🚫 Создатель не сможет выполнить этот заказ." + extra, None
     if st == "closed":
         extra = ""
         if float(o.get("refund") or 0) > 0:

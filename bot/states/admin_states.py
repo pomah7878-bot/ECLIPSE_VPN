@@ -194,6 +194,8 @@ class AdminStates(StatesGroup):
     help_price_note = State()              # Прайс помощи: пояснение новой услуги
     help_price_edit = State()              # Прайс помощи: правка поля существующей услуги
     help_executor_edit = State()           # Создатель вводит сведения об исполнителе для условий
+    help_decline_reason = State()          # Создатель вводит причину отказа в заказе
+    help_decline_refund = State()          # Создатель вводит сумму возврата при отказе
     help_discount = State()                # Создатель вводит скидку на заказ (% или рубли)
     help_order_close = State()             # Создатель закрывает заказ: «возврат | причина»
 

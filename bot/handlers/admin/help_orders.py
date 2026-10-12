@@ -104,8 +104,9 @@ async def hlp_terms(callback: CallbackQuery):
     o = data["order"]
     text = (f"{data['terms']}\n\n💼 <b>Заказ #{no}</b>: {ho._esc(o['title'])}\n"
             f"К оплате: <b>{ho.money(o['amount'])}</b> (СБП)")
+    ver = str(data.get("terms_version") or ho.TERMS_VERSION)
     await safe_edit_or_send(callback.message, text, reply_markup=_nav(
-        f"hlp_open:{no}", [_btn("✅ Согласен с условиями, оплатить", f"hlp_pay:{no}")]))
+        f"hlp_open:{no}", [_btn("✅ Согласен с условиями, оплатить", f"hlp_pay:{no}:{ver}")]))
     await callback.answer()
 
 
@@ -114,9 +115,15 @@ async def hlp_pay(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    no = int(callback.data.split(":", 1)[1])
+    parts = callback.data.split(":")
+    no = int(parts[1])
+    if len(parts) < 3:
+        # старая кнопка без версии условий: сначала покажем условия
+        await callback.answer("Сначала прочитайте условия.", show_alert=True)
+        return
+    ver = parts[2]
     await callback.answer("Создаю оплату…")
-    state, data = await ho.call("accept", no, ho.TERMS_VERSION)
+    state, data = await ho.call("accept", no, ver)
     if state == "unreachable":
         await callback.message.answer(_UNREACHABLE, reply_markup=_nav(f"hlp_open:{no}"))
         return
@@ -131,7 +138,7 @@ async def hlp_pay(callback: CallbackQuery):
         photo = BufferedInputFile(base64.b64decode(data["qr_png"]), filename=f"help{no}.png")
     except Exception:
         await callback.message.answer("❌ Не удалось показать QR. Нажмите «Оплатить» ещё раз.",
-                                      reply_markup=_nav(f"hlp_open:{no}", [_btn("💳 Оплатить", f"hlp_pay:{no}")]))
+                                      reply_markup=_nav(f"hlp_open:{no}", [_btn("💳 Оплатить", f"hlp_terms:{no}")]))
         return
     await callback.message.answer_photo(
         photo=photo,
@@ -156,6 +163,8 @@ async def hlp_check(callback: CallbackQuery):
         await callback.message.answer(f"✅ Заказ #{no} оплачен. Создатель скоро начнёт, обновления придут сюда.",
                                       reply_markup=_nav("hlp_list"))
         await callback.answer()
+    elif data.get("payment") == "late":
+        await callback.answer("Заказ уже закрыт создателем. Если вы оплатили, деньги вернут.", show_alert=True)
     elif data.get("payment") == "canceled":
         await callback.answer("Платёж отменён. Откройте заказ и оплатите заново.", show_alert=True)
     elif data.get("payment") == "error":
@@ -218,10 +227,12 @@ def _creator_order_kb(o) -> InlineKeyboardMarkup:
         rows.append([_btn("▶️ Взял в работу", f"ho_start:{no}")])
     if st in ("paid", "in_progress"):
         rows.append([_btn("📦 Сдать работу", f"ho_deliver:{no}")])
+    if st in ("offered", "awaiting_payment", "declined", "canceled"):
+        rows.append([_btn("🔄 Проверить оплату", f"ho_chk:{no}")])
     if st in ("offered", "awaiting_payment"):
         rows.append([_btn("✖️ Отозвать предложение", f"ho_withdraw:{no}")])
     if st in ("offered", "awaiting_payment", "paid", "in_progress", "delivered"):
-        rows.append([_btn("🎁 Скидка", f"ho_disc:{no}")])
+        rows.append([_btn("🎁 Скидка", f"ho_disc:{no}"), _btn("🚫 Отказать", f"ho_dec:{no}")])
     if st in ("paid", "in_progress", "delivered"):
         rows.append([_btn("🔒 Закрыть (возврат или нет)", f"ho_close:{no}")])
     rows.append([_btn("💼 Все заказы", "ho_list"), _btn("🈴 На главную", "start")])
@@ -370,6 +381,125 @@ async def ho_close_entered(message: Message, state: FSMContext):
     await message.answer(_creator_order_text(o), parse_mode="HTML", reply_markup=_creator_order_kb(o))
 
 
+# ---- проверка оплаты вручную и отказ в выполнении
+@router.callback_query(F.data.startswith("ho_chk:"))
+async def ho_check_payment(callback: CallbackQuery):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    no = int(callback.data.split(":", 1)[1])
+    o = ho.get_order(no)
+    if not o:
+        await callback.answer("Заказ не найден", show_alert=True)
+        return
+    res = await ho._check_payment(o)
+    texts = {"paid": "✅ Оплата поступила, статус обновлён.", "pending": "Оплаты пока нет.",
+             "canceled": "Платёж отменён, оплаты нет.", "error": "Не удалось проверить оплату, попробуйте позже.",
+             "late": "⚠️ Оплата пришла по закрытому заказу. Верните её в ЮKassa."}
+    fresh = ho.get_order(no)
+    try:
+        await callback.message.edit_text(_creator_order_text(fresh), parse_mode="HTML", reply_markup=_creator_order_kb(fresh))
+    except Exception:
+        pass
+    await callback.answer(texts.get(res, res), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("ho_dec:"))
+async def ho_decline_start(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    no = int(callback.data.split(":", 1)[1])
+    o = ho.get_order(no)
+    if not o or o["status"] in ho.FINAL_STATUSES:
+        await callback.answer("Этот заказ уже завершён.", show_alert=True)
+        return
+    await state.set_state(AdminStates.help_decline_reason)
+    await state.update_data(ho_no=no)
+    paid = o["status"] in ("paid", "in_progress", "delivered")
+    await safe_edit_or_send(
+        callback.message,
+        f"🚫 <b>Отказ в выполнении заказа #{no}</b>\n\nНапишите причину одним сообщением. Её увидит заказчик.\n"
+        + ("Дальше вы выберете сумму возврата." if paid else "Оплаты не было, возврат не нужен."),
+        reply_markup=_nav(f"ho_open:{no}"))
+    await callback.answer()
+
+
+async def _finish_decline(target, state: FSMContext, refund):
+    data = await state.get_data()
+    no = int(data.get("ho_no") or 0)
+    ok, msg = ho.decline_order(no, data.get("ho_reason") or "", refund)
+    await state.clear()
+    if not ok:
+        await target.answer(f"❌ {msg}", reply_markup=_nav(f"ho_open:{no}"))
+        return
+    await _show_order_after(target, ho.get_order(no), "✅ " + msg + " Заказчик получит уведомление.")
+
+
+@router.message(AdminStates.help_decline_reason)
+async def ho_decline_reason(message: Message, state: FSMContext):
+    if not _creator_only(message.from_user.id):
+        return
+    data = await state.get_data()
+    no = int(data.get("ho_no") or 0)
+    reason = (message.text or "").strip()
+    if len(reason) < 3 or reason.startswith("/"):
+        await message.answer("❌ Напишите причину текстом (хотя бы несколько слов).", reply_markup=_nav(f"ho_open:{no}"))
+        return
+    o = ho.get_order(no)
+    if not o or o["status"] in ho.FINAL_STATUSES:
+        await state.clear()
+        await message.answer("Этот заказ уже завершён.", reply_markup=_nav("ho_list"))
+        return
+    await state.update_data(ho_reason=reason[:300])
+    if o["status"] in ("paid", "in_progress", "delivered"):
+        await message.answer(
+            f"💸 Заказ #{no} оплачен ({ho.money(o['amount_rub'])}). Сколько вернуть заказчику?\n"
+            "Если работа уже частично сделана, укажите меньшую сумму.",
+            reply_markup=_nav(f"ho_open:{no}", [_btn(f"💸 Вернуть всё ({ho.money(o['amount_rub'])})", f"ho_decr:{no}:full")],
+                              [_btn("✏️ Другая сумма", f"ho_decr:{no}:custom")]))
+        return
+    await _finish_decline(message, state, None)
+
+
+@router.callback_query(F.data.startswith("ho_decr:"))
+async def ho_decline_refund(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    _, no, mode = callback.data.split(":")
+    data = await state.get_data()
+    if await state.get_state() != AdminStates.help_decline_reason or int(data.get("ho_no") or 0) != int(no):
+        await callback.answer("Отказ уже оформлен или отменён.", show_alert=True)
+        return
+    if mode == "full":
+        await callback.answer()
+        await _finish_decline(callback.message, state, None)
+        return
+    await state.set_state(AdminStates.help_decline_refund)
+    await safe_edit_or_send(callback.message,
+                            f"✏️ Напишите сумму возврата в рублях, только число (от 0 до {ho.money(ho.get_order(int(no))['amount_rub'])}).",
+                            reply_markup=_nav(f"ho_open:{no}"))
+    await callback.answer()
+
+
+@router.message(AdminStates.help_decline_refund)
+async def ho_decline_refund_entered(message: Message, state: FSMContext):
+    if not _creator_only(message.from_user.id):
+        return
+    data = await state.get_data()
+    no = int(data.get("ho_no") or 0)
+    text = (message.text or "").strip().replace(",", ".").replace(" ", "")
+    try:
+        value = float(text)
+        if value < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Напишите число, например 3000 (или 0, если возврата нет).", reply_markup=_nav(f"ho_open:{no}"))
+        return
+    await _finish_decline(message, state, value)
+
+
 # ---- скидка на заказ (в любой момент)
 def _discount_view(o):
     unpaid = o["status"] in ("offered", "awaiting_payment")
@@ -476,6 +606,28 @@ async def ho_discount_entered(message: Message, state: FSMContext):
 
 
 # ---- предложение
+def _offer_items_view(thread_id: int, ci: int = -1):
+    """Экран выбора услуги: при нескольких категориях сначала категория, потом услуга."""
+    items = ho.get_price_list()
+    cats = ho.categories(items)
+    custom = [_btn("✏️ Своя услуга и цена", f"ho_custom:{thread_id}")]
+    if len(cats) > 1 and ci < 0:
+        rows = [[_btn(f"📂 {c} ({sum(1 for it in items if _cat_of(it) == c)})"[:60], f"ho_cat:{thread_id}:{k}")]
+                for k, c in enumerate(cats)]
+        return (f"💼 <b>Предложение для установки #{thread_id}</b>\nВыберите категорию:",
+                _nav(f"cr_open:{thread_id}", *rows, custom))
+    if 0 <= ci < len(cats):
+        pool = [(gi, it) for gi, it in enumerate(items) if _cat_of(it) == cats[ci]]
+        head = f"📂 <b>{ho._esc(cats[ci])}</b>\nВыберите услугу:"
+        back = f"ho_new:{thread_id}"
+    else:
+        pool = list(enumerate(items))
+        head = f"💼 <b>Предложение для установки #{thread_id}</b>\nВыберите услугу:"
+        back = f"cr_open:{thread_id}"
+    rows = [[_btn(f"{it['title']} · {ho.money(it['price'])}"[:60], f"ho_pick:{thread_id}:{gi}")] for gi, it in pool]
+    return head, _nav(back, *rows, custom)
+
+
 @router.callback_query(F.data.startswith("ho_new:"))
 async def ho_new(callback: CallbackQuery, state: FSMContext):
     if not _creator_only(callback.from_user.id):
@@ -483,23 +635,35 @@ async def ho_new(callback: CallbackQuery, state: FSMContext):
         return
     thread_id = int(callback.data.split(":", 1)[1])
     await state.clear()
-    items = ho.get_price_list()
-    rows = [[_btn(f"{it['title']} · {ho.money(it['price'])}"[:60], f"ho_pick:{thread_id}:{i}")]
-            for i, it in enumerate(items)]
-    rows.append([_btn("✏️ Своя услуга и цена", f"ho_custom:{thread_id}")])
-    await callback.message.answer(f"💼 <b>Предложение для установки #{thread_id}</b>\nВыберите услугу:",
-                                  parse_mode="HTML", reply_markup=_nav(f"cr_open:{thread_id}", *rows))
+    text, kb = _offer_items_view(thread_id)
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
     await callback.answer()
 
 
-async def _ask_description(target, state: FSMContext, thread_id: int, title: str, price: float):
+@router.callback_query(F.data.startswith("ho_cat:"))
+async def ho_offer_category(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    _, thread_id, ci = callback.data.split(":")
+    await state.clear()
+    text, kb = _offer_items_view(int(thread_id), int(ci))
+    await safe_edit_or_send(callback.message, text, reply_markup=kb)
+    await callback.answer()
+
+
+async def _ask_description(target, state: FSMContext, thread_id: int, title: str, price: float, note: str = ""):
     await state.set_state(AdminStates.help_offer_desc)
-    await state.update_data(ho_thread=thread_id, ho_title=title, ho_price=price)
-    await target.answer(
-        f"📋 {ho._esc(title)} · <b>{ho.money(price)}</b>\n\n"
-        "Опишите одним сообщением, что входит в работу и что не входит (до "
-        f"{ho.MAX_DESC} символов).", parse_mode="HTML",
-        reply_markup=_nav(f"ho_new:{thread_id}", [_btn("⏭ Без описания", f"ho_nodesc:{thread_id}")]))
+    await state.update_data(ho_thread=thread_id, ho_title=title, ho_price=price, ho_note=note)
+    rows = []
+    text = (f"📋 {ho._esc(title)} · <b>{ho.money(price)}</b>\n\n"
+            "Опишите одним сообщением, что входит в работу и что не входит "
+            f"(до {ho.MAX_DESC} символов). Заказчик увидит это в предложении.")
+    if note:
+        text += f"\n\nИз прайса:\n<i>{ho._esc(note)}</i>"
+        rows.append([_btn("📝 Взять пояснение из прайса", f"ho_usenote:{thread_id}")])
+    rows.append([_btn("⏭ Без описания", f"ho_nodesc:{thread_id}")])
+    await target.answer(text, parse_mode="HTML", reply_markup=_nav(f"ho_new:{thread_id}", *rows))
 
 
 @router.callback_query(F.data.startswith("ho_pick:"))
@@ -514,7 +678,7 @@ async def ho_pick(callback: CallbackQuery, state: FSMContext):
     except (IndexError, ValueError):
         await callback.answer("Позиция прайса изменилась. Откройте предложение заново.", show_alert=True)
         return
-    await _ask_description(callback.message, state, int(thread_id), it["title"], it["price"])
+    await _ask_description(callback.message, state, int(thread_id), it["title"], it["price"], it.get("note") or "")
     await callback.answer()
 
 
@@ -592,6 +756,19 @@ async def ho_desc_entered(message: Message, state: FSMContext):
     await _finish_offer(message, state, text)
 
 
+@router.callback_query(F.data.startswith("ho_usenote:"))
+async def ho_usenote(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    if await state.get_state() != AdminStates.help_offer_desc:
+        await callback.answer("Предложение уже создано или отменено.", show_alert=True)
+        return
+    data = await state.get_data()
+    await callback.answer()
+    await _finish_offer(callback.message, state, data.get("ho_note") or "")
+
+
 @router.callback_query(F.data.startswith("ho_nodesc:"))
 async def ho_nodesc(callback: CallbackQuery, state: FSMContext):
     if not _creator_only(callback.from_user.id):
@@ -605,23 +782,44 @@ async def ho_nodesc(callback: CallbackQuery, state: FSMContext):
 
 
 # ---- прайс (по образцу тарифов на лицензии: список, карточка, пошаговое добавление)
-_FIELD_TITLES = {"t": "название", "p": "цену", "n": "пояснение"}
+_FIELD_TITLES = {"t": "название", "p": "цену", "n": "пояснение", "c": "категорию"}
+
+
+def _cat_of(it) -> str:
+    return it.get("cat") or ho.OTHER_CAT
 
 
 def _price_list_view():
     items = ho.get_price_list()
+    cats = ho.categories(items)
     lines = ["🏷 <b>Прайс помощи</b>", "",
-             "Это список услуг, из которого вы выбираете цену, когда выставляете предложение. "
-             "Нажмите на услугу, чтобы изменить её или удалить.", ""]
-    if items:
-        lines += [f"{i + 1}. {ho._esc(it['title'])} — <b>{ho.money(it['price'])}</b>" for i, it in enumerate(items)]
-    else:
+             "Список услуг, из которого вы выбираете цену при выставлении предложения. "
+             "Откройте категорию, чтобы изменить услугу.", ""]
+    for c in cats:
+        lines.append(f"📂 <b>{ho._esc(c)}</b>")
+        lines += [f"• {ho._esc(it['title'])} — {ho.money(it['price'])}" for it in items if _cat_of(it) == c]
+        lines.append("")
+    if not items:
         lines.append("Список пуст. Добавьте первую услугу.")
-    rows = [[_btn(f"{i + 1}. {it['title']} · {ho.money(it['price'])}"[:60], f"hp_item:{i}")] for i, it in enumerate(items)]
+    rows = [[_btn(f"📂 {c} ({sum(1 for it in items if _cat_of(it) == c)})"[:60], f"hp_cat:{ci}")] for ci, c in enumerate(cats)]
     if len(items) < ho.MAX_ITEMS:
         rows.append([_btn("➕ Добавить услугу", "hp_add")])
     rows.append([_btn("↩️ Вернуть стандартный прайс", "hp_reset_ask")])
-    return "\n".join(lines), _nav("ho_home", *rows)
+    text = "\n".join(lines)
+    return text[:3900], _nav("ho_home", *rows)
+
+
+def _price_cat_view(ci: int):
+    items = ho.get_price_list()
+    cats = ho.categories(items)
+    if not (0 <= ci < len(cats)):
+        return None
+    cat = cats[ci]
+    rows = [[_btn(f"{it['title']} · {ho.money(it['price'])}"[:60], f"hp_item:{gi}")]
+            for gi, it in enumerate(items) if _cat_of(it) == cat]
+    if len(items) < ho.MAX_ITEMS:
+        rows.append([_btn("➕ Добавить в эту категорию", f"hp_addc:{ci}")])
+    return f"📂 <b>{ho._esc(cat)}</b>\n\nНажмите на услугу, чтобы изменить её или удалить.", _nav("hp_screen", *rows)
 
 
 def _price_item_view(idx: int):
@@ -629,14 +827,15 @@ def _price_item_view(idx: int):
     if not (0 <= idx < len(items)):
         return None
     it = items[idx]
-    text = (f"🏷 <b>{ho._esc(it['title'])}</b>\n\nЦена: <b>{ho.money(it['price'])}</b>\n"
+    cats = ho.categories(items)
+    text = (f"🏷 <b>{ho._esc(it['title'])}</b>\n\nКатегория: {ho._esc(_cat_of(it))}\nЦена: <b>{ho.money(it['price'])}</b>\n"
             f"Пояснение: {ho._esc(it['note']) if it['note'] else '<i>нет</i>'}")
     rows = [[_btn("✏️ Название", f"hp_f:{idx}:t"), _btn("💰 Цена", f"hp_f:{idx}:p")],
-            [_btn("📝 Пояснение", f"hp_f:{idx}:n")]]
+            [_btn("📝 Пояснение", f"hp_f:{idx}:n"), _btn("📂 Категория", f"hp_f:{idx}:c")]]
     if idx > 0:
         rows.append([_btn("⬆️ Поднять выше", f"hp_up:{idx}")])
     rows.append([_btn("🗑 Удалить", f"hp_del:{idx}")])
-    return text, _nav("hp_screen", *rows)
+    return text, _nav(f"hp_cat:{cats.index(_cat_of(it))}", *rows)
 
 
 @router.callback_query(F.data == "hp_screen")
@@ -669,8 +868,38 @@ async def hp_item(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("hp_cat:"))
+async def hp_cat(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await state.clear()
+    view = _price_cat_view(int(callback.data.split(":", 1)[1]))
+    if not view:
+        text, kb = _price_list_view()
+        await safe_edit_or_send(callback.message, text, reply_markup=kb)
+    else:
+        await safe_edit_or_send(callback.message, view[0], reply_markup=view[1])
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("hp_addc:"))
+async def hp_add_to_category(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    cats = ho.categories()
+    ci = int(callback.data.split(":", 1)[1])
+    cat = cats[ci] if 0 <= ci < len(cats) else ""
+    await _start_add(callback, state, "" if cat == ho.OTHER_CAT else cat)
+
+
 @router.callback_query(F.data == "hp_add")
 async def hp_add(callback: CallbackQuery, state: FSMContext):
+    await _start_add(callback, state, "")
+
+
+async def _start_add(callback: CallbackQuery, state: FSMContext, cat: str):
     if not _creator_only(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
@@ -678,9 +907,10 @@ async def hp_add(callback: CallbackQuery, state: FSMContext):
         await callback.answer(f"В прайсе не больше {ho.MAX_ITEMS} услуг. Удалите ненужную.", show_alert=True)
         return
     await state.set_state(AdminStates.help_price_title)
+    await state.update_data(hp_cat=cat)
     await safe_edit_or_send(
         callback.message,
-        "➕ <b>Новая услуга</b>\n\nШаг 1 из 3. Напишите название услуги. Заказчик увидит его в предложении.\n"
+        "➕ <b>Новая услуга</b>" + (f" в категории «{ho._esc(cat)}»" if cat else "") + "\n\nШаг 1 из 3. Напишите название услуги. Заказчик увидит его в предложении.\n"
         "Например: <code>Настройка сертификата</code>",
         reply_markup=_nav("hp_screen"))
     await callback.answer()
@@ -723,11 +953,18 @@ async def hp_price_entered(message: Message, state: FSMContext):
 async def _save_new_item(target, state: FSMContext, note: str):
     data = await state.get_data()
     await state.clear()
-    if not ho.add_price_item(data.get("hp_title") or "", data.get("hp_price") or 0, note):
+    if not ho.add_price_item(data.get("hp_title") or "", data.get("hp_price") or 0, note, data.get("hp_cat") or ""):
         await target.answer("❌ Не удалось добавить услугу (проверьте цену, в прайсе не больше "
                             f"{ho.MAX_ITEMS} услуг).", reply_markup=_nav("hp_screen"))
         return
-    idx = len(ho.get_price_list()) - 1
+    items_now = ho.get_price_list()
+    idx = len(items_now) - 1
+    cat_now = data.get("hp_cat") or ""
+    if cat_now:   # новая услуга встаёт в конец своей категории
+        last = max((i for i, it in enumerate(items_now[:-1]) if _cat_of(it) == cat_now), default=None)
+        while last is not None and idx > last + 1:
+            ho.move_price_item_up(idx)
+            idx -= 1
     view = _price_item_view(idx)
     await target.answer("✅ Услуга добавлена.\n\n" + view[0], parse_mode="HTML", reply_markup=view[1])
 
@@ -770,7 +1007,8 @@ async def hp_field_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.help_price_edit)
     await state.update_data(hp_idx=idx, hp_field=field)
     hints = {"t": "Напишите новое название.", "p": f"Напишите новую цену в рублях, только число (от {ho.MIN_PRICE} до {ho.MAX_PRICE}).",
-             "n": "Напишите новое пояснение. Чтобы убрать пояснение, отправьте «-»."}
+             "n": "Напишите новое пояснение. Чтобы убрать пояснение, отправьте «-».",
+             "c": "Напишите название категории: существующей или новой. «-» убирает категорию (услуга попадёт в «Другое»)."}
     await safe_edit_or_send(callback.message, f"✏️ <b>{ho._esc(items[idx]['title'])}</b>\n\n{hints[field]}",
                             reply_markup=_nav(f"hp_item:{idx}"))
     await callback.answer()
@@ -790,8 +1028,8 @@ async def hp_field_entered(message: Message, state: FSMContext):
         await message.answer(f"❌ Нужно число от {ho.MIN_PRICE} до {ho.MAX_PRICE}, например: 4500",
                              reply_markup=_nav(f"hp_item:{idx}"))
         return
-    key = {"t": "title", "p": "price", "n": "note"}.get(field)
-    value = "" if (field == "n" and text == "-") else text
+    key = {"t": "title", "p": "price", "n": "note", "c": "cat"}.get(field)
+    value = "" if (field in ("n", "c") and text == "-") else text
     ok = key and ho.update_price_item(idx, **{key: value})
     await state.clear()
     view = _price_item_view(idx)
@@ -808,8 +1046,8 @@ async def hp_up(callback: CallbackQuery):
         return
     idx = int(callback.data.split(":", 1)[1])
     if ho.move_price_item_up(idx):
-        text, kb = _price_list_view()
-        await safe_edit_or_send(callback.message, text, reply_markup=kb)
+        view = _price_item_view(idx - 1)
+        await safe_edit_or_send(callback.message, view[0], reply_markup=view[1])
     await callback.answer("Поднял выше.")
 
 
