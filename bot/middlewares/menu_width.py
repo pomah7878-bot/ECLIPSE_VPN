@@ -85,23 +85,41 @@ def _is_home(btn) -> bool:
     ) or _label(btn) == "наглавную"
 
 
-def _is_back(btn) -> bool:
+# «⬅️ К настройкам CDN», «◀️ К списку», «⬅ Назад к ключу»: кнопка возврата с подписью. Постраничные
+# кнопки («⬅️ Пред.», «◀️ 1/3») сюда не попадают: после стрелки должно идти «Назад» или «К <чему-то>».
+_BACK_LIKE_RE = re.compile(r"^\s*[⬅◀←◁⏪]\ufe0f?\s*(назад|к\s+\S)", re.IGNORECASE)
+
+
+def _is_back_exact(btn) -> bool:
     return _label(btn) == "назад" and bool(btn.callback_data)
+
+
+def _is_back_like(btn) -> bool:
+    return bool(btn.callback_data) and bool(_BACK_LIKE_RE.match(btn.text or ""))
+
+
 
 
 def normalize_nav(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
     """Правило по умолчанию: «Назад» и «На главную» всегда в ОДНОЙ строке
-    в самом низу клавиатуры (Назад слева, На главную справа)."""
+    в самом низу клавиатуры (Назад слева, На главную справа).
+
+    Кнопка возврата с подписью («⬅️ К настройкам CDN», «⬅️ К списку») считается «Назад», если она одна
+    в своей строке и на экране есть «На главную»: так они тоже попадают в одну строку."""
+    has_home = any(_is_home(b) for row in markup.inline_keyboard for b in row)
     back = home = None
     rows = []
     for row in markup.inline_keyboard:
         kept = []
         for b in row:
-            if back is None and _is_back(b):
+            # подписанная кнопка возврата: одна в строке либо уже в паре с «На главную» (повторный проход)
+            alone = len(row) == 1 or (len(row) == 2 and any(_is_home(x) for x in row))
+            is_back = _is_back_exact(b) or (has_home and alone and _is_back_like(b))
+            if back is None and is_back:
                 back = b
             elif home is None and _is_home(b):
                 home = b
-            elif _is_back(b) or _is_home(b):
+            elif _is_back_exact(b) or _is_home(b):
                 continue  # дубликат навигации
             else:
                 kept.append(b)
