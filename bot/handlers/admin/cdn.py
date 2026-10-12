@@ -47,6 +47,16 @@ SETTING_FIELDS = {
         'Для отдельного клиента админ может задать другой объём в карточке его ключа.',
         '10',
     ),
+    'pgb': (
+        'cdn_promo_gb', 'Проба: объём, ГБ',
+        'Сколько ГБ получает клиент в пробном CDN. Берите немного: CDN платный для вас по объёму.',
+        '2',
+    ),
+    'pdays': (
+        'cdn_promo_days', 'Проба: срок, дней',
+        'Через сколько дней пробный CDN заканчивается, даже если объём не выбран.',
+        '7',
+    ),
     'days': (
         'cdn_pack_days', 'Срок пакета, дней',
         'Через сколько дней пакет заканчивается, даже если объём не выбран. '
@@ -60,10 +70,13 @@ def _stats_line() -> str:
     from database import db_cdn
     packs = db_cdn.list_packs()
     if not packs:
-        return 'Пакетов пока нет.'
+        from database import db_cdn as _db
+        return f'Пакетов пока нет. Проб выдано: {_db.promo_count()}.'
     active = sum(1 for p in packs if p['status'] == db_cdn.STATUS_ACTIVE)
     free = sum(1 for p in packs if p['status'] == db_cdn.STATUS_ACTIVE and p['is_free'])
-    return f'Пакетов всего: {len(packs)}, активных: {active} (из них бесплатных: {free}).'
+    from database import db_cdn as _db
+    return (f'Пакетов всего: {len(packs)}, активных: {active} (из них бесплатных: {free}). '
+            f'Проб выдано: {_db.promo_count()}.')
 
 
 def _group_names(ids) -> str:
@@ -111,6 +124,11 @@ def _settings_text() -> str:
         '• «В тарифах» — CDN входит в платные тарифы выбранных групп, цена CDN прибавляется к тарифу.\n'
         '• «Платный пакет» — кнопка «🌐 CDN» в карточке ключа: докупка объёма отдельно от тарифа.\n'
         'Цена и объём берутся из настроек выше и общие для обоих. Кнопка покупки видна, когда отмечены оба пункта ✅.\n\n'
+        f'<b>Пробный CDN:</b> {"🟢 включён" if cdn.is_promo_on() else "⚪ выключен"}. '
+        f'Клиент один раз нажимает «🎁 Попробовать бесплатно» на экране CDN и получает '
+        f'{cdn.get_promo_gb()} ГБ на {cdn.get_promo_days()} дн. Потом — обычная покупка'
+        f'{"" if cdn.get_sale_price_cents() > 0 else " (сейчас покупка выключена: задайте цену и включите платный пакет)"}. '
+        'Пробу видят все клиенты с подпиской.\n\n'
         '<b>Выдать бесплатно или изменить объём</b> для одного клиента: '
         'Пользователи → ключ → «🌐 CDN-пакет».\n\n'
         f'📊 {_stats_line()}'
@@ -124,6 +142,8 @@ def _settings_kb() -> InlineKeyboardMarkup:
         'price': cdn.format_price(cdn.get_cdn_price_cents()) if cdn.get_cdn_price_cents() > 0 else 'не задана',
         'gb': f'{cdn.get_cdn_pack_gb()} ГБ',
         'days': f'{cdn.get_cdn_pack_days()} дн.',
+        'pgb': f'{cdn.get_promo_gb()} ГБ',
+        'pdays': f'{cdn.get_promo_days()} дн.',
     }
     rows = [[InlineKeyboardButton(text=f'✏️ {meta[1]}: {values[field]}', callback_data=f'admin_cdn_set:{field}')]
             for field, meta in SETTING_FIELDS.items()]
@@ -133,7 +153,11 @@ def _settings_kb() -> InlineKeyboardMarkup:
                               callback_data='admin_cdn_toggle:tariffs')],
         [InlineKeyboardButton(text=f"{'🟢' if a_on else '⚪'} Платный пакет (доп. функция)",
                               callback_data='admin_cdn_toggle:addon')],
+        [InlineKeyboardButton(text=f"{'🟢' if cdn.is_promo_on() else '⚪'} Пробный CDN для клиентов",
+                              callback_data='admin_cdn_toggle:promo')],
     ]
+    if cdn.is_promo_on():
+        mode_rows.append([InlineKeyboardButton(text='📣 Сообщить клиентам о пробе', callback_data='admin_cdn_promo_news')])
     if t_on:
         chosen = set(cdn.get_cdn_group_ids())
         from database.db_groups import get_all_groups
@@ -167,12 +191,17 @@ async def cdn_toggle_flag(callback: CallbackQuery, state: FSMContext):
     elif which == 'addon':
         cdn.set_cdn_flags(addon=not cdn.is_addon_on())
         on, title = cdn.is_addon_on(), 'Платный пакет'
+    elif which == 'promo':
+        cdn.set_promo_on(not cdn.is_promo_on())
+        on, title = cdn.is_promo_on(), 'Пробный CDN'
     else:
         await callback.answer()
         return
     note = ''
     if which == 'tariffs' and on and not cdn.get_cdn_group_ids():
         note = ' Отметьте группы тарифов ниже.'
+    if which == 'promo' and on and not cdn.is_cdn_active():
+        note = ' CDN не включён или не задан инбаунд: клиенты пробу не увидят.'
     await callback.answer(f"{title}: {'включено' if on else 'выключено'}.{note}", show_alert=bool(note))
     await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
 
@@ -194,6 +223,83 @@ async def cdn_toggle_group(callback: CallbackQuery, state: FSMContext):
     cdn.toggle_cdn_group(int(callback.data.split(':')[1]))
     await callback.answer()
     await safe_edit_or_send(callback.message, _settings_text(), reply_markup=_settings_kb())
+
+
+def _promo_news_text() -> str:
+    from bot.services import cdn
+    return (
+        '🎁 <b>Новое: пробный CDN</b>\n\n'
+        'Если мобильный интернет работает только на «белых» адресах, обычные подключения могут не открываться. '
+        'CDN — отдельное подключение, которое проходит такие ограничения.\n\n'
+        f'Попробуйте бесплатно: <b>{cdn.get_promo_gb()} ГБ на {cdn.get_promo_days()} дн.</b>\n\n'
+        'Как включить:\n'
+        '1. Откройте свой ключ в боте.\n'
+        '2. Нажмите «🌐 CDN».\n'
+        '3. Нажмите «🎁 Попробовать бесплатно».\n'
+        '4. В приложении Happ обновите подписку кнопкой 🔄.\n\n'
+        'Проба выдаётся один раз.'
+    )
+
+
+def _promo_news_nav(*first_rows) -> InlineKeyboardMarkup:
+    rows = list(first_rows)
+    rows.append([InlineKeyboardButton(text='⬅️ К настройкам CDN', callback_data='admin_cdn_settings'),
+                 InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+@router.callback_query(F.data == 'admin_cdn_promo_news')
+async def cdn_promo_news(callback: CallbackQuery, state: FSMContext):
+    """Готовит текст рассылки о пробе. Саму рассылку админ проверяет и запускает в обычном разделе рассылок."""
+    from bot.services import cdn
+    from bot.services.license import is_feature_available
+    if not cdn.is_promo_on():
+        await callback.answer('Сначала включите пробный CDN', show_alert=True)
+        return
+    if not is_feature_available('broadcast_marketing'):
+        await safe_edit_or_send(
+            callback.message,
+            '📣 Рассылки в вашем тарифе недоступны. Готовый текст можно отправить клиентам вручную:\n\n' + _promo_news_text(),
+            reply_markup=_promo_news_nav())
+        await callback.answer()
+        return
+    from bot.handlers.admin.broadcast import get_broadcast_message
+    from bot.services.broadcast_content import is_broadcast_content_ready
+    if is_broadcast_content_ready(get_broadcast_message()):
+        await safe_edit_or_send(
+            callback.message,
+            '📣 В разделе рассылок уже сохранён другой текст. Если продолжить, он будет заменён текстом о пробном CDN.',
+            reply_markup=_promo_news_nav([InlineKeyboardButton(text='✅ Заменить и подготовить', callback_data='admin_cdn_promo_news_ok')]))
+        await callback.answer()
+        return
+    await _promo_news_prepare(callback)
+
+
+@router.callback_query(F.data == 'admin_cdn_promo_news_ok')
+async def cdn_promo_news_ok(callback: CallbackQuery, state: FSMContext):
+    await _promo_news_prepare(callback)
+
+
+async def _promo_news_prepare(callback: CallbackQuery) -> None:
+    from bot.handlers.admin.broadcast import save_broadcast_message
+    from bot.services.broadcast_validation import BroadcastValidationError, validate_broadcast_message
+    from bot.services import cdn
+    if not cdn.is_promo_on():
+        await callback.answer('Сначала включите пробный CDN', show_alert=True)
+        return
+    try:
+        text = validate_broadcast_message(_promo_news_text())
+        save_broadcast_message(text)
+    except BroadcastValidationError as e:
+        await callback.answer(f'Не удалось подготовить текст: {e}', show_alert=True)
+        return
+    await safe_edit_or_send(
+        callback.message,
+        '📣 <b>Текст рассылки подготовлен</b>\n\n' + _promo_news_text() +
+        '\n\n———\nОткройте рассылку: там можно посмотреть предварительный просмотр, выбрать, кому отправить '
+        '(например, только клиентам с активной подпиской), и запустить.',
+        reply_markup=_promo_news_nav([InlineKeyboardButton(text='📣 Открыть рассылку', callback_data='admin_broadcast')]))
+    await callback.answer()
 
 
 @router.callback_query(F.data == 'admin_cdn_settings')

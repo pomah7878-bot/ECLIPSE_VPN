@@ -49,6 +49,56 @@ def create_table(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cdn_packs_status ON cdn_packs(status)")
+    ensure_promo_table(conn)
+
+
+def ensure_promo_table(conn: sqlite3.Connection) -> None:
+    """Пробный CDN: один раз на пользователя (user_id — первичный ключ)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS cdn_promo_claims (
+            user_id INTEGER PRIMARY KEY,
+            vpn_key_id INTEGER,
+            gb INTEGER NOT NULL DEFAULT 0,
+            days INTEGER NOT NULL DEFAULT 0,
+            claimed_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+
+def promo_claimed(user_id: int) -> bool:
+    with get_db() as conn:
+        ensure_promo_table(conn)
+        return conn.execute("SELECT 1 FROM cdn_promo_claims WHERE user_id = ?", (int(user_id),)).fetchone() is not None
+
+
+def promo_try_claim(user_id: int, key_id: int, gb: int, days: int) -> bool:
+    """Атомарно занимает пробу. True — именно этот вызов её занял."""
+    with get_db() as conn:
+        ensure_promo_table(conn)
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO cdn_promo_claims (user_id, vpn_key_id, gb, days) VALUES (?, ?, ?, ?)",
+            (int(user_id), int(key_id), int(gb), int(days)))
+        return cur.rowcount == 1
+
+
+def promo_release(user_id: int) -> None:
+    with get_db() as conn:
+        ensure_promo_table(conn)
+        conn.execute("DELETE FROM cdn_promo_claims WHERE user_id = ?", (int(user_id),))
+
+
+def promo_is_trial_key(key_id: int) -> bool:
+    with get_db() as conn:
+        ensure_promo_table(conn)
+        return conn.execute("SELECT 1 FROM cdn_promo_claims WHERE vpn_key_id = ?", (int(key_id),)).fetchone() is not None
+
+
+def promo_count() -> int:
+    with get_db() as conn:
+        ensure_promo_table(conn)
+        return int(conn.execute("SELECT COUNT(*) FROM cdn_promo_claims").fetchone()[0])
 
 
 def parse_time(value: Optional[str]) -> Optional[datetime]:

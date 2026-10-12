@@ -517,6 +517,79 @@ def is_cdn_active() -> bool:
     return is_cdn_enabled() and bool(get_cdn_inbound_ids())
 
 
+# ------------------------------------------------------------------ промо --
+# Пробный CDN: админ включает кнопку «Попробовать бесплатно», клиент получает небольшой
+# пакет один раз (на пользователя), дальше — обычная покупка.
+
+DEFAULT_PROMO_GB = 2
+DEFAULT_PROMO_DAYS = 7
+
+
+def is_promo_on() -> bool:
+    from database.db_settings import get_setting
+    return str(get_setting("cdn_promo_on", "0") or "0").strip() == "1"
+
+
+def set_promo_on(on: bool) -> None:
+    from database.db_settings import set_setting
+    set_setting("cdn_promo_on", "1" if on else "0")
+
+
+def get_promo_gb() -> int:
+    value = _int_setting("cdn_promo_gb", DEFAULT_PROMO_GB)
+    return value if value > 0 else DEFAULT_PROMO_GB
+
+
+def get_promo_days() -> int:
+    value = _int_setting("cdn_promo_days", DEFAULT_PROMO_DAYS)
+    return value if value > 0 else DEFAULT_PROMO_DAYS
+
+
+def promo_offer_for_key(key_id: int, user_id: Optional[int] = None) -> bool:
+    """Показывать ли «Попробовать бесплатно»: проба включена, CDN настроен, пользователь её ещё не получал,
+    на ключе нет пакета."""
+    try:
+        if not (is_promo_on() and is_cdn_active()):
+            return False
+        if user_id is None:
+            from database.db_keys import get_vpn_key_by_id
+            user_id = (get_vpn_key_by_id(int(key_id)) or {}).get("user_id")
+        if not user_id or db_cdn.promo_claimed(int(user_id)):
+            return False
+        return db_cdn.get_pack(int(key_id)) is None
+    except Exception as e:  # noqa: BLE001
+        logger.debug("CDN: проверка пробы: %s", e)
+        return False
+
+
+async def claim_promo(key_id: int, user_id: int) -> Dict[str, Any]:
+    """Выдаёт пробный пакет. Проба занимается атомарно до выдачи и освобождается, если выдача не удалась."""
+    from database.db_keys import get_vpn_key_by_id
+    if not (is_promo_on() and is_cdn_active()):
+        return {"ok": False, "error": "Пробный CDN сейчас недоступен"}
+    gb, days = get_promo_gb(), get_promo_days()
+    async with _buy_locks[key_id]:
+        key = get_vpn_key_by_id(key_id)
+        if not key or int(key.get("user_id") or 0) != int(user_id):
+            return {"ok": False, "error": "Ключ не найден"}
+        problem = validate_key_for_purchase(key)
+        if problem:
+            return {"ok": False, "error": problem}
+        if db_cdn.get_pack(key_id):
+            return {"ok": False, "error": "На этом ключе уже есть пакет CDN"}
+        if not db_cdn.promo_try_claim(int(user_id), key_id, gb, days):
+            return {"ok": False, "error": "Пробный CDN вы уже получали"}
+        try:
+            result = await activate_pack(key_id, gb=gb, days=days, is_free=True)
+        except Exception as e:  # noqa: BLE001
+            logger.error("CDN: выдача пробы упала, key=%s: %s", key_id, e)
+            result = {"ok": False, "error": "Сервер сейчас недоступен. Попробуйте позже"}
+        if not result.get("ok"):
+            db_cdn.promo_release(int(user_id))
+            return {"ok": False, "error": result.get("error") or "Не удалось выдать пакет"}
+        return result
+
+
 def get_sale_price_cents() -> int:
     """Цена платного пакета для клиента: 0 (покупка недоступна), если доп. функция выключена
     или CDN не настроен. «CDN в тарифах» на продажу пакета не влияет."""
@@ -962,7 +1035,12 @@ def describe_pack(pack: Optional[Dict[str, Any]]) -> str:
         f"Действует до: {until}",
     ]
     if pack.get("is_free"):
-        lines.append("🎁 Выдан администратором")
+        trial = False
+        try:
+            trial = db_cdn.promo_is_trial_key(int(pack["vpn_key_id"]))
+        except Exception:  # noqa: BLE001
+            pass
+        lines.append("🎁 Пробный пакет" if trial else "🎁 Выдан администратором")
     return "\n".join(lines)
 
 
