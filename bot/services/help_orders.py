@@ -635,6 +635,53 @@ async def _check_payment(order: Dict[str, Any]) -> str:
     return "error" if errored else "canceled"
 
 
+SWEEP_INTERVAL_SEC = 60
+
+
+def _orders_to_sweep(limit: int = 50) -> List[Dict[str, Any]]:
+    """Заказы, по которым ещё может прийти оплата: ждущие оплаты и закрытые за последние 3 дня
+    без зафиксированного возврата (запоздавшая оплата по старому QR)."""
+    with _conn() as conn:
+        ensure_tables(conn)
+        rows = conn.execute(
+            "SELECT * FROM help_orders WHERE status = 'awaiting_payment' "
+            "OR (status IN ('declined','canceled') AND refund_rub = 0 "
+            "AND COALESCE(closed_at, created_at) >= datetime('now','-3 days') "
+            "AND id IN (SELECT order_id FROM help_order_payments)) "
+            "ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+async def sweep_payments() -> int:
+    """Один проход фоновой проверки оплаты. Возвращает число заказов, ставших оплаченными."""
+    paid = 0
+    for order in _orders_to_sweep():
+        try:
+            if await _check_payment(order) == "paid":
+                paid += 1
+        except Exception as exc:
+            logger.warning(f"help_orders: фоновая проверка #{order.get('id')}: {exc}")
+    return paid
+
+
+async def run_help_payment_sweeper() -> None:
+    """Фоновая задача лицензионного сервера: раз в минуту проверяет оплату заказов помощи,
+    чтобы создатель и заказчик узнавали об оплате без ручной проверки."""
+    import asyncio
+    from bot.services.license import is_license_server
+    if not is_license_server():
+        return
+    logger.info("💼 Помощь для админа: фоновая проверка оплаты запущена")
+    while True:
+        try:
+            await sweep_payments()
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            logger.warning(f"help_orders: ошибка фоновой проверки: {exc}")
+        await asyncio.sleep(SWEEP_INTERVAL_SEC)
+
+
 async def api_order(instance_id: str, token: str, action: str, order_no: Any = None,
                     terms_version: str = "") -> Dict[str, Any]:
     thread = _auth_thread(instance_id, token)
