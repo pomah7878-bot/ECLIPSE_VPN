@@ -80,11 +80,15 @@ async def creator_chat_command(message: Message, state: FSMContext):
         return
     from bot.services.license import is_license_server
     if is_license_server():
-        await message.answer("Это главная инсталляция: сообщения приходят вам сюда. Список чатов: /creator_chats")
+        from bot.keyboards.admin_misc import home_button
+        await message.answer("Это главная инсталляция: сообщения приходят вам сюда. Список чатов: /creator_chats",
+                             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[home_button()]]))
         return
     from bot.services import creator_chat as cc
     if not await cc.refresh_status():
-        await message.answer("Помощь для админа сейчас недоступна.")
+        from bot.keyboards.admin_misc import home_button
+        await message.answer("Помощь для админа сейчас недоступна.",
+                             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[home_button()]]))
         return
     await state.clear()
     await message.answer(_chat_text(), parse_mode="HTML", reply_markup=_chat_kb())
@@ -95,12 +99,12 @@ async def creator_chat_write_start(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    from bot.keyboards.admin_misc import back_button
+    from bot.keyboards.admin_misc import back_button, home_button
     await state.set_state(AdminStates.creator_chat_message)
     await safe_edit_or_send(
         callback.message,
         "✍️ Напишите сообщение создателю одним сообщением (до 1500 символов).",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('creator_chat')]]),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('creator_chat'), home_button()]]),
     )
     await callback.answer()
 
@@ -111,7 +115,9 @@ async def creator_chat_message_entered(message: Message, state: FSMContext):
         return
     text = (message.text or "").strip()
     if not text or text.startswith("/"):
-        await message.answer("❌ Отправьте текстовое сообщение (без команды).")
+        from bot.keyboards.admin_misc import back_button, home_button
+        await message.answer("❌ Отправьте текстовое сообщение (без команды).",
+                             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('creator_chat'), home_button()]]))
         return
     from bot.services import creator_chat as cc
     wait = await message.answer("🔄 Отправляю…")
@@ -195,21 +201,24 @@ async def creator_chats_list(message: Message):
         return
     from bot.services import creator_chat as cc
     threads = cc.list_threads(10)
+    from bot.keyboards.admin_misc import back_button, home_button
+    nav_row = [back_button('ho_home'), home_button()]
     if not threads:
-        await message.answer("Пока никто не писал.")
+        await message.answer("Пока никто не писал.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[nav_row]))
         return
     rows = [[InlineKeyboardButton(
         text=f"{'🚫 ' if t['blocked'] else ''}#{t['id']} {cc.thread_title(t)}"[:60],
         callback_data=f"cr_open:{t['id']}")] for t in threads]
     await message.answer("✉️ <b>Чаты с установками</b>", parse_mode="HTML",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows + [nav_row]))
 
 
 @router.callback_query(F.data.startswith("cr_open:"))
-async def creator_thread_open(callback: CallbackQuery):
+async def creator_thread_open(callback: CallbackQuery, state: FSMContext):
     if not _creator_only(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
+    await state.clear()
     from bot.services import creator_chat as cc
     thread_id = int(callback.data.split(":", 1)[1])
     t = cc.get_thread(thread_id)
@@ -226,7 +235,10 @@ async def creator_reply_start(callback: CallbackQuery, state: FSMContext):
     thread_id = int(callback.data.split(":", 1)[1])
     await state.set_state(AdminStates.creator_reply)
     await state.update_data(creator_thread_id=thread_id)
-    await callback.message.answer(f"✍️ Напишите ответ для установки #{thread_id} (одним сообщением):")
+    from bot.keyboards.admin_misc import back_button, home_button
+    await callback.message.answer(
+        f"✍️ Напишите ответ для установки #{thread_id} (одним сообщением):",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f"cr_open:{thread_id}"), home_button()]]))
     await callback.answer()
 
 
@@ -236,16 +248,20 @@ async def creator_reply_entered(message: Message, state: FSMContext):
         return
     text = (message.text or "").strip()
     if not text or text.startswith("/"):
-        await message.answer("❌ Отправьте текст ответа (без команды).")
+        from bot.keyboards.admin_misc import home_button
+        await message.answer("❌ Отправьте текст ответа (без команды).",
+                             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[home_button()]]))
         return
     from bot.services import creator_chat as cc
     data = await state.get_data()
     thread_id = int(data.get("creator_thread_id") or 0)
     await state.clear()
     mid = cc.server_reply(thread_id, text)
+    from bot.keyboards.admin_misc import back_button, home_button
     await message.answer(
         f"✅ Ответ сохранён, установка #{thread_id} получит его в течение нескольких минут." if mid
-        else "❌ Не удалось сохранить ответ: чат не найден."
+        else "❌ Не удалось сохранить ответ: чат не найден.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button(f"cr_open:{thread_id}"), home_button()]]),
     )
 
 

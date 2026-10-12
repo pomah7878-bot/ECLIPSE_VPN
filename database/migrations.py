@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 147
+LATEST_VERSION = 148
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3317,6 +3317,13 @@ def migration_147(conn: sqlite3.Connection) -> None:
     logger.info("Migration v147 applied: creator_threads, creator_messages, creator_chat_local, help_orders")
 
 
+def migration_148(conn: sqlite3.Connection) -> None:
+    """Версия 1.281: скидки на заказы помощи (list_price_rub, discount_text) и учёт всех платежей заказа."""
+    from bot.services.help_orders import ensure_tables
+    ensure_tables(conn)
+    logger.info("Migration v148 applied: help_orders (скидки), help_order_payments")
+
+
 def migration_146(conn: sqlite3.Connection) -> None:
     """Версия 1.277: учёт устройств Happ (happ_devices) для предупреждений о лимите тарифа."""
     from bot.services.happ_devices import ensure_table
@@ -3486,6 +3493,7 @@ MIGRATIONS = {
     145: migration_145,
     146: migration_146,
     147: migration_147,
+    148: migration_148,
 }
 
 

@@ -98,7 +98,21 @@ def ensure_tables(conn) -> None:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(help_orders)").fetchall()}
+    for name, ddl in (("list_price_rub", "REAL"), ("discount_text", "TEXT")):   # добавлены в 1.281
+        if name not in cols:
+            conn.execute(f"ALTER TABLE help_orders ADD COLUMN {name} {ddl}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_help_orders_thread ON help_orders(thread_id, id)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS help_order_payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            payment_id TEXT NOT NULL,
+            amount_rub REAL NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_help_order_payments_order ON help_order_payments(order_id)")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS help_orders_local (
             order_no INTEGER PRIMARY KEY,
@@ -129,22 +143,92 @@ def parse_price_list(text: str) -> List[Dict[str, Any]]:
     return items[:12]
 
 
-def get_price_text() -> str:
+MAX_ITEMS = 12
+
+
+def _load_items() -> List[Dict[str, Any]]:
+    import json
     from database.requests import get_setting
-    return get_setting(_PRICES_KEY, "") or DEFAULT_PRICE_LIST
+    raw = get_setting(_PRICES_KEY, "") or ""
+    if raw.strip().startswith("["):
+        try:
+            data = json.loads(raw)
+            items = [{"title": str(i.get("title") or "")[:MAX_TITLE], "price": int(i.get("price")),
+                      "note": str(i.get("note") or "")[:200]} for i in data if isinstance(i, dict)]
+            return [i for i in items if i["title"] and MIN_PRICE <= i["price"] <= MAX_PRICE][:MAX_ITEMS]
+        except (ValueError, TypeError):
+            pass
+    return parse_price_list(DEFAULT_PRICE_LIST)
 
 
 def get_price_list() -> List[Dict[str, Any]]:
-    return parse_price_list(get_price_text())
+    return _load_items()
 
 
-def set_price_text(text: str) -> int:
-    """Сохраняет прайс; возвращает число распознанных позиций (0 — не сохраняет)."""
+def _save_items(items: List[Dict[str, Any]]) -> None:
+    import json
     from database.requests import set_setting
-    items = parse_price_list(text)
-    if items:
-        set_setting(_PRICES_KEY, text.strip())
-    return len(items)
+    set_setting(_PRICES_KEY, json.dumps(items[:MAX_ITEMS], ensure_ascii=False))
+
+
+def parse_price(raw: Any) -> Optional[int]:
+    """Цена из текста вида «4500», «4 500 ₽», «4500,00». None, если не подходит."""
+    text = str(raw or "").strip().replace(",", ".")
+    if "." in text:
+        text = text.split(".", 1)[0]
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if not digits:
+        return None
+    price = int(digits)
+    return price if MIN_PRICE <= price <= MAX_PRICE else None
+
+
+def add_price_item(title: str, price: int, note: str = "") -> bool:
+    items = _load_items()
+    title = (title or "").strip()[:MAX_TITLE]
+    if not title or len(items) >= MAX_ITEMS or not (MIN_PRICE <= int(price) <= MAX_PRICE):
+        return False
+    items.append({"title": title, "price": int(price), "note": (note or "").strip()[:200]})
+    _save_items(items)
+    return True
+
+
+def update_price_item(idx: int, **fields: Any) -> bool:
+    items = _load_items()
+    if not (0 <= idx < len(items)):
+        return False
+    if "title" in fields:
+        title = str(fields["title"] or "").strip()[:MAX_TITLE]
+        if not title:
+            return False
+        items[idx]["title"] = title
+    if "price" in fields:
+        price = parse_price(fields["price"])
+        if price is None:
+            return False
+        items[idx]["price"] = price
+    if "note" in fields:
+        items[idx]["note"] = str(fields["note"] or "").strip()[:200]
+    _save_items(items)
+    return True
+
+
+def delete_price_item(idx: int) -> bool:
+    items = _load_items()
+    if not (0 <= idx < len(items)):
+        return False
+    del items[idx]
+    _save_items(items)
+    return True
+
+
+def move_price_item_up(idx: int) -> bool:
+    items = _load_items()
+    if not (1 <= idx < len(items)):
+        return False
+    items[idx - 1], items[idx] = items[idx], items[idx - 1]
+    _save_items(items)
+    return True
 
 
 def reset_price_list() -> None:
@@ -284,7 +368,72 @@ def close_order(order_no: int, refund_rub: float, reason: str) -> bool:
 def order_public(o: Dict[str, Any]) -> Dict[str, Any]:
     return {"no": o["id"], "title": o["title"], "description": o["description"],
             "amount": o["amount_rub"], "status": o["status"], "refund": o.get("refund_rub") or 0,
-            "reason": o.get("close_reason") or ""}
+            "reason": o.get("close_reason") or "", "list_price": o.get("list_price_rub") or o["amount_rub"],
+            "discount": o.get("discount_text") or ""}
+
+
+def price_line(amount: Any, list_price: Any = None, discount: str = "") -> str:
+    """«Сумма: 5 400 ₽» или со скидкой: «Сумма: <s>6 000 ₽</s> 5 400 ₽ (−10%)»."""
+    try:
+        has = bool(list_price) and float(list_price) > float(amount)
+    except (TypeError, ValueError):
+        has = False
+    if has:
+        return f"Сумма: <s>{money(list_price)}</s> <b>{money(amount)}</b>" + (f" ({_esc(discount)})" if discount else "")
+    return f"Сумма: <b>{money(amount)}</b>"
+
+
+def apply_discount(order_no: int, mode: str, value: Any = None) -> Tuple[bool, str]:
+    """Скидка в любой момент. mode: 'pct' (процент), 'rub' (рублей), 'reset' (убрать, только до оплаты).
+    До оплаты меняется цена заказа (процент и рубли считаются от первоначальной цены).
+    После оплаты скидка это частичный возврат: сумма фиксируется, возврат создатель делает вручную."""
+    order = get_order(order_no)
+    if not order:
+        return False, "Заказ не найден."
+    st = order["status"]
+    try:
+        num = float(str(value).replace(",", ".").replace(" ", "")) if value is not None else 0.0
+    except ValueError:
+        return False, "Нужно число."
+    if mode == "pct" and not (0 < num <= 90):
+        return False, "Процент скидки от 1 до 90."
+    if mode == "rub" and num <= 0:
+        return False, "Сумма скидки должна быть больше нуля."
+    if st in ("offered", "awaiting_payment"):
+        base = float(order.get("list_price_rub") or order["amount_rub"])
+        if mode == "reset":
+            new, text, listp = base, None, None
+        else:
+            off = round(base * num / 100) if mode == "pct" else round(num)
+            new = base - off
+            text = f"−{num:g}%" if mode == "pct" else f"−{off:.0f} ₽"
+            listp = base
+            if new < MIN_PRICE:
+                return False, f"После скидки цена не может быть меньше {MIN_PRICE} ₽."
+        with _conn() as conn:
+            conn.execute(
+                "UPDATE help_orders SET amount_rub = ?, list_price_rub = ?, discount_text = ?, "
+                "yk_payment_id = CASE WHEN status = 'awaiting_payment' THEN NULL ELSE yk_payment_id END, "
+                "yk_qr_url = CASE WHEN status = 'awaiting_payment' THEN NULL ELSE yk_qr_url END "
+                "WHERE id = ? AND status IN ('offered','awaiting_payment')",
+                (new, listp, text, order_no),
+            )
+        return True, (f"Скидка {text}. Новая цена: {money(new)}." if text else f"Скидка убрана. Цена: {money(new)}.")
+    if st in ("paid", "in_progress", "delivered"):
+        if mode == "reset":
+            return False, "Уже оформленную скидку после оплаты отменить нельзя."
+        paid = float(order["amount_rub"])
+        already = float(order.get("refund_rub") or 0)
+        part = round(paid * num / 100) if mode == "pct" else round(num)
+        if part <= 0 or already + part > paid - MIN_PRICE:
+            return False, f"Скидка не должна оставлять в оплате меньше {MIN_PRICE} ₽."
+        text = (order.get("discount_text") or "")
+        text = (text + ", " if text else "") + f"возврат {part:.0f} ₽"
+        with _conn() as conn:
+            conn.execute("UPDATE help_orders SET refund_rub = ?, discount_text = ? WHERE id = ? "
+                         "AND status IN ('paid','in_progress','delivered')", (already + part, text, order_no))
+        return True, f"Скидка {money(part)} оформлена. Верните эту сумму в кабинете ЮKassa вручную."
+    return False, "К этому заказу скидку уже нельзя применить."
 
 
 def orders_for_thread(thread_id: int) -> List[Dict[str, Any]]:
@@ -346,7 +495,8 @@ async def notify_creator_text(text: str, order_no: Optional[int] = None) -> None
         kb = None
         if order_no:
             kb = InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text=f"💼 Заказ #{order_no}", callback_data=f"ho_open:{order_no}")]])
+                InlineKeyboardButton(text=f"💼 Заказ #{order_no}", callback_data=f"ho_open:{order_no}"),
+                InlineKeyboardButton(text="🈴 На главную", callback_data="start")]])
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=kb)
@@ -357,24 +507,45 @@ async def notify_creator_text(text: str, order_no: Optional[int] = None) -> None
 
 
 async def _check_payment(order: Dict[str, Any]) -> str:
-    """'paid' | 'pending' | 'canceled' | 'error'. Первый, кто увидел оплату, переводит статус."""
+    """'paid' | 'pending' | 'canceled' | 'error'. Смотрит ВСЕ платежи заказа: после скидки старый QR
+    мог остаться действующим, и если по нему заплатили (больше текущей цены), заказ всё равно оплачен,
+    а разница фиксируется как переплата к возврату."""
     from bot.services.billing import check_yookassa_payment_status
-    if not order.get("yk_payment_id"):
+    with _conn() as conn:
+        ensure_tables(conn)
+        rows = conn.execute("SELECT payment_id, amount_rub FROM help_order_payments WHERE order_id = ? ORDER BY id DESC",
+                            (order["id"],)).fetchall()
+    pays = [(r["payment_id"], float(r["amount_rub"])) for r in rows]
+    if order.get("yk_payment_id") and order["yk_payment_id"] not in [p[0] for p in pays]:
+        pays.insert(0, (order["yk_payment_id"], float(order["amount_rub"])))
+    if not pays:
         return "pending"
-    try:
-        status = await check_yookassa_payment_status(order["yk_payment_id"], order_id=f"help{order['id']}")
-    except Exception as exc:
-        logger.error(f"help_orders: ошибка проверки оплаты #{order['id']}: {exc}")
-        return "error"
-    if status == "succeeded":
-        if _transition(order["id"], "paid", ("awaiting_payment", "offered"), "paid_at"):
-            await notify_creator_text(
-                f"💰 <b>Заказ #{order['id']} оплачен</b>\n{_esc(order['title'])}\n"
-                f"Сумма: {money(order['amount_rub'])}. Можно начинать.", order["id"])
-        return "paid"
-    if status == "canceled":
-        return "canceled"
-    return "pending"
+    pending = errored = False
+    for pid, amount in pays:
+        try:
+            status = await check_yookassa_payment_status(pid, order_id=f"help{order['id']}")
+        except Exception as exc:
+            logger.error(f"help_orders: ошибка проверки оплаты #{order['id']}: {exc}")
+            errored = True
+            continue
+        if status == "succeeded":
+            if _transition(order["id"], "paid", ("awaiting_payment", "offered"), "paid_at"):
+                fresh = get_order(order["id"]) or order
+                over = round(amount - float(fresh["amount_rub"]), 2)
+                warn = ""
+                if over > 0:
+                    with _conn() as conn:
+                        conn.execute("UPDATE help_orders SET refund_rub = ? WHERE id = ?", (over, order["id"]))
+                    warn = f"\n⚠️ Оплачено {money(amount)} при цене {money(fresh['amount_rub'])}: верните {money(over)} в ЮKassa."
+                await notify_creator_text(
+                    f"💰 <b>Заказ #{order['id']} оплачен</b>\n{_esc(order['title'])}\n"
+                    f"Сумма: {money(fresh['amount_rub'])}. Можно начинать.{warn}", order["id"])
+            return "paid"
+        if status != "canceled":
+            pending = True
+    if pending:
+        return "pending"
+    return "error" if errored else "canceled"
 
 
 async def api_order(instance_id: str, token: str, action: str, order_no: Any = None,
@@ -428,6 +599,8 @@ async def api_order(instance_id: str, token: str, action: str, order_no: Any = N
             logger.error(f"help_orders: не создана оплата #{order['id']}: {exc}")
             return {"ok": False, "reason": "payment", "message": "Не удалось создать оплату. Попробуйте позже."}
         with _conn() as conn:
+            conn.execute("INSERT INTO help_order_payments (order_id, payment_id, amount_rub) VALUES (?,?,?)",
+                         (order["id"], result["yookassa_payment_id"], float(order["amount_rub"])))
             conn.execute(
                 "UPDATE help_orders SET status = 'awaiting_payment', yk_payment_id = ?, yk_qr_url = ?, "
                 "terms_version = ?, accepted_terms_at = CURRENT_TIMESTAMP "
@@ -475,8 +648,12 @@ async def call(action: str, order_no: Optional[int] = None, terms_version: str =
 def _client_notice(o: Dict[str, Any]) -> Tuple[str, Optional[List[Tuple[str, str]]]]:
     """Текст и кнопки (текст, callback) уведомления установки о статусе заказа."""
     no = o["no"]
-    head = f"💼 <b>Заказ #{no}</b>: {_esc(o['title'])}\nСумма: <b>{money(o['amount'])}</b>\n"
+    head = f"💼 <b>Заказ #{no}</b>: {_esc(o['title'])}\n{price_line(o['amount'], o.get('list_price'), o.get('discount'))}\n"
     st = o["status"]
+    if st in ("offered", "awaiting_payment") and o.get("discount"):
+        head = "🎁 <b>Для вас скидка!</b>\n" + head
+    if st in ("paid", "in_progress", "delivered") and float(o.get("refund") or 0) > 0:
+        head += f"🎁 Скидка оформлена: вам вернут {money(o['refund'])}. Деньги придут на ваш счёт в течение нескольких дней.\n"
     if st == "offered":
         body = head + (f"\n{_esc(o['description'])}\n" if o.get("description") else "") + \
             "\nСначала прочитайте условия, потом оплата. Работа начинается после оплаты."
@@ -518,13 +695,15 @@ async def client_sync(bot, orders: List[Dict[str, Any]]) -> int:
             continue
         with _conn() as conn:
             ensure_tables(conn)
+            key = f"{status}|{o.get('amount')}|{o.get('refund') or 0}"     # смена статуса, цены или скидки
             row = conn.execute("SELECT status FROM help_orders_local WHERE order_no = ?", (no,)).fetchone()
-            if row and row["status"] == status:
+            if row and row["status"] == key:
                 continue
-            conn.execute("INSERT OR REPLACE INTO help_orders_local (order_no, status) VALUES (?, ?)", (no, status))
+            conn.execute("INSERT OR REPLACE INTO help_orders_local (order_no, status) VALUES (?, ?)", (no, key))
         text, buttons = _client_notice(o)
         rows = [[InlineKeyboardButton(text=t, callback_data=c) for t, c in buttons]] if buttons else []
-        rows.append([InlineKeyboardButton(text="📋 Мои заказы", callback_data="hlp_list")])
+        rows.append([InlineKeyboardButton(text="📋 Мои заказы", callback_data="hlp_list"),
+                     InlineKeyboardButton(text="🈴 На главную", callback_data="start")])
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, text, parse_mode="HTML",

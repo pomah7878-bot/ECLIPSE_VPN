@@ -187,9 +187,14 @@ class AdminStates(StatesGroup):
     creator_chat_message = State()         # Установка пишет сообщение создателю
     creator_reply = State()                # Создатель вводит ответ установке
     help_offer_custom = State()            # Создатель вводит «Название | цена» своего предложения
+    help_offer_price = State()             # Создатель вводит цену своей услуги в предложении
     help_offer_desc = State()              # Создатель вводит описание работ в предложении
-    help_prices_edit = State()             # Создатель заменяет прайс помощи
+    help_price_title = State()             # Прайс помощи: название новой услуги
+    help_price_price = State()             # Прайс помощи: цена новой услуги
+    help_price_note = State()              # Прайс помощи: пояснение новой услуги
+    help_price_edit = State()              # Прайс помощи: правка поля существующей услуги
     help_executor_edit = State()           # Создатель вводит сведения об исполнителе для условий
+    help_discount = State()                # Создатель вводит скидку на заказ (% или рубли)
     help_order_close = State()             # Создатель закрывает заказ: «возврат | причина»
 
     channel_post_edit_text = State()  # Ввод нового текста взамен существующего поста в очереди

@@ -265,6 +265,8 @@ def creator_kb(thread_id: int, blocked: bool = False):
         [InlineKeyboardButton(text="✍️ Ответить", callback_data=f"cr_reply:{thread_id}"),
          InlineKeyboardButton(text="✅ Разблокировать" if blocked else "🚫 Заблокировать",
                               callback_data=f"cr_block:{thread_id}")],
+        [InlineKeyboardButton(text="💼 Заказы и прайс", callback_data="ho_home"),
+         InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
         [InlineKeyboardButton(text="📜 История", callback_data=f"cr_open:{thread_id}")],
     ])
 
