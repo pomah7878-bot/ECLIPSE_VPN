@@ -30,6 +30,8 @@ from bot.handlers.admin.server_tools import router as server_tools_router
 from bot.handlers.admin.channel_gate import router as channel_gate_router
 from bot.handlers.admin.license_shop import router as license_shop_router
 from bot.handlers.admin.licenses import router as licenses_router
+from bot.handlers.admin.creator_chat import router as creator_chat_router
+from bot.handlers.admin.help_orders import router as help_orders_router
 from bot.handlers.admin.cdn import router as cdn_router
 
 admin_router = Router()
@@ -62,4 +64,6 @@ admin_router.include_router(server_tools_router)
 admin_router.include_router(channel_gate_router)
 admin_router.include_router(license_shop_router)
 admin_router.include_router(licenses_router)
+admin_router.include_router(creator_chat_router)
+admin_router.include_router(help_orders_router)
 

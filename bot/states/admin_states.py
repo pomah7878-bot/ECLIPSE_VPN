@@ -184,6 +184,13 @@ class AdminStates(StatesGroup):
     license_tariff_edit_name = State()     # Редактирование названия существующего тарифа
     license_tariff_edit_price = State()    # Редактирование цены существующего тарифа
     my_license_enter_code = State()        # Партнёр вводит код лицензии, выданный напрямую
+    creator_chat_message = State()         # Установка пишет сообщение создателю
+    creator_reply = State()                # Создатель вводит ответ установке
+    help_offer_custom = State()            # Создатель вводит «Название | цена» своего предложения
+    help_offer_desc = State()              # Создатель вводит описание работ в предложении
+    help_prices_edit = State()             # Создатель заменяет прайс помощи
+    help_executor_edit = State()           # Создатель вводит сведения об исполнителе для условий
+    help_order_close = State()             # Создатель закрывает заказ: «возврат | причина»
 
     channel_post_edit_text = State()  # Ввод нового текста взамен существующего поста в очереди
 

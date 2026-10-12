@@ -2913,6 +2913,91 @@ async def handle_license_check(request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+async def handle_creator_send(request: web.Request) -> web.Response:
+    """POST /api/creator/send — «Связь с создателем» (только на главной инсталляции).
+    Body: {"instance_id", "token", "text", "meta": {...}}. Ключ лицензии не нужен."""
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"creator-send:{_lip}", 30, 3600):
+        return web.json_response({"ok": False, "reason": "rate_limited"}, status=429)
+    _rl_record(f"creator-send:{_lip}")
+    from bot.services.license import is_license_server
+    if not is_license_server():
+        return web.json_response({"ok": False, "reason": "disabled"})
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "reason": "bad"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "reason": "bad"}, status=400)
+    from bot.services import creator_chat as cc
+    result = cc.server_receive(
+        str(data.get("instance_id") or ""), str(data.get("token") or ""),
+        data.get("text"), data.get("meta"), _lip,
+    )
+    if result.get("ok") and result.get("delivered") and result.get("thread_id"):
+        asyncio.create_task(cc.notify_creator(result["thread_id"], cc.clean_text(data.get("text"))))
+    # служебные поля наружу не отдаём
+    return web.json_response({k: v for k, v in result.items() if k not in ("thread_id", "msg_id")})
+
+
+async def handle_creator_status(request: web.Request) -> web.Response:
+    """POST /api/creator/status — включена ли «Помощь для админа» (решает создатель).
+    Установки спрашивают раз в ~30 минут и по нему показывают или прячут кнопку."""
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"creator-status:{_lip}", 120, 3600):
+        return web.json_response({"ok": False, "reason": "rate_limited"}, status=429)
+    _rl_record(f"creator-status:{_lip}")
+    from bot.services.license import is_license_server
+    if not is_license_server():
+        return web.json_response({"ok": True, "enabled": False})
+    from bot.services import creator_chat as cc
+    return web.json_response(cc.server_status())
+
+
+async def handle_creator_order(request: web.Request) -> web.Response:
+    """POST /api/creator/order — заказы «Помощи для админа» (оплата, статусы).
+    Body: {"instance_id", "token", "action": list|get|accept|check|confirm|cancel, "order_no", "terms_version"}."""
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"creator-order:{_lip}", 120, 3600):
+        return web.json_response({"ok": False, "reason": "rate_limited"}, status=429)
+    _rl_record(f"creator-order:{_lip}")
+    from bot.services.license import is_license_server
+    if not is_license_server():
+        return web.json_response({"ok": False, "reason": "disabled"})
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "reason": "bad"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "reason": "bad"}, status=400)
+    from bot.services import help_orders as ho
+    return web.json_response(await ho.api_order(
+        str(data.get("instance_id") or ""), str(data.get("token") or ""), str(data.get("action") or ""),
+        data.get("order_no"), str(data.get("terms_version") or ""),
+    ))
+
+
+async def handle_creator_poll(request: web.Request) -> web.Response:
+    """POST /api/creator/poll — установка забирает ответы создателя. Body: {"instance_id", "token", "after_id"}."""
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"creator-poll:{_lip}", 600, 3600):
+        return web.json_response({"ok": False, "reason": "rate_limited"}, status=429)
+    _rl_record(f"creator-poll:{_lip}")
+    from bot.services.license import is_license_server
+    if not is_license_server():
+        return web.json_response({"ok": False, "reason": "disabled", "messages": []})
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "reason": "bad", "messages": []}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "reason": "bad", "messages": []}, status=400)
+    from bot.services import creator_chat as cc
+    return web.json_response(cc.server_poll(
+        str(data.get("instance_id") or ""), str(data.get("token") or ""), data.get("after_id") or 0,
+    ))
+
+
 async def handle_license_trial(request: web.Request) -> web.Response:
     """POST /api/license/trial — пробная лицензия по запросу из бота партнёра (только на
     главном сервере). Body: {"instance_id", "telegram_id"}. Одна на установку и на аккаунт Telegram,
@@ -4409,6 +4494,7 @@ _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/api/status",
     "/api/ping",
     "/api/license/",
+    "/api/creator/",
     "/static/",
     "/favicon.ico",
     # v1.165: Telegram Mini App и оплата из него — базовые функции, они работают
@@ -4504,6 +4590,10 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/license/check", handle_license_check)
     app.router.add_post("/api/license/trial", handle_license_trial)
+    app.router.add_post("/api/creator/send", handle_creator_send)
+    app.router.add_post("/api/creator/poll", handle_creator_poll)
+    app.router.add_post("/api/creator/status", handle_creator_status)
+    app.router.add_post("/api/creator/order", handle_creator_order)
     app.router.add_post("/api/public/account/claim-purchase", handle_public_account_claim_purchase)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)
