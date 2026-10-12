@@ -93,10 +93,6 @@ async def _show_cdn_screen(callback: CallbackQuery, key: dict, notice: str = '')
         if pack and pack['status'] == 'active':
             lines.append('ℹ️ Новый пакет добавится к текущему: остаток объёма и срока сохранится.')
     rows = []
-    offer_trial = cdn.promo_offer_for_key(key_id, key.get('user_id'))
-    if offer_trial:
-        lines.append(f'\n🎁 <b>Попробуйте бесплатно:</b> {cdn.get_promo_gb()} ГБ на {cdn.get_promo_days()} дн.')
-        rows.append([InlineKeyboardButton(text=f'🎁 Попробовать бесплатно — {cdn.get_promo_gb()} ГБ', callback_data=f'key_cdn_trial:{key_id}')])
     if price > 0:
         label = f'➕ Докупить {gb} ГБ' if pack else f'🛒 Купить {gb} ГБ'
         rows.append([InlineKeyboardButton(text=f'{label} с баланса — {cdn.format_price(price)}', callback_data=f'key_cdn_buy:{key_id}')])
@@ -114,24 +110,6 @@ async def key_cdn_handler(callback: CallbackQuery):
         return
     await _show_cdn_screen(callback, key)
     await callback.answer()
-
-
-@router.callback_query(F.data.startswith('key_cdn_trial:'))
-@regular_panel_operation
-async def key_cdn_trial(callback: CallbackQuery):
-    from bot.services import cdn
-    key_id = int(callback.data.split(':')[1])
-    key = await _load_key(callback, key_id)
-    if not key:
-        return
-    await callback.answer('⏳ Подключаю пробный CDN…')
-    result = await cdn.claim_promo(key_id, int(key['user_id']))
-    if result.get('ok'):
-        head = f"🎁 Пробный CDN подключён: {result['gb']} ГБ на {result['days']} дн."
-        notice = cdn.paid_message(result['gb'], result['days'], result, head=head)
-    else:
-        notice = f"❌ {escape_html(str(result.get('error')))}."
-    await _show_cdn_screen(callback, key, notice=notice)
 
 
 @router.callback_query(F.data.startswith('key_cdn_buy:'))

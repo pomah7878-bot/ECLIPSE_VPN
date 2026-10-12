@@ -545,27 +545,49 @@ def get_promo_days() -> int:
     return value if value > 0 else DEFAULT_PROMO_DAYS
 
 
-def promo_offer_for_key(key_id: int, user_id: Optional[int] = None) -> bool:
-    """Показывать ли «Попробовать бесплатно»: проба включена, CDN настроен, пользователь её ещё не получал,
-    на ключе нет пакета."""
+def is_promo_active() -> bool:
+    """Проба выдаётся только в режиме «Платный пакет» при настроенном CDN: после пробы клиент может купить."""
+    return is_promo_on() and is_addon_on() and is_cdn_active()
+
+
+PROMO_BATCH = 50
+PROMO_RETRY_SEC = 6 * 3600
+_promo_skip: Dict[int, float] = {}
+_promo_running = False
+
+
+def _promo_candidate_rows(limit: Optional[int] = None) -> List[tuple]:
+    """(ключ, пользователь): по одному рабочему ключу на клиента, у которого ещё не было пробы и пакета."""
+    from database.connection import get_db
+    sql = (
+        "SELECT MIN(k.id) AS key_id, k.user_id FROM vpn_keys k "
+        "WHERE k.sub_id IS NOT NULL AND k.sub_id != '' AND k.panel_email IS NOT NULL AND k.panel_email != '' "
+        "AND k.server_id IS NOT NULL AND k.expires_at > datetime('now') "
+        "AND k.user_id NOT IN (SELECT user_id FROM cdn_promo_claims) "
+        "AND k.user_id NOT IN (SELECT user_id FROM cdn_packs WHERE user_id IS NOT NULL) "
+        "AND k.id NOT IN (SELECT vpn_key_id FROM cdn_packs) "
+        "GROUP BY k.user_id ORDER BY k.user_id"
+    )
+    if limit:
+        sql += f" LIMIT {int(limit)}"
+    with get_db() as conn:
+        db_cdn.ensure_promo_table(conn)
+        return [(int(r[0]), int(r[1])) for r in conn.execute(sql).fetchall()]
+
+
+def promo_pending_count() -> int:
+    """Сколько клиентов получили бы пробу сейчас (верхняя оценка до проверки ключей на панели)."""
     try:
-        if not (is_promo_on() and is_cdn_active()):
-            return False
-        if user_id is None:
-            from database.db_keys import get_vpn_key_by_id
-            user_id = (get_vpn_key_by_id(int(key_id)) or {}).get("user_id")
-        if not user_id or db_cdn.promo_claimed(int(user_id)):
-            return False
-        return db_cdn.get_pack(int(key_id)) is None
+        return len(_promo_candidate_rows())
     except Exception as e:  # noqa: BLE001
-        logger.debug("CDN: проверка пробы: %s", e)
-        return False
+        logger.debug("CDN: подсчёт кандидатов пробы: %s", e)
+        return 0
 
 
 async def claim_promo(key_id: int, user_id: int) -> Dict[str, Any]:
     """Выдаёт пробный пакет. Проба занимается атомарно до выдачи и освобождается, если выдача не удалась."""
     from database.db_keys import get_vpn_key_by_id
-    if not (is_promo_on() and is_cdn_active()):
+    if not is_promo_active():
         return {"ok": False, "error": "Пробный CDN сейчас недоступен"}
     gb, days = get_promo_gb(), get_promo_days()
     async with _buy_locks[key_id]:
@@ -588,6 +610,48 @@ async def claim_promo(key_id: int, user_id: int) -> Dict[str, Any]:
             db_cdn.promo_release(int(user_id))
             return {"ok": False, "error": result.get("error") or "Не удалось выдать пакет"}
         return result
+
+
+async def run_promo_sweep(bot, limit: Optional[int] = PROMO_BATCH) -> int:
+    """Раздаёт пробу подходящим клиентам и присылает каждому уведомление. limit=None — раздать всем.
+    Один проход за раз; если админ выключил пробу или платный пакет, выдача прекращается."""
+    global _promo_running
+    if _promo_running or not is_promo_active():
+        return 0
+    _promo_running = True
+    granted = 0
+    try:
+        import time
+        from database.db_keys import get_vpn_key_by_id
+        from bot.services.panel_sync_coordinator import panel_sync_coordinator
+        for key_id, user_id in _promo_candidate_rows():
+            if not is_promo_active():
+                break
+            if _promo_skip.get(key_id, 0) > time.time():
+                continue
+            try:
+                async with panel_sync_coordinator.regular():
+                    result = await claim_promo(key_id, user_id)
+            except Exception as e:  # noqa: BLE001
+                logger.error("CDN: проба для ключа %s: %s", key_id, e)
+                result = {"ok": False}
+            if result.get("ok"):
+                granted += 1
+                key = get_vpn_key_by_id(key_id) or {}
+                head = f"🎁 Вам подарен пробный CDN: {result['gb']} ГБ на {result['days']} дн."
+                await _notify(bot, key, paid_message(result["gb"], result["days"], result, head=head))
+            else:
+                _promo_skip[key_id] = time.time() + PROMO_RETRY_SEC
+            if limit and granted >= limit:
+                break
+            await asyncio.sleep(0.5)
+    except Exception as e:  # noqa: BLE001
+        logger.error("CDN: раздача пробы: %s", e)
+    finally:
+        _promo_running = False
+    if granted:
+        logger.info("🎁 CDN: пробный пакет выдан клиентам: %s", granted)
+    return granted
 
 
 def get_sale_price_cents() -> int:
@@ -1197,6 +1261,8 @@ async def run_cdn_scheduler(bot) -> None:
                     stats = await process_cdn_packs(bot)
                 if any(stats.values()):
                     logger.info("🌐 CDN-пакеты: %s", stats)
+            if is_promo_active():
+                await run_promo_sweep(bot)
             try:
                 from bot.services import yc_cdn
                 await yc_cdn.check_limits(bot)

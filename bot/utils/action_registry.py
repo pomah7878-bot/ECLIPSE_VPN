@@ -579,8 +579,8 @@ def _resolve_key_cdn(ctx: dict) -> Optional[dict]:
     if _key_details_is_unconfigured(ctx) or not ctx.get('has_sub_id'):
         return None
     try:
-        from bot.services.cdn import is_cdn_offered_for_key, promo_offer_for_key
-        if not (is_cdn_offered_for_key(int(key_id)) or promo_offer_for_key(int(key_id))):
+        from bot.services.cdn import is_cdn_offered_for_key
+        if not is_cdn_offered_for_key(int(key_id)):
             return None
     except Exception:
         return None
