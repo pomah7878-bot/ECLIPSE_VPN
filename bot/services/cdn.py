@@ -836,8 +836,17 @@ async def _provision(key: Dict[str, Any], *, total_gb: int, expire_days: int) ->
 
 
 async def _unprovision(key: Dict[str, Any]) -> int:
+    """Снимает CDN-клиента с панели. Если после удаления он там остался, бросает ошибку:
+    пакет нельзя считать отключённым, пока CDN-ключ на панели жив (повторим в следующий проход)."""
+    from bot.services.vpn_api import _parse_clients_by_email
     client, inbounds, _ = await _server_context(int(key["server_id"]))
-    return await _remove_panel_clients(client, inbounds, cdn_email(key["panel_email"]))
+    email = cdn_email(key["panel_email"])
+    removed = await _remove_panel_clients(client, inbounds, email)
+    if removed or _parse_clients_by_email(inbounds, email):
+        _, fresh, _ = await _server_context(int(key["server_id"]))
+        if _parse_clients_by_email(fresh, email):
+            raise RuntimeError("CDN-клиент остался на панели")
+    return removed
 
 
 async def get_pack_usage(key: Dict[str, Any]) -> Optional[int]:
@@ -1187,6 +1196,15 @@ async def _remind_pack_expiry(bot, key: Dict[str, Any], pack: Dict[str, Any], ex
         return False
 
 
+def _is_trial(key_id: int) -> bool:
+    """Пробный пакет: бесплатный и выданный по пробе (купленный на том же ключе позже пробным не считается)."""
+    try:
+        pack = db_cdn.get_pack(int(key_id))
+        return bool(pack and pack.get("is_free")) and db_cdn.promo_is_trial_key(int(key_id))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def process_cdn_packs(bot) -> Dict[str, int]:
     """Раз в час: срок, расход, приостановка при неактивном ключе, уведомления."""
     from database.db_keys import get_vpn_key_by_id, is_key_active
@@ -1205,9 +1223,17 @@ async def process_cdn_packs(bot) -> Dict[str, int]:
                 continue
             expires = db_cdn.parse_time(pack["expires_at"])
             if expires and expires <= datetime.utcnow():
-                await deactivate_pack(key_id, db_cdn.STATUS_EXPIRED)
+                done = await deactivate_pack(key_id, db_cdn.STATUS_EXPIRED)
+                if not done.get("ok"):
+                    stats["errors"] += 1      # панель недоступна: статус не меняем, повторим в следующий проход
+                    continue
                 stats["expired"] += 1
-                await _notify(bot, key, "⏰ <b>Пакет CDN закончился по сроку.</b>\nОбычные ключи подписки работают как раньше." + _refill_hint())
+                if _is_trial(key_id):
+                    text = ("⏰ <b>Пробный CDN закончился.</b>\nCDN-подключение отключено. "
+                            "Обычные ключи подписки работают как раньше.")
+                else:
+                    text = "⏰ <b>Пакет CDN закончился по сроку.</b>\nОбычные ключи подписки работают как раньше."
+                await _notify(bot, key, text + _refill_hint())
                 stats["notified"] += 1
                 continue
             key_ok = is_key_active(key) and not key.get("is_banned")
@@ -1230,10 +1256,18 @@ async def process_cdn_packs(bot) -> Dict[str, int]:
             limit = int(pack["limit_bytes"])
             db_cdn.update_pack(key_id, used_bytes=used)
             if limit > 0 and used >= limit:
-                await deactivate_pack(key_id, db_cdn.STATUS_EXHAUSTED)
+                done = await deactivate_pack(key_id, db_cdn.STATUS_EXHAUSTED)
+                if not done.get("ok"):
+                    stats["errors"] += 1
+                    continue
                 db_cdn.update_pack(key_id, used_bytes=limit)
                 stats["exhausted"] += 1
-                await _notify(bot, key, "📦 <b>Пакет CDN исчерпан.</b>\nОбычные ключи подписки работают как раньше." + _refill_hint())
+                if _is_trial(key_id):
+                    text = ("📦 <b>Пробный CDN исчерпан.</b>\nCDN-подключение отключено. "
+                            "Обычные ключи подписки работают как раньше.")
+                else:
+                    text = "📦 <b>Пакет CDN исчерпан.</b>\nОбычные ключи подписки работают как раньше."
+                await _notify(bot, key, text + _refill_hint())
                 stats["notified"] += 1
             elif limit > 0 and used * 100 // limit >= NOTIFY_PCT and int(pack["notified_pct"] or 0) < NOTIFY_PCT:
                 db_cdn.update_pack(key_id, notified_pct=NOTIFY_PCT)
