@@ -379,6 +379,8 @@ def _build_keyboard(
             logger.warning("is_hidden кнопки '%s' должен быть bool — скрываем кнопку", btn_id)
             is_hidden = True
         color = btn.get('color')
+        if btn_id == 'btn_key_renew' and (context or {}).get('renew_highlight') is True:
+            color = 'success'
         row = _button_position_value(btn.get('row', 0))
         col = _button_position_value(btn.get('col', 0))
         if row is None or col is None:

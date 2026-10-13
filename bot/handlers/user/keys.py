@@ -285,6 +285,7 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
             'key_active': key_active,
             'is_unconfigured': is_unconfigured,
             'traffic_exhausted': traffic_exhausted,
+            'renew_highlight': _renew_needed(key),
             'has_sub_id': bool(key.get('sub_id')),
             'has_panel_email': bool(key.get('panel_email')),
         },
@@ -295,6 +296,14 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         # того, в каком порядке админ расставил кнопки в редакторе страниц.
         bottom_button_ids={'btn_my_keys', 'btn_back_main'},
     )
+
+def _renew_needed(key) -> bool:
+    try:
+        from bot.services.renew_hint import needs_renew
+        return needs_renew(key.get('expires_at'))
+    except Exception:
+        return False
+
 
 @router.callback_query(F.data.startswith('key_delete:'))
 @regular_panel_operation

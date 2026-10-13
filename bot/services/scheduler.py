@@ -859,8 +859,7 @@ async def check_and_send_expiry_notifications(bot: Bot) -> None:
             
             # Keyboard with "My keys" and "Home" buttons
             builder = InlineKeyboardBuilder()
-            if is_trial_key:
-                builder.row(InlineKeyboardButton(text="💳 Купить / продлить", callback_data=f"key_renew:{vpn_key_id}"))
+            builder.row(InlineKeyboardButton(text="🔄 ПРОДЛИТЬ", callback_data=f"key_renew:{vpn_key_id}", style="success"))
             builder.row(InlineKeyboardButton(text="🔑 Мои ключи", callback_data="my_keys"))
             builder.row(InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
             kb = builder.as_markup()

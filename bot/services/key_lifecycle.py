@@ -135,7 +135,7 @@ async def _send_expired_notice(key: Dict[str, Any]) -> None:
             "Доступ к VPN приостановлен. Продлите подписку: ключ и ссылка в приложении останутся "
             "прежними, ничего настраивать заново не нужно.",
             InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="💳 Продлить", callback_data=f"key_renew:{int(key['id'])}")
+                InlineKeyboardButton(text="🔄 ПРОДЛИТЬ", callback_data=f"key_renew:{int(key['id'])}", style="success")
             ]]),
         )
     except Exception as e:

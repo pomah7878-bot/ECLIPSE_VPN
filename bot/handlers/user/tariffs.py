@@ -69,10 +69,18 @@ async def _render_buy_page(target):
         'telegram_id': telegram_id,
     }
 
+    renew_rows = []
+    try:
+        from bot.services.renew_hint import build_renew_rows
+        renew_rows = build_renew_rows(telegram_id)
+    except Exception:
+        renew_rows = []
+
     await render_page(
         target,
         page_key='prepayment',
         context=context,
+        prepend_buttons=renew_rows or None,
         force_new=isinstance(target, Message),
     )
 

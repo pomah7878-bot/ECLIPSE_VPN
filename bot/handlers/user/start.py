@@ -178,6 +178,12 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     append_buttons = admin_append_buttons
 
     page = get_page('main')
+    renew_rows = []
+    try:
+        from bot.services.renew_hint import build_renew_rows
+        renew_rows = build_renew_rows(user_id)
+    except Exception as e:
+        logger.debug(f'Кнопки продления не построены: {e}')
     if page:
         guard_result = await run_page_guards(
             parse_registry_names(page.get('guard_names')),
@@ -259,6 +265,9 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
             ]]
     except Exception as e:
         logger.warning(f"Не удалось добавить метку Powered by: {e}")
+
+    if renew_rows:
+        prepend_buttons = renew_rows + list(prepend_buttons or [])
 
     await render_page(
         target,
