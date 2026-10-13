@@ -1708,8 +1708,16 @@ def _cleanup_search_cache() -> None:
 limiter = Limiter(key_func=get_remote_address)
 token_header = APIKeyHeader(name="X-Support-Token", auto_error=False)
 
+def _token_ok(api_key) -> bool:
+    """Сравнение токена за постоянное время (без утечки по времени ответа)."""
+    import hmac
+    if not SUPPORT_API_TOKEN or not isinstance(api_key, str):
+        return False
+    return hmac.compare_digest(api_key.encode("utf-8"), SUPPORT_API_TOKEN.encode("utf-8"))
+
+
 async def verify_token(api_key: str = Security(token_header)):
-    if not SUPPORT_API_TOKEN or api_key != SUPPORT_API_TOKEN:
+    if not _token_ok(api_key):
         raise HTTPException(status_code=403, detail="Forbidden")
     return api_key
 

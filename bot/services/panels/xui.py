@@ -50,6 +50,7 @@ def _mark_panel_up(key: str) -> None:
     _PANEL_LAST_FAIL.pop(key, None)
 API_PROFILE_LEGACY = "legacy_inbounds"
 API_PROFILE_CLIENTS = "clients_api"
+PANEL_RECHECK_SECONDS = 24 * 3600
 BOT_API_TOKEN_NAME = "ECLIPSE_VPN Bot"
 JSON_INBOUND_FIELDS = ("settings", "streamSettings", "sniffing")
 SETTING_BASE_LEGACY = "/panel/setting"
@@ -161,6 +162,7 @@ class XUIClient(BaseVPNClient):
         self.panel_version: Optional[str] = server.get('panel_version') or None
         self.api_profile: Optional[str] = server.get('panel_api_profile') or None
         self._profile_verified = False
+        self._verified_at = 0.0
         self.api_token_diagnostic: Optional[str] = None
 
         # Panel settings cache (subPort/subPath/subDomain/...) from setting/all.
@@ -576,6 +578,7 @@ class XUIClient(BaseVPNClient):
             self.panel_version = version
         self.api_profile = profile
         self._profile_verified = True
+        self._verified_at = time.time()
         self._save_panel_info()
 
     async def _ensure_api_profile(self) -> str:
@@ -583,6 +586,15 @@ class XUIClient(BaseVPNClient):
         if not self.is_authenticated:
             await self.login()
         if self.api_profile in (API_PROFILE_LEGACY, API_PROFILE_CLIENTS) and self._profile_verified:
+            # Раз в сутки перепроверяем версию/профиль панели: после её обновления
+            # кэш не должен оставаться старым до перезапуска бота. Сбой проверки
+            # не мешает работе: остаёмся на прежнем профиле и повторяем через час.
+            if time.time() - self._verified_at > PANEL_RECHECK_SECONDS:
+                try:
+                    await self._refresh_panel_metadata(force=True)
+                except Exception as e:  # noqa: BLE001
+                    logger.info("Перепроверка версии панели не удалась, остаёмся на прежнем профиле: %s", e)
+                    self._verified_at = time.time() - PANEL_RECHECK_SECONDS + 3600
             return self.api_profile
         if self.api_profile not in (API_PROFILE_LEGACY, API_PROFILE_CLIENTS) or not self._profile_verified:
             await self._refresh_panel_metadata(force=True)
