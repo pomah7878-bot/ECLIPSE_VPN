@@ -1710,7 +1710,7 @@ async def _notify_admins_unfulfilled(bot: Any, order_id: str, error: Exception) 
             f"Способ: {order.get('payment_type')}\n"
             f"Ошибка: {str(error)[:200]}\n\n"
             "Заказ возвращён в ожидание. Оформите вручную или верните сумму на баланс (/refund_stars "
-            f"{order_id})."
+            f"{order_id} force)."
         )
         for admin_id in list(ADMIN_IDS)[:5]:
             try:

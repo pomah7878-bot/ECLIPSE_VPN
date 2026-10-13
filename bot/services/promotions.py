@@ -197,6 +197,32 @@ def build_quote(
     return quote
 
 
+TARIFF_UNAVAILABLE_TEXT = "Этот тариф сейчас недоступен для покупки."
+
+
+def is_tariff_purchasable(tariff: Optional[Dict[str, Any]], key_id: Any = None) -> bool:
+    """v1.293: тариф можно купить, если он активен, либо это пакет CDN или
+    текущий тариф продлеваемого ключа (та же логика, что в WebApp)."""
+    if not tariff:
+        return False
+    if tariff.get("is_active"):
+        return True
+    if not key_id:
+        return False
+    try:
+        from bot.services.cdn import is_cdn_tariff
+        if is_cdn_tariff(tariff.get("id")):
+            return True
+    except Exception:
+        pass
+    try:
+        from database.db_keys import get_vpn_key_by_id
+        key = get_vpn_key_by_id(int(key_id))
+        return bool(key and key.get("tariff_id") == tariff.get("id"))
+    except Exception:
+        return False
+
+
 def prepare_order_pricing(
     *,
     order_id: str,
@@ -208,6 +234,20 @@ def prepare_order_pricing(
     """
     Calculates the price, saves the snapshot in payments and reserves a promotional code for the order.
     """
+    # v1.293: скрытый тариф нельзя купить подделанной кнопкой (как уже сделано в WebApp)
+    try:
+        from database.db_payments import find_order_by_order_id as _find_order
+        _order_key = (_find_order(order_id) or {}).get("vpn_key_id")
+    except Exception:
+        _order_key = None
+    if not is_tariff_purchasable(tariff, _order_key):
+        cancel_promo_reservation_for_order(order_id)
+        return {
+            "ok": False, "promo": None, "promo_error": None, "payment_type": payment_type,
+            "amount_unit": _amount_unit(payment_type), "original_amount": 0,
+            "discount_percent": 0, "discount_amount": 0, "final_amount": 0,
+            "is_free": False, "unavailable_reason": TARIFF_UNAVAILABLE_TEXT,
+        }
     quote = build_quote(
         user_id=user_id,
         tariff=tariff,

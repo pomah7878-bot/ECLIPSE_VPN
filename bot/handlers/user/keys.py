@@ -755,6 +755,47 @@ async def key_replace_execute(callback: CallbackQuery, state: FSMContext):
     if not current_key or not new_server_data:
         await callback.answer('❌ Ошибка данных', show_alert=True)
         return
+    # v1.293: срок и трафик проверяются и в момент замены (подтверждение могло ждать долго)
+    from database.requests import is_traffic_exhausted as _traffic_out
+    if not current_key.get('is_active'):
+        await callback.answer('⏳ Срок действия ключа истёк.\nПродлите его перед заменой.', show_alert=True)
+        return
+    if _traffic_out(current_key):
+        await callback.answer('📊 Трафик закончился.\nПродлите ключ перед заменой.', show_alert=True)
+        return
+    # v1.293: двойное нажатие не создаёт второй комплект клиентов на панели
+    import asyncio as _asyncio
+    _lock = _REPLACE_LOCKS.setdefault(int(key_id), _asyncio.Lock())
+    if _lock.locked():
+        await callback.answer('⏳ Замена уже выполняется, подождите…')
+        return
+    try:
+        async with _lock:
+            await _key_replace_execute_locked(callback, state, key_id, new_server_id, new_inbound_id, current_key, new_server_data)
+    finally:
+        if not _lock.locked():
+            _REPLACE_LOCKS.pop(int(key_id), None)
+
+
+_REPLACE_LOCKS: dict = {}
+
+
+async def _key_replace_execute_locked(callback, state, key_id, new_server_id, new_inbound_id, current_key, new_server_data):
+    from database.requests import get_key_details_for_user, update_key_traffic, update_vpn_key_connection
+    from bot.services.vpn_api import (
+        calculate_panel_total_for_key,
+        get_client,
+        get_client_subscription_inbounds,
+        get_key_traffic_snapshot,
+        VPNAPIError,
+        is_subscription_mode,
+    )
+    from bot.handlers.admin.users_keys import generate_unique_email
+    from bot.utils.key_sender import build_key_delivery_target, send_key_with_qr
+    import uuid as _uuid
+    telegram_id = callback.from_user.id
+    if not (await state.get_data()).get('replace_key_id'):
+        return
     delivery_target = callback
     status_message = await render_key_status_page(
         callback,
@@ -827,6 +868,20 @@ async def key_replace_execute(callback: CallbackQuery, state: FSMContext):
                         logger.info('Ключ не найден на сервере, считаем удаленным.')
                     else:
                         raise VPNAPIError(f'Не удалось удалить старый ключ: {error_msg}. Замена отменена во избежание дублей.')
+                # v1.293: старый сервер недоступен — удалим старого клиента позже,
+                # иначе после возврата сервера у клиента будет второй рабочий доступ
+                try:
+                    from bot.services.deferred_panel_delete import schedule_deferred_delete
+                    schedule_deferred_delete(
+                        server_id=current_key['server_id'],
+                        panel_email=current_key['panel_email'],
+                        by_email=bool(old_had_sub or subscription_mode),
+                        inbound_id=current_key.get('panel_inbound_id'),
+                        client_uuid=current_key.get('client_uuid'),
+                        key_id=key_id,
+                    )
+                except Exception as defer_err:
+                    logger.error(f'Не удалось запланировать удаление старого ключа {key_id}: {defer_err}')
 
         # === 3. Counting balances ===
         new_client = await get_client(new_server_id)

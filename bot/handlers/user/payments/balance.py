@@ -577,7 +577,8 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         await callback.answer('❌ Ошибка: тариф не определён', show_alert=True)
         return
     tariff = get_tariff_by_id(tariff_id)
-    if not tariff:
+    from bot.services.promotions import is_tariff_purchasable
+    if not tariff or not is_tariff_purchasable(tariff, key_id):
         await callback.answer('❌ Тариф не найден', show_alert=True)
         return
     provider_token = get_setting('cards_provider_token', '')
@@ -725,7 +726,8 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         await safe_answer_callback(callback, '❌ Ошибка: тариф не определён', show_alert=True)
         return
     tariff = get_tariff_by_id(tariff_id)
-    if not tariff:
+    from bot.services.promotions import is_tariff_purchasable
+    if not tariff or not is_tariff_purchasable(tariff, key_id):
         await safe_answer_callback(callback, '❌ Тариф не найден', show_alert=True)
         return
     user_id = get_user_internal_id(callback.from_user.id)

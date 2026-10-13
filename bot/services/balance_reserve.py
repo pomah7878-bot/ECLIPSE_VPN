@@ -151,6 +151,52 @@ def release_stale_balance_reservations(card_minutes: int = 180, provider_hours: 
     return released
 
 
+def order_refund_cents(order_id: str) -> int:
+    """v1.293: сумма заказа в копейках рублей для возврата на баланс.
+
+    Заказы в рублях — по оплаченной сумме. Stars — по рублёвой цене тарифа
+    с учётом скидки (раньше бралась долларовая цена в центах как копейки,
+    и возврат выходил примерно в 100 раз меньше). Крипта — по курсу доллара.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT payment_type, tariff_id, final_amount_cents, amount_cents, "
+            "final_amount_stars, original_amount_stars, amount_stars "
+            "FROM payments WHERE order_id = ?",
+            (str(order_id),),
+        ).fetchone()
+    if not row:
+        return 0
+    row = dict(row)
+    payment_type = str(row.get('payment_type') or '')
+    if payment_type == 'stars':
+        stars = int(row.get('final_amount_stars') or row.get('amount_stars') or 0)
+        if stars <= 0:
+            return 0
+        original_stars = int(row.get('original_amount_stars') or stars)
+        rub_cents = 0
+        try:
+            from database.db_tariffs import get_tariff_by_id
+            tariff = get_tariff_by_id(row.get('tariff_id')) if row.get('tariff_id') else None
+            rub_cents = int(round(float((tariff or {}).get('price_rub') or 0) * 100))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Возврат Stars %s: не удалось получить тариф: %s", order_id, e)
+        if rub_cents > 0 and original_stars > 0:
+            return int(round(rub_cents * stars / original_stars))
+        from bot.services.stars_pricing import net_usd, rate_rub
+        rate = rate_rub()
+        return int(round(stars * net_usd() * rate * 100)) if rate else 0
+    usd_or_rub = row.get('final_amount_cents')
+    if usd_or_rub is None:
+        usd_or_rub = row.get('amount_cents')
+    cents = int(usd_or_rub or 0)
+    if payment_type == 'crypto':
+        from bot.services.stars_pricing import rate_rub
+        rate = rate_rub()
+        return int(round(cents * rate)) if rate else 0
+    return cents
+
+
 def credit_order_to_balance(order_id: str, ref_type: str, ref_id: str, reason: str) -> int:
     """v1.196: возврат за заказ ТОЛЬКО на баланс (деньги и звёзды физически не возвращаются).
 
@@ -160,12 +206,7 @@ def credit_order_to_balance(order_id: str, ref_type: str, ref_id: str, reason: s
         order = _order_row(order_id)
         if not order:
             return 0
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(final_amount_cents, amount_cents, 0) AS c FROM payments WHERE order_id = ?",
-                (str(order_id),),
-            ).fetchone()
-        cents = int(row['c'] or 0) if row else 0
+        cents = order_refund_cents(order_id)
         if cents <= 0:
             return 0
         user_id = int(order['user_id'])

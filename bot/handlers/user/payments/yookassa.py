@@ -419,12 +419,14 @@ async def _yookassa_referral_amount(order: dict, state: FSMContext) -> int:
     For partial payment (balance + QR) - take remaining_cents from FSM state,
     otherwise - the standard tariff price.
     """
+    # v1.293: сумма берётся из самого заказа (при частичной оплате там уже доплата),
+    # а не из состояния диалога — оно могло остаться от другой, брошенной оплаты.
+    if order.get('final_amount_cents') is not None:
+        return int(order.get('final_amount_cents') or 0)
     state_data = await state.get_data()
     remaining_cents = state_data.get('remaining_cents', 0)
     if remaining_cents > 0:
         return remaining_cents
-    if order.get('final_amount_cents') is not None:
-        return int(order.get('final_amount_cents') or 0)
     from database.requests import get_tariff_by_id
     _tariff = get_tariff_by_id(order.get('tariff_id'))
     return int((_tariff.get('price_rub', 0) or 0) * 100) if _tariff else 0

@@ -389,6 +389,13 @@ async def run_payment_auto_check_scheduler(bot: Any) -> None:
             raise
         except Exception as error:
             logger.error("Ошибка очистки резервов баланса: %s", error, exc_info=True)
+        try:
+            from bot.services.deferred_panel_delete import run_deferred_panel_deletes
+            await run_deferred_panel_deletes()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.error("Ошибка отложенного удаления клиентов с панели: %s", error, exc_info=True)
         await asyncio.sleep(60)
 
 

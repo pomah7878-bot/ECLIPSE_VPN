@@ -2126,13 +2126,24 @@ async def refund_stars_cmd(message: Message):
     if not is_admin(message.from_user.id):
         return
     parts = (message.text or "").split()[1:]
-    if len(parts) != 1:
+    force = len(parts) == 2 and parts[1].lower() == "force"
+    if len(parts) != 1 and not force:
         await message.answer("Использование: <code>/refund_stars НОМЕР_ЗАКАЗА</code>\nСумма заказа вернётся на баланс пользователя.", parse_mode="HTML")
         return
     from database.db_payments import find_order_by_order_id
     order = find_order_by_order_id(parts[0])
     if not order:
         await message.answer("❌ Заказ не найден.")
+        return
+    # v1.293: по неоплаченному заказу деньги не зачисляются без явного подтверждения
+    status = str(order.get("status") or "")
+    if status != "paid" and not force:
+        await message.answer(
+            f"⚠️ Заказ <code>{parts[0]}</code> не в статусе «оплачен» (сейчас: {status or '—'}).\n\n"
+            "Если вы уверены, что клиент заплатил (например, заказ вернулся в ожидание после сбоя выдачи), "
+            f"повторите: <code>/refund_stars {parts[0]} force</code>",
+            parse_mode="HTML",
+        )
         return
     from bot.services.balance_reserve import credit_order_to_balance
     cents = credit_order_to_balance(
@@ -2142,6 +2153,10 @@ async def refund_stars_cmd(message: Message):
     if cents <= 0:
         await message.answer("ℹ️ Ничего не зачислено: возврат по этому заказу уже сделан или сумма заказа равна нулю.")
         return
+    if status == "pending":
+        # заказ закрываем, чтобы его не оформили второй раз после возврата
+        from database.db_payments import cancel_pending_order
+        cancel_pending_order(parts[0])
     await message.answer(
         f"↩️ На баланс пользователя зачислено {cents / 100:.2f} ₽ по заказу <code>{parts[0]}</code>. "
         "Ключ или подписку, если нужно, отключите вручную.",

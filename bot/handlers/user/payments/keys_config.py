@@ -136,6 +136,59 @@ async def _answer_callback_if_needed(target, *args, **kwargs) -> None:
         await target.answer(*args, **kwargs)
 
 
+# v1.293: защита от двойного нажатия — один заказ настраивается одним вызовом,
+# а уже настроенный ключ повторно на панели не создаётся (иначе лишняя подписка).
+_NEW_KEY_LOCKS: dict = {}
+
+
+async def _new_key_already_done(target, state: FSMContext, order_id, key_id) -> bool:
+    from database.requests import find_order_by_order_id, get_vpn_key_by_id
+
+    order = find_order_by_order_id(order_id)
+    if not order:
+        return False
+    if str(order.get('status') or '') != 'paid':
+        await state.clear()
+        await _safe_edit_target(target, '❌ Заказ не оплачен\nОткройте оплату заново.')
+        return True
+    key_id = key_id or order.get('vpn_key_id')
+    key = get_vpn_key_by_id(int(key_id)) if key_id else None
+    if key and key.get('server_id') and key.get('panel_email'):
+        await state.clear()
+        await _safe_edit_target(target, '✅ Ключ уже настроен\nОн в разделе «Мои ключи».')
+        return True
+    return False
+
+
+def _new_key_guard(func):
+    from functools import wraps
+
+    @wraps(func)
+    async def wrapped(target, state: FSMContext, *args, **kwargs):
+        import asyncio
+        data = await state.get_data()
+        order_id = data.get('new_key_order_id')
+        if not order_id:
+            return await func(target, state, *args, **kwargs)
+        lock = _NEW_KEY_LOCKS.setdefault(str(order_id), asyncio.Lock())
+        if lock.locked():
+            try:
+                await _answer_callback_if_needed(target, '⏳ Ключ уже настраивается, подождите…')
+            except Exception:
+                pass
+            return None
+        try:
+            async with lock:
+                if await _new_key_already_done(target, state, order_id, data.get('new_key_id')):
+                    return None
+                return await func(target, state, *args, **kwargs)
+        finally:
+            if not lock.locked():
+                _NEW_KEY_LOCKS.pop(str(order_id), None)
+
+    return wrapped
+
+
 async def _continue_new_key_config(target, state: FSMContext, server: dict, *, force_new: bool = False):
     """Continues key configuration after manual or automatic server selection."""
     from bot.services.vpn_api import get_client, VPNAPIError, is_subscription_mode
@@ -250,6 +303,7 @@ async def process_new_key_server_selection(callback: CallbackQuery, state: FSMCo
     await _continue_new_key_config(callback, state, server)
 
 
+@_new_key_guard
 @regular_panel_operation
 async def process_new_key_subscription_final(target, state: FSMContext, server_id: int):
     """
@@ -446,6 +500,7 @@ async def process_new_key_inbound_selection(callback: CallbackQuery, state: FSMC
     server_id = data.get('new_key_server_id')
     await process_new_key_final(callback, state, server_id, inbound_id)
 
+@_new_key_guard
 @regular_panel_operation
 async def process_new_key_final(target, state: FSMContext, server_id: int, inbound_id: int):
     """The final stage of key creation."""

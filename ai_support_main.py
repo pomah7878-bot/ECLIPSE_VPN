@@ -313,7 +313,6 @@ gemini_client = AsyncOpenAI(
 MODEL_NAME = "openai/gpt-oss-120b"  # официальная замена llama-3.3-70b-versatile, 200K токенов/день
 SECONDARY_MODEL_NAME = "qwen/qwen3.8-27b"  # альтернатива топ-уровня, та же модель что и для vision (qwen3.6-27b deprecated Groq 02.09.2026, decommission 14.09.2026 — переход на 3.8)
 FALLBACK_MODEL_NAME = "openai/gpt-oss-20b"  # официальная замена llama-3.1-8b-instant
-_LEGACY_MODEL_70B = "llama-3.3-70b-versatile"
 _RESERVE_MODEL_SAFEGUARD = "openai/gpt-oss-safeguard-20b"
 # Второй провайдер (резервный лейн): Google Gemini. gemini-flash-latest —
 # скользящий алиас Google на актуальную flash-модель (не ловит 404 при смене
@@ -342,7 +341,6 @@ MODEL_CHAIN = (
     ModelSpec("groq", client, MODEL_NAME, "groq:gpt-oss-120b"),
     ModelSpec("groq", client, SECONDARY_MODEL_NAME, "groq:qwen"),
     ModelSpec("groq", client, FALLBACK_MODEL_NAME, "groq:gpt-oss-20b"),
-    ModelSpec("groq", client, _LEGACY_MODEL_70B, "groq:llama-70b"),
     ModelSpec("groq", client, _RESERVE_MODEL_SAFEGUARD, "groq:safeguard"),
     ModelSpec("gemini", gemini_client, _GEMINI_MODEL, "gemini:flash-latest"),
 )
