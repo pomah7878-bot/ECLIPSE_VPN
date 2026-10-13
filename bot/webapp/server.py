@@ -4204,11 +4204,24 @@ async def handle_weblink(request: web.Request) -> web.Response:
     telegram_id = _get_telegram_id(request)
     if not telegram_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    from config import BOT_TOKEN
-    from bot.utils.webtoken import make_token
-    token = make_token(telegram_id, BOT_TOKEN, ttl_seconds=3600)
-    url = f"https://support.pchelp-24.com/support?token={token}"
-    return web.json_response({"url": url})
+    # Внешняя страница с подписанной ссылкой — только если админ сам задал
+    # WEBLINK_URL в config.py. Иначе ведём на личный кабинет собственного сайта
+    # (без токена): данные клиента не уходят на чужой домен.
+    try:
+        from config import WEBLINK_URL
+    except ImportError:
+        WEBLINK_URL = ""
+    base = (WEBLINK_URL or "").strip().rstrip("/")
+    if base:
+        from config import BOT_TOKEN
+        from bot.utils.webtoken import make_token
+        token = make_token(telegram_id, BOT_TOKEN, ttl_seconds=3600)
+        return web.json_response({"url": f"{base}?token={token}"})
+    from database.requests import get_effective_webapp_url
+    site = (get_effective_webapp_url() or "").strip().rstrip("/")
+    if not site:
+        return web.json_response({"error": "not_configured"}, status=404)
+    return web.json_response({"url": f"{site}/shop"})
 
 async def handle_favicon(request: web.Request) -> web.Response:
     """GET /favicon.ico — браузеры запрашивают этот путь напрямую,

@@ -1345,7 +1345,8 @@ def get_effective_own_app_url() -> str:
     try:
         from config import OWN_APP_URL
     except ImportError:
-        return 'https://eclipse.unlimited.bot.nu/app'
+        # Чужим установкам без константы своё приложение автора не рекомендуем.
+        return ''
     return OWN_APP_URL.strip() if OWN_APP_URL else ''
 
 def set_own_app_url(url: str) -> None:
