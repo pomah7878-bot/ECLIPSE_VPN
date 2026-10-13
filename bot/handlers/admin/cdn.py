@@ -542,8 +542,11 @@ def _fmt_rub(value: float) -> str:
 def _provider_kb() -> InlineKeyboardMarkup:
     from bot.services import yc_cdn
     rows = []
-    if yc_cdn.is_configured():
+    if yc_cdn.is_active():
         rows.append([InlineKeyboardButton(text='🔄 Обновить', callback_data='admin_cdn_provider_refresh')])
+    rows.append([InlineKeyboardButton(
+        text=f"📊 Мониторинг: {'🟢 вкл' if yc_cdn.is_monitoring_on() else '⚪ выкл'}",
+        callback_data='admin_cdn_ptoggle')])
     rows.append([InlineKeyboardButton(text=f'🔑 Ключ API: {_mask(yc_cdn.get_api_key())}', callback_data='admin_cdn_pset:key')])
     rows.append([InlineKeyboardButton(text=f'📁 ID каталога: {yc_cdn.get_folder_id() or "не задан"}', callback_data='admin_cdn_pset:folder')])
     rows.append([InlineKeyboardButton(
@@ -553,7 +556,8 @@ def _provider_kb() -> InlineKeyboardMarkup:
     rows.append([InlineKeyboardButton(text=f'💵 Цена за ГБ сверх лимита: {_fmt_rub(yc_cdn.get_price_per_gb())}', callback_data='admin_cdn_pset:price')])
     if yc_cdn.get_api_key():
         rows.append([InlineKeyboardButton(text='🗑 Удалить ключ API', callback_data='admin_cdn_pclear')])
-    rows.append([InlineKeyboardButton(text='⬅️ К настройкам CDN', callback_data='admin_cdn_settings')])
+    rows.append([InlineKeyboardButton(text='⬅️ К настройкам CDN', callback_data='admin_cdn_settings'),
+                 InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -569,6 +573,12 @@ async def _provider_text(force: bool = False) -> str:
             '2. Создайте для него API-ключ и вставьте ниже («Ключ API»).\n'
             '3. Укажите ID каталога, предоплату за месяц и цену за ГБ сверх лимита.\n\n'
             'Ключ даёт только чтение статистики.'
+        )
+    if not yc_cdn.is_monitoring_on():
+        return head + (
+            '⚪ <b>Мониторинг выключен</b>\n\n'
+            'Бот не обращается к Yandex Cloud и не шлёт предупреждения о лимите трафика. '
+            'Ключ и настройки сохранены: включите кнопкой ниже, когда понадобится.'
         )
     summary = await (yc_cdn.fetch_summary(force=True) if force else yc_cdn.fetch_summary_fast())
     client_price = None
@@ -661,6 +671,15 @@ async def cdn_provider_save(message: Message, state: FSMContext):
     await state.clear()
     text = await _provider_text()
     await show('✅ Сохранено.\n\n' + text, _provider_kb())
+
+
+@router.callback_query(F.data == 'admin_cdn_ptoggle')
+async def cdn_provider_toggle(callback: CallbackQuery, state: FSMContext):
+    from bot.services import yc_cdn
+    new = not yc_cdn.is_monitoring_on()
+    yc_cdn.set_monitoring_on(new)
+    await callback.answer('Мониторинг включён' if new else 'Мониторинг выключен')
+    await safe_edit_or_send(callback.message, await _provider_text(), reply_markup=_provider_kb())
 
 
 @router.callback_query(F.data == 'admin_cdn_pclear')

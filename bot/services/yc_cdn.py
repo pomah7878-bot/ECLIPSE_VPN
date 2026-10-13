@@ -91,6 +91,20 @@ def is_configured() -> bool:
     return bool(get_api_key() and get_folder_id())
 
 
+def is_monitoring_on() -> bool:
+    """Переключатель мониторинга провайдера (по умолчанию включён).
+    Ключ и настройки при выключении сохраняются."""
+    return _setting("yc_monitoring_on", "1").strip() != "0"
+
+
+def set_monitoring_on(value: bool) -> None:
+    set_setting_value("yc_monitoring_on", "1" if value else "0")
+
+
+def is_active() -> bool:
+    return is_configured() and is_monitoring_on()
+
+
 def cost_rub(total_bytes: float) -> float:
     """Стоимость трафика по цене за ГБ, ₽."""
     return total_bytes / GB * get_price_per_gb()
@@ -137,6 +151,13 @@ _TRANSIENT_STATUSES = (429, 500, 502, 503, 504)
 _LAST_GOOD_KEY = "yc_last_summary"
 
 
+def _log_attempt(i: int, attempts: int, text: str) -> None:
+    """Разовый сбой шлюза Yandex — это INFO (дальше будет повтор); WARNING только когда
+    не удались все попытки, то есть данных получить не вышло."""
+    level = logging.WARNING if i + 1 >= attempts else logging.INFO
+    logger.log(level, "Yandex Monitoring: %s (попытка %d/%d)", text, i + 1, attempts)
+
+
 async def _post_retry(url: str, headers: Dict[str, str], body: Dict[str, Any]) -> Tuple[int, Any]:
     """_post с повторами при временных сбоях: у Yandex шлюз изредка отвечает
     503 «upstream connect error», через несколько секунд всё работает."""
@@ -149,10 +170,10 @@ async def _post_retry(url: str, headers: Dict[str, str], body: Dict[str, Any]) -
             if status not in _TRANSIENT_STATUSES:
                 return status, data
             last = TransientProviderError(f"ответ {status}")
-            logger.warning("Yandex Monitoring: ответ %s (попытка %d/%d): %s", status, i + 1, attempts, str(data)[:160])
+            _log_attempt(i, attempts, "ответ %s: %s" % (status, str(data)[:160]))
         except Exception as e:  # noqa: BLE001
             last = e
-            logger.warning("Yandex Monitoring: %s (попытка %d/%d)", e, i + 1, attempts)
+            _log_attempt(i, attempts, str(e))
         if i < attempts - 1:
             await asyncio.sleep(RETRY_DELAYS[i])
     if isinstance(last, TransientProviderError):
@@ -216,7 +237,7 @@ async def fetch_summary_fast() -> Dict[str, Any]:
     """Для открытия экрана: если есть свежий кэш или прошлые данные, отдаём сразу,
     а обновление идёт в фоне. Ждём Yandex только при самом первом запросе."""
     import asyncio
-    if not is_configured():
+    if not is_active():
         return await fetch_summary()
     cached = _CACHE.get(get_folder_id())
     if cached and time.time() - cached[0] < CACHE_SECONDS:
@@ -234,6 +255,8 @@ async def fetch_summary(force: bool = False) -> Dict[str, Any]:
     """Трафик CDN у провайдера: за 24 часа и с начала месяца (UTC)."""
     if not is_configured():
         return {"ok": False, "error": "не заданы ключ API и ID каталога"}
+    if not is_monitoring_on():
+        return {"ok": False, "error": "мониторинг выключен"}
     cache_key = get_folder_id()
     cached = _CACHE.get(cache_key)
     if cached and not force and time.time() - cached[0] < CACHE_SECONDS:
@@ -362,7 +385,7 @@ _ALERT_KEY = "yc_alert_state"
 async def check_limits(bot) -> Optional[int]:
     """Раз в час: предупреждает админов, когда месячный трафик подходит к включённым в прайс ГБ.
     Каждый порог (70, 90, 100%) отправляется один раз за месяц. Возвращает порог или None."""
-    if not is_configured():
+    if not is_active():
         return None
     summary = await fetch_summary(force=True)
     if not summary.get("ok") or summary.get("stale_at"):
