@@ -389,12 +389,14 @@ async def safe_edit_or_send(
             return result
             
         elif want_media and not is_current_media:
-            # Text → Media: remove text, send desired media type
+            # Text → Media: v1.312 — сначала новое сообщение, потом удаляем старое
+            # (без пустого чата между ними: на iPhone иначе мелькает кнопка «Старт»)
+            sent = await _answer_media(message, media, normalized_media_type, text, reply_markup)
             try:
                 await message.delete()
             except Exception:
                 pass
-            return await _answer_media(message, media, normalized_media_type, text, reply_markup)
+            return sent
             
         elif not want_media and not is_current_media:
             # Text → Text: normal editing
@@ -404,15 +406,16 @@ async def safe_edit_or_send(
             )
             
         else:
-            # Media → Text: remove media, send text
+            # Media → Text: v1.312 — сначала новое сообщение, потом удаляем старое
+            sent = await message.answer(
+                text=text, reply_markup=reply_markup, parse_mode='HTML',
+                link_preview_options=link_preview
+            )
             try:
                 await message.delete()
             except Exception:
                 pass
-            return await message.answer(
-                text=text, reply_markup=reply_markup, parse_mode='HTML',
-                link_preview_options=link_preview
-            )
+            return sent
             
     except TelegramBadRequest as e:
         error_msg = str(e).lower()

@@ -297,6 +297,19 @@ async def _render_key_delivery_photo(
     )
 
 
+def _track_key_message(message) -> None:
+    """v1.312: QR/ссылка подписки и файл конфига убираются из чата при возврате на главную
+    (раньше оставались висеть над новым меню)."""
+    try:
+        chat = getattr(message, 'chat', None)
+        if chat is None or getattr(chat, 'type', None) != 'private':
+            return
+        from bot.services.main_menu_tracker import track_sensitive
+        track_sensitive(chat.id, message)
+    except Exception as e:
+        logger.debug("Сообщение с ключом не запомнено: %s", e)
+
+
 def _remember_key_delivery_context(
     viewer_id: Optional[int],
     rendered_message: Message,
@@ -378,6 +391,7 @@ async def render_key_delivery_page(
         viewer_id=resolved_viewer_id,
         bot_username=bot_username,
     )
+    _track_key_message(rendered_message)
     _remember_key_delivery_context(
         viewer_id=resolved_viewer_id,
         rendered_message=rendered_message,
@@ -516,12 +530,13 @@ async def send_key_with_qr(
         else: # This is Message
             answer_func = messageable.answer_document
 
-        await answer_func(
+        doc_message = await answer_func(
             document=config_file,
             caption="📂 <b>Файл конфигурации</b> (для ручного импорта)",
             reply_markup=json_document_markup,
             parse_mode="HTML"
         )
+        _track_key_message(doc_message)
 
     except Exception as e:
         logger.error(f"Error sending key: {e}")

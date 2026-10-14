@@ -494,17 +494,9 @@ async def key_show_handler(callback: CallbackQuery):
         await render_page(callback, page_key='key_show_unconfigured')
         await callback.answer()
         return
-    delivery_target = callback
-    try:
-        status_message = await render_key_status_page(
-            callback,
-            title_html='⏳ <b>Получение данных ключа</b>',
-            body_html='',
-        )
-        delivery_target = build_key_delivery_target(callback, status_message)
-    except Exception:
-        pass
-    await send_key_with_qr(delivery_target, key)
+    # v1.312: без промежуточного экрана «⏳ Получение данных ключа» — карточка сразу
+    # сменяется на QR (раньше экран мигал: карточка → статус → удаление → QR внизу)
+    await send_key_with_qr(callback, key)
     await callback.answer()
 
 
