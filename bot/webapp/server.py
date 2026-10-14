@@ -1092,6 +1092,33 @@ async def handle_welcome_page(request: web.Request) -> web.Response:
     return web.Response(text="<h1>Welcome template not found</h1>", status=404)
 
 
+async def handle_status_page(request: web.Request) -> web.Response:
+    """GET /status — публичная страница статуса серверов (без адресов серверов).
+    Выключена по умолчанию: пока админ не включит, отдаёт 404."""
+    from bot.services import server_status
+    if not server_status.is_enabled():
+        return web.Response(text="404: Not Found", status=404)
+    return _serve_html_with_brand(
+        os.path.join(_TEMPLATES_DIR, "status.html"),
+        title_format="{brand} — статус серверов",
+        header_format="{brand} — статус серверов",
+    )
+
+
+async def handle_public_status(request: web.Request) -> web.Response:
+    """GET /api/public/status — названия серверов, работает/нет и пинг. Без IP."""
+    from bot.services import server_status
+    if not server_status.is_enabled():
+        return web.json_response({"error": "not_found"}, status=404)
+    try:
+        data = server_status.collect()
+    except Exception:
+        return web.json_response({"error": "unavailable"}, status=503)
+    resp = web.json_response(data)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 async def handle_public_site_info(request: web.Request) -> web.Response:
     """GET /api/public/site-info — базовая информация о сервисе, полностью
     без авторизации: название бренда, юзернейм бота, ссылка на новостной
@@ -4614,6 +4641,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
     app.router.add_get("/api/public/site-info", handle_public_site_info)
+    app.router.add_get("/status", handle_status_page)
+    app.router.add_get("/api/public/status", handle_public_status)
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)
     app.router.add_get("/happ-sub/{sub_id}", handle_happ_subscription)
     app.router.add_get("/routing/profile.json", handle_routing_profile)

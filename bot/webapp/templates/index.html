@@ -781,18 +781,24 @@
                 if (_payMethod === 'balance' && priceCents > userBalanceCents) {
                     html += `<button disabled class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold opacity-40 flex justify-between items-center${currentClass}">
                         <span>${escapeHtml(t.name)}${currentBadge}${cdnBadge}</span>
-                        <span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>
+                        <span class="text-right"><span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>${monthHint(t)}</span>
                     </button>`;
                 } else {
                     html += `<button onclick="selectTariff(${t.id})" class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold transition flex justify-between items-center${currentClass}">
                         <span>${escapeHtml(t.name)}${currentBadge}${cdnBadge}</span>
-                        <span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>
+                        <span class="text-right"><span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>${monthHint(t)}</span>
                     </button>`;
                 }
             });
             html += '</div><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-3">Отмена</button>';
             html += `<button onclick="closePay();goRenewInBot(${_payVpnKeyId || 'null'})" class="w-full text-[11px] text-mist-dim underline transition mt-3">Оплатить в чате бота</button>`;
             return html;
+        }
+
+        function monthHint(t) {
+            // Для тарифов от 2 месяцев — цена за месяц, видна выгода длинного срока
+            if (!t.duration_days || t.duration_days < 60 || !(t.price_rub > 0)) return '';
+            return `<span class="block text-[10px] text-mist-dim font-normal">≈${Math.round(t.price_rub * 30 / t.duration_days)} ₽/мес</span>`;
         }
 
         function setPayMethod(method) {

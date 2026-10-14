@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 149
+LATEST_VERSION = 150
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3429,6 +3429,67 @@ def migration_149(conn: sqlite3.Connection) -> None:
     logger.info("Migration v149 applied: license_activations.reported_*")
 
 
+def _add_page_button(conn: sqlite3.Connection, page_key: str, button: dict, before_id: str | None = None) -> None:
+    """Добавляет кнопку на страницу (и в стандартный, и в изменённый админом набор).
+    before_id — поставить отдельной строкой перед строкой этой кнопки (её и ниже сдвинуть)."""
+    for col in ("buttons_default", "buttons_custom"):
+        page = conn.execute(f"SELECT {col} FROM pages WHERE page_key = ?", (page_key,)).fetchone()
+        if not page or not page[0]:
+            continue
+        try:
+            buttons = json.loads(page[0])
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(buttons, list) or any(b.get("id") == button["id"] for b in buttons):
+            continue
+        anchor = next((b for b in buttons if b.get("id") == before_id), None) if before_id else None
+        if anchor is not None:
+            row = int(anchor.get("row", 0))
+            for b in buttons:
+                if int(b.get("row", 0)) >= row:
+                    b["row"] = int(b.get("row", 0)) + 1
+        else:
+            row = max((int(b.get("row", 0)) for b in buttons), default=-1) + 1
+        buttons.append(dict(button, row=row, col=0))
+        conn.execute(f"UPDATE pages SET {col} = ? WHERE page_key = ?",
+                     (json.dumps(buttons, ensure_ascii=False), page_key))
+
+
+def migration_150(conn: sqlite3.Connection) -> None:
+    """Версия 1.301: бонусные дни за отзыв и сторис (заявки с проверкой админом),
+    кнопки «🎁 Бонусные дни» на главной и «📡 Статус серверов» в справке.
+    Обе функции выключены по умолчанию, кнопки скрыты, пока админ не включит."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS bonus_task_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            telegram_id INTEGER NOT NULL,
+            task TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            file_id TEXT,
+            days INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            decided_at TIMESTAMP,
+            decided_by INTEGER
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_bonus_task_claims_user ON bonus_task_claims(user_id, task, status)")
+    try:
+        _add_page_button(conn, "main", {
+            "id": "btn_bonus_tasks", "label": "🎁 Бонусные дни", "color": "secondary",
+            "is_hidden": True, "action_type": "internal", "action_value": "cmd_bonus_tasks",
+        })
+        _add_page_button(conn, "help", {
+            "id": "btn_server_status", "label": "📡 Статус серверов", "color": "secondary",
+            "is_hidden": True, "action_type": "internal", "action_value": "cmd_server_status",
+        }, before_id="btn_back_main")
+    except sqlite3.Error as e:
+        logger.warning("Migration v150: не удалось добавить кнопки: %s", e)
+    logger.info("Migration v150 applied: bonus_task_claims, кнопки бонусных дней и статуса серверов")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3505,6 +3566,7 @@ MIGRATIONS = {
     147: migration_147,
     148: migration_148,
     149: migration_149,
+    150: migration_150,
 }
 
 

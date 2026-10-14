@@ -149,10 +149,16 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         show_roulette = _roulette_can_spin(user_id)
     except Exception:
         show_roulette = False
+    try:
+        from bot.handlers.user.bonus_tasks import is_visible as _bonus_visible
+        show_bonus = _bonus_visible()
+    except Exception:
+        show_bonus = False
 
     visibility = {
         'btn_trial': show_trial,
         'btn_roulette': show_roulette,
+        'btn_bonus_tasks': show_bonus,
         'btn_referral': show_referral,
         'btn_balance_topup': show_balance_button,
         'btn_ai_support': show_ai_support,
@@ -732,7 +738,12 @@ async def show_id_handler(callback: CallbackQuery):
 async def _render_help_page(target):
     """Renders a help page via render_page."""
     from bot.utils.page_renderer import render_page
-    await render_page(target, page_key='help')
+    try:
+        from bot.services import server_status
+        show_status = server_status.is_enabled()
+    except Exception:
+        show_status = False
+    await render_page(target, page_key='help', visibility={'btn_server_status': show_status})
 
 
 @router.callback_query(F.data == 'help')

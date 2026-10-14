@@ -259,6 +259,11 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
         text='🛬 Витрина для новых (/welcome): ✅' if is_welcome_page_enabled() else '🛬 Витрина для новых (/welcome): ❌',
         callback_data='admin_toggle_welcome_page',
     ))
+    from bot.services import server_status as _server_status
+    builder.row(InlineKeyboardButton(
+        text='📡 Статус серверов (/status): ✅' if _server_status.is_enabled() else '📡 Статус серверов (/status): ❌',
+        callback_data='admin_toggle_status_page',
+    ))
     builder.row(InlineKeyboardButton(
         text=f"🎨 Шаблон витрины: {WELCOME_TEMPLATES[get_welcome_template_id()]['label']}",
         callback_data='admin_welcome_template_menu',

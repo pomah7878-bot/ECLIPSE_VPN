@@ -13,6 +13,8 @@ from .ai_handler import router as ai_handler_router
 from .promo import router as promo_router
 from .roulette import router as roulette_router
 from .cdn import router as cdn_router
+from .bonus_tasks import router as bonus_tasks_router
+from .server_status import router as server_status_router
 
 # These are packages/modules that were explicitly standalone
 from .referral import router as referral_router
@@ -28,6 +30,8 @@ router.callback_query.outer_middleware(UserAccessGuardMiddleware())
 
 # The order is important: specific routers with deep_link must come before the general start_router
 router.include_router(payments_router)
+router.include_router(bonus_tasks_router)
+router.include_router(server_status_router)
 router.include_router(referral_router)
 router.include_router(support_router)
 router.include_router(ai_handler_router)

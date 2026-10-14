@@ -119,6 +119,20 @@ def _cdn_badge(tariff) -> str:
     return f'{badge} ' if badge else ''
 
 
+
+def month_price_hint(tariff: dict) -> str:
+    """Для тарифов от 2 месяцев: цена за месяц, чтобы была видна выгода длинного срока.
+    Пример: 12 месяцев за 3799 ₽ → « · ≈317 ₽/мес». Для коротких тарифов — пустая строка."""
+    try:
+        days = int(tariff.get('duration_days') or 0)
+        price = float(tariff.get('price_rub') or 0)
+    except (TypeError, ValueError):
+        return ''
+    if days < 60 or price <= 0:
+        return ''
+    return f" · ≈{round(price * 30 / days)} ₽/мес"
+
+
 def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: str = None, is_cards: bool = False, is_crypto: bool = False, is_balance: bool = False, is_qr: bool = False, groups_data: list = None, is_demo: bool = False, is_wata: bool = False, is_platega: bool = False, is_cardlink: bool = False) -> InlineKeyboardMarkup:
     """
     Keyboard for choosing a tariff for paying with Stars, Cards, Crypto or Balance.
@@ -204,6 +218,8 @@ def tariff_select_kb(tariffs: list, back_callback: str = "buy_key", order_id: st
                 prefix = "stars_pay"
                 emoji = '⭐'
                 
+            if price_display.endswith(' ₽'):
+                price_display += month_price_hint(tariff)
             cb_data = f"{prefix}:{tariff['id']}:{order_id}" if order_id else f"{prefix}:{tariff['id']}"
             
             builder.row(
@@ -346,6 +362,8 @@ def renew_tariff_select_kb(tariffs: list, key_id: int, order_id: str = None, is_
             prefix = "renew_pay_stars"
             emoji = '⭐'
             
+        if price_display.endswith(' ₽'):
+            price_display += month_price_hint(tariff)
         if is_balance:
             cb_data = f"{prefix}:{tariff['id']}:{key_id}"
         else:

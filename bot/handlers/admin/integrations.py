@@ -1340,6 +1340,30 @@ async def toggle_welcome_page(callback: CallbackQuery, state: FSMContext):
     await show_integrations_site_menu(callback)
 
 
+@router.callback_query(F.data == "admin_toggle_status_page")
+async def toggle_status_page(callback: CallbackQuery, state: FSMContext):
+    """Включает/выключает статус серверов: страница /status и кнопка в «Справке».
+    Клиенты видят только названия серверов и пинг, без адресов."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import server_status
+    enabled = not server_status.is_enabled()
+    server_status.set_enabled(enabled)
+    webapp_url = get_effective_webapp_url()
+    if enabled:
+        text = (
+            "✅ Статус серверов включён\n\n"
+            "• Кнопка «📡 Статус серверов» в «Справке»\n"
+            "• Адреса серверов клиенты не видят"
+            + (f"\n• Страница: {webapp_url}/status" if webapp_url else "")
+        )
+        await callback.answer(text[:200], show_alert=True)
+    else:
+        await callback.answer("⚪ Статус серверов выключен")
+    await show_integrations_site_menu(callback)
+
+
 @router.callback_query(F.data == "admin_welcome_template_menu")
 async def show_welcome_template_menu(callback: CallbackQuery, state: FSMContext):
     """Показывает список доступных шаблонов страницы /welcome с описанием."""
