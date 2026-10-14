@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 152
+LATEST_VERSION = 153
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3549,6 +3549,30 @@ def migration_152(conn: sqlite3.Connection) -> None:
     logger.info("Migration v152 applied: btn_key_cdn добавлена на key_delivery")
 
 
+def migration_153(conn: sqlite3.Connection) -> None:
+    """Версия 1.310: кнопка CDN остаётся только на экране выдачи ключа (key_delivery) —
+    с карточки ключа (key_details) убирается как дубль. Идемпотентно."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if row:
+        for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+            raw = row[column_index]
+            if not raw:
+                continue
+            try:
+                buttons = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            kept = [b for b in buttons if b.get("id") != "btn_key_cdn"]
+            if len(kept) != len(buttons):
+                conn.execute(
+                    f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+                    (json.dumps(kept, ensure_ascii=False),)
+                )
+    logger.info("Migration v153 applied: btn_key_cdn убрана с key_details")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3628,6 +3652,7 @@ MIGRATIONS = {
     150: migration_150,
     151: migration_151,
     152: migration_152,
+    153: migration_153,
 }
 
 
