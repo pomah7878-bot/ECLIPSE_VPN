@@ -1,7 +1,8 @@
 """Одно главное меню в чате: запоминаем последнее и убираем его при новом /start.
 
 Раньше каждый /start присылал новое меню, и старые копились в чате. Теперь при /start
-предыдущее меню клиента и сама команда удаляются, а новое появляется внизу чата.
+предыдущее меню клиента и прежняя команда удаляются, а новое меню появляется внизу чата.
+Самая последняя команда /start остаётся: без сообщений клиента Telegram показывает кнопку «Старт».
 """
 import asyncio
 import logging
@@ -11,6 +12,7 @@ from typing import Dict, Iterable, List, Optional
 logger = logging.getLogger(__name__)
 
 _SETTING_PREFIX = "main_menu_msg:"
+_CMD_PREFIX = "start_cmd_msg:"
 _cache: Dict[int, int] = {}
 
 # Служебные сообщения «хвоста» (страницы оплаты, статусы, вопросы и т.п.), которые бот
@@ -141,7 +143,20 @@ async def cleanup_before_start(bot, chat_id: int, user_id: int, command_message=
             logger.debug("Старое главное меню %s не удалено: %s", prev, e)
         _cache.pop(int(user_id), None)
     if command_message is not None:
+        # v1.311: текущее /start остаётся в чате (в диалоге должно быть хотя бы одно сообщение
+        # клиента, иначе Telegram на iPhone показывает синюю кнопку «Старт» вместо поля ввода).
+        # Удаляется только предыдущее /start — больше одного в чате не копится.
         try:
-            await command_message.delete()
+            from database.db_settings import get_setting, set_setting
+            key = f"{_CMD_PREFIX}{int(user_id)}"
+            prev_cmd = int(get_setting(key) or 0)
+            current = int(getattr(command_message, "message_id", 0) or 0)
+            if prev_cmd and prev_cmd != current:
+                try:
+                    await bot.delete_message(chat_id=chat_id, message_id=prev_cmd)
+                except Exception as e:
+                    logger.debug("Прежнее /start %s не удалено: %s", prev_cmd, e)
+            if current:
+                set_setting(key, str(current))
         except Exception as e:
-            logger.debug("Сообщение /start не удалено: %s", e)
+            logger.debug("Не удалось обработать сообщение /start: %s", e)
