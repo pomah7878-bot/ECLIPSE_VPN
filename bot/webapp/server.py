@@ -877,7 +877,11 @@ async def _complete_webapp_order(order_id: str, quote_final_amount_cents: int, t
                 from database.requests import get_key_details_for_user
                 key = get_key_details_for_user(key_id, telegram_id)
                 if key and not key.get("server_id"):
-                    is_draft = True
+                    # Сервер выбирается автоматически — клиенту ничего доделывать не нужно
+                    from bot.services.auto_provision import configure_draft_key
+                    if await configure_draft_key(int(key_id), order_id):
+                        key = get_key_details_for_user(key_id, telegram_id)
+                    is_draft = not (key and key.get("server_id"))
 
             return {"status": "paid", "message": text, "is_draft": is_draft}
         return {"status": "failed", "message": text}

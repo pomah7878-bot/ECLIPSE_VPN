@@ -272,12 +272,15 @@ async def start_new_key_config(
         new_key_owner_telegram_id=owner_telegram_id,
         new_key_owner_username=owner_username,
     )
-    if len(servers) == 1:
+    # Клиент не выбирает сервер: берём наименее загруженный автоматически
+    from bot.services.auto_provision import pick_server
+    auto_server = pick_server(servers)
+    if auto_server:
         logger.info(
-            f"Автовыбор единственного сервера {servers[0]['id']} "
+            f"Автовыбор сервера {auto_server['id']} "
             f"для нового ключа (Order: {order_id})"
         )
-        await _continue_new_key_config(message, state, servers[0], force_new=True)
+        await _continue_new_key_config(message, state, auto_server, force_new=True)
         return
     screen_data = build_new_key_server_select_data()
     await render_page(

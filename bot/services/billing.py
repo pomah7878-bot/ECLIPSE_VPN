@@ -1677,7 +1677,7 @@ async def _process_payment_order_inner(
             update_payment_key_id(order_id, new_key_id)
             order['vpn_key_id'] = new_key_id
         order["_payment_action"] = "new_key"
-        text = "✅ Оплата прошла успешно! Выберите сервер для подключения."
+        text = "✅ Оплата прошла успешно! Подписка настраивается автоматически."
 
     if process_referrals and order['_payment_processed_now']:
         try:
