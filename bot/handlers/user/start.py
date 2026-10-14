@@ -87,6 +87,15 @@ def _merge_main_append_buttons(
     return append_buttons or None
 
 
+def _admin_bonus_badge() -> str:
+    """«🔔 N» на кнопке админ-панели, если есть заявки на бонусные дни."""
+    try:
+        from bot.handlers.user.bonus_tasks import pending_badge
+        return pending_badge()
+    except Exception:
+        return ""
+
+
 async def _render_main_page(target, force_new: bool = False) -> bool:
     """Renders the main page via render_page.
     
@@ -176,7 +185,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     admin_append_buttons = None
     if is_admin:
         admin_append_buttons = [
-            [InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")]
+            [InlineKeyboardButton(text="⚙️ Админ-панель" + _admin_bonus_badge(), callback_data="admin_panel")]
         ]
 
     context = build_page_flow_context(target, telegram_id=user_id, page_key='main')

@@ -104,6 +104,22 @@ def is_visible(telegram_id: int | None = None) -> bool:
     return is_enabled() and bool(active_tasks())
 
 
+def pending_count() -> int:
+    """Сколько заявок ждут проверки (для значка 🔔 в меню админа). Без лицензии — 0."""
+    try:
+        if not is_licensed():
+            return 0
+        from database.db_bonus_tasks import stats
+        return int(stats().get("pending", 0))
+    except Exception:
+        return 0
+
+
+def pending_badge() -> str:
+    n = pending_count()
+    return f" · 🔔 {n}" if n else ""
+
+
 def _plural_days(n: int) -> str:
     if 11 <= n % 100 <= 14:
         return "дней"
@@ -320,13 +336,20 @@ def _claim_caption(claim: dict, footer: str = "") -> str:
     username = user.get("username")
     who = f"@{html.escape(username)}" if username else "без username"
     meta = TASKS.get(claim["task"], {"icon": "🎁", "title": claim["task"]})
+    check = {
+        "story": "сторис опубликована, видно наш бот или ссылку на него",
+        "review": "отзыв настоящий и оставлен в нужном месте",
+    }.get(claim["task"], "задание выполнено")
     text = (
-        f"🎁 <b>Заявка на бонусные дни</b> №{claim['id']}\n\n"
+        f"🔔 <b>Нужно проверить заявку на бонусные дни</b> №{claim['id']}\n\n"
         f"Задание: {meta['icon']} {meta['title']}\n"
         f"Клиент: {who} (<code>{claim['telegram_id']}</code>)\n"
-        f"Награда: +{claim['days']} {_plural_days(int(claim['days']))}"
+        f"Награда: +{claim['days']} {_plural_days(int(claim['days']))}\n\n"
+        f"🔎 Проверьте на скриншоте: {check}."
     )
-    return text + (f"\n\n{footer}" if footer else "")
+    if footer:
+        return text + f"\n\n{footer}"
+    return text + "\n\nНажмите «✅ Начислить» или «❌ Отклонить»."
 
 
 def _claim_kb(claim_id: int) -> InlineKeyboardMarkup:
@@ -353,6 +376,12 @@ async def _send_claim_to_admins(bot, claim_id: int, only_admin: int | None = Non
 def _is_admin(user_id: int) -> bool:
     from bot.utils.admin import is_admin
     return is_admin(user_id)
+
+
+def _admin_name(callback: CallbackQuery) -> str:
+    u = callback.from_user
+    name = getattr(u, "username", None)
+    return f"@{html.escape(name)}" if name else f"админ {u.id}"
 
 
 async def _finish_admin_message(callback: CallbackQuery, claim: dict, footer: str) -> None:
@@ -394,7 +423,7 @@ async def cb_bonus_ok(callback: CallbackQuery):
         await callback.answer(f"Дни не начислены: {reason}. Заявка осталась на проверке.", show_alert=True)
         return
     days = int(claim["days"])
-    await _finish_admin_message(callback, claim, f"✅ Начислено +{days} {_plural_days(days)}")
+    await _finish_admin_message(callback, claim, f"✅ Начислено +{days} {_plural_days(days)} — {_admin_name(callback)}")
     await callback.answer("Начислено")
     try:
         meta = TASKS.get(claim["task"], {"title": ""})
@@ -427,7 +456,7 @@ async def cb_bonus_no(callback: CallbackQuery):
         await callback.answer("Заявку уже проверил другой админ", show_alert=True)
         await _finish_admin_message(callback, get_claim(claim_id) or claim, "Уже проверена")
         return
-    await _finish_admin_message(callback, claim, "❌ Отклонено")
+    await _finish_admin_message(callback, claim, f"❌ Отклонено — {_admin_name(callback)}")
     await callback.answer("Отклонено")
     try:
         meta = TASKS.get(claim["task"], {"title": ""})
@@ -483,7 +512,7 @@ def _admin_text() -> str:
     lines += [
         "",
         "📊 <b>Заявки</b>",
-        f"• на проверке: {st['pending']}",
+        f"• на проверке: {st['pending']}" + (" 🔔" if st["pending"] else ""),
         f"• одобрено: {st['approved']} (выдано дней: {st['days']})",
         f"• отклонено: {st['rejected']}",
         "",
@@ -508,7 +537,8 @@ def _admin_kb() -> InlineKeyboardMarkup:
             callback_data=f"adm_bt_days:{task}",
         ))
     b.row(InlineKeyboardButton(text="🔗 Ссылка для отзыва", callback_data="adm_bt_url"))
-    b.row(InlineKeyboardButton(text="📥 Показать заявки на проверке", callback_data="adm_bt_pending"))
+    n = pending_count()
+    b.row(InlineKeyboardButton(text=f"📥 Заявки на проверке: {n}" + (" 🔔" if n else ""), callback_data="adm_bt_pending"))
     b.row(InlineKeyboardButton(text="👁 Как видит клиент", callback_data="bonus_tasks"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_marketing"),
           InlineKeyboardButton(text="🈴 На главную", callback_data="start"))

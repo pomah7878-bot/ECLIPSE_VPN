@@ -52,6 +52,15 @@ def home_only_kb() -> InlineKeyboardMarkup:
     builder.row(home_button())
     return builder.as_markup()
 
+def _bonus_badge() -> str:
+    """Значок «🔔 N», если есть заявки на бонусные дни, ждущие проверки."""
+    try:
+        from bot.handlers.user.bonus_tasks import pending_badge
+        return pending_badge()
+    except Exception:
+        return ''
+
+
 def admin_main_menu_kb() -> InlineKeyboardMarkup:
     """Main menu of the admin panel."""
     from bot.services.license import is_license_server
@@ -63,7 +72,7 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text='👥 Пользователи', callback_data='admin_users'),
-        InlineKeyboardButton(text='📣 Маркетинг', callback_data='admin_marketing')
+        InlineKeyboardButton(text='📣 Маркетинг' + _bonus_badge(), callback_data='admin_marketing')
     )
     builder.row(
         InlineKeyboardButton(text='⚙️ Настройки бота', callback_data='admin_bot_settings'),
@@ -97,7 +106,7 @@ def marketing_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🎟 Промокоды', callback_data='admin_promocodes'))
     builder.row(InlineKeyboardButton(text='🎫 Купоны', callback_data='admin_coupons'))
     builder.row(InlineKeyboardButton(text='🎰 Рулетка', callback_data='admin_roulette'))
-    builder.row(InlineKeyboardButton(text='🎁 Бонусные дни (отзыв, сторис)', callback_data='admin_bonus_tasks'))
+    builder.row(InlineKeyboardButton(text='🎁 Бонусные дни (отзыв, сторис)' + _bonus_badge(), callback_data='admin_bonus_tasks'))
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 
