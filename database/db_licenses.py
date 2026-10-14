@@ -109,6 +109,17 @@ def deactivate_partner_license(license_key: str) -> bool:
         return cursor.rowcount > 0
 
 
+def is_license_expired(license_row: Dict[str, Any]) -> bool:
+    """True, если у лицензии задан срок и он уже прошёл (время в UTC, как при проверке)."""
+    expires_at = (license_row or {}).get("expires_at")
+    if not expires_at:
+        return False
+    try:
+        return datetime.strptime(expires_at, "%Y-%m-%d %H:%M:%S") < datetime.utcnow()
+    except ValueError:
+        return False
+
+
 def check_license_validity(license_key: str) -> Dict[str, Any]:
     license_row = get_partner_license(license_key)
     if not license_row:

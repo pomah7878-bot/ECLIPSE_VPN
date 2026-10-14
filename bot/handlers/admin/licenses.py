@@ -24,13 +24,17 @@ router = Router()
 
 
 def _format_license_summary(licenses: list) -> str:
+    from database.db_licenses import is_license_expired
     total = len(licenses)
-    active_full = sum(1 for l in licenses if l["is_active"] and l["tier"] == "full")
-    active_basic = sum(1 for l in licenses if l["is_active"] and l["tier"] == "basic")
+    live = [l for l in licenses if l["is_active"] and not is_license_expired(l)]
+    active_full = sum(1 for l in live if l["tier"] == "full")
+    active_basic = sum(1 for l in live if l["tier"] == "basic")
+    expired = sum(1 for l in licenses if l["is_active"] and is_license_expired(l))
     inactive = sum(1 for l in licenses if not l["is_active"])
     return (
         f"🔑 <b>Лицензии партнёров</b>\n\n"
-        f"Всего: {total} · 💎 Полных: {active_full} · 🔹 Базовых: {active_basic} · 🚫 Неактивных: {inactive}\n\n"
+        f"Всего: {total} · 💎 Полных: {active_full} · 🔹 Базовых: {active_basic} · "
+        f"⌛ Истекших: {expired} · 🚫 Неактивных: {inactive}\n\n"
         f"Выберите партнёра, чтобы посмотреть детали:"
     )
 
@@ -71,8 +75,14 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
         await callback.answer("❌ Лицензия не найдена (возможно, удалена).", show_alert=True)
         return
 
-    status_text = "✅ Активна" if lic["is_active"] else "🚫 Деактивирована"
-    expires_text = lic["expires_at"] or "бессрочно"
+    from database.db_licenses import is_license_expired
+    if not lic["is_active"]:
+        status_text = "🚫 Деактивирована"
+    elif is_license_expired(lic):
+        status_text = "⌛ Истекла (продлите — и она снова заработает)"
+    else:
+        status_text = "✅ Активна"
+    expires_text = f"{lic['expires_at']} (UTC)" if lic["expires_at"] else "бессрочно"
 
     enabled = features_from_str(lic.get("features"))
     if enabled:
