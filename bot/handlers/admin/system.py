@@ -226,16 +226,23 @@ async def show_extensions_diagnostics(callback: CallbackQuery, state: FSMContext
     from bot.utils.custom_extensions import get_custom_extensions_diagnostics, run_active_extension_health_check
     from bot.handlers.user.ai_support_integration import get_ai_stats
 
+    # Проверка панелей и Telegram занимает несколько секунд — отвечаем на нажатие сразу
+    await callback.answer("⏳ Проверяю систему…")
+
     diagnostics = get_custom_extensions_diagnostics()
     health_check = run_active_extension_health_check()
     ai_stats = await get_ai_stats()
+    try:
+        from bot.services import system_health
+        system_lines = system_health.format_block(await system_health.collect(callback.bot))
+    except Exception as e:
+        system_lines = ["<b>━━ Система ━━</b>", f"⚪ Проверка не выполнена: {escape_html(type(e).__name__)}"]
 
     await safe_edit_or_send(
         callback.message,
-        _format_extensions_diagnostics(diagnostics, health_check, ai_stats),
+        _format_extensions_diagnostics(diagnostics, health_check, ai_stats, system_lines),
         reply_markup=extensions_diagnostics_kb(_extension_settings_menu_buttons(diagnostics)),
     )
-    await callback.answer()
 
 
 def _format_ai_diagnostics_block(ai_stats: dict | None) -> list[str]:
@@ -259,7 +266,8 @@ def _format_ai_diagnostics_block(ai_stats: dict | None) -> list[str]:
     return lines
 
 
-def _format_extensions_diagnostics(diagnostics: dict, health_check: dict, ai_stats: dict | None = None) -> str:
+def _format_extensions_diagnostics(diagnostics: dict, health_check: dict, ai_stats: dict | None = None,
+                                   system_lines: list[str] | None = None) -> str:
     if health_check.get('healthy'):
         health_lines = [
             "<b>━━ Активная проверка конфигурации ━━</b>",
@@ -301,12 +309,16 @@ def _format_extensions_diagnostics(diagnostics: dict, health_check: dict, ai_sta
     ignored = sum(1 for item in files if item.get('status') == 'ignored_private')
 
     lines = [
-        "🧩 <b>Диагностика расширений</b>",
+        "🧩 <b>Диагностика</b>",
         "",
-        "🔍 <b>Что проверяется:</b> активная проверка конфигурации бота, "
-        "доступность AI-консультанта, загрузка кастомных Python-расширений.",
+        "🔍 <b>Что проверяется:</b> версия и обновления, база данных, диск, бэкапы, "
+        "фоновые задачи, лицензия, панели 3x-ui, Telegram, оплаты, экраны бота, "
+        "AI-консультант и кастомные расширения.",
         "",
     ]
+    if system_lines:
+        lines.extend(system_lines)
+        lines.append("")
     lines.extend(health_lines)
     lines.extend(ai_lines)
     lines.append("")
@@ -342,7 +354,10 @@ def _format_extensions_diagnostics(diagnostics: dict, health_check: dict, ai_sta
         if len(registrations) > 8:
             lines.append(f"• ещё {len(registrations) - 8}")
 
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    if len(text) > 4000:  # предел сообщения Telegram
+        text = text[:3990].rsplit("\n", 1)[0] + "\n…"
+    return text
 
 
 def _format_extension_registration_summary(items: dict) -> str:

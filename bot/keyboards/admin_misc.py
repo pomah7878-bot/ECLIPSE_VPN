@@ -76,7 +76,7 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text='⚙️ Настройки бота', callback_data='admin_bot_settings'),
-        InlineKeyboardButton(text='🧩 Расширения', callback_data='admin_extensions_diagnostics')
+        InlineKeyboardButton(text='🩺 Диагностика', callback_data='admin_extensions_diagnostics')
     )
     if is_license_server():
         # Раздел управления whitelabel-лицензиями партнёров — только на
