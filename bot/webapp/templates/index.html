@@ -824,7 +824,7 @@
                     return;
                 }
                 if (res.status === 'paid') {
-                    showPaySuccess(res.message, res.is_draft);
+                    showPaySuccess(res.message, res.is_draft, res);
                     return;
                 }
                 renderPayQR(res);
@@ -842,7 +842,7 @@
                     box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось оплатить балансом.')}</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>`;
                     return;
                 }
-                showPaySuccess(res.message, res.is_draft);
+                showPaySuccess(res.message, res.is_draft, res);
             } catch(e) {
                 box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при оплате балансом. Попробуйте ещё раз.</p><button onclick="renderTariffSelection()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Назад</button>';
             }
@@ -880,7 +880,7 @@
                     if (res.status === 'paid') {
                         clearInterval(_payPollTimer);
                         _payPollTimer = null;
-                        showPaySuccess(res.message, res.is_draft);
+                        showPaySuccess(res.message, res.is_draft, res);
                     } else if (res.status === 'failed') {
                         clearInterval(_payPollTimer);
                         _payPollTimer = null;
@@ -893,7 +893,7 @@
             }, 5000);
         }
 
-        function showPaySuccess(message, isDraft) {
+        function showPaySuccess(message, isDraft, res) {
             const box = document.getElementById('payContent');
             const messageHtml = (message || '').replace(/\n/g, '<br>');
             let draftNote = '';
@@ -906,12 +906,56 @@
                 <div class="text-4xl mb-3">✅</div>
                 <h3 class="font-display text-base font-bold mb-2">Готово!</h3>
                 <div class="text-xs text-mist mb-4 text-left">${messageHtml}</div>
+                <div id="payKeyBlock"></div>
                 ${draftNote}
                 ${draftBtn}
                 <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">${isDraft ? 'Позже' : 'Отлично'}</button>
             `;
             if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            // Первая покупка: сразу показываем ключ и ссылку подписки, чтобы клиенту не пришлось их искать
+            if (res && res.new_key && res.key_id && !isDraft) { showNewKeyOnSuccess(res.key_id); }
             setTimeout(() => { init(); }, 300);
+        }
+
+        async function showNewKeyOnSuccess(keyId) {
+            const holder = document.getElementById('payKeyBlock');
+            if (!holder) return;
+            holder.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
+            let key = null;
+            for (let i = 0; i < 3 && !(key && key.sub_url); i++) {
+                try {
+                    const data = await fetchAPI('keys');
+                    key = (data.keys || []).find(k => k.id === keyId) || null;
+                    if (key) { _cachedKeys = data.keys; }
+                } catch (e) { /* повторим */ }
+                if (!(key && key.sub_url)) await new Promise(r => setTimeout(r, 1500));
+            }
+            const target = document.getElementById('payKeyBlock');
+            if (!target) return;
+            if (!key || !key.sub_url) {
+                target.innerHTML = '<div class="text-xs text-mist mb-4 text-left">Ваш ключ готов — он в списке подключений на главной странице.</div>';
+                return;
+            }
+            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=2&data=' + encodeURIComponent(key.sub_url);
+            const base = !!(window._appImportEnabled);
+            const imp = window._cabinetImportEnabled || {};
+            let importBtns = '';
+            [['happ', 'Happ'], ['incy', 'INCY'], ['karing', 'Karing']].forEach(([id, label]) => {
+                if (base && imp[id]) {
+                    importBtns += `<button onclick="importToApp('${id}', ${key.id})" class="py-2.5 btn-primary rounded-xl text-xs font-bold transition">Добавить в ${label}</button>`;
+                }
+            });
+            target.innerHTML = `
+                <div class="bg-panel-2 border border-[color:var(--hairline)] rounded-2xl p-3 mb-4 text-left">
+                    <div class="text-sm font-semibold mb-2">🔑 ${escapeHtml(key.name || 'Ваш ключ')}</div>
+                    <div class="flex justify-center mb-3"><img src="${qrUrl}" alt="QR" class="rounded-xl bg-white p-1" width="170" height="170"></div>
+                    <div class="text-[11px] break-all text-mist mb-3" id="payKeyLink">${escapeHtml(key.sub_url)}</div>
+                    <div class="grid gap-2">
+                        ${importBtns}
+                        <button onclick="copySubLink(${key.id})" class="py-2.5 btn-secondary rounded-xl text-xs font-semibold transition">Скопировать ссылку подписки</button>
+                    </div>
+                    <div class="text-[11px] text-mist mt-3">Вставьте ссылку в приложение (Happ, INCY, Karing) или отсканируйте QR. Ключ всегда доступен на главной странице.</div>
+                </div>`;
         }
         function copyQrLink() {
             const linkText = document.getElementById('qrLinkText').textContent;

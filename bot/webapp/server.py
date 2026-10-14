@@ -883,7 +883,10 @@ async def _complete_webapp_order(order_id: str, quote_final_amount_cents: int, t
                         key = get_key_details_for_user(key_id, telegram_id)
                     is_draft = not (key and key.get("server_id"))
 
-            return {"status": "paid", "message": text, "is_draft": is_draft}
+            return {
+                "status": "paid", "message": text, "is_draft": is_draft,
+                "key_id": key_id, "new_key": order.get("_payment_action") == "new_key",
+            }
         return {"status": "failed", "message": text}
     finally:
         await complete_bot.session.close()
