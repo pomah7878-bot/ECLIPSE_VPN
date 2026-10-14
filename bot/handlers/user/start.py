@@ -151,7 +151,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         show_roulette = False
     try:
         from bot.handlers.user.bonus_tasks import is_visible as _bonus_visible
-        show_bonus = _bonus_visible()
+        show_bonus = _bonus_visible(user_id)
     except Exception:
         show_bonus = False
 

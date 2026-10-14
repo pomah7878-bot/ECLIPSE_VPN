@@ -1,12 +1,15 @@
-"""v1.301: бонусные дни за задания — отзыв и сторис.
+"""Бонусные дни за задания — отзыв и сторис (платная функция bonus_tasks).
 
 Как работает:
-• клиент открывает «🎁 Бонусные дни», выбирает задание и присылает скриншот;
+• клиент открывает «🎁 Бонусные дни» и выбирает задание;
+• на экране задания — пошаговая инструкция, ссылка и кнопка «📎 Отправить скриншот»;
 • админы получают скриншот с кнопками «✅ Начислить» / «❌ Отклонить»;
 • после одобрения дни добавляются к активному ключу клиента.
 
 Каждое задание — один раз на клиента. Отклонённую заявку можно прислать снова.
-Нужен активный ключ (дни добавляются к нему).
+Где оставлять отзыв: ссылка из настроек, иначе новостной канал бота; если нет
+ни того, ни другого — задание «Отзыв» клиентам не показывается.
+Админам кнопка на главной не показывается (для проверки — «👁 Как видит клиент»).
 Управление: «📣 Маркетинг» → «🎁 Бонусные дни». По умолчанию выключено.
 """
 import html
@@ -21,17 +24,10 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 logger = logging.getLogger(__name__)
 router = Router()
 
+FEATURE = "bonus_tasks"
 TASKS = {
-    "story": {
-        "icon": "📸", "title": "Сторис",
-        "how": "Опубликуйте сторис с рассказом о нас и пришлите скриншот.",
-        "setting": "bonus_story_days",
-    },
-    "review": {
-        "icon": "⭐", "title": "Отзыв",
-        "how": "Оставьте отзыв о сервисе и пришлите скриншот.",
-        "setting": "bonus_review_days",
-    },
+    "story": {"icon": "📸", "title": "Сторис", "setting": "bonus_story_days"},
+    "review": {"icon": "⭐", "title": "Отзыв", "setting": "bonus_review_days"},
 }
 DEFAULT_DAYS = 7
 DAYS_CHOICES = (0, 1, 3, 5, 7, 14, 30)
@@ -50,9 +46,17 @@ def _setting(key: str, default: str) -> str:
     return default if value is None else str(value)
 
 
+def is_licensed() -> bool:
+    try:
+        from bot.services.license import is_feature_available
+        return is_feature_available(FEATURE)
+    except Exception:
+        return False
+
+
 def is_enabled() -> bool:
     try:
-        return _setting("bonus_tasks_enabled", "0") == "1"
+        return is_licensed() and _setting("bonus_tasks_enabled", "0") == "1"
     except Exception:
         return False
 
@@ -65,16 +69,38 @@ def task_days(task: str) -> int:
 
 
 def review_url() -> str:
+    """Ссылка из настроек (куда писать отзыв)."""
     url = _setting("bonus_review_url", "").strip()
     return url if url.startswith(("https://", "http://", "tg://")) else ""
 
 
+def review_target() -> str:
+    """Куда клиент пишет отзыв: ссылка из настроек, иначе новостной канал бота."""
+    url = review_url()
+    if url:
+        return url
+    try:
+        from database.requests import get_marketing_channel_id
+        channel = (get_marketing_channel_id() or "").strip().lstrip("@")
+        if channel:
+            from bot.utils.telegram_links import build_telegram_link
+            return build_telegram_link(channel)
+    except Exception:
+        pass
+    return ""
+
+
 def active_tasks() -> list:
-    return [t for t in TASKS if task_days(t) > 0]
+    tasks = [t for t in TASKS if task_days(t) > 0]
+    if "review" in tasks and not review_target():
+        tasks.remove("review")  # некуда оставлять отзыв — задание не показываем
+    return tasks
 
 
-def is_visible() -> bool:
-    """Показывать ли кнопку «🎁 Бонусные дни» на главной."""
+def is_visible(telegram_id: int | None = None) -> bool:
+    """Показывать ли кнопку «🎁 Бонусные дни» на главной (админам — нет)."""
+    if telegram_id is not None and _is_admin(telegram_id):
+        return False
     return is_enabled() and bool(active_tasks())
 
 
@@ -84,43 +110,101 @@ def _plural_days(n: int) -> str:
     return {1: "день", 2: "дня", 3: "дня", 4: "дня"}.get(n % 10, "дней")
 
 
+def _days(n: int) -> str:
+    return f"+{n} {_plural_days(n)}"
+
+
 def _nav_row(back: str = "start") -> list:
     return [InlineKeyboardButton(text="⬅️ Назад", callback_data=back),
             InlineKeyboardButton(text="🈴 На главную", callback_data="start")]
 
 
+def story_link(telegram_id: int) -> str:
+    """Ссылка для сторис: личная реферальная (если рефералка включена), иначе ссылка на бота."""
+    from bot.utils.runtime_state import get_bot_username
+    from bot.utils.telegram_links import build_telegram_link
+    username = get_bot_username()
+    if not username:
+        return ""
+    try:
+        from database.requests import ensure_user_referral_code, get_user_internal_id, is_referral_enabled
+        if is_referral_enabled():
+            uid = get_user_internal_id(telegram_id)
+            if uid:
+                return build_telegram_link(username, f"ref_{ensure_user_referral_code(uid)}")
+    except Exception:
+        pass
+    return build_telegram_link(username)
+
+
 # ── клиент ───────────────────────────────────────────────────────────────────
 
-def _user_screen(user_id: int | None):
+def _claim_status(user_id: int | None, task: str):
     from database.db_bonus_tasks import get_active_claim
+    claim = get_active_claim(user_id, task) if user_id else None
+    return claim["status"] if claim else None
+
+
+def _list_screen(user_id: int | None):
     lines = [
         "🎁 <b>Бонусные дни</b>",
         "",
-        "Выполните задание и получите дни подписки бесплатно.",
+        "Получите дни подписки бесплатно — выполните задание и пришлите скриншот.",
         "",
+        "<b>Как это работает</b>",
+        "1️⃣ Выберите задание ниже",
+        "2️⃣ Выполните его по инструкции",
+        "3️⃣ Пришлите скриншот — мы проверим и начислим дни",
+        "",
+        "<b>Задания</b>",
     ]
     b = InlineKeyboardBuilder()
     for task in active_tasks():
         meta, days = TASKS[task], task_days(task)
-        claim = get_active_claim(user_id, task) if user_id else None
-        lines.append(f"{meta['icon']} <b>{meta['title']}</b> — +{days} {_plural_days(days)}")
-        lines.append(meta["how"])
-        lines.append("")
-        if claim and claim["status"] == "approved":
-            b.row(InlineKeyboardButton(text=f"✅ {meta['title']}: дни начислены", callback_data="noop"))
-        elif claim:
-            b.row(InlineKeyboardButton(text=f"⏳ {meta['title']}: на проверке", callback_data="noop"))
-        else:
-            if task == "review" and review_url():
-                b.row(InlineKeyboardButton(text="⭐ Оставить отзыв", url=review_url()))
-            b.row(InlineKeyboardButton(text=f"{meta['icon']} {meta['title']}: прислать скриншот",
-                                       callback_data=f"bonus_task:{task}"))
-    lines += [
-        "ℹ️ <b>Условия</b>",
-        "• каждое задание — один раз",
-        "• дни добавятся к активному ключу после проверки",
-    ]
+        status = _claim_status(user_id, task)
+        mark = {"approved": "✅ получено", "pending": "⏳ на проверке"}.get(status, _days(days))
+        lines.append(f"{meta['icon']} {meta['title']} — {mark}")
+        b.row(InlineKeyboardButton(text=f"{meta['icon']} {meta['title']} — {mark}", callback_data=f"bonus_task:{task}"))
+    lines += ["", "ℹ️ Каждое задание — один раз. Дни добавятся к вашему активному ключу."]
     b.row(*_nav_row())
+    return "\n".join(lines), b.as_markup()
+
+
+def _task_screen(task: str, telegram_id: int, user_id: int | None):
+    meta, days = TASKS[task], task_days(task)
+    status = _claim_status(user_id, task)
+    b = InlineKeyboardBuilder()
+    lines = [f"{meta['icon']} <b>{meta['title']}</b> — {_days(days)} к подписке", ""]
+    if task == "story":
+        link = story_link(telegram_id)
+        lines += [
+            "<b>Что сделать</b>",
+            "1️⃣ Опубликуйте сторис в Telegram или Instagram и расскажите о нас.",
+            "2️⃣ Добавьте в сторис ссылку на бота" + (" (ниже)." if link else "."),
+            "3️⃣ Не удаляйте сторис хотя бы 24 часа.",
+            "4️⃣ Сделайте скриншот опубликованной сторис и пришлите его сюда.",
+        ]
+        if link:
+            lines += ["", "🔗 Ссылка для сторис (нажмите, чтобы скопировать):", f"<code>{html.escape(link)}</code>"]
+    else:
+        target = review_target()
+        lines += [
+            "<b>Что сделать</b>",
+            "1️⃣ Нажмите «⭐ Оставить отзыв» — откроется место для отзывов.",
+            "2️⃣ Напишите пару предложений: скорость, стабильность, удобство.",
+            "3️⃣ Сделайте скриншот своего отзыва и пришлите его сюда.",
+        ]
+        if target:
+            b.row(InlineKeyboardButton(text="⭐ Оставить отзыв", url=target))
+    lines.append("")
+    if status == "approved":
+        lines.append("✅ Вы уже получили дни за это задание. Спасибо!")
+    elif status == "pending":
+        lines.append("⏳ Скриншот на проверке — дни начислим после проверки.")
+    else:
+        lines.append("Когда всё готово — нажмите «📎 Отправить скриншот».")
+        b.row(InlineKeyboardButton(text="📎 Отправить скриншот", callback_data=f"bonus_send:{task}"))
+    b.row(*_nav_row("bonus_tasks"))
     return "\n".join(lines), b.as_markup()
 
 
@@ -129,10 +213,10 @@ async def cb_bonus_tasks(callback: CallbackQuery, state: FSMContext):
     from bot.utils.text import safe_edit_or_send
     from database.requests import get_user_internal_id
     await state.clear()
-    if not is_visible():
+    if not (is_enabled() and active_tasks()):
         await callback.answer("Сейчас бонусных заданий нет", show_alert=True)
         return
-    text, kb = _user_screen(get_user_internal_id(callback.from_user.id))
+    text, kb = _list_screen(get_user_internal_id(callback.from_user.id))
     await safe_edit_or_send(callback.message, text, reply_markup=kb)
     await callback.answer()
 
@@ -140,11 +224,25 @@ async def cb_bonus_tasks(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith("bonus_task:"))
 async def cb_bonus_task(callback: CallbackQuery, state: FSMContext):
     from bot.utils.text import safe_edit_or_send
+    from database.requests import get_user_internal_id
+    await state.clear()
+    task = callback.data.split(":", 1)[1]
+    if task not in active_tasks() or not is_enabled():
+        await callback.answer("Задание недоступно", show_alert=True)
+        return
+    text, kb = _task_screen(task, callback.from_user.id, get_user_internal_id(callback.from_user.id))
+    await safe_edit_or_send(callback.message, text, reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("bonus_send:"))
+async def cb_bonus_send(callback: CallbackQuery, state: FSMContext):
+    from bot.utils.text import safe_edit_or_send
     from database.db_bonus_tasks import get_active_claim
     from database.requests import get_first_active_key_for_user, get_user_internal_id
 
     task = callback.data.split(":", 1)[1]
-    if task not in TASKS or not is_enabled() or task_days(task) <= 0:
+    if task not in active_tasks() or not is_enabled():
         await callback.answer("Задание недоступно", show_alert=True)
         return
     user_id = get_user_internal_id(callback.from_user.id)
@@ -160,16 +258,12 @@ async def cb_bonus_task(callback: CallbackQuery, state: FSMContext):
     meta = TASKS[task]
     await state.set_state(BonusStates.waiting_screenshot)
     await state.update_data(bonus_task=task)
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="bonus_tasks")],
-        _nav_row("bonus_tasks"),
-    ])
     await safe_edit_or_send(
         callback.message,
-        f"{meta['icon']} <b>{meta['title']}</b>\n\n"
-        f"{meta['how']}\n\n"
-        "📎 Пришлите скриншот <b>одним фото</b> в этот чат.",
-        reply_markup=kb,
+        f"{meta['icon']} <b>{meta['title']}: скриншот</b>\n\n"
+        "📎 Пришлите скриншот <b>одним фото</b> следующим сообщением.\n\n"
+        "<i>Скрепка → Фото → выберите скриншот.</i>",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_nav_row(f"bonus_task:{task}")]),
     )
     await callback.answer()
 
@@ -198,8 +292,8 @@ async def msg_bonus_screenshot(message: Message, state: FSMContext):
         await message.answer("Заявка по этому заданию уже есть.", reply_markup=kb)
         return
     await message.answer(
-        "✅ <b>Скриншот отправлен на проверку</b>\n\n"
-        f"После проверки начислим +{days} {_plural_days(days)} и пришлём уведомление.",
+        "✅ <b>Скриншот получен</b>\n\n"
+        f"Проверим и начислим {_days(days)} к подписке. Придёт уведомление.",
         reply_markup=kb, parse_mode="HTML",
     )
     await _send_claim_to_admins(message.bot, claim_id)
@@ -210,11 +304,10 @@ async def msg_bonus_not_photo(message: Message, state: FSMContext):
     if message.text and message.text.startswith("/"):
         await state.clear()
         return
+    data = await state.get_data()
     await message.answer(
-        "📎 Нужен скриншот <b>одним фото</b>. Пришлите картинку, не файл.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="bonus_tasks")],
-        ]),
+        "📎 Нужен скриншот <b>одним фото</b> (не файлом). Скрепка → Фото → выберите скриншот.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_nav_row(f"bonus_task:{data.get('bonus_task', 'story')}")]),
         parse_mode="HTML",
     )
 
@@ -354,10 +447,22 @@ async def cb_bonus_no(callback: CallbackQuery):
 
 # ── админы: настройки ───────────────────────────────────────────────────────
 
+async def _guard(callback: CallbackQuery) -> bool:
+    """Только админ и только при наличии лицензии на функцию."""
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return False
+    if not is_licensed():
+        await callback.answer("🎁 Бонусные дни доступны только по лицензии", show_alert=True)
+        return False
+    return True
+
+
 def _admin_text() -> str:
     from database.db_bonus_tasks import stats
     st = stats()
     url = review_url()
+    target = review_target()
     lines = [
         "🎁 <b>Бонусные дни</b>",
         "",
@@ -369,7 +474,12 @@ def _admin_text() -> str:
     for task, meta in TASKS.items():
         d = task_days(task)
         lines.append(f"{meta['icon']} {meta['title']}: " + (f"<b>+{d} {_plural_days(d)}</b>" if d else "выключено"))
-    lines.append("🔗 Ссылка для отзыва: " + (html.escape(url) if url else "не задана"))
+    if url:
+        lines.append("🔗 Отзывы оставляют: " + html.escape(url))
+    elif target:
+        lines.append("🔗 Отзывы оставляют: в новостном канале (ссылка не задана)")
+    else:
+        lines.append("⚠️ Отзыв: не задано, куда его оставлять — задание скрыто от клиентов. Укажите ссылку.")
     lines += [
         "",
         "📊 <b>Заявки</b>",
@@ -377,7 +487,13 @@ def _admin_text() -> str:
         f"• одобрено: {st['approved']} (выдано дней: {st['days']})",
         f"• отклонено: {st['rejected']}",
         "",
-        "ℹ️ Каждое задание клиент выполняет один раз. Заявки приходят всем админам с кнопками проверки.",
+        "<b>Как это работает</b>",
+        "1️⃣ Клиент жмёт «🎁 Бонусные дни» на главной и выбирает задание",
+        "2️⃣ Читает пошаговую инструкцию и присылает скриншот",
+        "3️⃣ Вам приходит скриншот с кнопками «✅ Начислить» / «❌ Отклонить»",
+        "4️⃣ После одобрения дни добавляются к ключу клиента",
+        "",
+        "ℹ️ Каждое задание — один раз на клиента. У админов кнопки на главной нет — посмотреть экран клиента можно кнопкой «👁 Как видит клиент».",
     ]
     return "\n".join(lines)
 
@@ -393,6 +509,7 @@ def _admin_kb() -> InlineKeyboardMarkup:
         ))
     b.row(InlineKeyboardButton(text="🔗 Ссылка для отзыва", callback_data="adm_bt_url"))
     b.row(InlineKeyboardButton(text="📥 Показать заявки на проверке", callback_data="adm_bt_pending"))
+    b.row(InlineKeyboardButton(text="👁 Как видит клиент", callback_data="bonus_tasks"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_marketing"),
           InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
     return b.as_markup()
@@ -405,8 +522,7 @@ async def _show_admin(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "admin_bonus_tasks")
 async def cb_admin_bonus(callback: CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     await state.clear()
     await _show_admin(callback)
@@ -415,8 +531,7 @@ async def cb_admin_bonus(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "adm_bt_toggle")
 async def cb_admin_bonus_toggle(callback: CallbackQuery):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     from database.requests import set_setting
     set_setting("bonus_tasks_enabled", "0" if is_enabled() else "1")
@@ -426,8 +541,7 @@ async def cb_admin_bonus_toggle(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("adm_bt_days:"))
 async def cb_admin_bonus_days(callback: CallbackQuery):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     from bot.utils.text import safe_edit_or_send
     task = callback.data.split(":", 1)[1]
@@ -454,8 +568,7 @@ async def cb_admin_bonus_days(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("adm_bt_set:"))
 async def cb_admin_bonus_set(callback: CallbackQuery):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     from database.requests import set_setting
     _, task, raw = callback.data.split(":", 2)
@@ -467,8 +580,7 @@ async def cb_admin_bonus_set(callback: CallbackQuery):
 
 @router.callback_query(F.data == "adm_bt_url")
 async def cb_admin_bonus_url(callback: CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     from bot.utils.text import safe_edit_or_send
     await state.set_state(BonusStates.admin_review_url)
@@ -479,10 +591,14 @@ async def cb_admin_bonus_url(callback: CallbackQuery, state: FSMContext):
           InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
     await safe_edit_or_send(
         callback.message,
-        "🔗 <b>Ссылка для отзыва</b>\n\n"
-        "Куда клиент пишет отзыв: пост в канале, чат отзывов, страница каталога.\n"
-        "У клиента появится кнопка «⭐ Оставить отзыв».\n\n"
-        "Пришлите ссылку, она должна начинаться с https://",
+        "🔗 <b>Куда оставлять отзыв</b>\n\n"
+        "Пришлите ссылку, куда клиент напишет отзыв:\n"
+        "• пост в канале с открытыми комментариями\n"
+        "• чат или группа для отзывов\n"
+        "• страница сервиса в каталоге\n\n"
+        "У клиента появится кнопка «⭐ Оставить отзыв».\n"
+        "Если ссылку не задать, отзыв пишут в новостной канал бота (если он настроен).\n\n"
+        "Ссылка должна начинаться с https://",
         reply_markup=b.as_markup(),
     )
     await callback.answer()
@@ -490,8 +606,7 @@ async def cb_admin_bonus_url(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "adm_bt_url_clear")
 async def cb_admin_bonus_url_clear(callback: CallbackQuery, state: FSMContext):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     from database.requests import set_setting
     await state.clear()
@@ -519,8 +634,7 @@ async def msg_admin_bonus_url(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "adm_bt_pending")
 async def cb_admin_bonus_pending(callback: CallbackQuery):
-    if not _is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+    if not await _guard(callback):
         return
     from database.db_bonus_tasks import list_pending
     pending = list_pending(10)

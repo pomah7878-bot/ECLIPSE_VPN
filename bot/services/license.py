@@ -51,6 +51,7 @@ GATED_FEATURES = {
     "extra_protocols": "🛡 AmneziaWG / WireGuard / TUIC в списке подключений",
     "domain_autoprovision": "🌐 Автонастройка резервного домена (DNS+nginx+SSL)",
     "roulette": "🎰 Рулетка (розыгрыш призов для клиентов)",
+    "bonus_tasks": "🎁 Бонусные дни за отзыв и сторис",
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
 }
 
