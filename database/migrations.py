@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 151
+LATEST_VERSION = 152
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3506,6 +3506,49 @@ def migration_151(conn: sqlite3.Connection) -> None:
     logger.info("Migration v151 applied: функция bonus_tasks для full-лицензий")
 
 
+def migration_152(conn: sqlite3.Connection) -> None:
+    """Версия 1.309: кнопка «🌐 CDN (обход белых списков)» на экране выдачи ключа
+    (key_delivery) — в одной строке с «🛡 AmneziaWG». Если строки с AmneziaWG нет или в ней
+    уже две кнопки — отдельной строкой над «Назад». Идемпотентно."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_delivery'"
+    ).fetchone()
+    if not row:
+        return
+    for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+        raw = row[column_index]
+        if not raw:
+            continue
+        try:
+            buttons = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        if any(b.get("id") == "btn_key_cdn" for b in buttons):
+            continue
+        awg = next((b for b in buttons if b.get("id") == "btn_key_protocols"), None)
+        new_btn = {
+            "id": "btn_key_cdn", "label": "🌐 CDN (обход белых списков)", "color": "secondary",
+            "is_hidden": False, "action_type": "system", "action_value": None,
+        }
+        in_row = [b for b in buttons if awg is not None and b.get("row") == awg.get("row")]
+        if awg is not None and len(in_row) == 1:
+            new_btn["row"], new_btn["col"] = int(awg.get("row", 0)), int(awg.get("col", 0)) + 1
+        else:
+            back_row = next((b.get("row") for b in buttons if b.get("id") == "btn_key_delivery_back"), None)
+            if back_row is None:
+                back_row = max([int(b.get("row", 0)) for b in buttons] + [-1]) + 1
+            for b in buttons:
+                if int(b.get("row", 0)) >= int(back_row):
+                    b["row"] = int(b.get("row", 0)) + 1
+            new_btn["row"], new_btn["col"] = int(back_row), 0
+        buttons.append(new_btn)
+        conn.execute(
+            f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_delivery'",
+            (json.dumps(buttons, ensure_ascii=False),)
+        )
+    logger.info("Migration v152 applied: btn_key_cdn добавлена на key_delivery")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3584,6 +3627,7 @@ MIGRATIONS = {
     149: migration_149,
     150: migration_150,
     151: migration_151,
+    152: migration_152,
 }
 
 

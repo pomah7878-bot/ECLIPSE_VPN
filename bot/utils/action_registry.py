@@ -578,8 +578,22 @@ def _resolve_key_cdn(ctx: dict) -> Optional[dict]:
     key_id = _get_key_details_id(ctx)
     if not key_id:
         return None
-    if _key_details_is_unconfigured(ctx) or not ctx.get('has_sub_id'):
-        return None
+    if 'has_sub_id' in ctx or 'is_unconfigured' in ctx:
+        # Карточка ключа: контекст уже содержит признаки ключа
+        if _key_details_is_unconfigured(ctx) or not ctx.get('has_sub_id'):
+            return None
+    else:
+        # v1.309: экран выдачи ключа (key_delivery) — признаков нет, берём ключ из БД
+        telegram_id = ctx.get('telegram_id')
+        if not telegram_id:
+            return None
+        try:
+            from database.requests import get_key_details_for_user
+            key = get_key_details_for_user(int(key_id), int(telegram_id))
+        except Exception:
+            return None
+        if not key or not key.get('sub_id') or not key.get('server_id'):
+            return None
     try:
         from bot.services.cdn import is_cdn_offered_for_key
         if not is_cdn_offered_for_key(int(key_id)):
