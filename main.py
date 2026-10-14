@@ -262,6 +262,10 @@ async def main():
     from bot.middlewares.menu_width import MenuWidthMiddleware
     bot.session.middleware(MenuWidthMiddleware())
 
+    # Порядок в чате: запоминаем служебные сообщения клиента (см. bot/middlewares/chat_trail.py)
+    from bot.middlewares.chat_trail import TrackSentMessagesMiddleware, UserContextMiddleware
+    bot.session.middleware(TrackSentMessagesMiddleware())
+
     # Регистрируем экземпляр в нейтральном модуле-посреднике — см.
     # bot/utils/runtime_state.py про то, почему `from main import bot`
     # не работает (проблема __main__ vs main при запуске python3 main.py).
@@ -274,6 +278,9 @@ async def main():
     bot_blocked_reset = BotBlockedResetMiddleware()
     dp.message.outer_middleware(bot_blocked_reset)
     dp.callback_query.outer_middleware(bot_blocked_reset)
+    _user_ctx = UserContextMiddleware()
+    dp.message.outer_middleware(_user_ctx)
+    dp.callback_query.outer_middleware(_user_ctx)
     from bot.handlers.user.keys import ConnCleanupMiddleware
     dp.callback_query.outer_middleware(ConnCleanupMiddleware())
     

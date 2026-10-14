@@ -306,6 +306,13 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
 
     args = command.args
 
+    # Убираем накопившийся «хвост» страниц прошлых действий (до новых сообщений этого /start)
+    try:
+        from bot.services import main_menu_tracker as _mt
+        await _mt.purge_flow(message.bot, message.chat.id)
+    except Exception as e:
+        logger.debug(f'Не удалось убрать хвост сообщений: {e}')
+
     if is_new:
         from bot.keyboards.user import language_choice_kb
 
@@ -675,8 +682,23 @@ async def callback_start(callback: CallbackQuery, state: FSMContext):
         return
     await state.clear()
 
-    rendered = await _render_main_page(callback)
+    # Одно главное меню и без хвоста страниц оплаты/подменю в чате
+    from bot.services import main_menu_tracker as mt
+    msg = callback.message
+    chat_id = msg.chat.id if msg else user_id
+    prev_menu = mt.menu_id(user_id)
+    # Нажатие на старом сообщении (уведомление, после перезапуска) — меню присылаем внизу,
+    # а не превращаем в меню случайное сообщение где-то выше по чату
+    known = bool(msg) and mt.is_known_message(user_id, msg.message_id)
+
+    rendered = await _render_main_page(callback, force_new=not known)
     if rendered:
+        try:
+            current = mt.menu_id(user_id)
+            await mt.purge_flow(callback.bot, chat_id, keep={current})
+            await mt.delete_old_menu(callback.bot, chat_id, prev_menu, current)
+        except Exception as e:
+            logger.debug(f'Не удалось навести порядок в чате: {e}')
         await callback.answer()
 
 
