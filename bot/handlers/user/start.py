@@ -269,7 +269,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     if renew_rows:
         prepend_buttons = renew_rows + list(prepend_buttons or [])
 
-    await render_page(
+    sent_menu = await render_page(
         target,
         page_key='main',
         context=context,
@@ -279,6 +279,11 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         append_buttons=append_buttons,
         force_new=force_new,
     )
+    try:
+        from bot.services.main_menu_tracker import remember_main_menu
+        remember_main_menu(user_id, sent_menu)
+    except Exception as e:
+        logger.debug(f'Главное меню не запомнено: {e}')
     return True
 
 
@@ -643,6 +648,16 @@ async def _continue_start(
                 logger.exception(f'Ошибка открытия карточки ключа: {e}')
             return
     
+    # Одно главное меню в чате: убираем прежнее меню и саму команду /start
+    try:
+        from bot.services.main_menu_tracker import cleanup_before_start
+        await cleanup_before_start(
+            send_target.bot, send_target.chat.id, telegram_id,
+            command_message=render_target if isinstance(render_target, Message) else None,
+        )
+    except Exception as e:
+        logger.debug(f'Не удалось убрать старое меню: {e}')
+
     try:
         await _render_main_page(render_target, force_new=True)
     except TelegramForbiddenError:
