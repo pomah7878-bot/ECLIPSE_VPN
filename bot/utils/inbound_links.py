@@ -16,8 +16,10 @@ import urllib.parse
 import zlib
 from typing import Any, Optional
 
+from bot.utils.protocol_info import get_protocol_info
+
 # Протоколы поверх UDP — TCP-пинг к их порту бессмысленен.
-UDP_PROTOCOLS = {"hysteria2", "tuic", "amneziawg", "wireguard"}
+UDP_PROTOCOLS = {"hysteria2", "tuic", "amneziawg", "wireguard", "masque"}
 # Протоколы, показ которых включается функцией лицензии "extra_protocols".
 EXTRA_PROTOCOLS = {"tuic", "amneziawg", "wireguard"}
 EXTRA_FEATURE = "extra_protocols"
@@ -29,6 +31,7 @@ _PROTOCOL_LABELS = {
     "ss": "Shadowsocks",
     "hysteria2": "Hysteria2",
     "tuic": "TUIC",
+    "masque": "MASQUE",
 }
 _AWG_KEYS = {"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "i1"}
 
@@ -259,6 +262,7 @@ def parse_and_group_inbound_links(raw_links_text: str) -> list[dict[str, Any]]:
             "name": parsed["name"],
             "link": parsed["link"],
             "kind": parsed.get("kind", "link"),
+            "protocol_info": get_protocol_info(parsed["protocol"]),
         }
         if item["kind"] == "conf":
             item["config_text"] = parsed["config_text"]

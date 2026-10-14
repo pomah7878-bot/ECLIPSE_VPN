@@ -1332,6 +1332,11 @@ class XUIClient(BaseVPNClient):
         group = self.server.get("inbound_group") if isinstance(self.server, dict) else None
         if group:
             inbounds = [ib for ib in inbounds if _inbound_belongs_to_group(ib.get("tag"), int(group))]
+        # MASQUE: пока поддержка не включена (настройка masque_enabled), бот такие inbound
+        # не видит и не создаёт в них клиентов — формат клиента у него другой (email+пароль)
+        from bot.utils.inbounds import is_masque_inbound, masque_enabled
+        if not masque_enabled():
+            inbounds = [ib for ib in inbounds if not is_masque_inbound(ib)]
         return inbounds
 
     async def get_inbounds(self, include_ignored: bool = False) -> List[Dict[str, Any]]:

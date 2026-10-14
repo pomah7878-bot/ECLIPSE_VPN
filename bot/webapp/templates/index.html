@@ -126,6 +126,12 @@
             justify-content: center; align-items: center;
         }
         #payOverlay.active { display: flex; }
+        #protoOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75); z-index: 2200;
+            justify-content: center; align-items: center;
+        }
+        #protoOverlay.active { display: flex; }
         .modal-box { animation: modalPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
         @keyframes modalPop {
             from { transform: scale(0.9); opacity: 0; }
@@ -497,6 +503,10 @@
 
     <div id="payOverlay" onclick="if(event.target===this)closePay()">
         <div class="modal-box bg-panel border border-[color:var(--hairline)] rounded-3xl p-6 max-w-xs w-[90%] text-center shadow-2xl" id="payContent"></div>
+    </div>
+
+    <div id="protoOverlay" onclick="if(event.target===this)closeProto()">
+        <div class="modal-box bg-panel border border-[color:var(--hairline)] rounded-3xl p-6 max-w-xs w-[90%] shadow-2xl" id="protoContent"></div>
     </div>
 
     <div id="sheetOverlay" onclick="if(event.target===this)closeSheet()">
@@ -1231,7 +1241,7 @@
                         const ping = '…'; // измеряется асинхронно в measureClientPings()
                         return `
                         <div class="flex items-center gap-1.5 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-2.5 py-2 mb-1.5 text-[11px]">
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('protocol', ib.protocol_label)}">${escapeHtml(ib.protocol_label)}</span>
+                            <span onclick="showProtocolInfo(${keyId}, ${gi}, ${ii})" style="cursor:pointer" class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('protocol', ib.protocol_label)}">${escapeHtml(ib.protocol_label)}${ib.protocol_info ? ' ⓘ' : ''}</span>
                             <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('transport', ib.transport_label)}">${escapeHtml(ib.transport_label)}</span>
                             <span class="px-1.5 py-0.5 rounded font-semibold ${badgeClass('security', ib.security_label)}">${escapeHtml(ib.security_label)}</span>
                             <span class="text-mist-dim flex-1"></span>
@@ -1243,6 +1253,25 @@
                     }).join('')}
                 </div>
             `).join('');
+        }
+
+        function showProtocolInfo(keyId, gi, ii) {
+            const ib = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii];
+            const info = ib && ib.protocol_info;
+            if (!info) return;
+            const soon = info.status === 'soon' ? '<div class="text-[11px] text-amber-400 mb-2">Скоро</div>' : '';
+            document.getElementById('protoContent').innerHTML = `
+                <div class="text-base font-bold mb-1">${escapeHtml(info.title)}</div>
+                ${soon}
+                <p class="text-sm text-mist mb-3">${escapeHtml(info.summary)}</p>
+                <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-0.5">Подходит для</div>
+                <p class="text-sm mb-3">${escapeHtml(info.good_for)}</p>
+                <p class="text-xs text-mist-dim mb-4">${escapeHtml(info.note)}</p>
+                <button onclick="closeProto()" class="w-full py-2 rounded-xl bg-panel-2 border border-[color:var(--hairline)] text-sm">Понятно</button>`;
+            document.getElementById('protoOverlay').classList.add('active');
+        }
+        function closeProto() {
+            document.getElementById('protoOverlay').classList.remove('active');
         }
 
         function copyInboundLink(keyId, gi, ii) {

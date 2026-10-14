@@ -10,6 +10,9 @@ CDN_INBOUND_MARKER = "[CDN]"
 _CDN_IDS_TTL_SECONDS = 15.0
 _cdn_ids_cache: Tuple[float, FrozenSet[int]] = (0.0, frozenset())
 MTPROTO_PROTOCOL = "mtproto"
+MASQUE_PROTOCOL = "masque"
+_MASQUE_TTL_SECONDS = 10.0
+_masque_cache: Tuple[float, bool] = (0.0, False)
 
 
 def inbound_protocol(inbound: Dict[str, Any]) -> str:
@@ -22,6 +25,34 @@ def inbound_protocol(inbound: Dict[str, Any]) -> str:
 def is_mtproto_inbound(inbound: Dict[str, Any]) -> bool:
     """Whether the inbound is an MTProto proxy rather than a regular VPN key."""
     return inbound_protocol(inbound) == MTPROTO_PROTOCOL
+
+
+def is_masque_inbound(inbound: Dict[str, Any]) -> bool:
+    """Whether the inbound is MASQUE (CONNECT-IP). Клиенты в нём входят по email и паролю."""
+    return inbound_protocol(inbound) == MASQUE_PROTOCOL
+
+
+def masque_enabled() -> bool:
+    """Включена ли поддержка MASQUE (настройка masque_enabled=1). По умолчанию выключена:
+    пока приложения клиентов его не поддерживают, бот такие inbound не трогает."""
+    global _masque_cache
+    now = time.monotonic()
+    cached_at, cached = _masque_cache
+    if now - cached_at < _MASQUE_TTL_SECONDS:
+        return cached
+    value = False
+    try:
+        from database.db_settings import get_setting
+        value = str(get_setting("masque_enabled", "0") or "0").strip() in ("1", "true", "True")
+    except Exception:
+        value = False
+    _masque_cache = (now, value)
+    return value
+
+
+def reset_masque_cache() -> None:
+    global _masque_cache
+    _masque_cache = (0.0, False)
 
 
 def filter_regular_inbounds(inbounds: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

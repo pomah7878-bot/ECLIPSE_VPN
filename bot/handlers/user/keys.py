@@ -1451,7 +1451,9 @@ async def key_proto_handler(callback: CallbackQuery):
     else:
         first_msg = await bot.send_message(
             chat_id,
-            f"🔗 <b>{escape_html(item['protocol_label'])}</b> — {escape_html(item['name'])}\n\n<code>{escape_html(item['link'])}</code>",
+            f"🔗 <b>{escape_html(item['protocol_label'])}</b> — {escape_html(item['name'])}\n"
+            + (f"<i>{escape_html(item['protocol_info']['summary'])}</i>\n" if item.get('protocol_info') else '')
+            + f"\n<code>{escape_html(item['link'])}</code>",
             parse_mode='HTML',
             reply_markup=None if png else nav,
         )
