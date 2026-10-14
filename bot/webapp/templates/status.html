@@ -57,7 +57,7 @@
             o.textContent = OVERALL[d.overall] || OVERALL.unknown;
             document.getElementById('list').innerHTML = d.servers.map(s => `
                 <div class="row"><span class="dot ${s.state}"></span><span class="name">${esc(s.name)}</span>
-                <span class="val">${s.state === 'up' ? s.latency_ms + ' мс' : (s.state === 'down' ? 'не отвечает' : 'нет данных')}</span></div>`).join('');
+                <span class="val">${s.state === 'up' ? 'работает' : (s.state === 'down' ? 'не отвечает' : 'нет данных')}</span></div>`).join('');
             if (d.checked_at) {
                 const t = new Date(d.checked_at);
                 document.getElementById('foot').textContent = 'Последняя проверка: ' + t.toLocaleString() + '. Проверка раз в 15 минут.';

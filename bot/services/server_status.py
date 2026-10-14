@@ -1,6 +1,8 @@
 """Статус серверов для клиентов: публичная страница /status и экран в боте.
 
-Показываем только название сервера, «работает / не отвечает» и пинг.
+Показываем только название сервера и «работает / не отвечает».
+Пинг клиентам не показываем: он измеряется от сервера бота до панели и
+не отражает скорость у клиента, а большие цифры только пугают.
 Адреса серверов (IP, домены) наружу не отдаются никогда: если админ назвал
 сервер его адресом, вместо названия выводится «Сервер N».
 
@@ -73,7 +75,6 @@ def collect(now: Optional[datetime] = None) -> Dict[str, Any]:
         items.append({
             "name": public_name(srv.get("name"), i),
             "state": state,
-            "latency_ms": int(latency) if state == "up" else None,
         })
     up = sum(1 for x in items if x["state"] == "up")
     down = sum(1 for x in items if x["state"] == "down")
@@ -106,8 +107,7 @@ def bot_text(data: Optional[Dict[str, Any]] = None) -> str:
     lines = ["📡 <b>Статус серверов</b>", "", OVERALL_TEXT[data["overall"]], ""]
     from bot.utils.text import escape_html
     for s in data["servers"]:
-        tail = f" — {s['latency_ms']} мс" if s["state"] == "up" else (
-            " — не отвечает" if s["state"] == "down" else " — нет данных")
+        tail = {"up": " — работает", "down": " — не отвечает"}.get(s["state"], " — нет данных")
         lines.append(f"{STATE_ICON[s['state']]} {escape_html(s['name'])}{tail}")
     if not data["servers"]:
         lines.append("Серверы ещё не добавлены.")
