@@ -1445,9 +1445,11 @@ async def key_proto_handler(callback: CallbackQuery):
             parse_mode='HTML',
             reply_markup=None if png else nav,
         )
+        last_msg = None
         if png:
             last_msg = await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='📷 Или отсканируйте QR-код в приложении AmneziaWG', reply_markup=nav)
             _conn_register(chat_id, first_msg, last_msg, callback.message.message_id)
+        _track_key_messages(chat_id, first_msg, last_msg)
     else:
         first_msg = await bot.send_message(
             chat_id,
@@ -1457,9 +1459,20 @@ async def key_proto_handler(callback: CallbackQuery):
             parse_mode='HTML',
             reply_markup=None if png else nav,
         )
+        last_msg = None
         if png:
             last_msg = await bot.send_photo(chat_id, BufferedInputFile(png, filename='qr.png'), caption='QR-код', reply_markup=nav)
             _conn_register(chat_id, first_msg, last_msg, callback.message.message_id)
+        _track_key_messages(chat_id, first_msg, last_msg)
+
+
+def _track_key_messages(chat_id, *messages):
+    """Файл .conf, QR и ссылка с личным ключом убираются при возврате на главную (в т.ч. через /start)."""
+    try:
+        from bot.services.main_menu_tracker import track_sensitive
+        track_sensitive(chat_id, *[m for m in messages if m])
+    except Exception as e:
+        logger.debug(f'Сообщения с ключом не запомнены: {e}')
 
 
 # ===== v1.199: удаление файла/ссылки при возврате назад =====

@@ -18,6 +18,12 @@ _cache: Dict[int, int] = {}
 _trail: Dict[int, List[int]] = {}
 _MAX_TRAIL = 40
 
+# Сообщения с личным ключом (файл .conf, QR AmneziaWG/WireGuard). Удаляются при любом
+# возврате на главную, даже если клиент ушёл командой /start, не нажимая кнопки под QR.
+# Хранятся и в БД — переживают перезапуск бота.
+_SENS_PREFIX = "sensitive_msgs:"
+_MAX_SENSITIVE = 20
+
 # Пользователь, чьё обновление обрабатывается сейчас (чтобы не трогать уведомления
 # другим людям и сообщения из фоновых задач)
 current_user: ContextVar[Optional[int]] = ContextVar("current_user", default=None)
@@ -28,6 +34,33 @@ def track_flow_message(chat_id: int, message_id: int) -> None:
     if message_id not in lst:
         lst.append(int(message_id))
         del lst[:-_MAX_TRAIL]
+
+
+def _load_sensitive(chat_id: int) -> List[int]:
+    try:
+        from database.db_settings import get_setting
+        raw = get_setting(f"{_SENS_PREFIX}{int(chat_id)}") or ""
+        return [int(x) for x in str(raw).split(",") if x.strip().isdigit()]
+    except Exception:
+        return []
+
+
+def _save_sensitive(chat_id: int, ids: List[int]) -> None:
+    try:
+        from database.db_settings import set_setting
+        set_setting(f"{_SENS_PREFIX}{int(chat_id)}", ",".join(str(i) for i in ids[-_MAX_SENSITIVE:]))
+    except Exception as e:
+        logger.debug("Не удалось сохранить сообщения с ключом %s: %s", chat_id, e)
+
+
+def track_sensitive(chat_id: int, *messages) -> None:
+    """Запоминает сообщения с личным ключом, чтобы убрать их при возврате на главную."""
+    ids = _load_sensitive(chat_id)
+    for m in messages:
+        mid = getattr(m, "message_id", m)
+        if mid and int(mid) not in ids:
+            ids.append(int(mid))
+    _save_sensitive(chat_id, ids)
 
 
 def menu_id(user_id: int) -> Optional[int]:
@@ -55,7 +88,11 @@ async def purge_flow(bot, chat_id: int, keep: Iterable[int] = ()) -> None:
     keep = {int(k) for k in keep if k}
     ids = _trail.get(int(chat_id), [])
     _trail[int(chat_id)] = [i for i in ids if i in keep]
-    await _delete_many(bot, chat_id, [i for i in ids if i not in keep])
+    sensitive = _load_sensitive(chat_id)
+    if sensitive:
+        _save_sensitive(chat_id, [i for i in sensitive if i in keep])
+    todo = [i for i in ids if i not in keep] + [i for i in sensitive if i not in keep and i not in ids]
+    await _delete_many(bot, chat_id, todo)
 
 
 async def delete_old_menu(bot, chat_id: int, old_id: Optional[int], keep_id: Optional[int]) -> None:
