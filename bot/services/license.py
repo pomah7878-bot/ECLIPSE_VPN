@@ -251,6 +251,13 @@ async def refresh_license_status() -> None:
     elif state == "invalid":
         _clear_license_status(data.get("message", ""))
     # "unreachable": ничего не меняем, действует грейс-период
+    if state in ("valid", "invalid"):
+        # Сообщаем серверу лицензий, какие функции теперь реально действуют у этого бота
+        try:
+            from bot.services.license_report import send_report
+            await send_report(license_key)
+        except Exception as e:
+            logger.debug(f"Отчёт о функциях не отправлен: {e}")
 
 
 async def activate_license_code(code: str):

@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 148
+LATEST_VERSION = 149
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3419,6 +3419,16 @@ def migration_144(conn: sqlite3.Connection) -> None:
     logger.info("Migration v144 applied: таблица roulette_spins, функция roulette для full-лицензий")
 
 
+def migration_149(conn: sqlite3.Connection) -> None:
+    """Версия 1.299: отчёт бота партнёра о реально действующих платных функциях
+    (колонки в license_activations). Идемпотентно."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(license_activations)").fetchall()]
+    for name in ("reported_features", "reported_at", "reported_checked_at", "reported_release"):
+        if cols and name not in cols:
+            conn.execute(f"ALTER TABLE license_activations ADD COLUMN {name} TEXT")
+    logger.info("Migration v149 applied: license_activations.reported_*")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3494,6 +3504,7 @@ MIGRATIONS = {
     146: migration_146,
     147: migration_147,
     148: migration_148,
+    149: migration_149,
 }
 
 

@@ -2920,6 +2920,34 @@ async def handle_license_check(request: web.Request) -> web.Response:
     return web.json_response(result)
 
 
+async def handle_license_report(request: web.Request) -> web.Response:
+    """POST /api/license/report — бот партнёра сообщает, какие платные функции у него
+    реально действуют (показывается в карточке лицензии). Принимается только от
+    установки, уже известной серверу по этому ключу."""
+    import re
+    _lip = _get_client_ip(request)
+    if not _rl_allowed(f"lic-report:{_lip}", 30, 3600):
+        return web.json_response({"error": "rate_limited"}, status=429)
+    _rl_record(f"lic-report:{_lip}")
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False}, status=400)
+    from bot.services.license import is_valid_key_format
+    from bot.services.license_report import record_report
+    license_key = str(data.get("license_key") or "").strip().upper()
+    instance_id = str(data.get("instance_id") or "").strip()
+    if not is_valid_key_format(license_key) or not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", instance_id):
+        return web.json_response({"ok": False}, status=400)
+    ok = record_report(
+        license_key, instance_id,
+        str(data.get("features") or "")[:600], str(data.get("checked_at") or ""), str(data.get("release") or ""),
+    )
+    return web.json_response({"ok": bool(ok)})
+
+
 async def handle_creator_send(request: web.Request) -> web.Response:
     """POST /api/creator/send — «Связь с создателем» (только на главной инсталляции).
     Body: {"instance_id", "token", "text", "meta": {...}}. Ключ лицензии не нужен."""
@@ -4609,6 +4637,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/license/check", handle_license_check)
+    app.router.add_post("/api/license/report", handle_license_report)
     app.router.add_post("/api/license/trial", handle_license_trial)
     app.router.add_post("/api/creator/send", handle_creator_send)
     app.router.add_post("/api/creator/poll", handle_creator_poll)

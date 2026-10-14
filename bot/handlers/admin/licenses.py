@@ -85,10 +85,11 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
     expires_text = f"{lic['expires_at']} (UTC)" if lic["expires_at"] else "бессрочно"
 
     enabled = features_from_str(lic.get("features"))
-    if enabled:
-        features_list = "\n".join(f"  ✅ {GATED_FEATURES[k]}" for k in GATED_FEATURES if k in enabled)
-    else:
-        features_list = "  (нет платных функций)"
+    from database.db_licenses import list_activations as _list_acts
+    from bot.services.license_report import format_feature_block
+    _all_acts = _list_acts(lic["license_key"])
+    _license_alive = bool(lic["is_active"]) and not is_license_expired(lic)
+    features_list = format_feature_block(enabled, _license_alive, _all_acts)
 
     text = (
         f"🔑 <b>{lic['partner_name']}</b>\n\n"
@@ -96,7 +97,7 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
         f"Действует до: {expires_text}\n"
         f"Ключ: <code>{lic['license_key']}</code>\n"
         f"Создана: {lic['created_at']}\n\n"
-        f"Функции:\n{features_list}"
+        f"{features_list}"
     )
     if lic.get("notes"):
         text += f"\n\nЗаметка: {lic['notes']}"
@@ -574,7 +575,7 @@ def _format_tariff_detail_text(t: dict) -> str:
         f"Срок действия лицензии: {duration_text}\n"
         f"Цена: {t['price_rub']:.0f} ₽\n"
         f"Статус: {status_text}\n\n"
-        f"Функции:\n{features_list}"
+        f"{features_list}"
     )
 
 
