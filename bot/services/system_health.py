@@ -7,6 +7,7 @@
 import asyncio
 import logging
 import os
+import re
 import shutil
 import time
 from datetime import datetime, timedelta, timezone
@@ -151,8 +152,38 @@ def check_scheduler(now: Optional[datetime] = None) -> Check:
         return ("⚪", "Планировщик", _short_error(e))
 
 
+_ADDR_RE = re.compile(r"(https?://\S+)|\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\.[a-z]{2,}(?::\d+)?\b", re.I)
+
+
+def _hide_addresses(text: str) -> str:
+    """Убирает из текста ошибки IP-адреса, домены и ссылки."""
+    return _ADDR_RE.sub("…", str(text or "")).strip()[:60]
+
+
+def node_checks(panel_name: str, raw_nodes: List[dict]) -> List[Check]:
+    """Строка на каждую ноду панели: онлайн, нагрузка, состояние Xray."""
+    from bot.services.admin_monitoring import LOAD_WARNING_THRESHOLD, _flatten_nodes
+    out: List[Check] = []
+    for node in _flatten_nodes(raw_nodes or []):
+        name = str(node.get("name") or "нода")[:30]
+        title = f"Нода {name}"
+        if not node.get("enable", True):
+            out.append(("⚪", title, "выключена в панели"))
+        elif node.get("status") != "online":
+            err = _hide_addresses(node.get("lastError") or "")
+            out.append(("🔴", title, "нет связи" + (f": {err}" if err else "")))
+        elif node.get("xray_problem"):
+            out.append(("🔴", title, f"Xray остановлен ({node.get('xrayState') or 'ошибка'})"))
+        else:
+            cpu, mem = float(node.get("cpuPct") or 0), float(node.get("memPct") or 0)
+            text = f"онлайн, клиентов {node.get('onlineCount', 0)}, CPU {cpu:.0f}%, RAM {mem:.0f}%"
+            icon = "⚠️" if cpu >= LOAD_WARNING_THRESHOLD or mem >= LOAD_WARNING_THRESHOLD else "✅"
+            out.append((icon, title, text + (" — высокая нагрузка" if icon == "⚠️" else "")))
+    return out
+
+
 async def check_panels() -> List[Check]:
-    """Каждая активная панель 3x-ui: вход и список подключений (параллельно, с таймаутом)."""
+    """Каждая активная панель 3x-ui: вход, список подключений и её ноды (параллельно, с таймаутом)."""
     from database.requests import get_all_servers
     from bot.services.vpn_api import get_client
 
@@ -160,20 +191,30 @@ async def check_panels() -> List[Check]:
     if not servers:
         return [("⚪", "Панели", "нет активных серверов")]
 
-    async def one(srv) -> Check:
-        name = str(srv.get("name") or f"#{srv.get('id')}")[:30]
+    async def one(srv) -> List[Check]:
+        name = str(srv.get("name") or f"#{srv.get('id')}")[:48]
         started = time.monotonic()
         try:
             client = await get_client(srv["id"])
             inbounds = await asyncio.wait_for(client.get_inbounds(), PANEL_TIMEOUT)
             ms = int((time.monotonic() - started) * 1000)
-            if not inbounds:
-                return ("⚠️", f"Панель {name}", f"вход есть, но подключений нет ({ms} мс)")
-            return ("✅", f"Панель {name}", f"подключений: {len(inbounds)}, ответ {ms} мс")
         except Exception as e:
-            return ("🔴", f"Панель {name}", _short_error(e))
+            return [("🔴", f"Панель {name}", _short_error(e))]
+        if not inbounds:
+            result = [("⚠️", f"Панель {name}", f"вход есть, но подключений нет ({ms} мс)")]
+        else:
+            result = [("✅", f"Панель {name}", f"подключений: {len(inbounds)}, ответ {ms} мс")]
+        get_nodes = getattr(client, "get_nodes", None)
+        if get_nodes is not None:
+            try:
+                raw_nodes = await asyncio.wait_for(get_nodes(), PANEL_TIMEOUT)
+                result += node_checks(name, raw_nodes)
+            except Exception as e:
+                logger.debug("Ноды панели %s не получены: %s", name, e)
+        return result
 
-    return list(await asyncio.gather(*(one(s) for s in servers)))
+    groups = await asyncio.gather(*(one(s) for s in servers))
+    return [c for g in groups for c in g]
 
 
 async def check_telegram(bot) -> Check:
