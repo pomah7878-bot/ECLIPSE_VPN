@@ -23,6 +23,7 @@ CHECK_INTERVAL = 300          # секунд между проверками
 FAIL_THRESHOLD = 2            # сколько проверок подряд 🔴 до первого сообщения
 REPEAT_AFTER = 6 * 3600       # повторить напоминание, если проблема не исчезла
 START_DELAY = 90              # дать боту и панелям подняться после запуска
+PROBE_EVERY = 3               # проверка подключений ключа — раз в 3 цикла (~15 минут)
 SETTING_KEY = "health_alerts_enabled"
 
 Check = Tuple[str, str, str]
@@ -108,11 +109,26 @@ async def collect_alert_checks() -> List[Check]:
     return list(sync) + list(panels)
 
 
-async def run_check_once(bot, state: Dict[str, Dict[str, Any]]) -> int:
+async def collect_probe_checks() -> List[Check]:
+    """Подключения ключа для проверки (если выбран и автопроверка включена)."""
+    from bot.services import connection_probe as cp
+    if not cp.auto_enabled() or cp.get_key_id() is None:
+        return []
+    report = await cp.probe_configured()
+    return cp.to_checks(report) if report else []
+
+
+async def run_check_once(bot, state: Dict[str, Dict[str, Any]], with_probe: bool = False) -> int:
     """Одна проверка и рассылка. Возвращает число событий."""
     if not is_enabled():
         return 0
-    events = evaluate(await collect_alert_checks(), state, time.time())
+    checks = await collect_alert_checks()
+    if with_probe:
+        try:
+            checks += await collect_probe_checks()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Проверка подключений ключа не выполнена: %s", e)
+    events = evaluate(checks, state, time.time())
     if not events:
         return 0
     text = format_message(events)
@@ -129,9 +145,11 @@ async def run_health_alert_scheduler(bot) -> None:
     logger.info("🔔 Оповещения о сбоях запущены (каждые %d с)", CHECK_INTERVAL)
     state: Dict[str, Dict[str, Any]] = {}
     await asyncio.sleep(START_DELAY)
+    cycle = 0
     while True:
         try:
-            await run_check_once(bot, state)
+            await run_check_once(bot, state, with_probe=(cycle % PROBE_EVERY == 0))
+            cycle += 1
         except asyncio.CancelledError:
             logger.info("Оповещения о сбоях остановлены")
             break

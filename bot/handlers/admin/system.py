@@ -263,7 +263,124 @@ async def _render_diagnostics(callback: CallbackQuery):
 def _alerts_toggle_button() -> list[dict[str, str]]:
     from bot.services import health_alerts
     state = "включены" if health_alerts.is_enabled() else "выключены"
-    return [{'text': f'🔔 Оповещения о сбоях: {state}', 'callback_data': 'admin_health_alerts_toggle'}]
+    return [
+        {'text': f'🔔 Оповещения о сбоях: {state}', 'callback_data': 'admin_health_alerts_toggle'},
+        {'text': '🧪 Проверка подключений', 'callback_data': 'admin_probe'},
+    ]
+
+
+# ===== v1.318: проверка работоспособности подключений из подписки =====
+
+def _probe_kb(rows: list[list[tuple[str, str]]], back: str = "admin_extensions_diagnostics"):
+    from bot.keyboards.admin_misc import back_button, home_button
+    builder = InlineKeyboardBuilder()
+    for row in rows:
+        builder.row(*[InlineKeyboardButton(text=t, callback_data=c) for t, c in row])
+    builder.row(back_button(back), home_button())
+    return builder.as_markup()
+
+
+async def _render_probe_menu(callback: CallbackQuery):
+    from bot.services import connection_probe as cp
+    from database.db_keys import get_vpn_key_by_id
+    key_id = cp.get_key_id()
+    key = get_vpn_key_by_id(key_id) if key_id else None
+    xray = cp.find_xray()
+    lines = [
+        "🧪 <b>Проверка подключений</b>",
+        "",
+        "Бот берёт подключения одного вашего ключа так, как их получает клиент, и проверяет каждое: "
+        "порт, TLS, срок сертификата и (если установлен Xray) реальный трафик.",
+        "",
+        f"<b>Ключ для проверки:</b> {('#' + str(key_id)) if key else 'не выбран'}",
+        f"<b>Реальный тест:</b> {'доступен (Xray найден)' if xray else 'недоступен: Xray не найден на сервере бота'}",
+        f"<b>Автопроверка раз в 15 минут:</b> {'включена' if cp.auto_enabled() else 'выключена'}",
+        "",
+        "<i>Совет: возьмите свой ключ без жёсткого лимита устройств, бот проверяет с одного IP.</i>",
+    ]
+    rows = []
+    if key:
+        rows.append([("▶️ Проверить сейчас", "admin_probe_run")])
+    rows.append([("🔑 Выбрать ключ" if not key else "🔑 Сменить ключ", "admin_probe_pick")])
+    rows.append([(f"🔔 Автопроверка: {'вкл' if cp.auto_enabled() else 'выкл'}", "admin_probe_auto")])
+    await safe_edit_or_send(callback.message, "\n".join(lines), reply_markup=_probe_kb(rows))
+
+
+@router.callback_query(F.data == "admin_probe")
+async def probe_menu(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await _render_probe_menu(callback)
+
+
+@router.callback_query(F.data == "admin_probe_auto")
+async def probe_toggle_auto(callback: CallbackQuery, state: FSMContext):
+    from bot.services import connection_probe as cp
+    cp.set_auto(not cp.auto_enabled())
+    await callback.answer("Автопроверка включена" if cp.auto_enabled() else "Автопроверка выключена")
+    await _render_probe_menu(callback)
+
+
+@router.callback_query(F.data == "admin_probe_pick")
+async def probe_pick_key(callback: CallbackQuery, state: FSMContext):
+    from database.db_keys import get_user_keys_for_display
+    await callback.answer()
+    keys = get_user_keys_for_display(callback.from_user.id) or []
+    if not keys:
+        await safe_edit_or_send(
+            callback.message,
+            "🧪 <b>Ключ для проверки</b>\n\nУ вас нет своих ключей. Создайте ключ для себя "
+            "(пробный или купленный) и вернитесь сюда.",
+            reply_markup=_probe_kb([], back="admin_probe"),
+        )
+        return
+    rows = [[(f"#{k['id']} · {str(k.get('display_name') or k.get('server_name') or 'ключ')[:30]}",
+              f"admin_probe_set:{k['id']}")] for k in keys[:20]]
+    await safe_edit_or_send(
+        callback.message,
+        "🧪 <b>Выберите ключ для проверки</b>\n\nПоказаны ваши ключи. Лучше взять ключ с большим лимитом устройств.",
+        reply_markup=_probe_kb(rows, back="admin_probe"),
+    )
+
+
+@router.callback_query(F.data.startswith("admin_probe_set:"))
+async def probe_set_key(callback: CallbackQuery, state: FSMContext):
+    from bot.services import connection_probe as cp
+    from database.db_keys import get_vpn_key_by_id
+    try:
+        key_id = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer("Некорректный ключ", show_alert=True)
+        return
+    key = get_vpn_key_by_id(key_id)
+    if not key or int(key.get("telegram_id") or 0) != callback.from_user.id:
+        await callback.answer("Ключ не найден или не ваш", show_alert=True)
+        return
+    cp.set_key_id(key_id)
+    await callback.answer("Ключ выбран")
+    await _render_probe_menu(callback)
+
+
+@router.callback_query(F.data == "admin_probe_run")
+async def probe_run(callback: CallbackQuery, state: FSMContext):
+    from bot.services import connection_probe as cp
+    await callback.answer("⏳ Проверяю…")
+    await safe_edit_or_send(
+        callback.message,
+        "🧪 <b>Проверка подключений</b>\n\n⏳ Идёт проверка, это может занять до минуты…",
+        reply_markup=_probe_kb([], back="admin_probe"),
+    )
+    try:
+        report = await cp.probe_configured()
+    except Exception as e:  # noqa: BLE001
+        report = {"results": [], "xray": False, "error": type(e).__name__}
+    if report is None:
+        await _render_probe_menu(callback)
+        return
+    await safe_edit_or_send(
+        callback.message,
+        cp.format_report(report),
+        reply_markup=_probe_kb([[("🔄 Повторить", "admin_probe_run")]], back="admin_probe"),
+    )
 
 
 def _format_ai_diagnostics_block(ai_stats: dict | None) -> list[str]:

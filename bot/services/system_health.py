@@ -286,13 +286,21 @@ def check_business() -> List[Check]:
     return out
 
 
+def _connections_check() -> Check:
+    try:
+        from bot.services.connection_probe import check_connections_summary
+        return check_connections_summary()
+    except Exception as e:
+        return ("⚪", "Подключения", _short_error(e))
+
+
 async def collect(bot=None) -> List[Check]:
     """Все проверки. Синхронные выполняются в отдельном потоке, чтобы не тормозить бота."""
     loop = asyncio.get_running_loop()
 
     def sync_checks() -> List[Check]:
         return [check_version(), check_updates(), check_database(), check_disk(),
-                check_backups(), check_scheduler(), check_license()] + check_business()
+                check_backups(), check_scheduler(), check_license(), _connections_check()] + check_business()
 
     sync_task = loop.run_in_executor(None, sync_checks)
     panels, telegram = await asyncio.gather(check_panels(), check_telegram(bot), return_exceptions=True)
