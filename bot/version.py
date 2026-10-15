@@ -34,6 +34,15 @@ def resolve_bot_version() -> tuple[str, str]:
     commit = commit.strip() or UNKNOWN_BOT_VERSION
     release = parse_bot_release(subject)
     if release is None:
+        # Обычный коммит без номера (например, правка документации) —
+        # берём номер ближайшей версии выше по истории.
+        ok, history = run_git_command(["log", "-n", "300", "--format=%s"])
+        if ok:
+            for line in history.split("\n"):
+                release = parse_bot_release(line)
+                if release:
+                    break
+    if release is None:
         logger.warning(
             "Current Git commit subject has no release prefix: %s",
             subject[:160],
