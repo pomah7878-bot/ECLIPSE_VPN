@@ -16,8 +16,8 @@
 Ограничения (их нужно понимать):
   • проверка идёт с сервера бота, а не из сети клиента. Она показывает, что
     подключение живо, но не покажет, что его блокирует конкретный оператор;
-  • UDP-протоколы (Hysteria2, TUIC, WireGuard, AmneziaWG) реальным тестом не
-    проверяются — для них проверка недоступна;
+  • реальным тестом проверяются VLESS, Trojan, VMess, Shadowsocks и Hysteria2
+    (без обфускации); TUIC, WireGuard и AmneziaWG не проверяются;
   • тестовый ключ в панели видит IP сервера бота как «устройство»: берите ключ
     без жёсткого лимита устройств.
 """
@@ -190,7 +190,36 @@ async def probe_basic(item: Dict[str, Any]) -> Dict[str, Any]:
 
 # ------------------------------------------------------------------ проверка 2: реальный тест через Xray
 
-def _stream_settings(q: Dict[str, str], host: str, default_security: str = "") -> Dict[str, Any]:
+def _norm_pin(value: str) -> str:
+    """Отпечаток сертификата (SHA-256) → 64 символа hex в нижнем регистре; иначе пустая строка."""
+    pin = (value or "").replace(":", "").replace(" ", "").lower()
+    return pin if len(pin) == 64 and all(c in "0123456789abcdef" for c in pin) else ""
+
+
+def _is_insecure(q: Dict[str, str]) -> bool:
+    return (q.get("allowInsecure") or q.get("insecure") or "") in ("1", "true")
+
+
+def needs_pin(link: str) -> bool:
+    """Подключение с «небезопасным» сертификатом (allowInsecure/insecure), но без закреплённого отпечатка.
+    В новом Xray флаг allowInsecure удалён: сертификат нужно закрепить по отпечатку."""
+    q = _query(link)
+    return _is_insecure(q) and not _norm_pin(q.get("pinSHA256") or q.get("pin") or "")
+
+
+def _fetch_cert_pin_sync(host: str, port: int, sni: str) -> str:
+    """Отпечаток сертификата сервера (по TCP+TLS) для подключений с самоподписанным сертификатом."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with socket.create_connection((host, port), timeout=CONNECT_TIMEOUT) as sock:
+        with ctx.wrap_socket(sock, server_hostname=sni or host) as tls:
+            der = tls.getpeercert(binary_form=True)
+    import hashlib
+    return hashlib.sha256(der).hexdigest() if der else ""
+
+
+def _stream_settings(q: Dict[str, str], host: str, default_security: str = "", pin: str = "") -> Dict[str, Any]:
     net = (q.get("type") or "tcp").lower()
     if net == "http":
         net = "tcp"
@@ -198,8 +227,9 @@ def _stream_settings(q: Dict[str, str], host: str, default_security: str = "") -
     stream: Dict[str, Any] = {"network": net, "security": security}
     sni = q.get("sni") or ""
     if security == "tls":
-        tls: Dict[str, Any] = {"serverName": sni or q.get("host") or host,
-                               "allowInsecure": q.get("allowInsecure") == "1"}
+        tls: Dict[str, Any] = {"serverName": sni or q.get("host") or host}
+        if pin:
+            tls["pinnedPeerCertSha256"] = pin
         if q.get("fp"):
             tls["fingerprint"] = q["fp"]
         if q.get("alpn"):
@@ -230,8 +260,10 @@ def _stream_settings(q: Dict[str, str], host: str, default_security: str = "") -
     return stream
 
 
-def link_to_outbound(link: str) -> Optional[Dict[str, Any]]:
-    """Ссылка подключения → исходящее подключение Xray. None, если тип не поддерживается."""
+def link_to_outbound(link: str, pin: str = "") -> Optional[Dict[str, Any]]:
+    """Ссылка подключения → исходящее подключение Xray. None, если тип не поддерживается.
+
+    pin — отпечаток сертификата (hex), нужен для ссылок с insecure/allowInsecure."""
     try:
         parsed = urllib.parse.urlparse(link)
         scheme = parsed.scheme.lower()
@@ -253,8 +285,24 @@ def link_to_outbound(link: str) -> Optional[Dict[str, Any]]:
             return None
         q = _query(link)
         user = urllib.parse.unquote(parsed.username or "")
+        pin = _norm_pin(q.get("pinSHA256") or q.get("pin") or "") or _norm_pin(pin)
+        if _is_insecure(q) and not pin:
+            return None  # без отпечатка Xray не примет самоподписанный сертификат
+        if scheme in ("hysteria2", "hy2"):
+            # Обфускация (obfs) тестом не поддерживается: без неё результат был бы
+            # неточным, поэтому такие подключения не проверяем.
+            if q.get("obfs") or q.get("obfs-password"):
+                return None
+            auth = user + (":" + urllib.parse.unquote(parsed.password) if parsed.password else "")
+            tls: Dict[str, Any] = {"serverName": q.get("sni") or host,
+                                   "alpn": [a for a in (q.get("alpn") or "h3").split(",") if a]}
+            if pin:
+                tls["pinnedPeerCertSha256"] = pin
+            return {"protocol": "hysteria", "settings": {"version": 2, "address": host, "port": port},
+                    "streamSettings": {"network": "hysteria", "security": "tls", "tlsSettings": tls,
+                                       "hysteriaSettings": {"version": 2, "auth": auth}}}
         if scheme == "vless":
-            stream = _stream_settings(q, host)
+            stream = _stream_settings(q, host, pin=pin)
             if not stream:
                 return None
             u: Dict[str, Any] = {"id": user, "encryption": q.get("encryption") or "none"}
@@ -263,7 +311,7 @@ def link_to_outbound(link: str) -> Optional[Dict[str, Any]]:
             return {"protocol": "vless", "streamSettings": stream,
                     "settings": {"vnext": [{"address": host, "port": port, "users": [u]}]}}
         if scheme == "trojan":
-            stream = _stream_settings(q, host, default_security="tls")
+            stream = _stream_settings(q, host, default_security="tls", pin=pin)
             if not stream:
                 return None
             return {"protocol": "trojan", "streamSettings": stream,
@@ -292,9 +340,32 @@ def _free_port() -> int:
 
 async def probe_xray(item: Dict[str, Any], xray: str) -> Dict[str, Any]:
     """Проверка 2: реальный запрос в интернет через это подключение."""
-    outbound = link_to_outbound(item.get("link", ""))
-    if outbound is None or item.get("protocol") in UDP_PROTOCOLS:
+    link = item.get("link", "")
+    pin = ""
+    if needs_pin(link):
+        q = _query(link)
+        if item.get("protocol") in UDP_PROTOCOLS:
+            return {"status": "skip", "detail": "самоподписанный сертификат: реальный тест недоступен"}
+        try:
+            pin = await asyncio.get_running_loop().run_in_executor(
+                None, _fetch_cert_pin_sync, item["host"], int(item["port"]), q.get("sni") or q.get("host") or "")
+        except Exception:  # noqa: BLE001
+            return {"status": "bad", "detail": "не удалось получить сертификат сервера"}
+    outbound = link_to_outbound(link, pin=pin)
+    if outbound is None:
         return {"status": "skip", "detail": "реальный тест для этого типа недоступен"}
+    result = await _run_xray(xray, outbound)
+    if result.get("start_failed"):
+        # В разных версиях Xray отпечаток сертификата записывается строкой или списком.
+        tls = (outbound.get("streamSettings") or {}).get("tlsSettings") or {}
+        if isinstance(tls.get("pinnedPeerCertSha256"), str):
+            tls["pinnedPeerCertSha256"] = [tls["pinnedPeerCertSha256"]]
+            result = await _run_xray(xray, outbound)
+    result.pop("start_failed", None)
+    return result
+
+
+async def _run_xray(xray: str, outbound: Dict[str, Any]) -> Dict[str, Any]:
     port = _free_port()
     config = {
         "log": {"loglevel": "none"},
@@ -312,7 +383,7 @@ async def probe_xray(item: Dict[str, Any], xray: str) -> Dict[str, Any]:
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
         for _ in range(30):  # ждём, пока Xray откроет локальный порт (до 3 с)
             if proc.returncode is not None:
-                return {"status": "skip", "detail": "Xray не запустился (проверьте его версию)"}
+                return {"status": "skip", "detail": "Xray не запустился (проверьте его версию)", "start_failed": True}
             try:
                 with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                     break
@@ -329,7 +400,8 @@ async def probe_xray(item: Dict[str, Any], xray: str) -> Dict[str, Any]:
                         if resp.status in (200, 204):
                             ms = int((time.monotonic() - started) * 1000)
                             return {"status": "ok", "detail": f"трафик идёт, {ms} мс", "ms": ms}
-                        last_error = f"ответ {resp.status}"
+                        last_error = ("подключение не установилось" if resp.status >= 500
+                                      else f"ответ {resp.status}")
                 except asyncio.TimeoutError:
                     last_error = "таймаут: трафик не идёт"
                 except Exception as e:  # noqa: BLE001
@@ -389,6 +461,7 @@ async def probe_all(key: Dict[str, Any], use_xray: bool = True) -> Dict[str, Any
                 real = await probe_xray(item, xray)
         res = combine(basic, real)
         res["title"] = _label(item)
+        res["proto"] = str(item.get("protocol_label") or item.get("protocol") or "").strip()
         return res
 
     results = await asyncio.gather(*(one(i) for i in items), return_exceptions=True)
@@ -397,6 +470,7 @@ async def probe_all(key: Dict[str, Any], use_xray: bool = True) -> Dict[str, Any
                "bad": sum(1 for r in clean if r["status"] == "bad"),
                "warn": sum(1 for r in clean if r["status"] == "warn"),
                "ok": sum(1 for r in clean if r["status"] == "ok"),
+               "skip": sum(1 for r in clean if r["status"] == "skip"),
                "real": bool(xray)}
     last_summary.clear()
     last_summary.update(summary)
@@ -437,7 +511,8 @@ def check_connections_summary() -> Check:
         return ("⚪", "Подключения", "ещё не проверялись")
     age = int((time.time() - last_summary["at"]) // 60)
     when = "только что" if age < 1 else f"{age} мин назад"
-    text = f"проверено {last_summary['total']}, не работает {last_summary['bad']} ({when})"
+    checked = last_summary["total"] - last_summary.get("skip", 0)
+    text = f"проверено {checked} из {last_summary['total']}, не работает {last_summary['bad']} ({when})"
     if last_summary["bad"]:
         return ("🔴", "Подключения", text)
     if last_summary["warn"]:
@@ -455,13 +530,21 @@ def format_report(report: Dict[str, Any]) -> str:
     if not results:
         lines.append("У ключа нет подключений.")
         return "\n".join(lines)
-    order = {"bad": 0, "warn": 1, "ok": 2, "skip": 3}
-    for r in sorted(results, key=lambda x: order.get(x["status"], 9)):
+    order = {"bad": 0, "warn": 1, "ok": 2}
+    shown = [r for r in results if r["status"] != "skip"]
+    skipped = [r for r in results if r["status"] == "skip"]
+    for r in sorted(shown, key=lambda x: order.get(x["status"], 9)):
         lines.append(f"{_ICON[r['status']]} <b>{escape_html(r['title'])}</b>\n    {escape_html(r['detail'])}")
+    if skipped:
+        counts: Dict[str, int] = {}
+        for r in skipped:
+            counts[r.get("proto") or "прочие"] = counts.get(r.get("proto") or "прочие", 0) + 1
+        kinds = ", ".join(f"{name} ×{n}" for name, n in counts.items())
+        lines.append(f"⚪ <b>Не проверяются ({len(skipped)})</b>\n    {escape_html(kinds)}: для этих типов проверка недоступна")
     bad = sum(1 for r in results if r["status"] == "bad")
     ok = sum(1 for r in results if r["status"] == "ok")
     lines.append("")
-    lines.append(f"Всего: {len(results)}, работает: {ok}, не работает: {bad}")
+    lines.append(f"Всего: {len(results)}, работает: {ok}, не работает: {bad}, не проверялись: {len(skipped)}")
     if report.get("xray"):
         lines.append("Режим: реальный тест через Xray + проверка порта.")
     else:
