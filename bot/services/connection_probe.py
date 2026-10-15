@@ -167,7 +167,7 @@ async def probe_basic(item: Dict[str, Any]) -> Dict[str, Any]:
     """Проверка 1 для одного подключения."""
     proto = item.get("protocol", "")
     if proto in UDP_PROTOCOLS or item.get("kind") == "conf":
-        return {"status": "skip", "detail": "UDP: быстрая проверка недоступна"}
+        return {"status": "skip", "detail": skip_reason(item)}
     q = _query(item.get("link", ""))
     security = (q.get("security") or ("tls" if proto == "trojan" else "")).lower()
     sni = q.get("sni") or q.get("host") or ""
@@ -332,6 +332,26 @@ def link_to_outbound(link: str, pin: str = "") -> Optional[Dict[str, Any]]:
     return None
 
 
+def skip_reason(item: Dict[str, Any]) -> str:
+    """Короткая понятная причина, почему подключение нельзя проверить реальным тестом."""
+    proto = str(item.get("protocol") or "").lower()
+    q = _query(item.get("link", ""))
+    if proto == "tuic":
+        return "для TUIC нет клиента"
+    if proto in ("wireguard", "amneziawg") or item.get("kind") == "conf":
+        return "для WireGuard и AmneziaWG нет клиента"
+    if proto in ("hysteria2", "hy2"):
+        if q.get("obfs") or q.get("obfs-password"):
+            return "обфускация (obfs) не поддерживается тестом"
+        if needs_pin(item.get("link", "")):
+            return "самоподписанный сертификат без отпечатка"
+    if _is_insecure(q) and needs_pin(item.get("link", "")):
+        return "самоподписанный сертификат: не удалось закрепить"
+    if proto in ("vless", "trojan", "vmess") and (q.get("type") or "tcp").lower() in ("kcp", "quic", "mkcp"):
+        return "транспорт не поддерживается тестом"
+    return "тип подключения не поддерживается тестом"
+
+
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -345,7 +365,7 @@ async def probe_xray(item: Dict[str, Any], xray: str) -> Dict[str, Any]:
     if needs_pin(link):
         q = _query(link)
         if item.get("protocol") in UDP_PROTOCOLS:
-            return {"status": "skip", "detail": "самоподписанный сертификат: реальный тест недоступен"}
+            return {"status": "skip", "detail": skip_reason(item)}
         try:
             pin = await asyncio.get_running_loop().run_in_executor(
                 None, _fetch_cert_pin_sync, item["host"], int(item["port"]), q.get("sni") or q.get("host") or "")
@@ -353,7 +373,7 @@ async def probe_xray(item: Dict[str, Any], xray: str) -> Dict[str, Any]:
             return {"status": "bad", "detail": "не удалось получить сертификат сервера"}
     outbound = link_to_outbound(link, pin=pin)
     if outbound is None:
-        return {"status": "skip", "detail": "реальный тест для этого типа недоступен"}
+        return {"status": "skip", "detail": skip_reason(item)}
     result = await _run_xray(xray, outbound)
     if result.get("start_failed"):
         # В разных версиях Xray отпечаток сертификата записывается строкой или списком.
@@ -432,7 +452,8 @@ def combine(basic: Dict[str, Any], real: Optional[Dict[str, Any]]) -> Dict[str, 
         return {"status": status, "detail": detail, "level": "тест"}
     if basic["status"] in ("ok", "warn"):
         return {"status": basic["status"], "detail": basic["detail"], "level": "порт"}
-    return {"status": "skip", "detail": basic["detail"], "level": ""}
+    reason = real["detail"] if real and real["status"] == "skip" else basic["detail"]
+    return {"status": "skip", "detail": reason, "level": ""}
 
 
 def _label(item: Dict[str, Any]) -> str:
@@ -536,11 +557,13 @@ def format_report(report: Dict[str, Any]) -> str:
     for r in sorted(shown, key=lambda x: order.get(x["status"], 9)):
         lines.append(f"{_ICON[r['status']]} <b>{escape_html(r['title'])}</b>\n    {escape_html(r['detail'])}")
     if skipped:
-        counts: Dict[str, int] = {}
+        groups: Dict[Tuple[str, str], int] = {}
         for r in skipped:
-            counts[r.get("proto") or "прочие"] = counts.get(r.get("proto") or "прочие", 0) + 1
-        kinds = ", ".join(f"{name} ×{n}" for name, n in counts.items())
-        lines.append(f"⚪ <b>Не проверяются ({len(skipped)})</b>\n    {escape_html(kinds)}: для этих типов проверка недоступна")
+            key = (r.get("proto") or "прочие", r.get("detail") or "проверка недоступна")
+            groups[key] = groups.get(key, 0) + 1
+        lines.append(f"⚪ <b>Не проверяются ({len(skipped)})</b>")
+        for (proto, reason), n in groups.items():
+            lines.append(f"    {escape_html(proto)} ×{n}: {escape_html(reason)}")
     bad = sum(1 for r in results if r["status"] == "bad")
     ok = sum(1 for r in results if r["status"] == "ok")
     lines.append("")
