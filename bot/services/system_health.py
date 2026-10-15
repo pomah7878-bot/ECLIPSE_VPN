@@ -288,6 +288,9 @@ def check_business() -> List[Check]:
 
 def _connections_check() -> Check:
     try:
+        from bot.services.connection_probe import is_licensed
+        if not is_licensed():
+            return ("⚪", "Подключения", "доступно по лицензии")
         from bot.services.connection_probe import check_connections_summary
         return check_connections_summary()
     except Exception as e:

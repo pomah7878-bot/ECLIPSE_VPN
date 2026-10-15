@@ -264,6 +264,12 @@ def tariff_blocked_reason(promo: Optional[Dict[str, Any]], tariff: Optional[Dict
     """Текст причины, если промокод активной акции не действует на этот тариф; иначе None."""
     if not promo or not tariff or not promo.get("id"):
         return None
+    try:
+        from bot.services.license import is_feature_available
+        if not is_feature_available("collabs"):
+            return None
+    except Exception:
+        return None
     campaign = get_campaign_by_promo_id(int(promo["id"]))
     if not campaign or not campaign.get("is_active"):
         return None

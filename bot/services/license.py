@@ -52,6 +52,8 @@ GATED_FEATURES = {
     "domain_autoprovision": "🌐 Автонастройка резервного домена (DNS+nginx+SSL)",
     "roulette": "🎰 Рулетка (розыгрыш призов для клиентов)",
     "bonus_tasks": "🎁 Бонусные дни за отзыв и сторис",
+    "collabs": "🤝 Совместные акции с партнёрами",
+    "connection_probe": "🧪 Проверка подключений и оповещения о них",
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
 }
 

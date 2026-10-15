@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 155
+LATEST_VERSION = 156
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3592,6 +3592,22 @@ def migration_155(conn: sqlite3.Connection) -> None:
     logger.info("Migration v155 applied: anonymous_purchases.promo_*")
 
 
+def migration_156(conn: sqlite3.Connection) -> None:
+    """Версия 1.321: платные функции «collabs» (совместные акции) и «connection_probe»
+    (проверка подключений). Лицензиям и тарифам tier='full' добавляются автоматически."""
+    for table in ("partner_licenses", "license_tariffs"):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not {"tier", "features"} <= columns:
+            continue
+        for row in conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall():
+            current = {f for f in (row[1] or "").split(",") if f}
+            current.update({"collabs", "connection_probe"})
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), row[0]))
+    logger.info("Migration v156 applied: функции collabs и connection_probe для full-лицензий")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3674,6 +3690,7 @@ MIGRATIONS = {
     153: migration_153,
     154: migration_154,
     155: migration_155,
+    156: migration_156,
 }
 
 

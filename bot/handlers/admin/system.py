@@ -262,11 +262,24 @@ async def _render_diagnostics(callback: CallbackQuery):
 
 def _alerts_toggle_button() -> list[dict[str, str]]:
     from bot.services import health_alerts
+    from bot.services.connection_probe import is_licensed
     state = "включены" if health_alerts.is_enabled() else "выключены"
-    return [
-        {'text': f'🔔 Оповещения о сбоях: {state}', 'callback_data': 'admin_health_alerts_toggle'},
-        {'text': '🧪 Проверка подключений', 'callback_data': 'admin_probe'},
-    ]
+    buttons = [{'text': f'🔔 Оповещения о сбоях: {state}', 'callback_data': 'admin_health_alerts_toggle'}]
+    if is_licensed():
+        buttons.append({'text': '🧪 Проверка подключений', 'callback_data': 'admin_probe'})
+    return buttons
+
+
+async def _probe_guard(callback: CallbackQuery) -> bool:
+    """Только админ и только при наличии лицензии на функцию."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return False
+    from bot.services.connection_probe import is_licensed
+    if not is_licensed():
+        await callback.answer("🧪 Проверка подключений доступна только по лицензии", show_alert=True)
+        return False
+    return True
 
 
 # ===== v1.318: проверка работоспособности подключений из подписки =====
@@ -308,12 +321,16 @@ async def _render_probe_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "admin_probe")
 async def probe_menu(callback: CallbackQuery, state: FSMContext):
+    if not await _probe_guard(callback):
+        return
     await callback.answer()
     await _render_probe_menu(callback)
 
 
 @router.callback_query(F.data == "admin_probe_auto")
 async def probe_toggle_auto(callback: CallbackQuery, state: FSMContext):
+    if not await _probe_guard(callback):
+        return
     from bot.services import connection_probe as cp
     cp.set_auto(not cp.auto_enabled())
     await callback.answer("Автопроверка включена" if cp.auto_enabled() else "Автопроверка выключена")
@@ -322,6 +339,8 @@ async def probe_toggle_auto(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "admin_probe_pick")
 async def probe_pick_key(callback: CallbackQuery, state: FSMContext):
+    if not await _probe_guard(callback):
+        return
     from database.db_keys import get_user_keys_for_display
     await callback.answer()
     keys = get_user_keys_for_display(callback.from_user.id) or []
@@ -344,6 +363,8 @@ async def probe_pick_key(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("admin_probe_set:"))
 async def probe_set_key(callback: CallbackQuery, state: FSMContext):
+    if not await _probe_guard(callback):
+        return
     from bot.services import connection_probe as cp
     from database.db_keys import get_vpn_key_by_id
     try:
@@ -362,6 +383,8 @@ async def probe_set_key(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "admin_probe_run")
 async def probe_run(callback: CallbackQuery, state: FSMContext):
+    if not await _probe_guard(callback):
+        return
     from bot.services import connection_probe as cp
     await callback.answer("⏳ Проверяю…")
     await safe_edit_or_send(

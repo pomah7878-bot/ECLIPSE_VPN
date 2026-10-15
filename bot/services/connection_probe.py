@@ -73,7 +73,17 @@ def set_key_id(key_id: Optional[int]) -> None:
     set_setting(KEY_SETTING, str(key_id) if key_id else "")
 
 
+def is_licensed() -> bool:
+    try:
+        from bot.services.license import is_feature_available
+        return is_feature_available("connection_probe")
+    except Exception:
+        return False
+
+
 def auto_enabled() -> bool:
+    if not is_licensed():
+        return False
     from database.db_settings import get_setting
     return str(get_setting(AUTO_SETTING, "1") or "1") == "1"
 
@@ -501,7 +511,7 @@ async def probe_all(key: Dict[str, Any], use_xray: bool = True) -> Dict[str, Any
 async def probe_configured() -> Optional[Dict[str, Any]]:
     """Проверка выбранного ключа. None, если ключ не выбран или не найден."""
     key_id = get_key_id()
-    if not key_id:
+    if not key_id or not is_licensed():
         return None
     from database.db_keys import get_vpn_key_by_id
     key = await asyncio.get_running_loop().run_in_executor(None, get_vpn_key_by_id, key_id)

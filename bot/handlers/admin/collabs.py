@@ -39,8 +39,8 @@ def _nav(back_cb: str):
 
 async def _licensed(callback: CallbackQuery) -> bool:
     from bot.services.license import is_feature_available
-    if not is_feature_available("promo_coupons"):
-        await callback.answer("Эта функция доступна на вашем тарифе", show_alert=True)
+    if not is_feature_available("collabs"):
+        await callback.answer("🤝 Совместные акции доступны только по лицензии", show_alert=True)
         return False
     return True
 

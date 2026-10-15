@@ -26,8 +26,16 @@ def _format_date(value: Any) -> str:
         return str(value)
 
 
+def is_licensed() -> bool:
+    try:
+        from bot.services.license import is_feature_available
+        return is_feature_available("collabs")
+    except Exception:
+        return False
+
+
 def get_active_campaign_for_promo(promo: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    if not promo or not promo.get("id"):
+    if not promo or not promo.get("id") or not is_licensed():
         return None
     try:
         campaign = db_collabs.get_campaign_by_promo_id(int(promo["id"]))
@@ -151,7 +159,7 @@ async def notify_member(bot, campaign_id: int, telegram_id: int) -> None:
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
     campaign = db_collabs.get_campaign(campaign_id)
-    if not campaign:
+    if not campaign or not is_licensed():
         return
     text = (
         f"🤝 <b>Совместная акция {escape_html(_brand())} × {escape_html(campaign['title'])}</b>\n\n"
