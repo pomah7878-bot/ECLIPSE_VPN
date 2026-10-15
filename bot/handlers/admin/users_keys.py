@@ -390,7 +390,9 @@ async def start_add_key(callback: CallbackQuery, state: FSMContext):
         await callback.answer('❌ Нет активных серверов', show_alert=True)
         return
     await state.set_state(AdminStates.add_key_server)
-    await state.update_data(add_key_user_id=user['id'], add_key_user_telegram_id=telegram_id)
+    # v1.313: обычная выдача ключа — сбрасываем данные прошлой выдачи по совместной акции
+    await state.update_data(add_key_user_id=user['id'], add_key_user_telegram_id=telegram_id,
+                            add_key_collab_id=None, add_key_tariff_id=None)
     await safe_edit_or_send(callback.message, f'➕ <b>Добавление ключа для {format_user_display(user)}</b>\n\nВыберите сервер:', reply_markup=add_key_server_kb(servers))
     await callback.answer()
 
@@ -523,6 +525,12 @@ async def confirm_add_key(callback: CallbackQuery, state: FSMContext, bot: Bot):
     try:
         client = get_client_from_server_data(server)
         admin_tariff = get_admin_tariff()
+        # v1.313: ключ участника совместной акции — свой скрытый тариф (устройства, срок)
+        _collab_id = data.get('add_key_collab_id')
+        _collab_tariff_id = data.get('add_key_tariff_id')
+        if _collab_id and _collab_tariff_id:
+            from database.db_tariffs import get_tariff_by_id as _get_tariff_by_id
+            admin_tariff = _get_tariff_by_id(int(_collab_tariff_id), raw=True) or admin_tariff
         tariff_id = admin_tariff['id']
 
         if subscription_mode:
@@ -579,6 +587,15 @@ async def confirm_add_key(callback: CallbackQuery, state: FSMContext, bot: Bot):
                 traffic_limit=traffic_limit_bytes,
             )
 
+        if _collab_id:
+            try:
+                from database import db_collabs
+                db_collabs.record_member(int(_collab_id), user_id, user_telegram_id, key_id)
+                from bot.services.collabs import notify_member
+                await notify_member(bot, int(_collab_id), int(user_telegram_id))
+            except Exception as e:
+                logger.warning(f'Не удалось записать участника совместной акции: {e}')
+            await state.update_data(add_key_collab_id=None, add_key_tariff_id=None)
         await callback.answer('✅ Ключ успешно создан!', show_alert=True)
         await _show_user_view_edit(callback, state, user_telegram_id)
     except VPNAPIError as e:

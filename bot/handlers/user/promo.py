@@ -175,14 +175,23 @@ async def promo_code_input_handler(message: Message, state: FSMContext):
 
     await state.clear()
     promo = result["promo"]
+    title_html = "✅ <b>Промокод применён</b>"
+    body_html = (
+        f"Код: <b>{escape_html(promo['code'])}</b>\n"
+        f"Скидка: <b>{int(promo.get('discount_percent') or 0)}%</b>\n\n"
+        "Теперь выберите способ оплаты и тариф заново."
+    )
+    try:
+        from bot.services.collabs import client_promo_screen
+        collab_screen = client_promo_screen(promo)
+        if collab_screen:
+            title_html, body_html = collab_screen
+    except Exception as e:
+        logger.debug("Экран совместной акции не показан: %s", e)
     await render_promo_status_page(
         message,
-        title_html="✅ <b>Промокод применён</b>",
-        body_html=(
-            f"Код: <b>{escape_html(promo['code'])}</b>\n"
-            f"Скидка: <b>{int(promo.get('discount_percent') or 0)}%</b>\n\n"
-            "Теперь выберите способ оплаты и тариф заново."
-        ),
+        title_html=title_html,
+        body_html=body_html,
         append_buttons=_promo_return_kb(key_id).inline_keyboard,
         force_new=True,
     )

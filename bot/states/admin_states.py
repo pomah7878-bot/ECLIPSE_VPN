@@ -106,6 +106,9 @@ class AdminStates(StatesGroup):
     promocode_add_expires = State()
     promocode_add_limit = State()
     promocode_edit_value = State()
+    collab_new_title = State()       # Совместная акция: название партнёра
+    collab_edit_value = State()      # Совместная акция: значение поля
+    collab_issue_user = State()      # Совместная акция: участник для бесплатного ключа
     coupon_setting_value = State()
     coupon_generate_discount = State()
     coupon_generate_lifetime = State()

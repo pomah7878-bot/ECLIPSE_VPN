@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 153
+LATEST_VERSION = 154
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3573,6 +3573,14 @@ def migration_153(conn: sqlite3.Connection) -> None:
     logger.info("Migration v153 applied: btn_key_cdn убрана с key_details")
 
 
+def migration_154(conn: sqlite3.Connection) -> None:
+    """Версия 1.313: «Совместные акции» — таблицы collab_campaigns и collab_members.
+    Данных партнёров в миграции нет: акции создаются админом в боте."""
+    from database.db_collabs import create_tables
+    create_tables(conn)
+    logger.info("Migration v154 applied: collab_campaigns, collab_members")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3653,6 +3661,7 @@ MIGRATIONS = {
     151: migration_151,
     152: migration_152,
     153: migration_153,
+    154: migration_154,
 }
 
 

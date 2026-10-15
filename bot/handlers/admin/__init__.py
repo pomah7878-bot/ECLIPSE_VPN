@@ -33,6 +33,7 @@ from bot.handlers.admin.licenses import router as licenses_router
 from bot.handlers.admin.creator_chat import router as creator_chat_router
 from bot.handlers.admin.help_orders import router as help_orders_router
 from bot.handlers.admin.cdn import router as cdn_router
+from bot.handlers.admin.collabs import router as collabs_router
 
 admin_router = Router()
 
@@ -55,6 +56,7 @@ admin_router.include_router(system_router)
 admin_router.include_router(trial_router)
 admin_router.include_router(referral_router)
 admin_router.include_router(promotions_router)
+admin_router.include_router(collabs_router)
 admin_router.include_router(customization_reset_router)
 admin_router.include_router(integrations_router)
 admin_router.include_router(channel_posts_router)

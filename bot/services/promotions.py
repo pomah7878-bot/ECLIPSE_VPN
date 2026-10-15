@@ -148,6 +148,18 @@ def build_quote(
             if not availability.get("ok"):
                 promo = None
 
+    # v1.313: промокод совместной акции может действовать только на длинные тарифы
+    if promo:
+        try:
+            from database.db_collabs import tariff_blocked_reason
+            blocked = tariff_blocked_reason(promo, tariff)
+        except Exception:
+            blocked = None
+        if blocked:
+            promo = None
+            if explicit_code:
+                promo_error = blocked
+
     discount_percent = int(promo.get("discount_percent") or 0) if promo else 0
     discount_amount = _discount_amount(original_amount, discount_percent) if promo else 0
     final_amount = max(0, original_amount - discount_amount)

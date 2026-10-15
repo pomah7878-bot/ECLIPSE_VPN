@@ -147,7 +147,7 @@ def trial_tariff_select_kb(tariffs: List[Dict[str, Any]], selected_id: Optional[
     """
     builder = InlineKeyboardBuilder()
     for tariff in tariffs:
-        if tariff.get('name') == 'Admin Tariff':
+        if tariff.get('name') == 'Admin Tariff' or str(tariff.get('name') or '').startswith('Совместная акция: '):
             continue
         status = '🟢' if tariff.get('is_active') else '⚪'
         is_selected = tariff['id'] == selected_id

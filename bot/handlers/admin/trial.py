@@ -179,7 +179,8 @@ async def admin_trial_select_tariff(callback: CallbackQuery):
     selected_id = get_trial_tariff_id()
 
     # Filtering Admin Tariff
-    available = [t for t in tariffs if t.get('name') != 'Admin Tariff']
+    available = [t for t in tariffs if t.get('name') != 'Admin Tariff'
+                 and not str(t.get('name') or '').startswith('Совместная акция: ')]
 
     if not available:
         await callback.answer("❌ Нет доступных тарифов", show_alert=True)

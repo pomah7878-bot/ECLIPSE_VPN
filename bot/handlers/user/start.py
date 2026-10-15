@@ -517,13 +517,22 @@ async def _continue_start(
                 telegram_id=telegram_id,
                 start_param=args,
             )
+            _title_html = "🎟 <b>Промокод сохранён</b>"
+            _body_html = (
+                f"Код <b>{escape_html(promo['code'])}</b> "
+                "будет учтён при следующей оплате."
+            )
+            try:
+                from bot.services.collabs import client_promo_screen
+                _collab_screen = client_promo_screen(promo)
+                if _collab_screen:
+                    _title_html, _body_html = _collab_screen
+            except Exception as e:
+                logger.debug(f'Экран совместной акции не показан: {e}')
             await render_promo_status_page(
                 send_target,
-                title_html="🎟 <b>Промокод сохранён</b>",
-                body_html=(
-                    f"Код <b>{escape_html(promo['code'])}</b> "
-                    "будет учтён при следующей оплате."
-                ),
+                title_html=_title_html,
+                body_html=_body_html,
                 force_new=True,
             )
         else:
