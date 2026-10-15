@@ -162,9 +162,14 @@ https://ваш-домен/auth/yandex/callback
 
 ### 3. Nginx + SSL для WebApp и сайта
 
-Пример конфигурации (адаптируйте под свой домен):
+Порядок важен: сначала HTTP-конфиг без сертификатов, затем certbot сам добавит HTTPS. Если сразу написать `listen 443 ssl` с несуществующими сертификатами, nginx не запустится.
+
+**1. Направьте домен на сервер.** В DNS создайте A-запись `ваш-домен` → IP сервера и подождите несколько минут. Проверка: `dig +short ваш-домен` должен вернуть IP сервера.
+
+**2. Создайте конфиг** `/etc/nginx/sites-available/eclipse` (адаптируйте под свой домен):
 ```nginx
 server {
+    listen 80;
     server_name ваш-домен;
     location / {
         proxy_pass http://127.0.0.1:3000;
@@ -174,17 +179,21 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
-    listen 443 ssl;
-    ssl_certificate /etc/letsencrypt/live/ваш-домен/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/ваш-домен/privkey.pem;
 }
 ```
 
-Получить SSL-сертификат:
+**3. Включите конфиг и получите SSL-сертификат:**
 ```bash
-apt install certbot python3-certbot-nginx -y
+apt install nginx certbot python3-certbot-nginx -y
+ln -s /etc/nginx/sites-available/eclipse /etc/nginx/sites-enabled/eclipse
+nginx -t && systemctl reload nginx
 certbot --nginx -d ваш-домен
 ```
+Certbot сам допишет в конфиг блок `listen 443 ssl` и пути к сертификатам, а также редирект с HTTP на HTTPS.
+
+**4. Укажите домен в боте:** «🌐 Сайт и витрина» → «🌐 Домен сайта» (`https://ваш-домен`).
+
+**5. Проверьте:** `curl -I https://ваш-домен` должен ответить `200`, а в браузере открыться сайт. Если ответ `502`, бот не запущен: `systemctl status eclipse-vpn`.
 
 ---
 
