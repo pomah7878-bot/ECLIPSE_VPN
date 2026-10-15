@@ -222,12 +222,27 @@ async def show_extensions_diagnostics(callback: CallbackQuery, state: FSMContext
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-
-    from bot.utils.custom_extensions import get_custom_extensions_diagnostics, run_active_extension_health_check
-    from bot.handlers.user.ai_support_integration import get_ai_stats
-
     # Проверка панелей и Telegram занимает несколько секунд — отвечаем на нажатие сразу
     await callback.answer("⏳ Проверяю систему…")
+    await _render_diagnostics(callback)
+
+
+@router.callback_query(F.data == "admin_health_alerts_toggle")
+async def toggle_health_alerts(callback: CallbackQuery, state: FSMContext):
+    """Включает и выключает оповещения о сбоях (панели, узлы, диск, бэкапы)."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import health_alerts
+    enabled = not health_alerts.is_enabled()
+    health_alerts.set_enabled(enabled)
+    await callback.answer("🔔 Оповещения включены" if enabled else "🔕 Оповещения выключены")
+    await _render_diagnostics(callback)
+
+
+async def _render_diagnostics(callback: CallbackQuery):
+    from bot.utils.custom_extensions import get_custom_extensions_diagnostics, run_active_extension_health_check
+    from bot.handlers.user.ai_support_integration import get_ai_stats
 
     diagnostics = get_custom_extensions_diagnostics()
     health_check = run_active_extension_health_check()
@@ -241,8 +256,14 @@ async def show_extensions_diagnostics(callback: CallbackQuery, state: FSMContext
     await safe_edit_or_send(
         callback.message,
         _format_extensions_diagnostics(diagnostics, health_check, ai_stats, system_lines),
-        reply_markup=extensions_diagnostics_kb(_extension_settings_menu_buttons(diagnostics)),
+        reply_markup=extensions_diagnostics_kb(_alerts_toggle_button() + _extension_settings_menu_buttons(diagnostics)),
     )
+
+
+def _alerts_toggle_button() -> list[dict[str, str]]:
+    from bot.services import health_alerts
+    state = "включены" if health_alerts.is_enabled() else "выключены"
+    return [{'text': f'🔔 Оповещения о сбоях: {state}', 'callback_data': 'admin_health_alerts_toggle'}]
 
 
 def _format_ai_diagnostics_block(ai_stats: dict | None) -> list[str]:
