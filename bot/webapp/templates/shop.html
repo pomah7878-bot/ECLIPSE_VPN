@@ -317,6 +317,7 @@
     </div>
 
     <div class="max-w-md md:max-w-5xl mx-auto px-4">
+        <div id="promoBanner" class="max-w-md mx-auto"></div>
         <div id="authGate" class="card rounded-2xl p-5 mb-6 max-w-md mx-auto">
             <div class="text-xs text-mist mb-4 text-center leading-relaxed">
                 ⚠️ Используя VPN-сервис, вы подтверждаете, что действуете самостоятельно и на свой страх и риск, и несёте ответственность за соблюдение законодательства своей страны.
@@ -372,6 +373,17 @@
                         <button onclick="setBuyPayMethod('card')" id="buyPayMethodCardBtn" class="flex-1 py-2 rounded-lg text-xs font-semibold transition btn-primary">💳 Банк / СБП</button>
                         <button onclick="setBuyPayMethod('balance')" id="buyPayMethodBalanceBtn" class="flex-1 py-2 rounded-lg text-xs font-semibold transition btn-secondary">💎 Баланс</button>
                     </div>
+                </div>
+            </div>
+            <div class="max-w-md mx-auto mb-3">
+                <button id="promoToggleBtn" onclick="togglePromoInput()" class="w-full text-xs text-mist underline transition">🎟 У меня есть промокод</button>
+                <div id="promoInputBox" class="hidden mt-2">
+                    <div class="flex gap-2">
+                        <input id="promoCodeInput" type="text" placeholder="Промокод" autocomplete="off" maxlength="64"
+                            class="flex-1 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-2.5 text-sm text-ink font-mono uppercase" style="outline:none;">
+                        <button onclick="applyPromoCode()" class="px-4 py-2.5 btn-primary rounded-xl font-bold text-sm transition">Применить</button>
+                    </div>
+                    <div id="promoError" class="text-xs text-alert mt-2 text-center"></div>
                 </div>
             </div>
             <div id="tariffList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-6">
@@ -718,6 +730,58 @@
 
         let _lastLoadedTariffs = [];
 
+        // ==================== ПРОМОКОД / СОВМЕСТНАЯ АКЦИЯ ====================
+
+        function renderPromoBanner(promo) {
+            const box = document.getElementById('promoBanner');
+            if (!box) return;
+            if (!promo) { box.innerHTML = ''; return; }
+            const lines = (promo.lines || []).map(l => `<div class="text-xs text-mist mt-1">${escapeHtml(l)}</div>`).join('');
+            box.innerHTML = `
+                <div class="card rounded-2xl p-4 mb-4" style="border-color:var(--gold);">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <div class="font-display font-bold text-sm text-gold">${promo.is_collab ? '🤝 ' : '🎟 '}${escapeHtml(promo.title)}</div>
+                            ${lines}
+                            <div class="text-[11px] text-mist-dim mt-2">Промокод: <span class="font-mono">${escapeHtml(promo.code)}</span></div>
+                        </div>
+                        <button onclick="clearPromoCode()" class="text-mist-dim text-lg leading-none" title="Убрать промокод">×</button>
+                    </div>
+                </div>`;
+        }
+
+        async function loadPromoBanner() {
+            try {
+                const res = await fetchAPI('promo');
+                renderPromoBanner(res.promo);
+            } catch(e) { /* без акции — просто нет баннера */ }
+        }
+
+        function togglePromoInput() {
+            document.getElementById('promoInputBox').classList.toggle('hidden');
+        }
+
+        async function applyPromoCode() {
+            const input = document.getElementById('promoCodeInput');
+            const err = document.getElementById('promoError');
+            err.textContent = '';
+            try {
+                const res = await postAPISafe('promo/apply', { code: input.value });
+                if (!res.ok) { err.textContent = res.message || 'Не удалось применить промокод.'; return; }
+                input.value = '';
+                document.getElementById('promoInputBox').classList.add('hidden');
+                renderPromoBanner(res.promo);
+                if (!document.getElementById('mainApp').classList.contains('hidden')) loadTariffs();
+                showToast('Промокод применён');
+            } catch(e) { err.textContent = 'Не удалось применить промокод.'; }
+        }
+
+        async function clearPromoCode() {
+            try { await postAPISafe('promo/clear', {}); } catch(e) {}
+            renderPromoBanner(null);
+            if (!document.getElementById('mainApp').classList.contains('hidden')) loadTariffs();
+        }
+
         async function loadTariffs() {
             const box = document.getElementById('tariffList');
             try {
@@ -767,7 +831,9 @@
                     <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
                     <div class="text-xs text-mist mb-4">${t.duration_days} дней${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
                     ${t.cdn_gb ? `<div class="text-[11px] text-gold mb-3">🌐 + CDN ${t.cdn_gb} ГБ (обход белых списков)</div>` : ''}
-                    <div class="text-gold font-display font-bold text-2xl mt-auto">${t.price_rub.toFixed(0)} ₽</div>
+                    ${t.old_price_rub ? `<div class="text-xs text-mist-dim line-through mt-auto">${t.old_price_rub.toFixed(0)} ₽</div>` : ''}
+                    <div class="text-gold font-display font-bold text-2xl ${t.old_price_rub ? '' : 'mt-auto'}">${t.price_rub.toFixed(0)} ₽</div>
+                    ${t.promo_percent ? `<div class="text-[11px] text-teal font-semibold">по акции −${t.promo_percent}%</div>` : ''}
                     <div class="text-[11px] text-mist-dim mt-1">≈ ${dailyPrice.toFixed(dailyPrice < 10 ? 1 : 0)} ₽/день</div>
                     ${savingsBadge}
                 </button>
@@ -2073,6 +2139,7 @@
         }
 
         initOAuthButtons();
+        loadPromoBanner();
         (async () => {
             const autoLoggedIn = await tryAutoLoginFromUrl();
             if (!autoLoggedIn) {

@@ -367,7 +367,7 @@ async def admin_collab_issue(callback: CallbackQuery, state: FSMContext):
     text = (
         "🔑 <b>Ключ участнику</b>\n\n"
         f"Партнёр: <b>{escape_html(campaign['title'])}</b>\n"
-        f"Ключ: безлимит, {int(campaign['member_devices'])} устройств, {int(campaign['member_days'])} дн.\n\n"
+        f"Ключ: безлимит, {int(campaign['member_devices'])} устройств, {collab_service.days_label(campaign['member_days'])}\n\n"
         "Отправьте <b>Telegram ID</b> или <b>@username</b> участника.\n"
         "Участник должен хотя бы раз запустить бота."
     )
@@ -426,7 +426,7 @@ async def collab_issue_user(message: Message, state: FSMContext):
             f"👤 Участник: {who}\n"
             f"🖥️ Сервер: {escape_html(str(server['name']))}\n"
             "📊 Трафик: без лимита\n"
-            f"📅 Срок: {int(campaign['member_days'])} дней\n"
+            f"📅 Срок: {collab_service.days_label(campaign['member_days'])}\n"
             f"📱 Устройств: {int(campaign['member_devices'])}\n"
         )
         await safe_edit_or_send(message, text, reply_markup=add_key_confirm_kb(), force_new=True)
@@ -437,6 +437,6 @@ async def collab_issue_user(message: Message, state: FSMContext):
     await safe_edit_or_send(
         message,
         f"➕ <b>Ключ участнику акции «{escape_html(campaign['title'])}»</b>\n"
-        f"Участник: {who}\n\nВыберите сервер (трафик — 0 = без лимита, срок — {int(campaign['member_days'])} дн.):",
+        f"Участник: {who}\n\nВыберите сервер (трафик — 0 = без лимита, срок — {collab_service.days_label(campaign['member_days'])}):",
         reply_markup=add_key_server_kb(servers), force_new=True,
     )

@@ -355,10 +355,18 @@ def get_stats(campaign_id: int) -> Dict[str, Any]:
         if not promo_id:
             return result
         row = conn.execute(
-            "SELECT COUNT(*), COUNT(DISTINCT telegram_id) FROM promo_link_visits WHERE promo_code_id = ?",
+            """
+            SELECT COUNT(*),
+                   COUNT(DISTINCT CASE WHEN telegram_id != 0 THEN telegram_id END),
+                   COALESCE(SUM(CASE WHEN telegram_id = 0 THEN 1 ELSE 0 END), 0)
+            FROM promo_link_visits WHERE promo_code_id = ?
+            """,
             (promo_id,),
         ).fetchone()
-        result["visits"], result["unique_visitors"] = int(row[0]), int(row[1])
+        # Заходы с сайта пишутся с telegram_id = 0 и считаются по одному на браузер
+        result["visits"] = int(row[0])
+        result["unique_visitors"] = int(row[1]) + int(row[2])
+        result["site_visits"] = int(row[2])
         result["holders"] = conn.execute(
             "SELECT COUNT(*) FROM users WHERE active_promo_code_id = ?", (promo_id,)
         ).fetchone()[0]
@@ -384,7 +392,63 @@ def get_stats(campaign_id: int) -> Dict[str, Any]:
             result["money"][r["amount_unit"]] = {
                 "original": int(r["original"]), "discount": int(r["discount"]), "final": int(r["final"]),
             }
+
+        # Покупки с сайта (в рублях, в копейках — как и суммы бота)
+        site = conn.execute(
+            """
+            SELECT COUNT(*) AS n,
+                   COUNT(DISTINCT COALESCE(site_account_id, -id)) AS buyers,
+                   COALESCE(SUM(promo_original_cents), 0) AS original,
+                   COALESCE(SUM(promo_discount_cents), 0) AS discount,
+                   COALESCE(SUM(promo_final_cents), 0) AS final
+            FROM anonymous_purchases
+            WHERE promo_code_id = ? AND status IN ('paid', 'claimed')
+            """,
+            (promo_id,),
+        ).fetchone()
+        if site and int(site["n"]):
+            result["site_paid"] = int(site["n"])
+            result["paid"] += int(site["n"])
+            result["buyers"] += int(site["buyers"])
+            cur = result["money"].setdefault("cents", {"original": 0, "discount": 0, "final": 0})
+            cur["original"] += int(site["original"])
+            cur["discount"] += int(site["discount"])
+            cur["final"] += int(site["final"])
     return result
+
+
+def record_site_visit(promo_code_id: int, code: str) -> None:
+    """Заход на сайт по ссылке акции (один на браузер): пишется как визит без Telegram."""
+    try:
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO promo_link_visits (promo_code_id, code, user_id, telegram_id, start_param)
+                   VALUES (?, ?, NULL, 0, ?)""",
+                (promo_code_id, code, "site"),
+            )
+    except Exception as e:
+        logger.warning("record_site_visit failed: %s", e)
+
+
+def tag_site_purchase(order_id: str, promo_code_id: int, original_cents: int,
+                      discount_cents: int, final_cents: int) -> None:
+    """Запоминает промокод и суммы в сайтовой покупке (для аналитики и лимита)."""
+    with get_db() as conn:
+        conn.execute(
+            """UPDATE anonymous_purchases
+               SET promo_code_id = ?, promo_original_cents = ?, promo_discount_cents = ?, promo_final_cents = ?
+               WHERE order_id = ?""",
+            (int(promo_code_id), int(original_cents), int(discount_cents), int(final_cents), order_id),
+        )
+
+
+def site_purchase_count(promo_code_id: int) -> int:
+    """Сколько оплаченных покупок с сайта прошло по промокоду (идёт в лимит активаций)."""
+    with get_db() as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM anonymous_purchases WHERE promo_code_id = ? AND status IN ('paid', 'claimed')",
+            (int(promo_code_id),),
+        ).fetchone()[0])
 
 
 def format_money(unit: str, amount: int) -> str:

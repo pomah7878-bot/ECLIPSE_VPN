@@ -37,6 +37,24 @@ def get_active_campaign_for_promo(promo: Optional[Dict[str, Any]]) -> Optional[D
     return campaign if campaign and campaign.get("is_active") else None
 
 
+def days_label(days: Any) -> str:
+    """Срок ключа участника: 10 лет и больше показываем как «бессрочно»."""
+    days = int(days or 0)
+    return "бессрочно" if days >= 3650 else f"{days} дн."
+
+
+def site_promo_url(code: Optional[str]) -> Optional[str]:
+    """Ссылка на сайт с уже подставленным промокодом (если у бота есть сайт)."""
+    if not code:
+        return None
+    try:
+        from database.requests import get_effective_webapp_url
+        base = (get_effective_webapp_url() or "").rstrip("/")
+    except Exception:
+        return None
+    return f"{base}/shop?promo={code}" if base else None
+
+
 def client_promo_screen(promo: Optional[Dict[str, Any]]) -> Optional[Tuple[str, str]]:
     """(заголовок, текст) экрана клиента для промокода совместной акции, иначе None."""
     campaign = get_active_campaign_for_promo(promo)
@@ -84,11 +102,14 @@ def campaign_card_text(campaign: Dict[str, Any], bot_username: Optional[str] = N
         "",
         "🔑 <b>Ключи участникам партнёра</b>",
         f"• Безлимитный трафик, до <b>{int(campaign.get('member_devices') or 5)}</b> устройств",
-        f"• Срок ключа: <b>{int(campaign.get('member_days') or 90)}</b> дн.",
+        f"• Срок ключа: <b>{days_label(campaign.get('member_days') or 90)}</b>",
     ]
     if bot_username and campaign.get("promo_code"):
         link = build_telegram_link(bot_username, f"pr_{campaign['promo_code']}")
-        lines += ["", f"🔗 Промо-ссылка: <code>{escape_html(link)}</code>"]
+        lines += ["", f"🔗 Промо-ссылка (бот): <code>{escape_html(link)}</code>"]
+    site_link = site_promo_url(campaign.get("promo_code"))
+    if site_link:
+        lines += ["", f"🌐 Промо-ссылка (сайт): <code>{escape_html(site_link)}</code>"]
     return "\n".join(lines)
 
 
@@ -104,10 +125,12 @@ def campaign_stats_text(campaign: Dict[str, Any]) -> str:
         f"📊 <b>Аналитика: {escape_html(campaign['title'])}</b>",
         "",
         "👀 <b>Воронка</b>",
-        f"• Переходов по промо-ссылке: <b>{visits}</b> (уникальных: <b>{unique}</b>)",
+        f"• Переходов по промо-ссылке: <b>{visits}</b> (уникальных: <b>{unique}</b>)"
+        + (f", из них с сайта: <b>{stats.get('site_visits', 0)}</b>" if stats.get("site_visits") else ""),
         f"• Сейчас держат промокод: <b>{stats['holders']}</b>",
         f"• Начали оплату, не завершили: <b>{stats['reserved']}</b>",
-        f"• Оплатили со скидкой: <b>{paid}</b> (клиентов: <b>{stats['buyers']}</b>)",
+        f"• Оплатили со скидкой: <b>{paid}</b> (клиентов: <b>{stats['buyers']}</b>)"
+        + (f", из них на сайте: <b>{stats.get('site_paid', 0)}</b>" if stats.get("site_paid") else ""),
         f"• Конверсия в оплату: <b>{conversion}</b>",
         "",
         "💰 <b>Деньги</b>",
@@ -135,7 +158,7 @@ async def notify_member(bot, campaign_id: int, telegram_id: int) -> None:
         "Вам открыт бесплатный доступ:\n"
         "• без ограничения трафика;\n"
         f"• до <b>{int(campaign['member_devices'])}</b> устройств одновременно;\n"
-        f"• срок: <b>{int(campaign['member_days'])}</b> дн.\n\n"
+        f"• срок: <b>{days_label(campaign['member_days'])}</b>\n\n"
         "Ключ — в разделе «🔑 Мои ключи»."
     )
     markup = InlineKeyboardMarkup(inline_keyboard=[

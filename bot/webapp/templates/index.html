@@ -781,12 +781,12 @@
                 if (_payMethod === 'balance' && priceCents > userBalanceCents) {
                     html += `<button disabled class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold opacity-40 flex justify-between items-center${currentClass}">
                         <span>${escapeHtml(t.name)}${currentBadge}${cdnBadge}</span>
-                        <span class="text-right"><span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>${monthHint(t)}</span>
+                        <span class="text-right">${t.old_price_rub ? `<span class="block text-[10px] text-mist-dim line-through font-normal">${t.old_price_rub.toFixed(0)} ₽</span>` : ''}<span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>${t.promo_percent ? `<span class="block text-[10px] text-teal font-normal">по акции −${t.promo_percent}%</span>` : ''}${monthHint(t)}</span>
                     </button>`;
                 } else {
                     html += `<button onclick="selectTariff(${t.id})" class="w-full py-3 px-4 btn-secondary rounded-xl text-sm font-semibold transition flex justify-between items-center${currentClass}">
                         <span>${escapeHtml(t.name)}${currentBadge}${cdnBadge}</span>
-                        <span class="text-right"><span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>${monthHint(t)}</span>
+                        <span class="text-right">${t.old_price_rub ? `<span class="block text-[10px] text-mist-dim line-through font-normal">${t.old_price_rub.toFixed(0)} ₽</span>` : ''}<span class="text-gold font-bold">${t.price_rub.toFixed(0)} ₽</span>${t.promo_percent ? `<span class="block text-[10px] text-teal font-normal">по акции −${t.promo_percent}%</span>` : ''}${monthHint(t)}</span>
                     </button>`;
                 }
             });

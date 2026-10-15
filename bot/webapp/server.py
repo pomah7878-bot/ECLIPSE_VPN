@@ -651,20 +651,35 @@ async def handle_tariffs_list(request: web.Request) -> web.Response:
         except (ValueError, TypeError):
             pass
 
-    return web.json_response({
-        "tariffs": [
-            {
-                "id": t["id"],
-                "name": t["name"],
-                "duration_days": t["duration_days"],
-                "price_rub": float(t.get("price_rub") or 0),
-                "traffic_limit_gb": t.get("traffic_limit_gb"),
-                "cdn_gb": _tariff_cdn_gb(t["id"]),
-                "is_current": current_tariff_id is not None and t["id"] == current_tariff_id,
-            }
-            for t in tariffs
-        ]
-    })
+    # v1.314: скидка активного промокода (в т.ч. совместной акции) — той же логикой, что и оплата
+    promo_prices = {}
+    try:
+        from database.requests import get_user_internal_id
+        _uid = get_user_internal_id(telegram_id)
+        if _uid:
+            from bot.services.site_promo import telegram_prices
+            promo_prices = telegram_prices(_uid, tariffs)
+    except Exception as e:
+        logger.warning(f"tariffs promo preview failed: {e}")
+
+    def _tariff_row(t):
+        row = {
+            "id": t["id"],
+            "name": t["name"],
+            "duration_days": t["duration_days"],
+            "price_rub": float(t.get("price_rub") or 0),
+            "traffic_limit_gb": t.get("traffic_limit_gb"),
+            "cdn_gb": _tariff_cdn_gb(t["id"]),
+            "is_current": current_tariff_id is not None and t["id"] == current_tariff_id,
+        }
+        pp = promo_prices.get(int(t["id"]))
+        if pp:
+            row["old_price_rub"] = row["price_rub"]
+            row["price_rub"] = pp["final_rub"]
+            row["promo_percent"] = pp["percent"]
+        return row
+
+    return web.json_response({"tariffs": [_tariff_row(t) for t in tariffs]})
 
 
 async def handle_pay_create(request: web.Request) -> web.Response:
@@ -1062,6 +1077,66 @@ async def handle_shop_page(request: web.Request) -> web.Response:
             "site_ref_code", ref_code.strip(),
             max_age=60 * 60 * 24 * 30, httponly=True, secure=True, samesite="Lax",
         )
+
+    # v1.314: ссылка совместной акции /shop?promo=КОД — код запоминаем в браузере
+    promo_param = (request.query.get("promo") or "").strip()
+    if promo_param:
+        try:
+            from bot.services import site_promo as _sp
+            _chk = _sp.validate_code(promo_param)
+            if _chk["ok"]:
+                _code = _chk["promo"]["code"]
+                if request.cookies.get(_sp.SITE_PROMO_COOKIE) != _code:
+                    from database.db_collabs import record_site_visit
+                    record_site_visit(int(_chk["promo"]["id"]), _code)
+                resp.set_cookie(
+                    _sp.SITE_PROMO_COOKIE, _code,
+                    max_age=_sp.SITE_PROMO_MAX_AGE, httponly=True, secure=True, samesite="Lax",
+                )
+        except Exception as e:
+            logger.warning(f"shop promo link failed: {e}")
+    return resp
+
+
+async def handle_public_promo_info(request: web.Request) -> web.Response:
+    """GET /api/public/promo — баннер акции для сайта (по сохранённому в браузере промокоду)."""
+    from bot.services import site_promo as _sp
+    code = request.cookies.get(_sp.SITE_PROMO_COOKIE)
+    info = _sp.banner(code) if code else None
+    return web.json_response({"ok": True, "promo": info})
+
+
+async def handle_public_promo_apply(request: web.Request) -> web.Response:
+    """POST /api/public/promo/apply — ввод промокода на сайте. Body JSON: {"code": "..."}"""
+    _ip = _get_client_ip(request)
+    if not _rl_allowed(f"promo-apply:{_ip}", 20, 600):
+        return web.json_response({"ok": False, "message": "Слишком много попыток. Попробуйте позже."}, status=429)
+    _rl_record(f"promo-apply:{_ip}")
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "message": "Некорректный запрос."}, status=400)
+    from bot.services import site_promo as _sp
+    chk = _sp.validate_code(data.get("code"))
+    if not chk["ok"]:
+        return web.json_response({"ok": False, "message": chk["reason"]}, status=400)
+    code = chk["promo"]["code"]
+    if request.cookies.get(_sp.SITE_PROMO_COOKIE) != code:
+        from database.db_collabs import record_site_visit
+        record_site_visit(int(chk["promo"]["id"]), code)
+    resp = web.json_response({"ok": True, "promo": _sp.banner(code)})
+    resp.set_cookie(
+        _sp.SITE_PROMO_COOKIE, code,
+        max_age=_sp.SITE_PROMO_MAX_AGE, httponly=True, secure=True, samesite="Lax",
+    )
+    return resp
+
+
+async def handle_public_promo_clear(request: web.Request) -> web.Response:
+    """POST /api/public/promo/clear — убрать сохранённый промокод."""
+    from bot.services import site_promo as _sp
+    resp = web.json_response({"ok": True})
+    resp.del_cookie(_sp.SITE_PROMO_COOKIE)
     return resp
 
 
@@ -1918,19 +1993,30 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
         except (ValueError, TypeError):
             pass
 
+    # v1.314: промокод/совместная акция действует на покупку НОВОГО ключа
+    promo_code = None if vpn_key_id_raw else request.cookies.get("site_promo_code")
+
+    def _site_tariff_row(t):
+        row = {
+            "id": t["id"],
+            "name": t["name"],
+            "duration_days": t["duration_days"],
+            "price_rub": float(t.get("price_rub") or 0),
+            "traffic_limit_gb": t.get("traffic_limit_gb"),
+            "cdn_gb": _tariff_cdn_gb(t["id"]),
+            "is_current": current_tariff_id is not None and t["id"] == current_tariff_id,
+        }
+        if promo_code:
+            from bot.services import site_promo as _sp
+            q = _sp.price_for_site(promo_code, t)
+            if q["applied"]:
+                row["old_price_rub"] = row["price_rub"]
+                row["price_rub"] = q["final_cents"] / 100
+                row["promo_percent"] = q["percent"]
+        return row
+
     return web.json_response({
-        "tariffs": [
-            {
-                "id": t["id"],
-                "name": t["name"],
-                "duration_days": t["duration_days"],
-                "price_rub": float(t.get("price_rub") or 0),
-                "traffic_limit_gb": t.get("traffic_limit_gb"),
-                "cdn_gb": _tariff_cdn_gb(t["id"]),
-                "is_current": current_tariff_id is not None and t["id"] == current_tariff_id,
-            }
-            for t in tariffs
-        ],
+        "tariffs": [_site_tariff_row(t) for t in tariffs],
         "trial_available": trial_available,
     })
 
@@ -1971,7 +2057,7 @@ def _site_account_used_trial(account_id: int, trial_tariff_id: int, telegram_id)
 
 async def handle_public_pay_create(request: web.Request) -> web.Response:
     """POST /api/public/pay/create — создаёт анонимный заказ и QR-платёж
-    ЮKassa, без Telegram. Полная цена, без промокодов/баланса.
+    ЮKassa, без Telegram. Цена со скидкой, если в браузере сохранён промокод.
     Body JSON: {"tariff_id": int}
     """
     _pip = _get_client_ip(request)
@@ -1998,10 +2084,17 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
     if price_rub <= 0:
         return web.json_response({"error": "invalid_price"}, status=400)
 
+    # v1.314: промокод / совместная акция (цена считается на сервере)
+    from bot.services import site_promo as _sp
+    promo_quote = _sp.price_for_site(request.cookies.get(_sp.SITE_PROMO_COOKIE), tariff)
+    if promo_quote["applied"]:
+        price_rub = promo_quote["final_cents"] / 100
+
     order_id = _generate_public_order_id()
 
     try:
         claim_code = create_anonymous_purchase(order_id, tariff["id"])
+        _sp.tag_purchase(order_id, promo_quote)
 
         # Если покупатель авторизован (Google/Яндекс/код) — сразу связываем
         # покупку с его аккаунтом, чтобы она отобразилась в личном кабинете
@@ -3912,7 +4005,9 @@ async def handle_public_account_buy_balance(request: web.Request) -> web.Respons
 
     from bot.services.anonymous_purchase import complete_anonymous_purchase_via_balance
     try:
-        result = await complete_anonymous_purchase_via_balance(account_id, int(tariff_id))
+        result = await complete_anonymous_purchase_via_balance(
+            account_id, int(tariff_id), promo_code=request.cookies.get("site_promo_code"),
+        )
     except Exception as e:
         logger.error(f"Public account buy/balance error: {e}")
         return web.json_response({"error": "payment_creation_failed"}, status=502)
@@ -4650,6 +4745,9 @@ def create_web_app() -> web.Application:
     app.router.add_get("/awg-open/{token}/file", handle_awg_file)
     app.router.add_get("/api/public/landing-tariffs", handle_landing_tariffs)
     app.router.add_get("/api/public/tariffs", handle_public_tariffs)
+    app.router.add_get("/api/public/promo", handle_public_promo_info)
+    app.router.add_post("/api/public/promo/apply", handle_public_promo_apply)
+    app.router.add_post("/api/public/promo/clear", handle_public_promo_clear)
     app.router.add_post("/api/public/pay/create", handle_public_pay_create)
     app.router.add_post("/api/public/trial/create", handle_public_trial_create)
     app.router.add_post("/api/public/pay/check", handle_public_pay_check)

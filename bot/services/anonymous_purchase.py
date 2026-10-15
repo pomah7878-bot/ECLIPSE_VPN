@@ -434,6 +434,14 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
     # вместо настоящих 233 ₽).
     price_rub_value = (tariff.get("price_rub") if tariff else None) or 0
     amount_cents = int(round(price_rub_value * 100))
+    # v1.314: если покупка шла по промокоду/совместной акции — в уведомлении сумма со скидкой
+    try:
+        _promo_final = (purchase.get("promo_final_cents") if hasattr(purchase, "get") else None)
+        if _promo_final:
+            amount_cents = int(_promo_final)
+            price_rub_value = amount_cents / 100
+    except Exception:
+        pass
 
     try:
         from database.requests import get_site_referrer_code_for_order, get_user_by_referral_code
@@ -473,7 +481,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
             "vpn_key_id": provisioned_key_id,
             "payment_type": "yookassa_qr",
             "final_amount_cents": amount_cents,
-            "price_rub": (tariff.get("price_rub") if tariff else None) or 0,
+            "price_rub": price_rub_value,
         }
         bot_instance = get_bot_instance()
         if bot_instance:
@@ -485,7 +493,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
     return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
 
 
-async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int) -> dict:
+async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int, promo_code: str | None = None) -> dict:
     """Оформляет НОВУЮ покупку с сайта (личный кабинет, залогинен) сразу за
     счёт личного баланса — без ЮKassa/QR, синхронно в один вызов.
 
@@ -525,6 +533,12 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
     if price_cents <= 0:
         return {"ok": False, "message": "Некорректная цена тарифа."}
 
+    # v1.314: промокод / совместная акция, сохранённые в браузере
+    from bot.services import site_promo as _sp
+    promo_quote = _sp.price_for_site(promo_code, tariff)
+    if promo_quote["applied"]:
+        price_cents = promo_quote["final_cents"]
+
     if account.get("telegram_id"):
         from database.requests import get_user_internal_id
         internal_user_id = get_user_internal_id(account["telegram_id"])
@@ -554,6 +568,7 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
 
     order_id = f"SITEBAL{int(_time.time() * 1000)}{account_id}"
     claim_code = create_anonymous_purchase(order_id, tariff_id)
+    _sp.tag_purchase(order_id, promo_quote)
     link_purchase_to_account(order_id, account_id)
     # yookassa_payment_id тут не платёж ЮKassa, а просто метка источника —
     # колонка текстовая и повторно не используется после статуса 'paid'.
@@ -609,7 +624,7 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
             "_payment_action": "new_key",
             "tariff_id": tariff_id, "tariff_name": tariff.get("name") or "—",
             "vpn_key_id": provisioned_key_id, "payment_type": "balance",
-            "final_amount_cents": price_cents, "price_rub": tariff.get("price_rub") or 0,
+            "final_amount_cents": price_cents, "price_rub": price_cents / 100,
         }
         bot_instance = get_bot_instance()
         if bot_instance:

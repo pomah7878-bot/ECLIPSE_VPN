@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 154
+LATEST_VERSION = 155
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3581,6 +3581,17 @@ def migration_154(conn: sqlite3.Connection) -> None:
     logger.info("Migration v154 applied: collab_campaigns, collab_members")
 
 
+def migration_155(conn: sqlite3.Connection) -> None:
+    """Версия 1.314: совместные акции на сайте — в сайтовых покупках запоминаем
+    применённый промокод и суммы (для аналитики акции и лимита активаций)."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(anonymous_purchases)").fetchall()}
+    for col in ("promo_code_id", "promo_original_cents", "promo_discount_cents", "promo_final_cents"):
+        if col not in existing:
+            conn.execute(f"ALTER TABLE anonymous_purchases ADD COLUMN {col} INTEGER")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_anon_purchases_promo ON anonymous_purchases(promo_code_id)")
+    logger.info("Migration v155 applied: anonymous_purchases.promo_*")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3662,6 +3673,7 @@ MIGRATIONS = {
     152: migration_152,
     153: migration_153,
     154: migration_154,
+    155: migration_155,
 }
 
 
