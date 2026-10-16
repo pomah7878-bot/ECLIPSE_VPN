@@ -3,6 +3,7 @@
 Путь: «Интеграции → AI-суппорт → AI на сайте». Платная функция (лицензия «site_ai»).
 Помощник работает на публичных страницах сайта для гостей и для клиентов, вошедших
 в кабинет. Каждая возможность включается и выключается отдельно."""
+import asyncio
 import logging
 import re
 
@@ -380,6 +381,11 @@ async def admin_site_ai_selftest(callback: CallbackQuery, state: FSMContext):
     for kind, question in site_ai.TEST_QUESTIONS:
         try:
             data = await _ask_assistant(question)
+            if data.get("error"):          # помощник упал (например, лимит модели) — одна повторная попытка
+                await asyncio.sleep(6)
+                data = await _ask_assistant(question)
+            if data.get("error"):
+                raise RuntimeError(data["error"])
             reply = data.get("reply") or ""
             notes = list(data.get("violations") or []) + site_ai.trap_flags(kind, reply)
             status = data.get("guard", "ok")
@@ -390,6 +396,7 @@ async def admin_site_ai_selftest(callback: CallbackQuery, state: FSMContext):
             done.append((status, question, reply, notes))
         except Exception as e:
             logger.warning(f"site_ai selftest: {e}")
-            done.append(("error", question, f"не удалось получить ответ: {type(e).__name__}", []))
+            done.append(("error", question, f"не удалось получить ответ: {str(e)[:120]}", []))
+        await asyncio.sleep(2)             # пауза между вопросами, чтобы не упереться в лимит модели
         await safe_edit_or_send(callback.message, _selftest_text(done, total, len(done) == total),
                                 reply_markup=_selftest_kb(len(done) == total))

@@ -2711,6 +2711,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
 class SiteConsultResponse(ConsultResponse):
     guard: str = "ok"              # ok | retried | blocked — что сделала проверка фактов
     violations: list[str] = []     # что модель назвала без опоры на данные (только для диагностики)
+    error: str = ""                # причина сбоя, если помощник не смог ответить (только для диагностики)
 
 
 class SiteConsultRequest(BaseModel):
@@ -2867,11 +2868,17 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
     brand = get_effective_brand_name()
     allowed = site_ai.allowed_tools(mode)
 
-    tariffs_text = _site_public_tariffs_text() if mode == site_ai.MODE_GUEST and site_ai.get_bool("g_tariffs") else ""
+    tariff_rows = site_ai.public_tariff_rows() if mode == site_ai.MODE_GUEST and site_ai.get_bool("g_tariffs") else []
+    tariffs_text = site_ai.format_tariffs(tariff_rows) if tariff_rows else ""
+    dev_groups = site_ai.device_groups(tariff_rows)
+    dev_question = bool(dev_groups) and site_ai.device_intent(message)
     trial_text = _site_trial_text() if mode == site_ai.MODE_GUEST else ""
     system = site_ai.build_prompt(mode, brand, shop_url, tariffs_text=tariffs_text, trial_text=trial_text)
     # «Данные», на которые опирается модель: без общих правил промпта (в них тоже есть цифры вроде «2–5 предложений»)
     facts = [tariffs_text, trial_text, site_ai.get_text("rules")]
+    if dev_question and len(dev_groups) > 1:
+        system += ("\n\nПосетитель спрашивает про число устройств. Лимиты у тарифов РАЗНЫЕ: назови лимит по каждому тарифу из сводки "
+                   "(все числа), не называй одно число как общее и не утверждай, можно ли докупить устройства, если этого нет в данных.")
     if mode == site_ai.MODE_CLIENT:
         if site_ai.hide_personal_promos():
             profile["available_promo_codes"] = []
@@ -2924,21 +2931,29 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
         reply = _sanitize_reply(msg.content or "Не удалось сформировать ответ.")
         # Проверка фактов: числа устройств, суммы, проценты и «докупка» должны быть в данных, которые видела модель.
         facts_context = "\n".join(facts + [str(m.get("content") or "") for m in messages if m.get("role") == "tool"])
-        guard, violations = "ok", site_ai.find_unverified_facts(reply, facts_context, message)
+        def _check(text: str) -> list:
+            found = site_ai.find_unverified_facts(text, facts_context, message)
+            if dev_question:
+                found += site_ai.check_devices_by_tariff(text, dev_groups)
+            return found
+
+        guard, violations = "ok", _check(reply)
         if violations:
             logger.warning(f"consult_site: непроверенные факты {violations} в ответе {reply[:200]!r}")
             retry = messages + [{"role": "assistant", "content": reply},
-                                {"role": "user", "content": site_ai.FACT_RETRY_NOTE.format(items=", ".join(violations))}]
+                                {"role": "user", "content": site_ai.FACT_RETRY_NOTE.format(items=", ".join(violations))
+                                 + (("\n" + site_ai.devices_summary(tariff_rows)) if dev_question else "")}]
             guard = "retried"
             response = await _chat_completion_with_fallback(retry, **{**kwargs, "tool_choice": "none"} if tools else kwargs)
             reply = _sanitize_reply(response.choices[0].message.content or "")
-            violations = site_ai.find_unverified_facts(reply, facts_context, message)
+            violations = _check(reply)
             if violations or not reply:
                 logger.warning(f"consult_site: после повтора остались непроверенные факты {violations}")
-                reply, guard = site_ai.FACT_FALLBACK, "blocked"
+                reply, guard = (site_ai.devices_answer(dev_groups) if dev_question else site_ai.FACT_FALLBACK), "blocked"
     except Exception as e:
         logger.error(f"consult_site error ({type(e).__name__}): {e}")
-        return SiteConsultResponse(reply="Помощник временно недоступен, попробуйте чуть позже.", escalate=False)
+        return SiteConsultResponse(reply="Помощник временно недоступен, попробуйте чуть позже.", escalate=False,
+                                   error=f"{type(e).__name__}: {str(e)[:150]}")
 
     escalate = "[ESCALATE]" in reply and site_ai.get_bool("escalate")
     reply = reply.replace("[ESCALATE]", "").strip() or "Передаю ваш вопрос администратору."

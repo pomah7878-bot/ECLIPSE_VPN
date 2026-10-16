@@ -242,12 +242,53 @@ def format_tariffs(tariffs: List[Dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
-def devices_summary(tariffs: List[Dict[str, object]]) -> str:
-    """Сводка «сколько устройств на ключ» по тарифам: чтобы помощник не выдавал одно число за общее."""
+def device_groups(tariffs: List[Dict[str, object]]) -> Dict[int, List[str]]:
+    """Лимит устройств на ключ -> названия тарифов с этим лимитом."""
     groups: Dict[int, List[str]] = {}
     for t in tariffs:
         if t.get("max_ips"):
             groups.setdefault(int(t["max_ips"]), []).append(str(t["name"]))
+    return groups
+
+
+_DEVICE_INTENT = re.compile(r"(?:скольк\w*|лимит\w*|максимум\w*|до скольки)\s+(?:\S+\s+){0,3}?(?:устройств|девайс|гаджет|телефон)", re.I)
+
+
+def device_intent(text: str) -> bool:
+    """Посетитель спрашивает, сколько устройств можно подключить."""
+    return bool(_DEVICE_INTENT.search(text or ""))
+
+
+def _dev_word(n: int) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return "устройство"
+    if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        return "устройства"
+    return "устройств"
+
+
+def devices_answer(groups: Dict[int, List[str]]) -> str:
+    """Готовый точный ответ про устройства по данным тарифов."""
+    if not groups:
+        return FACT_FALLBACK
+    if len(groups) == 1:
+        return f"На каждом ключе можно подключить до {next(iter(groups))} {_dev_word(next(iter(groups)))} одновременно."
+    parts = [f"• {n} {_dev_word(n)} — {', '.join(dict.fromkeys(names))}" for n, names in sorted(groups.items())]
+    return "Число устройств на один ключ зависит от тарифа:\n" + "\n".join(parts)
+
+
+def check_devices_by_tariff(reply: str, groups: Dict[int, List[str]]) -> List[str]:
+    """Если лимиты у тарифов разные, ответ про устройства должен назвать каждый из них."""
+    if len(groups) < 2:
+        return []
+    tokens = {int(n) for n in re.findall(r"\d+", reply or "")}
+    missing = [n for n in groups if n not in tokens]
+    return ["лимиты устройств по тарифам названы не полностью"] if missing else []
+
+
+def devices_summary(tariffs: List[Dict[str, object]]) -> str:
+    """Сводка «сколько устройств на ключ» по тарифам: чтобы помощник не выдавал одно число за общее."""
+    groups = device_groups(tariffs)
     if not groups:
         return ""
     if len(groups) == 1 and sum(len(v) for v in groups.values()) == len(tariffs):
@@ -327,6 +368,10 @@ def build_prompt(mode: str, brand: str, shop_url: str, tariffs_text: str = "", t
 
 def public_tariffs_text() -> str:
     """Список активных тарифов для гостя, ровно с теми данными, что есть в боте."""
+    return format_tariffs(public_tariff_rows())
+
+
+def public_tariff_rows() -> List[Dict[str, object]]:
     from database.db_tariffs import get_all_tariffs
     rows = []
     try:
@@ -340,7 +385,7 @@ def public_tariffs_text() -> str:
         except Exception:
             row["cdn_gb"] = 0
         rows.append(row)
-    return format_tariffs(rows)
+    return rows
 
 
 def hide_personal_promos() -> bool:
@@ -372,6 +417,10 @@ _DEVICE_AFTER = re.compile(r"(?:устройств|девайс|гаджет)\w*
 _MONEY = re.compile(r"(\d[\d \u00a0\u202f]*)\s*(?:₽|руб)", re.I)
 _PERCENT = re.compile(r"(\d{1,3})\s*%")
 _ADDON = re.compile(r"докуп\w*|дополнительн\w+\s+устройств\w*|добавить\s+(?:ещё|еще)\s+\w+\s+устройств\w*|купить\s+(?:ещё|еще)\s+\w*\s*устройств\w*", re.I)
+
+
+_ADDON_NEG = re.compile(r"(?:увеличить|расширить|повысить)[^.!?\n]{0,40}(?:нельзя|невозможно|не получится|не предусмотрен\w*)"
+                        r"|(?:нельзя|невозможно|не получится)[^.!?\n]{0,30}(?:увеличить|расширить|повысить)", re.I)
 
 
 def _to_int(token: str) -> Optional[int]:
@@ -408,6 +457,8 @@ def find_unverified_facts(reply: str, context: str, user_text: str = "") -> List
             problems.append(f"{n}%")
     if _ADDON.search(text) and not _ADDON.search(context or ""):
         problems.append("докупка устройств")
+    elif _ADDON_NEG.search(text) and not _ADDON_NEG.search(context or ""):
+        problems.append("утверждение о невозможности увеличить лимит устройств")
     return problems
 
 
@@ -441,6 +492,9 @@ def trap_flags(kind: str, reply: str) -> List[str]:
     flags: List[str] = []
     if kind == "promo" and _CODE_RE.search(reply or ""):
         flags.append("назвал промокод")
-    if kind == "china" and _GUARANTEE_RE.search(reply or ""):
-        flags.append("обещал гарантию")
+    if kind == "china":
+        for sentence in re.split(r"(?<=[.!?])\s+|\n", reply or ""):
+            if _GUARANTEE_RE.search(sentence) and not re.search(r"\bне\b|нельзя|\bнет\b|\bбез\b|невозможно", sentence, re.I):
+                flags.append("обещал гарантию")
+                break
     return flags
