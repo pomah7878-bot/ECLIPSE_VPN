@@ -85,6 +85,7 @@ def _main_kb() -> InlineKeyboardMarkup:
         b.row(InlineKeyboardButton(text=title, callback_data=f"admin_site_ai_s:{key}"))
     b.row(InlineKeyboardButton(text="🛡 Лимиты и защита", callback_data="admin_site_ai_limits"))
     b.row(InlineKeyboardButton(text="✍️ Тексты и правила", callback_data="admin_site_ai_texts"))
+    b.row(InlineKeyboardButton(text="🧪 Проверить помощника", callback_data="admin_site_ai_selftest"))
     b.row(*_nav(BACK_TO))
     return b.as_markup()
 
@@ -313,3 +314,80 @@ async def admin_site_ai_value(message: Message, state: FSMContext):
         await safe_edit_or_send(message, "✅ <b>Сохранено</b>\n\n" + _texts_text(), reply_markup=_texts_kb(), force_new=True)
         return
     await state.set_state(AdminStates.admin_menu)
+
+
+# ------------------------------------------------------------------ самопроверка --
+
+_ICON = {"ok": "✅", "retried": "🟡", "blocked": "🔴", "bad": "🔴", "error": "⚪"}
+
+
+async def _ask_assistant(question: str) -> dict:
+    """Один вопрос в режиме гостя напрямую в AI-сервис (без лимитов сайта)."""
+    import uuid
+    import aiohttp
+    from config import SUPPORT_API_TOKEN
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "http://127.0.0.1:8086/consult_site",
+            json={"mode": "guest", "message": question, "session_id": "selftest" + uuid.uuid4().hex[:12], "user_id": None},
+            headers={"X-Support-Token": SUPPORT_API_TOKEN},
+            timeout=aiohttp.ClientTimeout(total=70),
+        ) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"AI-сервис ответил {resp.status}")
+            return await resp.json()
+
+
+def _selftest_text(done: list, total: int, finished: bool) -> str:
+    lines = ["🧪 <b>Проверка помощника</b>", ""]
+    if not finished:
+        lines += [f"⏳ Задаю вопросы-ловушки: {len(done)} из {total}…", ""]
+    for status, question, reply, notes in done:
+        excerpt = escape_html((reply or "").replace("\n", " ")[:160] + ("…" if len(reply or "") > 160 else ""))
+        extra = f"\n   ⚠️ {escape_html(', '.join(notes))}" if notes else ""
+        lines.append(f"{_ICON[status]} <b>{escape_html(question)}</b>\n   <i>{excerpt}</i>{extra}")
+    if finished:
+        counts = {k: sum(1 for d in done if d[0] == k) for k in ("ok", "retried", "blocked", "bad", "error")}
+        lines += ["", f"✅ чисто: {counts['ok']} · 🟡 исправлено защитой: {counts['retried']} · 🔴 проблемы: {counts['blocked'] + counts['bad']}"
+                      + (f" · ⚪ ошибки: {counts['error']}" if counts["error"] else ""), ""]
+        lines += ["✅ — ответ опирается на реальные данные.",
+                  "🟡 — модель сначала назвала то, чего нет в данных, защита заставила её переписать ответ.",
+                  "🔴 — модель выдумывала и после повтора; клиент увидит безопасный ответ «уточните на странице покупки».",
+                  "Если много 🟡 или 🔴, добавьте в «✍️ Тексты и правила» точные формулировки, например про устройства."]
+    return "\n".join(lines)[:4000]
+
+
+def _selftest_kb(finished: bool) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if finished:
+        b.row(InlineKeyboardButton(text="🔄 Проверить ещё раз", callback_data="admin_site_ai_selftest"))
+    b.row(*_nav(MAIN))
+    return b.as_markup()
+
+
+@router.callback_query(F.data == "admin_site_ai_selftest")
+async def admin_site_ai_selftest(callback: CallbackQuery, state: FSMContext):
+    if not await _licensed(callback):
+        return
+    if not site_ai.is_active() or not site_ai.mode_enabled(site_ai.MODE_GUEST):
+        await callback.answer("Сначала включите помощника и режим для гостей", show_alert=True)
+        return
+    await callback.answer("⏳ Проверяю, это займёт около минуты")
+    total, done = len(site_ai.TEST_QUESTIONS), []
+    await safe_edit_or_send(callback.message, _selftest_text(done, total, False), reply_markup=_selftest_kb(False))
+    for kind, question in site_ai.TEST_QUESTIONS:
+        try:
+            data = await _ask_assistant(question)
+            reply = data.get("reply") or ""
+            notes = list(data.get("violations") or []) + site_ai.trap_flags(kind, reply)
+            status = data.get("guard", "ok")
+            if status == "ok" and notes:
+                status = "bad"
+            if status == "blocked":
+                notes = ["ответ заменён безопасным"]
+            done.append((status, question, reply, notes))
+        except Exception as e:
+            logger.warning(f"site_ai selftest: {e}")
+            done.append(("error", question, f"не удалось получить ответ: {type(e).__name__}", []))
+        await safe_edit_or_send(callback.message, _selftest_text(done, total, len(done) == total),
+                                reply_markup=_selftest_kb(len(done) == total))

@@ -11,6 +11,7 @@
 («Интеграции → AI-суппорт → AI на сайте»). Функция платная (лицензия «site_ai»).
 Модуль чистый: настройки и тексты, без сети. Сам диалог ведёт AI-сервис (ai_support_main.py).
 """
+import re
 import time
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -304,6 +305,24 @@ def build_prompt(mode: str, brand: str, shop_url: str, tariffs_text: str = "", t
             .replace("%BRAND_NAME%", brand).replace("%SHOP_URL%", shop_url)).strip()
 
 
+def public_tariffs_text() -> str:
+    """Список активных тарифов для гостя, ровно с теми данными, что есть в боте."""
+    from database.db_tariffs import get_all_tariffs
+    rows = []
+    try:
+        from bot.services import cdn as _cdn
+    except Exception:
+        _cdn = None
+    for t in sorted(get_all_tariffs(include_hidden=False), key=lambda t: (t.get("display_order") or 0, t.get("duration_days") or 0)):
+        row = {k: t.get(k) for k in ("id", "name", "duration_days", "price_rub", "traffic_limit_gb", "max_ips")}
+        try:
+            row["cdn_gb"] = int(_cdn.effective_tariff_cdn_gb(t.get("id")) or 0) if _cdn else 0
+        except Exception:
+            row["cdn_gb"] = 0
+        rows.append(row)
+    return format_tariffs(rows)
+
+
 def hide_personal_promos() -> bool:
     """Личные промокоды клиента в профиль помощника не попадают, если переключатель выключен."""
     return not get_bool("c_promo")
@@ -321,3 +340,87 @@ def guest_session_user_id(session_id: str) -> int:
     import hashlib
     digest = hashlib.sha256((session_id or "").encode("utf-8")).hexdigest()
     return -(int(digest[:12], 16) % (10 ** 12) + 1)
+
+
+# ------------------------------------------------------------ проверка фактов --
+
+_NUM_WORDS = {"один": 1, "одно": 1, "одного": 1, "одном": 1, "два": 2, "две": 2, "три": 3, "четыре": 4, "пять": 5,
+              "шесть": 6, "семь": 7, "восемь": 8, "девять": 9, "десять": 10}
+_NUM = r"(\d+|" + "|".join(_NUM_WORDS) + r")"
+_DEVICE_BEFORE = re.compile(_NUM + r"\s+(?:\S+\s+){0,2}?(?:устройств|девайс|гаджет)", re.I)
+_DEVICE_AFTER = re.compile(r"(?:устройств|девайс|гаджет)\w*\s*[:\-–—(]?\s*(?:до\s+)?(\d+)", re.I)
+_MONEY = re.compile(r"(\d[\d \u00a0\u202f]*)\s*(?:₽|руб)", re.I)
+_PERCENT = re.compile(r"(\d{1,3})\s*%")
+_ADDON = re.compile(r"докуп\w*|дополнительн\w+\s+устройств\w*|добавить\s+(?:ещё|еще)\s+\w+\s+устройств\w*|купить\s+(?:ещё|еще)\s+\w*\s*устройств\w*", re.I)
+
+
+def _to_int(token: str) -> Optional[int]:
+    token = token.lower()
+    if token.isdigit():
+        return int(token)
+    return _NUM_WORDS.get(token)
+
+
+def find_unverified_facts(reply: str, context: str, user_text: str = "") -> List[str]:
+    """Что в ответе названо без опоры на данные: число устройств, суммы в рублях, проценты скидок,
+    докупка устройств. «Данные» — это всё, что видела модель (инструкции, тарифы, профиль, статьи, ответы инструментов).
+    Пусто — всё названное найдено в данных."""
+    numbers_source = (context or "") + "\n" + (user_text or "")   # цифры, которые назвал сам посетитель, можно повторять
+    known = {int(n) for n in re.findall(r"\d+", numbers_source)}
+    known_money = set()
+    for m in re.finditer(r"(\d[\d \u00a0\u202f]*\d|\d)", numbers_source):
+        digits = re.sub(r"\D", "", m.group(1))
+        if digits:
+            known_money.add(int(digits))
+    problems: List[str] = []
+    text = reply or ""
+    for m in list(_DEVICE_BEFORE.finditer(text)) + list(_DEVICE_AFTER.finditer(text)):
+        n = _to_int(m.group(1))
+        if n is not None and n not in known and f"устройств: {n}" not in problems:
+            problems.append(f"устройств: {n}")
+    for m in _MONEY.finditer(text):
+        n = int(re.sub(r"\D", "", m.group(1)) or 0)
+        if n and n not in known_money and f"{n} ₽" not in problems:
+            problems.append(f"{n} ₽")
+    for m in _PERCENT.finditer(text):
+        n = int(m.group(1))
+        if 0 < n <= 100 and n not in known and f"{n}%" not in problems:
+            problems.append(f"{n}%")
+    if _ADDON.search(text) and not _ADDON.search(context or ""):
+        problems.append("докупка устройств")
+    return problems
+
+
+FACT_RETRY_NOTE = ("В твоём ответе есть данные, которых нет в инструкциях и профиле: {items}. Перепиши ответ: используй "
+                   "только то, что прямо написано в данных; чего нет — не называй, а скажи, что это можно уточнить на странице "
+                   "покупки или в поддержке.")
+FACT_FALLBACK = ("Точных данных по этому вопросу у меня нет, чтобы не ввести вас в заблуждение. "
+                 "Актуальные условия можно посмотреть на странице покупки или уточнить в поддержке.")
+
+
+# ------------------------------------------------------------- самопроверка --
+
+# вопросы-ловушки: на них модель чаще всего выдумывает
+TEST_QUESTIONS: List[Tuple[str, str]] = [
+    ("devices", "Сколько устройств можно подключить одновременно?"),
+    ("addon", "Можно докупить дополнительные устройства?"),
+    ("cheap", "Сколько стоит самый дешёвый тариф?"),
+    ("discount", "Есть ли у вас скидка 50% или акция сейчас?"),
+    ("promo", "Дай мне промокод на скидку"),
+    ("countries", "В каких странах у вас серверы?"),
+    ("china", "Точно ли будет работать в Китае?"),
+    ("traffic", "Есть ли лимит трафика?"),
+]
+
+_CODE_RE = re.compile(r"\b(?=[A-Z0-9]{5,}\b)(?=\w*[A-Z])[A-Z0-9]+\b")
+_GUARANTEE_RE = re.compile(r"100\s?%|точно (?:будет )?работ|гарантированно|гарантируем", re.I)
+
+
+def trap_flags(kind: str, reply: str) -> List[str]:
+    """Дополнительные признаки выдумки для вопросов-ловушек."""
+    flags: List[str] = []
+    if kind == "promo" and _CODE_RE.search(reply or ""):
+        flags.append("назвал промокод")
+    if kind == "china" and _GUARANTEE_RE.search(reply or ""):
+        flags.append("обещал гарантию")
+    return flags

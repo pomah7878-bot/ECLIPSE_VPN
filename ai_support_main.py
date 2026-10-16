@@ -2708,6 +2708,11 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
 
 # ===== v1.322: AI-помощник на сайте (гость и клиент) =====
 
+class SiteConsultResponse(ConsultResponse):
+    guard: str = "ok"              # ok | retried | blocked — что сделала проверка фактов
+    violations: list[str] = []     # что модель назвала без опоры на данные (только для диагностики)
+
+
 class SiteConsultRequest(BaseModel):
     mode: str = "guest"            # guest | client
     message: str
@@ -2782,20 +2787,7 @@ async def _site_run_tool(name: str, args: dict, telegram_id: int | None) -> str:
 
 def _site_public_tariffs_text() -> str:
     from bot.services import site_ai
-    from database.db_tariffs import get_all_tariffs
-    rows = []
-    try:
-        from bot.services import cdn as _cdn
-    except Exception:
-        _cdn = None
-    for t in sorted(get_all_tariffs(include_hidden=False), key=lambda t: (t.get("display_order") or 0, t.get("duration_days") or 0)):
-        row = {k: t.get(k) for k in ("id", "name", "duration_days", "price_rub", "traffic_limit_gb", "max_ips")}
-        try:
-            row["cdn_gb"] = int(_cdn.effective_tariff_cdn_gb(t.get("id")) or 0) if _cdn else 0
-        except Exception:
-            row["cdn_gb"] = 0
-        rows.append(row)
-    return site_ai.format_tariffs(rows)
+    return site_ai.public_tariffs_text()
 
 
 def _site_trial_text() -> str:
@@ -2844,12 +2836,12 @@ async def _notify_site_guest_escalation(session_id: str, question: str, history_
         logger.error(f"Site escalation notify outer error: {e}")
 
 
-@app.post("/consult_site", response_model=ConsultResponse)
+@app.post("/consult_site", response_model=SiteConsultResponse)
 async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_token)):
     from bot.services import site_ai
     from database.requests import get_effective_webapp_url, get_effective_brand_name
 
-    unavailable = ConsultResponse(reply="Помощник сейчас недоступен. Попробуйте позже.", escalate=False)
+    unavailable = SiteConsultResponse(reply="Помощник сейчас недоступен. Попробуйте позже.", escalate=False)
     if not site_ai.is_active():
         return unavailable
 
@@ -2875,22 +2867,25 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
     brand = get_effective_brand_name()
     allowed = site_ai.allowed_tools(mode)
 
-    system = site_ai.build_prompt(
-        mode, brand, shop_url,
-        tariffs_text=_site_public_tariffs_text() if mode == site_ai.MODE_GUEST and site_ai.get_bool("g_tariffs") else "",
-        trial_text=_site_trial_text() if mode == site_ai.MODE_GUEST else "",
-    )
+    tariffs_text = _site_public_tariffs_text() if mode == site_ai.MODE_GUEST and site_ai.get_bool("g_tariffs") else ""
+    trial_text = _site_trial_text() if mode == site_ai.MODE_GUEST else ""
+    system = site_ai.build_prompt(mode, brand, shop_url, tariffs_text=tariffs_text, trial_text=trial_text)
+    # «Данные», на которые опирается модель: без общих правил промпта (в них тоже есть цифры вроде «2–5 предложений»)
+    facts = [tariffs_text, trial_text, site_ai.get_text("rules")]
     if mode == site_ai.MODE_CLIENT:
         if site_ai.hide_personal_promos():
             profile["available_promo_codes"] = []
         if not site_ai.get_bool("c_tariffs"):
             profile["available_tariffs"] = []
+        profile_text = _format_customer_profile(profile, await _resolve_bot_username())
+        facts.append(profile_text)
         system += ("\n\nПолный профиль клиента (используй для персонального ответа, не показывай сырые данные без необходимости):\n"
-                   + _format_customer_profile(profile, await _resolve_bot_username()))
+                   + profile_text)
     kb_on = "search_knowledge_base" in allowed
     if kb_on:
         setup = get_app_setup_instructions()
         if setup:
+            facts.append(setup)
             system += ("\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти приложения и ссылки, "
                        "других не выдумывай):\n" + setup)
         try:
@@ -2898,6 +2893,7 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
             found = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: search_knowledge_base(message, top_k=1, min_score=0.6))
             if found:
+                facts.extend(f"{r['title']}\n{r['content']}" for r in found)
                 system += ("\n\nСтатья базы знаний, найденная как самая подходящая к этому вопросу; опирайся на неё, "
                            "пересказывай своими словами:\n" + "\n\n".join(f"### {r['title']}\n{r['content']}" for r in found))
         except Exception as e:
@@ -2926,9 +2922,23 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
             response = await _chat_completion_with_fallback(messages, **{**kwargs, "tool_choice": "none"})
             msg = response.choices[0].message
         reply = _sanitize_reply(msg.content or "Не удалось сформировать ответ.")
+        # Проверка фактов: числа устройств, суммы, проценты и «докупка» должны быть в данных, которые видела модель.
+        facts_context = "\n".join(facts + [str(m.get("content") or "") for m in messages if m.get("role") == "tool"])
+        guard, violations = "ok", site_ai.find_unverified_facts(reply, facts_context, message)
+        if violations:
+            logger.warning(f"consult_site: непроверенные факты {violations} в ответе {reply[:200]!r}")
+            retry = messages + [{"role": "assistant", "content": reply},
+                                {"role": "user", "content": site_ai.FACT_RETRY_NOTE.format(items=", ".join(violations))}]
+            guard = "retried"
+            response = await _chat_completion_with_fallback(retry, **{**kwargs, "tool_choice": "none"} if tools else kwargs)
+            reply = _sanitize_reply(response.choices[0].message.content or "")
+            violations = site_ai.find_unverified_facts(reply, facts_context, message)
+            if violations or not reply:
+                logger.warning(f"consult_site: после повтора остались непроверенные факты {violations}")
+                reply, guard = site_ai.FACT_FALLBACK, "blocked"
     except Exception as e:
         logger.error(f"consult_site error ({type(e).__name__}): {e}")
-        return ConsultResponse(reply="Помощник временно недоступен, попробуйте чуть позже.", escalate=False)
+        return SiteConsultResponse(reply="Помощник временно недоступен, попробуйте чуть позже.", escalate=False)
 
     escalate = "[ESCALATE]" in reply and site_ai.get_bool("escalate")
     reply = reply.replace("[ESCALATE]", "").strip() or "Передаю ваш вопрос администратору."
@@ -2941,7 +2951,7 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
     async with _lock:
         _save_history_row(history_uid, "user", message)
         _save_history_row(history_uid, "assistant", reply, response_id=response_id, escalate=escalate)
-    return ConsultResponse(reply=reply, escalate=escalate, response_id=response_id)
+    return SiteConsultResponse(reply=reply, escalate=escalate, response_id=response_id, guard=guard, violations=violations)
 
 
 class OutreachRequest(BaseModel):
