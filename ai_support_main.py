@@ -2706,6 +2706,244 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
 
     return ConsultResponse(reply=reply_text, escalate=escalate, response_id=response_id)
 
+# ===== v1.322: AI-помощник на сайте (гость и клиент) =====
+
+class SiteConsultRequest(BaseModel):
+    mode: str = "guest"            # guest | client
+    message: str
+    session_id: str = ""           # анонимный id браузера (для истории гостя)
+    user_id: int | None = None     # telegram_id клиента, уже проверенный сайтом по cookie-сессии
+
+
+_SITE_TOOLS = {
+    t["function"]["name"]: t
+    for t in (SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL,
+              CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL,
+              LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL,
+              CHECK_PAYMENT_NOW_TOOL)
+}
+
+
+def _site_tool_args(tool_call) -> dict:
+    try:
+        args = json.loads(tool_call.function.arguments)
+        return args if isinstance(args, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+async def _site_run_tool(name: str, args: dict, telegram_id: int | None) -> str:
+    """Выполняет один инструмент. Инструменты с данными клиента требуют telegram_id."""
+    key = (args.get("key_identifier") or "").strip() or None
+    if name == "search_knowledge_base":
+        query = (args.get("query") or "").strip()
+        if not query:
+            return "Пустой запрос."
+        from database.knowledge_base import search_knowledge_base
+        results = await asyncio.get_event_loop().run_in_executor(None, search_knowledge_base, query)
+        if not results:
+            return "В базе знаний не найдено релевантных статей по этому вопросу."
+        return "\n\n".join(f"### {r['title']}\n{r['content']}" for r in results)
+    if name == "web_search":
+        query = (args.get("query") or "").strip()
+        return await web_search_tavily(query) if query else "Пустой поисковый запрос."
+    if name == "github_search":
+        query = (args.get("query") or "").strip()
+        return await github_search(query, (args.get("repo") or "").strip() or None) if query else "Пустой поисковый запрос."
+    if name == "github_latest_release":
+        repo = (args.get("repo") or "").strip()
+        return await github_latest_release(repo) if repo else "Не указан репозиторий."
+    if telegram_id is None:
+        return "Инструмент недоступен без входа в кабинет."
+    if name == "check_server_status":
+        return await check_server_status(telegram_id)
+    if name == "check_active_devices":
+        return await check_active_devices(telegram_id)
+    if name == "toggle_auto_renewal":
+        return await toggle_auto_renewal(telegram_id, key)
+    if name == "clear_device_ips":
+        return await clear_device_ips(telegram_id, key)
+    if name == "list_devices":
+        return await list_devices(telegram_id, key)
+    if name == "disconnect_device":
+        try:
+            number = int(args.get("device_number"))
+        except (TypeError, ValueError):
+            return "Не указан номер устройства — сначала вызови list_devices."
+        return await disconnect_device(telegram_id, number, key)
+    if name == "suggest_key_replacement":
+        return await suggest_key_replacement(telegram_id, key)
+    if name == "suggest_key_renewal":
+        return await suggest_key_renewal(telegram_id, key)
+    if name == "check_payment_now":
+        return await check_payment_now(telegram_id)
+    return "Инструмент не найден."
+
+
+def _site_public_tariffs_text() -> str:
+    from bot.services import site_ai
+    from database.db_tariffs import get_all_tariffs
+    rows = []
+    try:
+        from bot.services import cdn as _cdn
+    except Exception:
+        _cdn = None
+    for t in sorted(get_all_tariffs(include_hidden=False), key=lambda t: (t.get("display_order") or 0, t.get("duration_days") or 0)):
+        row = {k: t.get(k) for k in ("id", "name", "duration_days", "price_rub", "traffic_limit_gb", "max_ips")}
+        try:
+            row["cdn_gb"] = int(_cdn.effective_tariff_cdn_gb(t.get("id")) or 0) if _cdn else 0
+        except Exception:
+            row["cdn_gb"] = 0
+        rows.append(row)
+    return site_ai.format_tariffs(rows)
+
+
+def _site_trial_text() -> str:
+    try:
+        from database.db_settings import is_trial_enabled, get_trial_tariff_id
+        from database.db_tariffs import get_tariff_by_id
+        if not is_trial_enabled():
+            return ""
+        tid = get_trial_tariff_id()
+        tariff = get_tariff_by_id(tid) if tid else None
+        if not tariff:
+            return ""
+        return (f"Пробный период: есть бесплатный пробный период на {tariff.get('duration_days')} дн. "
+                f"Один раз на человека. Предлагай его тем, кто сомневается, и объясни, что для него нужно нажать кнопку пробного периода на странице.")
+    except Exception:
+        return ""
+
+
+async def _notify_site_guest_escalation(session_id: str, question: str, history_messages: list) -> None:
+    if not BOT_TOKEN or not ADMIN_IDS:
+        return
+    key = f"site:{session_id}"
+    now = time.time()
+    async with _escalation_lock:
+        if now - _last_escalation_at.get(key, 0.0) < ESCALATION_THROTTLE_SECONDS:
+            return
+        _last_escalation_at[key] = now
+    lines = ["🌐 <b>AI-помощник на сайте передал диалог</b>", "👤 Посетитель не вошёл в кабинет", "",
+             "❓ <b>Вопрос:</b>", html.escape((question or "")[:500]), ""]
+    recent = [m for m in (history_messages or []) if m.get("role") in ("user", "assistant")][-6:]
+    if recent:
+        lines.append("📜 <b>Контекст переписки:</b>")
+        for m in recent:
+            who = "Посетитель" if m.get("role") == "user" else "AI"
+            lines.append(f"<i>{who}:</i> {html.escape((m.get('content') or '')[:300])}")
+    text = "\n".join(lines)[:4000]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            for admin_id in ADMIN_IDS:
+                try:
+                    await http_client.post(f"{TELEGRAM_API_BASE}/sendMessage",
+                                           json={"chat_id": admin_id, "text": text, "parse_mode": "HTML"})
+                except Exception as e:
+                    logger.error(f"Site escalation notify error for admin {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"Site escalation notify outer error: {e}")
+
+
+@app.post("/consult_site", response_model=ConsultResponse)
+async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_token)):
+    from bot.services import site_ai
+    from database.requests import get_effective_webapp_url, get_effective_brand_name
+
+    unavailable = ConsultResponse(reply="Помощник сейчас недоступен. Попробуйте позже.", escalate=False)
+    if not site_ai.is_active():
+        return unavailable
+
+    mode = site_ai.MODE_CLIENT if (req.mode == "client" and req.user_id) else site_ai.MODE_GUEST
+    message = (req.message or "").strip()[: site_ai.get_int("msg_len")]
+    if not message:
+        return ConsultResponse(reply="Напишите ваш вопрос.", escalate=False)
+
+    profile = None
+    if mode == site_ai.MODE_CLIENT:
+        profile = await query_full_customer_profile(int(req.user_id))
+        if not profile.get("found"):
+            mode = site_ai.MODE_GUEST
+    if not site_ai.mode_enabled(mode):
+        return unavailable
+
+    telegram_id = int(req.user_id) if mode == site_ai.MODE_CLIENT else None
+    history_uid = telegram_id if telegram_id else site_ai.guest_session_user_id(req.session_id or "anon")
+    async with _lock:
+        history_messages = _load_recent_history(history_uid, MAX_HISTORY_MESSAGES) + [{"role": "user", "content": message}]
+
+    shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
+    brand = get_effective_brand_name()
+    allowed = site_ai.allowed_tools(mode)
+
+    system = site_ai.build_prompt(
+        mode, brand, shop_url,
+        tariffs_text=_site_public_tariffs_text() if mode == site_ai.MODE_GUEST and site_ai.get_bool("g_tariffs") else "",
+        trial_text=_site_trial_text() if mode == site_ai.MODE_GUEST else "",
+    )
+    if mode == site_ai.MODE_CLIENT:
+        if site_ai.hide_personal_promos():
+            profile["available_promo_codes"] = []
+        if not site_ai.get_bool("c_tariffs"):
+            profile["available_tariffs"] = []
+        system += ("\n\nПолный профиль клиента (используй для персонального ответа, не показывай сырые данные без необходимости):\n"
+                   + _format_customer_profile(profile, await _resolve_bot_username()))
+    kb_on = "search_knowledge_base" in allowed
+    if kb_on:
+        setup = get_app_setup_instructions()
+        if setup:
+            system += ("\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти приложения и ссылки, "
+                       "других не выдумывай):\n" + setup)
+        try:
+            from database.knowledge_base import search_knowledge_base
+            found = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: search_knowledge_base(message, top_k=1, min_score=0.6))
+            if found:
+                system += ("\n\nСтатья базы знаний, найденная как самая подходящая к этому вопросу; опирайся на неё, "
+                           "пересказывай своими словами:\n" + "\n\n".join(f"### {r['title']}\n{r['content']}" for r in found))
+        except Exception as e:
+            logger.warning(f"Автопоиск в базе знаний (сайт): {e}")
+
+    tools = [_SITE_TOOLS[n] for n in sorted(allowed) if n in _SITE_TOOLS]
+    messages = [{"role": "system", "content": system}] + history_messages
+    try:
+        kwargs = dict(max_tokens=700, temperature=0.6, timeout=20.0)
+        if tools:
+            kwargs.update(tools=tools, tool_choice="auto")
+        response = await _chat_completion_with_fallback(messages, **kwargs)
+        msg = response.choices[0].message
+        if tools and not msg.tool_calls and _looks_like_stray_tool_json(msg.content):
+            response = await _chat_completion_with_fallback(messages, **{**kwargs, "tool_choice": "none"})
+            msg = response.choices[0].message
+        if msg.tool_calls:
+            messages.append(msg.model_dump(exclude_none=True))
+            for call in msg.tool_calls[:3]:
+                name = call.function.name
+                if name in allowed:
+                    result = await _site_run_tool(name, _site_tool_args(call), telegram_id)
+                else:
+                    result = "Инструмент недоступен."
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+            response = await _chat_completion_with_fallback(messages, **{**kwargs, "tool_choice": "none"})
+            msg = response.choices[0].message
+        reply = _sanitize_reply(msg.content or "Не удалось сформировать ответ.")
+    except Exception as e:
+        logger.error(f"consult_site error ({type(e).__name__}): {e}")
+        return ConsultResponse(reply="Помощник временно недоступен, попробуйте чуть позже.", escalate=False)
+
+    escalate = "[ESCALATE]" in reply and site_ai.get_bool("escalate")
+    reply = reply.replace("[ESCALATE]", "").strip() or "Передаю ваш вопрос администратору."
+    if escalate:
+        if telegram_id:
+            asyncio.create_task(_notify_admins_escalation(telegram_id, message, history_messages))
+        else:
+            asyncio.create_task(_notify_site_guest_escalation(req.session_id or "anon", message, history_messages))
+    response_id = uuid.uuid4().hex
+    async with _lock:
+        _save_history_row(history_uid, "user", message)
+        _save_history_row(history_uid, "assistant", reply, response_id=response_id, escalate=escalate)
+    return ConsultResponse(reply=reply, escalate=escalate, response_id=response_id)
+
+
 class OutreachRequest(BaseModel):
     user_id: int
     reason: str  # краткий машинный повод, например "key_expiring"

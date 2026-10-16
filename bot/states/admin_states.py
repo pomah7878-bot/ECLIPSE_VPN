@@ -109,6 +109,7 @@ class AdminStates(StatesGroup):
     collab_new_title = State()       # Совместная акция: название партнёра
     collab_edit_value = State()      # Совместная акция: значение поля
     collab_issue_user = State()      # Совместная акция: участник для бесплатного ключа
+    site_ai_edit_value = State()     # AI на сайте: значение настройки
     coupon_setting_value = State()
     coupon_generate_discount = State()
     coupon_generate_lifetime = State()

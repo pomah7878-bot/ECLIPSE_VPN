@@ -575,6 +575,7 @@ def integrations_apikeys_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🤖 Ключ AI (Groq)', callback_data='admin_edit_groq_key'))
     builder.row(InlineKeyboardButton(text='✨ Ключ AI (Gemini)', callback_data='admin_edit_gemini_key'))
     builder.row(InlineKeyboardButton(text='🔍 Ключ веб-поиска (Tavily)', callback_data='admin_edit_tavily_key'))
+    builder.row(InlineKeyboardButton(text='🌐 AI на сайте', callback_data='admin_site_ai'))
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
 

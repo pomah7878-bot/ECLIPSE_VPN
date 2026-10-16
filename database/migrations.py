@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 156
+LATEST_VERSION = 157
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3608,6 +3608,22 @@ def migration_156(conn: sqlite3.Connection) -> None:
     logger.info("Migration v156 applied: функции collabs и connection_probe для full-лицензий")
 
 
+def migration_157(conn: sqlite3.Connection) -> None:
+    """Версия 1.322: платная функция «site_ai» (AI-помощник на сайте).
+    Лицензиям и тарифам tier='full' добавляется автоматически, custom — вручную."""
+    for table in ("partner_licenses", "license_tariffs"):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not {"tier", "features"} <= columns:
+            continue
+        for row in conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall():
+            current = {f for f in (row[1] or "").split(",") if f}
+            current.add("site_ai")
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), row[0]))
+    logger.info("Migration v157 applied: функция site_ai для full-лицензий")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3691,6 +3707,7 @@ MIGRATIONS = {
     154: migration_154,
     155: migration_155,
     156: migration_156,
+    157: migration_157,
 }
 
 

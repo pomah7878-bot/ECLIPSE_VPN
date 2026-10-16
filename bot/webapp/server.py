@@ -625,6 +625,128 @@ async def handle_ai_feedback(request: web.Request) -> web.Response:
         return web.json_response({"error": "ai_unavailable"}, status=502)
 
 
+# ===== v1.322: AI-помощник на сайте =====
+
+def _site_ai_identity(request: web.Request):
+    """('client', telegram_id) для вошедшего через Telegram, иначе ('guest', None)."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if account_id:
+        try:
+            from database.requests import get_site_account_by_id
+            account = get_site_account_by_id(account_id)
+            tg = account.get("telegram_id") if account else None
+            if tg:
+                return "client", int(tg)
+        except Exception as e:
+            logger.debug(f"site-ai: не удалось определить аккаунт: {e}")
+    return "guest", None
+
+
+async def handle_site_ai_config(request: web.Request) -> web.Response:
+    """GET /api/public/site-ai/config?page=shop|welcome — нужен ли виджет и с какими настройками."""
+    from bot.services import site_ai
+    page = "welcome" if request.query.get("page") == "welcome" else "shop"
+    mode, _tg = _site_ai_identity(request)
+    resp = web.json_response(site_ai.public_config(mode == "client", page))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+async def _site_ai_escalate_to_support(telegram_id: int, question: str, ai_reply: str) -> None:
+    """Клиент с сайта: заводим обращение в поддержке, как и для Mini App."""
+    try:
+        from aiogram import Bot
+        from config import BOT_TOKEN
+        from database.requests import get_or_create_user, create_support_thread, record_support_message
+        from bot.services.support import send_ai_escalation_to_admins
+        from bot.utils.text import escape_html
+
+        user, _ = get_or_create_user(telegram_id)
+        thread = create_support_thread(telegram_id, initiator_type="user")
+        if not thread:
+            return
+        record_support_message(
+            thread["id"], sender_type="user", sender_telegram_id=telegram_id,
+            recipient_telegram_id=thread.get("assigned_admin_id"), text_html=escape_html(question),
+            media_type="text", media_file_id=None, source_chat_id=telegram_id, source_message_id=0,
+        )
+        bot = Bot(token=BOT_TOKEN)
+        try:
+            await send_ai_escalation_to_admins(bot, thread=thread, user=user, question=question, ai_reply=ai_reply)
+        finally:
+            await bot.session.close()
+    except Exception as e:
+        logger.error(f"site-ai escalation error: {e}")
+
+
+async def handle_site_ai_ask(request: web.Request) -> web.Response:
+    """POST /api/public/site-ai/ask — вопрос AI-помощнику с сайта.
+    Body JSON: {"message": "..."}. Личность определяется только по cookie-сессии сайта."""
+    from bot.services import site_ai
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    if not site_ai.is_active():
+        return web.json_response({"error": "disabled"}, status=403)
+    mode, tg = _site_ai_identity(request)
+    if mode == "client" and not site_ai.mode_enabled("client"):
+        mode, tg = "guest", None
+    if not site_ai.mode_enabled(mode):
+        return web.json_response({"error": "disabled"}, status=403)
+
+    message = str(data.get("message") or "").strip()
+    if not message:
+        return web.json_response({"error": "empty_message"}, status=400)
+    max_len = site_ai.get_int("msg_len")
+    if len(message) > max_len:
+        return web.json_response({"error": "message_too_long", "max": max_len}, status=400)
+
+    sid = request.cookies.get("site_ai_sid") or ""
+    new_sid = False
+    if not re.fullmatch(r"[0-9a-f]{32}", sid):
+        sid, new_sid = _secrets_mod.token_hex(16), True
+
+    ip = _get_client_ip(request)
+    busy = {"error": "rate_limited", "message": "Слишком много вопросов. Попробуйте позже."}
+    if (not _rl_allowed(f"siteai-ip:{ip}", site_ai.get_int("ip_hour"), 3600)
+            or not _rl_allowed(f"siteai-sid:{sid}", site_ai.get_int("session_day"), 86400)):
+        return web.json_response(busy, status=429)
+    if site_ai.daily_total_reached():
+        return web.json_response({"error": "busy", "message": "Помощник сегодня занят. Попробуйте завтра или напишите в поддержку."}, status=429)
+    _rl_record(f"siteai-ip:{ip}")
+    _rl_record(f"siteai-sid:{sid}")
+    site_ai.count_request()
+
+    import aiohttp
+    from config import SUPPORT_API_TOKEN
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "http://127.0.0.1:8086/consult_site",
+                json={"mode": mode, "message": message, "session_id": sid, "user_id": tg},
+                headers={"X-Support-Token": SUPPORT_API_TOKEN},
+                timeout=aiohttp.ClientTimeout(total=45),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"site-ai: AI-сервис вернул {resp.status}")
+                    return web.json_response({"error": "ai_unavailable", "message": "Помощник временно недоступен."}, status=502)
+                payload = await resp.json()
+    except asyncio.TimeoutError:
+        return web.json_response({"error": "ai_timeout", "message": "Помощник отвечает слишком долго, попробуйте ещё раз."}, status=504)
+    except Exception as e:
+        logger.error(f"site-ai proxy error: {e}")
+        return web.json_response({"error": "ai_unavailable", "message": "Помощник временно недоступен."}, status=502)
+
+    if payload.get("escalate") and tg:
+        asyncio.create_task(_site_ai_escalate_to_support(tg, message, payload.get("reply", "")))
+    out = web.json_response({"reply": payload.get("reply", ""), "escalate": bool(payload.get("escalate")), "mode": mode})
+    if new_sid:
+        out.set_cookie("site_ai_sid", sid, max_age=7 * 86400, httponly=True, secure=True, samesite="Lax")
+    return out
+
+
 async def handle_tariffs_list(request: web.Request) -> web.Response:
     """GET /api/tariffs — список активных тарифов для экрана оплаты в WebApp.
 
@@ -4730,6 +4852,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/language", handle_language)
     app.router.add_post("/api/ai-consult", handle_ai_consult)
     app.router.add_post("/api/ai-feedback", handle_ai_feedback)
+    app.router.add_get("/api/public/site-ai/config", handle_site_ai_config)
+    app.router.add_post("/api/public/site-ai/ask", handle_site_ai_ask)
     app.router.add_get("/api/tariffs", handle_tariffs_list)
     app.router.add_post("/api/pay/create", handle_pay_create)
     app.router.add_post("/api/pay/check", handle_pay_check)
