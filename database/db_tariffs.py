@@ -295,3 +295,21 @@ def delete_tariff(tariff_id: int, move_keys_to: Optional[int] = None) -> Tuple[b
         conn.execute("DELETE FROM tariffs WHERE id = ?", (tariff_id,))
         logger.info(f"Тариф ID {tariff_id} удалён, ключей перенесено: {keys}")
     return True, f"Тариф удалён. Перенесено ключей: {keys}" if keys else "Тариф удалён"
+
+
+# v1.334: функции ниже пишут в таблицу settings напрямую — после них сбрасываем кэш настроек
+def _invalidating(func):
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        finally:
+            from database.db_settings import invalidate_settings_cache
+            invalidate_settings_cache()
+    return wrapper
+
+
+for _name in ['delete_tariff']:
+    globals()[_name] = _invalidating(globals()[_name])

@@ -333,3 +333,21 @@ __all__ = [
     "STOCK_PAGE_ROUTES",
     "reset_customization_database",
 ]
+
+
+# v1.334: функции ниже пишут в таблицу settings напрямую — после них сбрасываем кэш настроек
+def _invalidating(func):
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        finally:
+            from database.db_settings import invalidate_settings_cache
+            invalidate_settings_cache()
+    return wrapper
+
+
+for _name in ['reset_customization_database']:
+    globals()[_name] = _invalidating(globals()[_name])

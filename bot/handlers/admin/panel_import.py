@@ -192,6 +192,11 @@ async def confirm_orphan_import(callback: CallbackQuery, state: FSMContext):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
     data = await state.get_data()
+    if not data.get('server_id') or not data.get('email'):
+        # v1.334: данные диалога потерялись (например, бот перезапускался) — не падаем
+        await state.clear()
+        await callback.answer('⚠️ Данные импорта устарели. Откройте импорт из панели заново.', show_alert=True)
+        return
     from database.requests import create_vpn_key_from_panel_import, vpn_key_exists_for_panel_email
 
     # Защита от гонки состояний: клиент мог быть импортирован уже ПОСЛЕ

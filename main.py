@@ -271,6 +271,9 @@ async def main():
     # не работает (проблема __main__ vs main при запуске python3 main.py).
     from bot.utils.runtime_state import set_bot_instance
     set_bot_instance(bot)
+    # v1.334: магические фильтры F выполняются без перехода в поток (см. bot/utils/fast_filters.py)
+    from bot.utils.fast_filters import install_fast_magic_filters
+    install_fast_magic_filters()
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 

@@ -238,3 +238,21 @@ def delete_broadcast_confirmation(telegram_id: int) -> bool:
             (_confirm_key(telegram_id),),
         )
         return cursor.rowcount > 0
+
+
+# v1.334: функции ниже пишут в таблицу settings напрямую — после них сбрасываем кэш настроек
+def _invalidating(func):
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        finally:
+            from database.db_settings import invalidate_settings_cache
+            invalidate_settings_cache()
+    return wrapper
+
+
+for _name in ['insert_broadcast_stage_if_absent', 'compare_and_swap_broadcast_stage', 'delete_broadcast_editor_stage', 'set_broadcast_content_with_revision', 'set_broadcast_filter_with_revision', 'apply_broadcast_editor_stage', 'set_broadcast_confirmation_raw', 'pop_broadcast_confirmation_raw', 'delete_broadcast_confirmation']:
+    globals()[_name] = _invalidating(globals()[_name])

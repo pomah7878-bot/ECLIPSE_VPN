@@ -652,3 +652,4 @@ async def back_to_server_select(callback: CallbackQuery, state: FSMContext):
         },
         prepend_buttons=keyboard_rows(new_key_server_list_kb(servers)),
     )
+    await _answer_callback_if_needed(callback)

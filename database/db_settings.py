@@ -169,6 +169,45 @@ _TIMEZONE_ALIASES = {
 }
 _UTC_OFFSET_RE = re.compile(r'^(?:utc|gmt)?\s*([+-])\s*(\d{1,2})(?::?(\d{2}))?$')
 
+# v1.334: кэш настроек. Раньше каждое чтение настройки открывало отдельное соединение с базой
+# (плюс 7 служебных PRAGMA): на главном меню это было 56 соединений из 64. Теперь обычные
+# настройки читаются одним запросом и живут в памяти 2 секунды (другие процессы — например,
+# AI-сервис — видят изменения не позже чем через 2 с; в этом процессе запись видна сразу).
+# Персональные ключи с «:» (sensitive_msgs:<id>, main_menu_msg:<id> …) их много и они часто
+# меняются — читаются напрямую, как раньше.
+import threading as _threading
+import time as _time
+
+_SETTINGS_TTL = 2.0
+_SETTINGS_LOCK = _threading.Lock()
+_SETTINGS_SNAPSHOT: Dict[str, str] = {}
+_SETTINGS_LOADED_AT = 0.0
+
+
+def _is_personal_key(key: str) -> bool:
+    return ":" in key
+
+
+def invalidate_settings_cache() -> None:
+    """Сбросить кэш настроек: следующее чтение заново загрузит их из базы."""
+    global _SETTINGS_LOADED_AT
+    _SETTINGS_LOADED_AT = 0.0
+
+
+def _settings_snapshot() -> Dict[str, str]:
+    global _SETTINGS_SNAPSHOT, _SETTINGS_LOADED_AT
+    if _time.monotonic() - _SETTINGS_LOADED_AT < _SETTINGS_TTL:
+        return _SETTINGS_SNAPSHOT
+    with _SETTINGS_LOCK:
+        if _time.monotonic() - _SETTINGS_LOADED_AT < _SETTINGS_TTL:
+            return _SETTINGS_SNAPSHOT
+        with get_db() as conn:
+            rows = conn.execute("SELECT key, value FROM settings WHERE instr(key, ':') = 0").fetchall()
+        _SETTINGS_SNAPSHOT = {r[0]: r[1] for r in rows}
+        _SETTINGS_LOADED_AT = _time.monotonic()
+        return _SETTINGS_SNAPSHOT
+
+
 def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     """
     Gets the setting value.
@@ -180,6 +219,14 @@ def get_setting(key: str, default: Optional[str] = None) -> Optional[str]:
     Returns:
         Setting value or default
     """
+    if not _is_personal_key(key):
+        try:
+            value = _settings_snapshot().get(key)
+        except sqlite3.Error:
+            value = None
+            invalidate_settings_cache()
+        else:
+            return value if value is not None else default
     with get_db() as conn:
         cursor = conn.execute(
             "SELECT value FROM settings WHERE key = ?",
@@ -203,6 +250,8 @@ def set_setting(key: str, value: str) -> None:
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
         """, (key, value))
         logger.info(f"Настройка обновлена: {key}")
+    if not _is_personal_key(key) and _SETTINGS_LOADED_AT:
+        _SETTINGS_SNAPSHOT[key] = value
 
 
 def get_site_session_secret() -> str:
@@ -248,7 +297,10 @@ def delete_setting(key: str) -> bool:
     """
     with get_db() as conn:
         cursor = conn.execute("DELETE FROM settings WHERE key = ?", (key,))
-        return cursor.rowcount > 0
+        removed = cursor.rowcount > 0
+    if not _is_personal_key(key):
+        _SETTINGS_SNAPSHOT.pop(key, None)
+    return removed
 
 
 def is_update_notifications_enabled() -> bool:

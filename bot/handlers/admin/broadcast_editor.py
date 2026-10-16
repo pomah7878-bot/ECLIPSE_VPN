@@ -166,6 +166,10 @@ async def broadcast_editor_launch(callback: CallbackQuery, bot: Bot) -> None:
         ensure_broadcast_editor_stage,
         callback.from_user.id,
     )
+    if not isinstance((stage or {}).get("content"), dict) or not stage["content"]:
+        # v1.334: материал рассылки не задан — раньше кнопка падала с ошибкой
+        await callback.answer("Сначала задайте текст или материал рассылки", show_alert=True)
+        return
     try:
         await _send_content_preview(bot, callback.message, stage["content"])
         confirmation = await asyncio.to_thread(

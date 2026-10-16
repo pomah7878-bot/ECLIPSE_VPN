@@ -4477,6 +4477,8 @@ async def handle_rename(request: web.Request) -> web.Response:
         else:
             return web.json_response({"error": "not_found_or_forbidden"}, status=404)
 
+    except (ValueError, TypeError):
+        return web.json_response({"error": "bad_request"}, status=400)
     except json.JSONDecodeError:
         return web.json_response({"error": "invalid_json"}, status=400)
     except Exception as e:
@@ -4531,6 +4533,8 @@ async def handle_delete(request: web.Request) -> web.Response:
         else:
             return web.json_response({"error": "db_error"}, status=500)
 
+    except (ValueError, TypeError):
+        return web.json_response({"error": "bad_request"}, status=400)
     except json.JSONDecodeError:
         return web.json_response({"error": "invalid_json"}, status=400)
     except Exception as e:
@@ -4976,6 +4980,19 @@ _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
 
 
 @web.middleware
+async def bad_input_middleware(request: web.Request, handler):
+    """v1.334: неверные данные в запросе к API (например, tariff_id="abc") — ответ 400,
+    а не 500 «Internal Server Error» с трассировкой в журнале."""
+    try:
+        return await handler(request)
+    except (ValueError, TypeError) as e:
+        if not request.path.startswith("/api/"):
+            raise
+        logger.info("Некорректный запрос %s %s: %s", request.method, request.path, e)
+        return web.json_response({"error": "bad_request", "message": "Некорректные данные запроса."}, status=400)
+
+
+@web.middleware
 async def license_gate_middleware(request: web.Request, handler):
     """Блокирует доступ к сайту/личному кабинету (шоп, оплата, аккаунт),
     если у whitelabel-партнёра нет активной лицензии полного тарифа —
@@ -5005,7 +5022,7 @@ async def license_gate_middleware(request: web.Request, handler):
 
 def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
-    app = web.Application(middlewares=[cors_middleware, license_gate_middleware], client_max_size=12 * 1024 * 1024)
+    app = web.Application(middlewares=[cors_middleware, license_gate_middleware, bad_input_middleware], client_max_size=12 * 1024 * 1024)
     app.on_cleanup.append(_close_upstream_session)
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")

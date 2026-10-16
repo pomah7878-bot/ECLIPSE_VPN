@@ -623,6 +623,11 @@ async def add_server_retest(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     server_data = data.get('server_data', {})
     auth_method = data.get('auth_method', AUTH_LOGIN_PASSWORD)
+    if not server_data or not server_data.get('host'):
+        # v1.334: данные добавления потерялись (бот перезапускался) — просим начать заново
+        await state.clear()
+        await callback.answer('⚠️ Данные нового сервера устарели. Начните добавление сервера заново.', show_alert=True)
+        return
     
     await safe_edit_or_send(callback.message, 
         "⏳ <b>Проверка подключения...</b>"

@@ -3713,6 +3713,18 @@ MIGRATIONS = {
 
 
 def run_migrations() -> None:
+    """Обёртка v1.334: после миграций сбрасываем кэш настроек (миграции пишут в settings напрямую)."""
+    try:
+        _run_migrations_impl()
+    finally:
+        try:
+            from database.db_settings import invalidate_settings_cache
+            invalidate_settings_cache()
+        except Exception:
+            pass
+
+
+def _run_migrations_impl() -> None:
     """
     Runs all necessary migrations.
     

@@ -2087,7 +2087,6 @@ async def delete_webapp_url_backup_ask(callback: CallbackQuery, state: FSMContex
         f"🔁 Удалить резервный домен <code>{current}</code> из настроек бота?\n\n"
         "Это уберёт домен только из настроек бота — сам сайт, nginx-конфиг и SSL-сертификат "
         "на сервере останутся нетронутыми, домен нужно будет удалить вручную, если он больше не нужен.",
-        parse_mode="HTML",
         reply_markup=_delete_confirm_kb("admin_delete_webapp_url_backup_confirm", "admin_integrations_site"),
     )
     await callback.answer()
