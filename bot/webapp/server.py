@@ -1925,6 +1925,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             headers.popall("autorouting", None)
             headers.popall("routing", None)
             body = _strip_routing_lines(body)
+        if detected_app == "incy":
+            body = _name_awg_lines(body)
         _incy_auto = False
         if detected_app == "incy" and routing_mode in ("add", "onadd"):
             from database.requests import (
@@ -2097,6 +2099,46 @@ def _strip_routing_lines(body: bytes) -> bytes:
     if out is None:
         return body
     return base64.b64encode(out.encode("utf-8"))
+
+
+def _name_awg_lines(body: bytes) -> bytes:
+    """v1.333: у строк AmneziaWG (vpn://) панель не пишет название после «#» — оно есть только
+    комментарием внутри конфига (# 🇷🇺AmneziaWG🇫🇮). INCY комментарий не читает и показывает
+    вместо названия адрес сервера. Дописываем название из конфига в конец строки."""
+    import urllib.parse as _up
+
+    def _fix(text: str):
+        changed = False
+        out = []
+        for ln in text.splitlines():
+            if ln.startswith("vpn://") and "#" not in ln:
+                try:
+                    from bot.utils.inbound_links import decode_vpn_link, parse_conf
+                    info = parse_conf(decode_vpn_link(ln) or "") or {}
+                    name = (info.get("name") or "").strip()
+                except Exception:  # noqa: BLE001
+                    name = ""
+                if name:
+                    ln = f"{ln}#{_up.quote(name, safe='')}"
+                    changed = True
+            out.append(ln)
+        return "\n".join(out) if changed else None
+
+    try:
+        text = body.decode("utf-8")
+    except Exception:
+        return body
+    if "://" in text:
+        out = _fix(text)
+        return body if out is None else out.encode("utf-8")
+    try:
+        raw = text.strip().replace("-", "+").replace("_", "/")
+        raw += "=" * (-len(raw) % 4)
+        decoded = base64.b64decode(raw, validate=True).decode("utf-8")
+    except Exception:
+        return body
+    out = _fix(decoded)
+    return body if out is None else base64.b64encode(out.encode("utf-8"))
 
 
 def _incy_announce(is_expired, days_left, key, webapp_url, bot_username):
