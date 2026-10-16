@@ -469,6 +469,9 @@ def _panel_bool(value: Any, default: bool = True) -> bool:
 _PANEL_DIFF_LOGGED: list = []
 
 
+_EXPIRY_TOLERANCE_MS = 60_000
+
+
 def _client_needs_panel_update(
     client: Dict[str, Any],
     *,
@@ -496,7 +499,14 @@ def _client_needs_panel_update(
         checks += (('subId', client.get('subId') or '', sub_id or ''),)
     if flow is not None:
         checks += (('flow', client.get('flow') or '', flow),)
-    diffs = [(name, cur, exp) for name, cur, exp in checks if cur != exp]
+    def _differs(name, cur, exp) -> bool:
+        # v1.330: срок панель ставит по своим часам — расхождение в пару секунд не «отличие»,
+        # иначе сразу после выдачи ключа все inbound переписывались повторно
+        if name == 'expiryTime' and cur and exp and cur > 0 and exp > 0:
+            return abs(int(cur) - int(exp)) > _EXPIRY_TOLERANCE_MS
+        return cur != exp
+
+    diffs = [(name, cur, exp) for name, cur, exp in checks if _differs(name, cur, exp)]
     if not diffs:
         return False
     if len(_PANEL_DIFF_LOGGED) < 30:

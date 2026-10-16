@@ -2055,36 +2055,43 @@ class XUIClient(BaseVPNClient):
             "sub_id": client_entry["subId"],
         })
     
+    _FLOW_CACHE_TTL = 30.0
+
+    @staticmethod
+    def flow_for_inbound(inbound: Dict[str, Any]) -> str:
+        """Flow = 'xtls-rprx-vision' нужен только для VLESS + TCP + (Reality или TLS)."""
+        if (inbound or {}).get('protocol', '') != 'vless':
+            return ""
+        stream_raw = inbound.get('streamSettings', '{}')
+        try:
+            stream = json.loads(stream_raw) if isinstance(stream_raw, str) else (stream_raw or {})
+        except (TypeError, ValueError):
+            return ""
+        network = stream.get('network', 'tcp')
+        security = stream.get('security', 'none')
+        return 'xtls-rprx-vision' if network == 'tcp' and security in ('reality', 'tls') else ""
+
     async def get_inbound_flow(self, inbound_id: int) -> str:
         """
         Defines the desired flow value for inbound.
-        Flow = 'xtls-rprx-vision' is only needed for VLESS + TCP + (Reality or TLS).
+        v1.330: список inbound запрашивается один раз и кэшируется на 30 секунд. Раньше каждый
+        вызов скачивал ВЕСЬ список inbound со всеми клиентами: при выдаче ключа это делалось
+        по разу на каждый inbound, и настройка подписки занимала несколько секунд.
         """
+        import time as _t
+        cache = self.__dict__.setdefault('_flow_cache', {'ts': 0.0, 'flows': {}})
+        lock = self.__dict__.setdefault('_flow_lock', asyncio.Lock())
         try:
-            inbounds = await self.get_inbounds()
-            for inbound in inbounds:
-                if inbound['id'] == inbound_id:
-                    protocol = inbound.get('protocol', '')
-                    if protocol != 'vless':
-                        return ""
-                    
-                    stream_raw = inbound.get('streamSettings', '{}')
-                    if isinstance(stream_raw, str):
-                        stream = json.loads(stream_raw)
-                    else:
-                        stream = stream_raw
-                    
-                    network = stream.get('network', 'tcp')
-                    security = stream.get('security', 'none')
-                    
-                    # Flow is only needed for VLESS + TCP + (reality | tls)
-                    if network == 'tcp' and security in ('reality', 'tls'):
-                        return 'xtls-rprx-vision'
-                    return ""
+            async with lock:
+                if _t.monotonic() - cache['ts'] > self._FLOW_CACHE_TTL or inbound_id not in cache['flows']:
+                    inbounds = await self.get_inbounds()
+                    cache['flows'] = {ib['id']: self.flow_for_inbound(ib) for ib in inbounds if 'id' in ib}
+                    cache['ts'] = _t.monotonic()
+                return cache['flows'].get(inbound_id, "")
         except Exception as e:
             logger.warning(f"Error determining flow for inbound {inbound_id}: {e}")
         return ""
-    
+
     @staticmethod
     def _traffic_int(value: Any) -> Optional[int]:
         """Normalizes numeric traffic fields from different API versions."""
