@@ -54,3 +54,10 @@ database/*.db.bak*
 *.bak*
 apply_*.py
 patch_*.py
+
+# v1.329: случайные файлы базы и служебные файлы установки в корне репозитория
+/*.db
+/*.db-wal
+/*.db-shm
+*.bundle
+purge_*.sh

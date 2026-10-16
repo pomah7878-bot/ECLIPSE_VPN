@@ -731,7 +731,7 @@
         function showQR(keyId) {
             const key = _cachedKeys.find(k => k.id === keyId);
             if (!key || !key.sub_url) { showToast('Ссылка недоступна'); return; }
-            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=2&data=' + encodeURIComponent(key.sub_url);
+            const qrUrl = '/api/qr.png?d=' + encodeURIComponent(key.sub_url);
             document.getElementById('qrImage').src = qrUrl;
             document.getElementById('qrLinkText').textContent = key.sub_url;
             document.getElementById('qrOverlay').classList.add('active');
@@ -952,7 +952,7 @@
                 target.innerHTML = '<div class="text-xs text-mist mb-4 text-left">Ваш ключ готов — он в списке подключений на главной странице.</div>';
                 return;
             }
-            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=2&data=' + encodeURIComponent(key.sub_url);
+            const qrUrl = '/api/qr.png?d=' + encodeURIComponent(key.sub_url);
             const base = !!(window._appImportEnabled);
             const imp = window._cabinetImportEnabled || {};
             let importBtns = '';
@@ -1291,7 +1291,7 @@
             const _ib = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii];
             const link = _ib ? (_ib.config_text || _ib.link) : null;
             if (!link) { showToast('Ссылка недоступна'); return; }
-            const qrUrl = (_ib && _ib.qr_png) ? _ib.qr_png : 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(link);
+            const qrUrl = (_ib && _ib.qr_png) ? _ib.qr_png : '/api/qr.png?d=' + encodeURIComponent(link);
             const win = document.createElement('div');
             win.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
             win.onclick = () => win.remove();

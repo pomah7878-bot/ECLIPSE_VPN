@@ -1821,7 +1821,7 @@
             const _ib = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii];
             const link = _ib ? (_ib.config_text || _ib.link) : null;
             if (!link) return;
-            const qrUrl = (_ib && _ib.qr_png) ? _ib.qr_png : 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(link);
+            const qrUrl = (_ib && _ib.qr_png) ? _ib.qr_png : '/api/qr.png?d=' + encodeURIComponent(link);
             const win = document.createElement('div');
             win.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
             win.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:50;';
@@ -2106,7 +2106,7 @@
 
         function showKeyQR(btn) {
             const url = btn.getAttribute('data-url');
-            const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=2&data=' + encodeURIComponent(url);
+            const qrUrl = '/api/qr.png?d=' + encodeURIComponent(url);
             document.getElementById('payContent').innerHTML = `
                 <h3 class="font-display text-base font-bold mb-4">QR-код подключения</h3>
                 <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[264px] h-[264px] flex items-center justify-center">

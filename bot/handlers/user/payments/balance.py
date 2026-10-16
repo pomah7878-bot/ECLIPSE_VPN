@@ -436,12 +436,20 @@ async def balance_pay_handler(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith('pay_with_balance:'))
 async def pay_with_balance_handler(callback: CallbackQuery, state: FSMContext):
-    """Защита от двойного нажатия: пока покупка идёт или только что прошла, повтор отбрасывается."""
+    """Защита от повторной покупки:
+    * пока покупка идёт или только что прошла — повтор отбрасывается (v1.328);
+    * v1.329: экран оплаты одноразовый — после успешной покупки кнопка «Оплатить балансом»
+      на этом же сообщении больше не срабатывает (раньше второе нажатие через 40 секунд
+      на оставшийся в чате экран оформляло второй ключ и второе списание)."""
     from bot.services.user_locks import try_begin_purchase, end_purchase
-    parts = callback.data.split(':')
-    data = await state.get_data()
-    tariff_id = data.get('tariff_id') or (parts[1] if len(parts) > 1 else None)
-    key_id = data.get('key_id') or (parts[2] if len(parts) > 2 and parts[2] else None)
+    tariff_id, key_id = _balance_button_target(callback.data)
+    screen_key = _paid_screen_key(callback)
+    if screen_key and _screen_already_paid(screen_key):
+        await callback.answer(
+            '✅ По этому экрану покупка уже оформлена. Чтобы купить ещё, откройте покупку заново.',
+            show_alert=True,
+        )
+        return
     guard_key = ('balance', callback.from_user.id, str(tariff_id), str(key_id or 0))
     if not try_begin_purchase(guard_key):
         await callback.answer('⏳ Покупка уже оформляется, подождите несколько секунд', show_alert=False)
@@ -451,6 +459,44 @@ async def pay_with_balance_handler(callback: CallbackQuery, state: FSMContext):
         done = bool(await _pay_with_balance_inner(callback, state))
     finally:
         end_purchase(guard_key, done)
+        if done and screen_key:
+            _mark_screen_paid(screen_key)
+
+
+# v1.329: экраны оплаты, по которым уже прошла покупка (chat_id, message_id) -> время
+_PAID_SCREENS: dict = {}
+_PAID_SCREENS_TTL = 7 * 24 * 3600
+
+
+def _balance_button_target(data: str):
+    """Тариф и ключ — из самой кнопки (её текст и есть то, что клиент подтверждает)."""
+    parts = (data or '').split(':')
+    tariff_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+    key_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() and parts[2] != '0' else None
+    return tariff_id, key_id
+
+
+def _paid_screen_key(callback: CallbackQuery):
+    msg = getattr(callback, 'message', None)
+    chat = getattr(msg, 'chat', None)
+    if msg is None or chat is None or getattr(msg, 'message_id', None) is None:
+        return None
+    return (chat.id, msg.message_id)
+
+
+def _screen_already_paid(key) -> bool:
+    import time as _t
+    ts = _PAID_SCREENS.get(key)
+    return bool(ts and _t.time() - ts < _PAID_SCREENS_TTL)
+
+
+def _mark_screen_paid(key) -> None:
+    import time as _t
+    now = _t.time()
+    if len(_PAID_SCREENS) > 5000:
+        for k in [k for k, v in _PAID_SCREENS.items() if now - v >= _PAID_SCREENS_TTL]:
+            _PAID_SCREENS.pop(k, None)
+    _PAID_SCREENS[key] = now
 
 
 async def _pay_with_balance_inner(callback: CallbackQuery, state: FSMContext):
@@ -461,16 +507,9 @@ async def _pay_with_balance_inner(callback: CallbackQuery, state: FSMContext):
     When paying with balance, referral rewards are NOT accrued.
     """
     from database.requests import get_user_balance, get_tariff_by_id, get_or_create_user
-    data = await state.get_data()
-    balance_to_deduct = data.get('balance_to_deduct', 0)
-    tariff_price_cents = data.get('tariff_price_cents', 0)
-    tariff_id = data.get('tariff_id')
-    key_id = data.get('key_id')
-    parts = callback.data.split(':')
-    if not tariff_id:
-        tariff_id = int(parts[1]) if len(parts) > 1 else None
-    if not key_id:
-        key_id = int(parts[2]) if len(parts) > 2 and parts[2] else None
+    # v1.329: тариф и ключ — из нажатой кнопки, а не из состояния диалога
+    # (там мог остаться тариф с предыдущего экрана, и покупался не тот тариф)
+    tariff_id, key_id = _balance_button_target(callback.data)
     if not tariff_id:
         await callback.answer('❌ Ошибка: тариф не определён', show_alert=True)
         return

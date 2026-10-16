@@ -158,6 +158,31 @@ def _tariff_purchasable(tariff, key_id=None) -> bool:
     return False
 
 
+def _renewal_tariff_allowed(tariff, key_id) -> bool:
+    """v1.329: продлить ключ можно только его текущим тарифом или тарифом из его группы —
+    так же, как в боте (get_tariffs_for_renewal). Раньше сайт и Mini App принимали любой
+    активный тариф, в том числе из чужой группы с другими серверами и лимитами."""
+    if not tariff:
+        return False
+    if not key_id:
+        return True
+    try:
+        from bot.services.cdn import is_cdn_tariff
+        if is_cdn_tariff(tariff.get("id")):
+            return True
+        from database.requests import get_vpn_key_by_id
+        from bot.utils.groups import get_tariffs_for_renewal
+        key = get_vpn_key_by_id(int(key_id))
+        if not key:
+            return False
+        if key.get("tariff_id") and int(key["tariff_id"]) == int(tariff["id"]):
+            return True
+        return any(int(t["id"]) == int(tariff["id"]) for t in get_tariffs_for_renewal(key.get("tariff_id") or 0))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Проверка тарифа продления: {e}")
+        return False
+
+
 def _get_telegram_id(request: web.Request) -> Optional[int]:
     """
     Извлекает и проверяет initData из запроса (query param или header).
@@ -805,6 +830,39 @@ async def handle_tariffs_list(request: web.Request) -> web.Response:
 
 
 async def handle_pay_create(request: web.Request) -> web.Response:
+    """v1.329: оплата балансом в Mini App — повторное нажатие во время оформления
+    (или сразу после успешной покупки) не создаёт второй заказ и второе списание."""
+    telegram_id = _get_telegram_id(request)
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if telegram_id and isinstance(data, dict) and data.get("payment_method") == "balance":
+        return await _guarded_purchase(
+            ("webapp_balance", telegram_id, str(data.get("tariff_id")), str(data.get("vpn_key_id") or 0)),
+            _handle_pay_create_impl(request),
+        )
+    return await _handle_pay_create_impl(request)
+
+
+async def _guarded_purchase(guard_key, coro) -> web.Response:
+    """Выполняет покупку, если такая же не идёт прямо сейчас и не прошла только что (bot.services.user_locks)."""
+    from bot.services.user_locks import try_begin_purchase, end_purchase
+    if not try_begin_purchase(guard_key):
+        coro.close()
+        return web.json_response(
+            {"error": "in_progress", "message": "Покупка уже оформляется, подождите несколько секунд."}, status=429,
+        )
+    done = False
+    try:
+        resp = await coro
+        done = resp.status == 200 and b'"status": "paid"' in (resp.body or b"")
+        return resp
+    finally:
+        end_purchase(guard_key, done)
+
+
+async def _handle_pay_create_impl(request: web.Request) -> web.Response:
     """POST /api/pay/create — создаёт заказ на покупку нового ключа или
     продление существующего. По умолчанию — QR-платёж YooKassa; если
     передан payment_method="balance", списывает стоимость с личного
@@ -832,7 +890,7 @@ async def handle_pay_create(request: web.Request) -> web.Response:
     from bot.services.billing import create_yookassa_qr_payment
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not _tariff_purchasable(tariff, vpn_key_id):
+    if not _tariff_purchasable(tariff, vpn_key_id) or not _renewal_tariff_allowed(tariff, vpn_key_id):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     user_id = get_user_internal_id(telegram_id)
@@ -2271,6 +2329,10 @@ async def handle_public_pay_check(request: web.Request) -> web.Response:
     если оплата прошла, провижинит рабочий VPN-ключ прямо сейчас.
     Body JSON: {"order_id": "..."}
     """
+    _cip = _get_client_ip(request)
+    if not _rl_allowed(f"paycheck:{_cip}", 240, 3600):
+        return web.json_response({"error": "rate_limited", "status": "pending"}, status=429)
+    _rl_record(f"paycheck:{_cip}")
     try:
         data = await request.json()
     except json.JSONDecodeError:
@@ -3808,7 +3870,7 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
     from database.db_payments import create_anonymous_purchase, save_anonymous_purchase_payment_id
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not _tariff_purchasable(tariff, key_id):
+    if not _tariff_purchasable(tariff, key_id) or not _renewal_tariff_allowed(tariff, key_id):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_rub = float(tariff.get("price_rub") or 0)
@@ -3919,6 +3981,21 @@ async def handle_public_account_key_renew_check(request: web.Request) -> web.Res
 
 
 async def handle_public_account_key_renew_balance(request: web.Request) -> web.Response:
+    """v1.329: защита от двойного продления (двойной клик → два списания)."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if account_id and isinstance(data, dict) and data.get("key_id"):
+        return await _guarded_purchase(
+            ("site_renew_balance", int(account_id), str(data.get("key_id"))),
+            _handle_public_account_key_renew_balance_impl(request),
+        )
+    return await _handle_public_account_key_renew_balance_impl(request)
+
+
+async def _handle_public_account_key_renew_balance_impl(request: web.Request) -> web.Response:
     """POST /api/public/account/key/renew/balance — продление КОНКРЕТНОГО
     ключа личного кабинета оплатой с личного баланса, без QR/ЮKassa —
     завершается сразу, синхронно, в один запрос (в отличие от
@@ -3956,7 +4033,7 @@ async def handle_public_account_key_renew_balance(request: web.Request) -> web.R
 
     from database.db_tariffs import get_tariff_by_id
     tariff = get_tariff_by_id(int(tariff_id))
-    if not _tariff_purchasable(tariff, key_id):
+    if not _tariff_purchasable(tariff, key_id) or not _renewal_tariff_allowed(tariff, key_id):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_cents = int(round(float(tariff.get("price_rub") or 0) * 100))
@@ -4213,7 +4290,7 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
     from database.db_payments import create_anonymous_purchase, save_anonymous_purchase_payment_id
 
     tariff = get_tariff_by_id(int(tariff_id))
-    if not _tariff_purchasable(tariff, None):
+    if not _tariff_purchasable(tariff, account.get("key_id")) or not _renewal_tariff_allowed(tariff, account.get("key_id")):
         return web.json_response({"error": "tariff_not_found"}, status=404)
 
     price_rub = float(tariff.get("price_rub") or 0)
@@ -4269,6 +4346,10 @@ async def handle_public_account_renew_check(request: web.Request) -> web.Respons
     """POST /api/public/account/renew/check — проверяет статус платежа за
     продление и, если оплачен, реально продлевает ключ.
     Body JSON: {"order_id": "..."}"""
+    _cip = _get_client_ip(request)
+    if not _rl_allowed(f"paycheck:{_cip}", 240, 3600):
+        return web.json_response({"error": "rate_limited", "status": "pending"}, status=429)
+    _rl_record(f"paycheck:{_cip}")
     try:
         data = await request.json()
     except json.JSONDecodeError:
@@ -4509,6 +4590,34 @@ async def handle_weblink(request: web.Request) -> web.Response:
     if not site:
         return web.json_response({"error": "not_configured"}, status=404)
     return web.json_response({"url": f"{site}/shop"})
+
+async def handle_qr_png(request: web.Request) -> web.Response:
+    """GET /api/qr.png?d=... — v1.329: QR-код рисуется на своём сервере. Раньше страницы
+    брали картинку у api.qrserver.com, и туда уходила ссылка подписки клиента."""
+    data = request.query.get("d", "")
+    if not data or len(data) > 2048:
+        return web.Response(status=400, text="bad request")
+    ip = _get_client_ip(request)
+    if not _rl_allowed(f"qr:{ip}", 300, 3600):
+        return web.Response(status=429, text="rate limited")
+    _rl_record(f"qr:{ip}")
+    try:
+        import io
+        import qrcode
+        qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_L, box_size=8, border=2)
+        qr.add_data(data)
+        qr.make(fit=True)
+        buf = io.BytesIO()
+        qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"QR: {e}")
+        return web.Response(status=500, text="error")
+    resp = web.Response(body=buf.getvalue(), content_type="image/png")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    return resp
+
 
 async def handle_favicon(request: web.Request) -> web.Response:
     """GET /favicon.ico — браузеры запрашивают этот путь напрямую,
@@ -4797,6 +4906,7 @@ _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/api/creator/",
     "/static/",
     "/favicon.ico",
+    "/api/qr.png",
     # v1.165: Telegram Mini App и оплата из него — базовые функции, они работают
     # всегда (сайт и личный кабинет закрываются лицензией «site_webapp»)
     "/api/keys",
@@ -4848,6 +4958,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
     app.router.add_get("/favicon.ico", handle_favicon)
+    app.router.add_get("/api/qr.png", handle_qr_png)
     app.router.add_get("/", handle_index)
     app.router.add_get("/import", handle_import)
     app.router.add_get("/app", handle_app_page)
