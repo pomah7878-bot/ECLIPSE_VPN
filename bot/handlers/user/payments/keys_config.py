@@ -386,6 +386,8 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
         user_fake_dict = {'telegram_id': telegram_id, 'username': username}
         panel_email = generate_unique_email(user_fake_dict)
         sub_id = _uuid.uuid4().hex
+        import time as _time
+        _t0 = _time.monotonic()
 
         client = await get_client(server_id)
         inbounds = await get_client_subscription_inbounds(client)
@@ -425,6 +427,7 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
                     return (inb['id'], None, e)
 
         results = await asyncio.gather(*[_add_client_to_inbound(inb) for inb in inbounds])
+        _t_created = _time.monotonic()
 
         first_uuid = None
         first_inbound_id = None
@@ -457,8 +460,10 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
         sync_stats = await sync_key_to_panel_state(key_id)
         if not sync_stats.get('ok'):
             logger.warning(f"subscription_final: ключ {key_id} синхронизирован не полностью: {sync_stats}")
+        _t_synced = _time.monotonic()
         from bot.services import cdn as _cdn
         await _cdn.grant_tariff_pack(key_id)
+        _t_cdn = _time.monotonic()
         from bot.services.key_lifecycle import emit_key_lifecycle_event_safe
 
         await emit_key_lifecycle_event_safe(
@@ -488,6 +493,12 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
             ),
             new_key,
             is_new=True,
+        )
+        _t_end = _time.monotonic()
+        logger.info(
+            "Выдача ключа %s: %.1f с (inbound: %d, создание %.1f с, сверка %.1f с, CDN %.1f с, отправка %.1f с)",
+            key_id, _t_end - _t0, len(inbounds), _t_created - _t0, _t_synced - _t_created,
+            _t_cdn - _t_synced, _t_end - _t_cdn,
         )
     except Exception as e:
         logger.error(f'Ошибка настройки subscription-ключа (id={key_id}): {e}')

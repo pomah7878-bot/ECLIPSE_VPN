@@ -1709,6 +1709,23 @@ class XUIClient(BaseVPNClient):
             )
         )
 
+    _ADD_META_TTL = 5.0
+
+    async def _inbounds_meta_for_add(self) -> List[Dict[str, Any]]:
+        """v1.330: протокол и настройки целевого inbound для add_client. Раньше каждый вызов
+        скачивал весь список inbound со всеми клиентами, и при выдаче подписки (клиент в каждый
+        inbound, до 6 параллельно) панель отдавала полный список по разу на каждый inbound.
+        Теперь параллельные вызовы делят одну выгрузку, а результат живёт 5 секунд — этого
+        хватает на одну выдачу ключа; настройки inbound за это время не меняются."""
+        import time as _t
+        cache = self.__dict__.setdefault('_add_meta_cache', {'ts': 0.0, 'inbounds': None})
+        lock = self.__dict__.setdefault('_add_meta_lock', asyncio.Lock())
+        async with lock:
+            if cache['inbounds'] is None or _t.monotonic() - cache['ts'] > self._ADD_META_TTL:
+                cache['inbounds'] = await self.get_inbounds(include_ignored=True)
+                cache['ts'] = _t.monotonic()
+            return cache['inbounds']
+
     async def _add_client_impl(
         self,
         inbound_id: int,
@@ -1768,7 +1785,7 @@ class XUIClient(BaseVPNClient):
         inbounds = (
             panel_snapshot.inbounds
             if panel_snapshot is not None
-            else await self.get_inbounds(include_ignored=True)
+            else await self._inbounds_meta_for_add()
         )
         target_inbound = next(
             (ib for ib in inbounds if ib.get("id") == inbound_id),
