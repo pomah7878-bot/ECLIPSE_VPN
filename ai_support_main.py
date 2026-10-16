@@ -2875,7 +2875,10 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
     trial_text = _site_trial_text() if mode == site_ai.MODE_GUEST else ""
     system = site_ai.build_prompt(mode, brand, shop_url, tariffs_text=tariffs_text, trial_text=trial_text)
     # «Данные», на которые опирается модель: без общих правил промпта (в них тоже есть цифры вроде «2–5 предложений»)
-    facts = [tariffs_text, trial_text, site_ai.get_text("rules")]
+    cdn_facts = site_ai.cdn_text(include_price=mode == site_ai.MODE_CLIENT or site_ai.get_bool("g_tariffs"))
+    if cdn_facts:
+        system += "\n\nРеальные данные про CDN (говори о CDN только по ним):\n" + cdn_facts
+    facts = [tariffs_text, trial_text, site_ai.get_text("rules"), cdn_facts]
     if dev_question and len(dev_groups) > 1:
         system += ("\n\nПосетитель спрашивает про число устройств. Лимиты у тарифов РАЗНЫЕ: назови лимит по каждому тарифу из сводки "
                    "(все числа), не называй одно число как общее и не утверждай, можно ли докупить устройства, если этого нет в данных.")

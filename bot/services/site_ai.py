@@ -242,6 +242,32 @@ def format_tariffs(tariffs: List[Dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
+def cdn_text(include_price: bool = True) -> str:
+    """Факты про CDN (обход белых списков) из живых настроек бота; пусто, если проверить не удалось."""
+    head = ("CDN (обход белых списков): отдельный пакет трафика для случаев, когда мобильный интернет пропускает только "
+            "«разрешённые» сайты. Пакет добавляется в подписку ключа; после покупки в приложении нужно обновить подписку, "
+            "и появится подключение CDN. Это дополнение к основному трафику, а не замена VPN.")
+    try:
+        from bot.services import cdn as _cdn
+        if not _cdn.is_cdn_active():
+            return head + "\nСейчас CDN не продаётся и не выдаётся: не обещай его и не называй цен на него."
+        lines = [head]
+        gb, days = int(_cdn.get_cdn_pack_gb()), int(_cdn.get_cdn_pack_days())
+        if _cdn.is_tariffs_on():
+            lines.append(f"CDN входит в часть тарифов (в списке тарифов они помечены «CDN»), объём: {gb} ГБ.")
+        price = int(_cdn.get_sale_price_cents() or 0)
+        if price > 0:
+            cost = f" за {_cdn.format_price(price)}" if include_price else ""
+            lines.append(f"Пакет CDN можно докупить: {gb} ГБ на {days} дн.{cost}. Покупка и баланс пакета — на экране CDN у ключа.")
+        if _cdn.is_promo_active():
+            lines.append(f"Есть бесплатная проба CDN: {int(_cdn.get_promo_gb())} ГБ на {int(_cdn.get_promo_days())} дн., один раз на человека, "
+                         "кнопка «Попробовать бесплатно» в разделе CDN.")
+        lines.append("Не гарантируй, что CDN обойдёт конкретную блокировку или оператора: ситуация меняется.")
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def device_groups(tariffs: List[Dict[str, object]]) -> Dict[int, List[str]]:
     """Лимит устройств на ключ -> названия тарифов с этим лимитом."""
     groups: Dict[int, List[str]] = {}
@@ -481,6 +507,7 @@ TEST_QUESTIONS: List[Tuple[str, str]] = [
     ("countries", "В каких странах у вас серверы?"),
     ("china", "Точно ли будет работать в Китае?"),
     ("traffic", "Есть ли лимит трафика?"),
+    ("cdn", "Что такое CDN и точно ли он обходит белые списки?"),
 ]
 
 _CODE_RE = re.compile(r"\b(?=[A-Z0-9]{5,}\b)(?=\w*[A-Z])[A-Z0-9]+\b")
@@ -492,7 +519,7 @@ def trap_flags(kind: str, reply: str) -> List[str]:
     flags: List[str] = []
     if kind == "promo" and _CODE_RE.search(reply or ""):
         flags.append("назвал промокод")
-    if kind == "china":
+    if kind in ("china", "cdn"):
         for sentence in re.split(r"(?<=[.!?])\s+|\n", reply or ""):
             if _GUARANTEE_RE.search(sentence) and not re.search(r"\bне\b|нельзя|\bнет\b|\bбез\b|невозможно", sentence, re.I):
                 flags.append("обещал гарантию")
