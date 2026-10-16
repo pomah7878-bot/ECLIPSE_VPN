@@ -4,6 +4,7 @@
 Помощник работает на публичных страницах сайта для гостей и для клиентов, вошедших
 в кабинет. Каждая возможность включается и выключается отдельно."""
 import logging
+import re
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -343,7 +344,8 @@ def _selftest_text(done: list, total: int, finished: bool) -> str:
     if not finished:
         lines += [f"⏳ Задаю вопросы-ловушки: {len(done)} из {total}…", ""]
     for status, question, reply, notes in done:
-        excerpt = escape_html((reply or "").replace("\n", " ")[:160] + ("…" if len(reply or "") > 160 else ""))
+        plain = re.sub(r"<[^>]+>", "", (reply or "")).replace("\n", " ")
+        excerpt = escape_html(plain[:160] + ("…" if len(plain) > 160 else ""))
         extra = f"\n   ⚠️ {escape_html(', '.join(notes))}" if notes else ""
         lines.append(f"{_ICON[status]} <b>{escape_html(question)}</b>\n   <i>{excerpt}</i>{extra}")
     if finished:

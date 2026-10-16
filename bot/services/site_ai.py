@@ -236,7 +236,27 @@ def format_tariffs(tariffs: List[Dict[str, object]]) -> str:
         devices = f", устройств на ключ: {t['max_ips']}" if t.get("max_ips") else ", лимит устройств не указан"
         cdn = f", CDN для обхода белых списков ({t['cdn_gb']} ГБ)" if t.get("cdn_gb") else ""
         lines.append(f"  • {t['name']} — {t['price_rub']} ₽ за {t['duration_days']} дн., трафик: {traffic}{devices}{cdn}")
+    summary = devices_summary(tariffs)
+    if summary:
+        lines.append(summary)
     return "\n".join(lines)
+
+
+def devices_summary(tariffs: List[Dict[str, object]]) -> str:
+    """Сводка «сколько устройств на ключ» по тарифам: чтобы помощник не выдавал одно число за общее."""
+    groups: Dict[int, List[str]] = {}
+    for t in tariffs:
+        if t.get("max_ips"):
+            groups.setdefault(int(t["max_ips"]), []).append(str(t["name"]))
+    if not groups:
+        return ""
+    if len(groups) == 1 and sum(len(v) for v in groups.values()) == len(tariffs):
+        return f"Устройств на ключ: у всех тарифов одинаково — {next(iter(groups))}."
+    parts = []
+    for n, names in sorted(groups.items()):
+        shown = ", ".join(dict.fromkeys(names))
+        parts.append(f"{n} — {shown}")
+    return "Устройств на ключ ЗАВИСИТ ОТ ТАРИФА: " + "; ".join(parts) + ". Отвечая про устройства, называй лимит именно для тарифа и не выдавай одно число за общее для всех."
 
 
 _COMMON_RULES = """- ЯЗЫК: отвечай на языке последнего сообщения посетителя, по умолчанию по-русски.
