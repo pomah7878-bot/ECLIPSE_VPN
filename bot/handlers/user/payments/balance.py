@@ -622,15 +622,15 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
     from aiogram.types import LabeledPrice
     from database.requests import get_tariff_by_id, get_user_internal_id, get_user_balance, create_pending_order, get_setting
     data = await state.get_data()
-    balance_to_deduct = data.get('balance_to_deduct', 0)
-    tariff_price_cents = data.get('tariff_price_cents', 0)
-    tariff_id = data.get('tariff_id')
-    key_id = data.get('key_id')
-    parts = callback.data.split(':')
-    if not tariff_id:
-        tariff_id = int(parts[1]) if len(parts) > 1 else None
-    if not key_id:
-        key_id = int(parts[2]) if len(parts) > 2 and parts[2] != '0' else None
+    # v1.332: тариф и ключ — из нажатой кнопки; сумма из состояния диалога — только если
+    # она посчитана для этого же тарифа и ключа (иначе пересчитывается ниже по актуальной цене)
+    tariff_id, key_id = _balance_button_target(callback.data)
+    if data.get('tariff_id') == tariff_id and (data.get('key_id') or None) == key_id:
+        balance_to_deduct = data.get('balance_to_deduct', 0)
+        tariff_price_cents = data.get('tariff_price_cents', 0)
+    else:
+        balance_to_deduct = 0
+        tariff_price_cents = 0
     if not tariff_id:
         await callback.answer('❌ Ошибка: тариф не определён', show_alert=True)
         return
@@ -655,7 +655,9 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         await callback.answer('❌ Ошибка пользователя', show_alert=True)
         return
     if not tariff_price_cents:
-        tariff_price_cents = int(tariff.get('price_rub', 0) * 100)
+        # цена со скидками и промокодом — так же, как на экране оплаты
+        from bot.services.promotions import build_quote as _bq
+        tariff_price_cents = int(_bq(user_id=user_id, tariff=tariff, payment_type='balance')['final_amount'])
     if not balance_to_deduct:
         balance_cents = get_user_balance(user_id)
         balance_to_deduct = min(balance_cents, tariff_price_cents)
@@ -771,15 +773,15 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
     )
     from aiogram.types import BufferedInputFile
     data = await state.get_data()
-    balance_to_deduct = data.get('balance_to_deduct', 0)
-    tariff_price_cents = data.get('tariff_price_cents', 0)
-    tariff_id = data.get('tariff_id')
-    key_id = data.get('key_id')
-    parts = callback.data.split(':')
-    if not tariff_id:
-        tariff_id = int(parts[1]) if len(parts) > 1 else None
-    if not key_id:
-        key_id = int(parts[2]) if len(parts) > 2 and parts[2] != '0' else None
+    # v1.332: тариф и ключ — из нажатой кнопки; сумма из состояния диалога — только если
+    # она посчитана для этого же тарифа и ключа (иначе пересчитывается ниже по актуальной цене)
+    tariff_id, key_id = _balance_button_target(callback.data)
+    if data.get('tariff_id') == tariff_id and (data.get('key_id') or None) == key_id:
+        balance_to_deduct = data.get('balance_to_deduct', 0)
+        tariff_price_cents = data.get('tariff_price_cents', 0)
+    else:
+        balance_to_deduct = 0
+        tariff_price_cents = 0
     if not tariff_id:
         await safe_answer_callback(callback, '❌ Ошибка: тариф не определён', show_alert=True)
         return
@@ -793,7 +795,9 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         await safe_answer_callback(callback, '❌ Пользователь не найден', show_alert=True)
         return
     if not tariff_price_cents:
-        tariff_price_cents = int(tariff.get('price_rub', 0) * 100)
+        # цена со скидками и промокодом — так же, как на экране оплаты
+        from bot.services.promotions import build_quote as _bq
+        tariff_price_cents = int(_bq(user_id=user_id, tariff=tariff, payment_type='balance')['final_amount'])
     if not balance_to_deduct:
         balance_cents = get_user_balance(user_id)
         balance_to_deduct = min(balance_cents, tariff_price_cents)

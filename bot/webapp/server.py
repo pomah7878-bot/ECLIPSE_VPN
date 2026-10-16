@@ -3770,12 +3770,22 @@ async def _cdn_buy_response(key_id: int, account: dict) -> web.Response:
 
     from bot.services import cdn as _cdn
     from bot.services.panel_sync_coordinator import panel_sync_coordinator
+    from bot.services.user_locks import try_begin_purchase, end_purchase
+    # v1.332: тот же ключ защиты, что и в боте — двойной клик не покупает второй пакет
+    guard_key = ("cdn", int(key_id))
+    if not try_begin_purchase(guard_key):
+        return web.json_response(
+            {"error": "in_progress", "message": "Пакет уже оформляется или только что оформлен."}, status=429,
+        )
+    result = {}
     try:
         async with panel_sync_coordinator.regular():
             result = await _cdn.purchase_pack(key_id, int(internal_user_id))
     except Exception as e:
         logger.warning(f"CDN buy с сайта, ключ {key_id}: {e}")
         return web.json_response({"error": "internal_error", "message": "Не удалось оформить пакет. Попробуйте позже."}, status=502)
+    finally:
+        end_purchase(guard_key, bool(result.get("ok")))
 
     if not result.get("ok"):
         if result.get("error") == "insufficient_funds":

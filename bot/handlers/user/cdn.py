@@ -144,8 +144,18 @@ async def key_cdn_buy_confirm(callback: CallbackQuery):
     key = await _load_key(callback, key_id)
     if not key:
         return
+    # v1.332: повторное нажатие «Подтвердить» не покупает второй пакет
+    from bot.services.user_locks import try_begin_purchase, end_purchase
+    guard_key = ('cdn', key_id)
+    if not try_begin_purchase(guard_key):
+        await callback.answer('⏳ Пакет уже оформляется или только что оформлен', show_alert=True)
+        return
     await callback.answer('⏳ Оформляю пакет…')
-    result = await cdn.purchase_pack(key_id, int(key['user_id']))
+    result = {}
+    try:
+        result = await cdn.purchase_pack(key_id, int(key['user_id']))
+    finally:
+        end_purchase(guard_key, bool(result.get('ok')))
     if result.get('ok'):
         notice = cdn.paid_message(result['gb'], result['days'], result)
     elif result.get('error') == 'insufficient_funds':
