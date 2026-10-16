@@ -4126,13 +4126,21 @@ async def handle_public_account_buy_balance(request: web.Request) -> web.Respons
         return web.json_response({"error": "tariff_id_required"}, status=400)
 
     from bot.services.anonymous_purchase import complete_anonymous_purchase_via_balance
+    from bot.services.user_locks import try_begin_purchase, end_purchase
+    guard_key = ("site_balance", int(account_id), str(tariff_id))
+    if not try_begin_purchase(guard_key):
+        return web.json_response({"error": "purchase_failed", "message": "Покупка уже оформляется, подождите несколько секунд."}, status=429)
+    _done = False
     try:
         result = await complete_anonymous_purchase_via_balance(
             account_id, int(tariff_id), promo_code=request.cookies.get("site_promo_code"),
         )
+        _done = bool(result.get("ok"))
     except Exception as e:
         logger.error(f"Public account buy/balance error: {e}")
         return web.json_response({"error": "payment_creation_failed"}, status=502)
+    finally:
+        end_purchase(guard_key, _done)
 
     if not result.get("ok"):
         if result.get("insufficient"):

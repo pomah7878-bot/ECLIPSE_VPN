@@ -436,6 +436,24 @@ async def balance_pay_handler(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith('pay_with_balance:'))
 async def pay_with_balance_handler(callback: CallbackQuery, state: FSMContext):
+    """Защита от двойного нажатия: пока покупка идёт или только что прошла, повтор отбрасывается."""
+    from bot.services.user_locks import try_begin_purchase, end_purchase
+    parts = callback.data.split(':')
+    data = await state.get_data()
+    tariff_id = data.get('tariff_id') or (parts[1] if len(parts) > 1 else None)
+    key_id = data.get('key_id') or (parts[2] if len(parts) > 2 and parts[2] else None)
+    guard_key = ('balance', callback.from_user.id, str(tariff_id), str(key_id or 0))
+    if not try_begin_purchase(guard_key):
+        await callback.answer('⏳ Покупка уже оформляется, подождите несколько секунд', show_alert=False)
+        return
+    done = False
+    try:
+        done = bool(await _pay_with_balance_inner(callback, state))
+    finally:
+        end_purchase(guard_key, done)
+
+
+async def _pay_with_balance_inner(callback: CallbackQuery, state: FSMContext):
     """
     Full payment from the balance (when remaining_cents == 0).
     Atomic operation: write off + issue a key.
@@ -552,6 +570,7 @@ async def pay_with_balance_handler(callback: CallbackQuery, state: FSMContext):
     except Exception as refund_err:
         logger.error(f'Не удалось вернуть баланс по заказу {order_id}: {refund_err}')
     await callback.answer()
+    return True
 
 @router.callback_query(F.data.startswith('pay_card_balance:'))
 async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
