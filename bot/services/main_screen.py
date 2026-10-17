@@ -168,11 +168,19 @@ def _plan_name(tariff_id: Any) -> str:
         if tariff.get('group_id') and get_groups_count() > 1:
             group = get_group_by_id(int(tariff['group_id']))
             if group and group.get('name'):
-                return _emoji_first(str(group['name']))
-        return _clean_tariff_name(tariff.get('name') or '')
+                return _strip_emoji(str(group['name']))
+        return _strip_emoji(_clean_tariff_name(tariff.get('name') or ''))
     except Exception as e:  # noqa: BLE001
         logger.debug('main_screen: тариф не получен: %s', e)
         return ''
+
+
+def _strip_emoji(name: str) -> str:
+    """«Premium 👑» / «⚡ 1 месяц» → «Premium» / «1 месяц»: в карточке уже есть 🟢, второй значок лишний."""
+    from bot.utils.page_dynamic_data import _is_symbol
+    cleaned = ''.join(ch for ch in str(name or '') if not _is_symbol(ch))
+    cleaned = ' '.join(cleaned.split())
+    return cleaned or str(name or '').strip()
 
 
 def _emoji_first(name: str) -> str:
