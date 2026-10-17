@@ -355,6 +355,28 @@ def _pct(value: Any) -> str:
     return "—" if number is None else f"{int(round(number))}%"
 
 
+_LINE_FIT = 37  # примерно столько знаков помещается в строку цитаты на телефоне
+
+
+def _visual_len(text: str) -> int:
+    """Грубая ширина строки: эмодзи шире букв, флаг — два символа-половинки."""
+    import re as _re
+    import unicodedata as _ud
+    plain = _re.sub(r"<[^>]+>", "", text)
+    width = 0
+    for ch in plain:
+        code = ord(ch)
+        if code in (0xFE0F, 0x200D):
+            continue
+        if 0x1F1E6 <= code <= 0x1F1FF:
+            width += 1
+        elif code > 0xFFFF or _ud.category(ch) == "So":
+            width += 2
+        else:
+            width += 1
+    return width
+
+
 def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
     """Короткие строки, чтобы помещались в ширину телефона без переносов."""
     lines: List[str] = []
@@ -378,14 +400,15 @@ def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
 
         nodes = entry.get("nodes", [])
         selected = _select_nodes_for_display(nodes)
+        rows: List[Any] = []
         for node in selected:
             icon = _node_icon(node)
             node_name = escape_html(str(node.get("name") or "Нода"))
             if not node.get("enable", True):
-                lines.append(f"{icon} {node_name} — выключена")
+                rows.append(f"{icon} {node_name} — выключена")
             elif node.get("status") != "online":
                 detail = escape_html(str(node.get("lastError") or "нет связи"))
-                lines.append(f"{icon} {node_name} — {detail}")
+                rows.append(f"{icon} {node_name} — {detail}")
             else:
                 node_parts = [
                     f"{icon} {node_name}",
@@ -395,7 +418,21 @@ def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
                 ]
                 if node.get("xray_problem"):
                     node_parts.append(f"Xray {escape_html(str(node.get('xrayState') or ''))}")
-                lines.append(" · ".join(node_parts))
+                rows.append(node_parts)
+        # Если хоть одна нода не помещается в строку — нагрузку всех нод
+        # выносим на вторую строку, чтобы список выглядел одинаково.
+        split = any(
+            isinstance(row, list) and _visual_len(" · ".join(row)) > _LINE_FIT
+            for row in rows
+        )
+        for row in rows:
+            if not isinstance(row, list):
+                lines.append(row)
+            elif split:
+                lines.append(" · ".join(row[:2]))
+                lines.append("      " + " · ".join(row[2:]))
+            else:
+                lines.append(" · ".join(row))
         omitted = len(nodes) - len(selected)
         if omitted > 0:
             lines.append(f"… ещё {omitted}")
