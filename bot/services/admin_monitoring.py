@@ -17,6 +17,7 @@ from database.requests import (
     get_expiring_keys,
     get_keys_stats,
     get_new_users_count_today,
+    get_payments_stats,
     get_users_stats,
 )
 from bot.services.vpn_api import format_traffic, get_client_from_server_data
@@ -262,7 +263,9 @@ async def collect_admin_monitoring_snapshot() -> Dict[str, Any]:
     users = get_users_stats()
     keys = get_keys_stats()
     payments = get_daily_payments_stats()
+    payments_7d = get_payments_stats(7)
     expiring_24h = len(get_expiring_keys(1))
+    expiring_3d = len(get_expiring_keys(3))
     new_users = get_new_users_count_today()
 
     problems: List[Dict[str, Any]] = []
@@ -283,8 +286,10 @@ async def collect_admin_monitoring_snapshot() -> Dict[str, Any]:
         "users": users,
         "keys": keys,
         "payments": payments,
+        "payments_7d": payments_7d,
         "new_users": new_users,
         "expiring_24h": expiring_24h,
+        "expiring_3d": expiring_3d,
         "problems": problems,
     }
 
@@ -315,8 +320,82 @@ def _snapshot_counts(snapshot: Dict[str, Any]) -> Dict[str, int]:
     }
 
 
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
+def _fmt_rub(value: Any) -> str:
+    rub = int(round(_safe_float(value, 0) or 0))
+    return f"{rub:,}".replace(",", "\u202f") + " ₽"
+
+
+def _money_text(payments: Dict[str, Any]) -> str:
+    """Сумма за период: рубли, затем доллары (крипта) и звёзды, если были."""
+    parts = [_fmt_rub(payments.get("paid_rub"))]
+    cents = _safe_int(payments.get("paid_cents"))
+    stars = _safe_int(payments.get("paid_stars"))
+    if cents > 0:
+        parts.append(f"${cents / 100:g}".replace(".", ","))
+    if stars > 0:
+        parts.append(f"⭐{stars}")
+    return " + ".join(parts)
+
+
+def _payments_count_text(count: int) -> str:
+    return f"{count} {_plural(count, 'оплата', 'оплаты', 'оплат')}"
+
+
+def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
+    lines: List[str] = []
+    for entry in entries:
+        server = entry["server"]
+        name = escape_html(str(server.get("name") or "Сервер"))
+        if not entry.get("is_active"):
+            lines.append(f"⏸ {name} — мониторинг выключен")
+            continue
+        if not entry.get("panel_online"):
+            error = escape_html(str(entry.get("error") or "нет подключения"))
+            lines.append(f"🔴 {name} — {error}")
+            continue
+        stats = entry.get("stats") or {}
+        parts = [f"🟢 {name}", f"🔑 {_safe_int(stats.get('online_clients'))}"]
+        if stats.get("cpu_percent") is not None:
+            parts.append(f"CPU {_format_percent(stats.get('cpu_percent'))}")
+        lines.append(" · ".join(parts))
+
+        nodes = entry.get("nodes", [])
+        selected = _select_nodes_for_display(nodes)
+        for node in selected:
+            icon = _node_icon(node)
+            node_name = escape_html(str(node.get("name") or "Нода"))
+            if not node.get("enable", True):
+                lines.append(f"   {icon} {node_name} — выключена")
+            elif node.get("status") != "online":
+                detail = escape_html(str(node.get("lastError") or "нет связи"))
+                lines.append(f"   {icon} {node_name} — {detail}")
+            else:
+                node_parts = [
+                    f"   {icon} {node_name}",
+                    f"🔑 {node.get('onlineCount', 0)}",
+                    f"CPU {_format_percent(node.get('cpuPct'))}",
+                    f"RAM {_format_percent(node.get('memPct'))}",
+                ]
+                if node.get("xray_problem"):
+                    node_parts.append(f"Xray {escape_html(str(node.get('xrayState') or ''))}")
+                lines.append(" · ".join(node_parts))
+        omitted = len(nodes) - len(selected)
+        if omitted > 0:
+            lines.append(f"   … ещё {omitted}")
+    return lines
+
+
 def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
-    """Generates a short summary of the main admin panel."""
+    """Главный экран админ-панели: сводка сверху, подробности в раскрываемых блоках."""
     entries = snapshot.get("servers", [])
     if not entries:
         return (
@@ -331,64 +410,92 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
     updated = collected_at.strftime("%H:%M") if isinstance(collected_at, datetime) else "—"
 
     if counts["active_panels"] == 0:
-        health_icon = "⚠️"
-        health_text = "Мониторинг выключен"
+        health = "⚠️ <b>Мониторинг выключен</b>"
     elif counts["online_panels"] == 0:
-        health_icon = "🔴"
-        health_text = "Все панели недоступны"
+        health = "🔴 <b>Все панели недоступны</b>"
     elif problems:
-        health_icon = "⚠️"
-        health_text = "Есть проблемы"
+        health = "⚠️ <b>Есть проблемы</b>"
     else:
-        health_icon = "🟢"
-        health_text = "Система работает"
+        health = "🟢 <b>Всё работает</b>"
 
-    panel_suffix = f" | ⏸️ {counts['inactive_panels']} выкл." if counts["inactive_panels"] else ""
-    node_suffix = f" | ⏸️ {counts['disabled_nodes']} выкл." if counts["disabled_nodes"] else ""
+    payments = snapshot.get("payments", {}) or {}
+    payments_7d = snapshot.get("payments_7d", {}) or {}
+    users = snapshot.get("users", {}) or {}
+    keys = snapshot.get("keys", {}) or {}
+    new_users = _safe_int(snapshot.get("new_users"))
+
+    servers_total = counts["active_panels"] + counts["nodes_total"]
+    servers_online = counts["online_panels"] + counts["online_nodes"]
+    total_users = _safe_int(users.get("total"))
+    active_users = _safe_int(users.get("active"))
+
+    users_line = (
+        f"👥 {total_users} {_plural(total_users, 'клиент', 'клиента', 'клиентов')}"
+        f" · {active_users} {_plural(active_users, 'активный', 'активных', 'активных')}"
+    )
+    if new_users:
+        users_line += f" · +{new_users} за сутки"
+
+    summary = [
+        f"💰 {_money_text(payments)} сегодня · {_money_text(payments_7d)} за 7 дн.",
+        users_line,
+        f"📶 {counts['panel_online_clients']} онлайн · серверы {servers_online}/{servers_total}",
+    ]
 
     lines = [
         "⚙️ <b>Админ-панель</b>",
+        f"{health} · {updated}",
         "",
-        f"{health_icon} <b>{health_text}</b>",
-        f"🖥️ Панели: {counts['online_panels']}/{counts['active_panels']} онлайн{panel_suffix}",
-        f"🌐 Ноды: {counts['online_nodes']}/{counts['nodes_total']} онлайн{node_suffix}",
-        f"🔑 Онлайн на панелях: {counts['panel_online_clients']}",
-        f"🕒 Обновлено: {updated}",
-        "",
+        "<blockquote>" + "\n".join(summary) + "</blockquote>",
     ]
 
     if problems:
-        lines.append("⚠️ <b>Требуют внимания</b>")
-        for problem in problems[:MAX_SUMMARY_PROBLEMS]:
-            lines.append(problem["text"])
+        shown = [problem["text"] for problem in problems[:MAX_SUMMARY_PROBLEMS]]
         omitted = len(problems) - MAX_SUMMARY_PROBLEMS
         if omitted > 0:
-            lines.append(f"… ещё {omitted}")
-    else:
-        lines.append("✅ Проблем не обнаружено")
+            shown.append(f"… ещё {omitted}")
+        lines.append("<b>Требует внимания</b>")
+        lines.append("<blockquote>" + "\n".join(shown) + "</blockquote>")
 
-    payments = snapshot.get("payments", {})
-    users = snapshot.get("users", {})
-    keys = snapshot.get("keys", {})
-
-    divider = "━━━━━━━━━━━━━━━━━━━━"
-
-    lines.extend(
-        [
-            divider,
-            "💰 <b>Оплаты за 24 часа</b>",
-            f"🤖 Бот: <b>{payments.get('bot_count', 0)}</b> · {_format_payment_parts(payments.get('bot_cents', 0), payments.get('bot_rub', 0), payments.get('bot_stars', 0))}",
-            f"🌐 Сайт: <b>{payments.get('site_count', 0)}</b> · {_format_payment_parts(0, payments.get('site_rub', 0), 0)}",
-            f"➤ Итого: <b>{payments.get('paid_count', 0)}</b> · {_format_payments_sum(payments)}",
-            divider,
-            "👥 <b>Клиенты</b>",
-            f"Всего: <b>{users.get('total', 0)}</b>  •  Активных: <b>{users.get('active', 0)}</b>",
-            f"Новых за 24 часа: <b>{snapshot.get('new_users', 0)}</b>",
-            divider,
-            "🔑 <b>Ключи</b>",
-            f"Активных: <b>{keys.get('active', 0)}</b>  •  Истекают за 24 часа: <b>{snapshot.get('expiring_24h', 0)}</b>",
-        ]
+    # Серверы
+    lines.append(
+        "<blockquote expandable>🖥 <b>Серверы</b>\n"
+        + "\n".join(_server_lines(entries))
+        + "</blockquote>"
     )
+
+    # Оплаты
+    day_count = _safe_int(payments.get("paid_count"))
+    week_count = _safe_int(payments_7d.get("paid_count"))
+    pay_lines = ["💰 <b>Оплаты</b>"]
+    if week_count == 0:
+        pay_lines.append("За 7 дней оплат не было")
+    else:
+        pay_lines.append(
+            f"Сегодня: {_payments_count_text(day_count)} · {_money_text(payments)}"
+            if day_count else "Сегодня оплат не было"
+        )
+        pay_lines.append(f"7 дней: {_payments_count_text(week_count)} · {_money_text(payments_7d)}")
+        rub_count = _safe_int(payments_7d.get("rub_count"))
+        rub_total = _safe_float(payments_7d.get("paid_rub"), 0) or 0
+        if rub_count > 0 and rub_total > 0:
+            pay_lines.append(f"Средний чек: {_fmt_rub(rub_total / rub_count)}")
+        pay_lines.append(
+            f"Бот: {_safe_int(payments_7d.get('bot_count'))}"
+            f" · Сайт: {_safe_int(payments_7d.get('site_count'))}"
+        )
+    lines.append("<blockquote expandable>" + "\n".join(pay_lines) + "</blockquote>")
+
+    # Ключи
+    exp_1 = _safe_int(snapshot.get("expiring_24h"))
+    exp_3 = _safe_int(snapshot.get("expiring_3d"))
+    key_lines = [
+        "🔑 <b>Ключи</b>",
+        f"Активных: {_safe_int(keys.get('active'))}",
+        f"Истекут: за сутки {exp_1} · за 3 дня {exp_3}",
+        f"Создано за сутки: {_safe_int(keys.get('created_today'))}",
+    ]
+    lines.append("<blockquote expandable>" + "\n".join(key_lines) + "</blockquote>")
 
     return "\n".join(lines)
 

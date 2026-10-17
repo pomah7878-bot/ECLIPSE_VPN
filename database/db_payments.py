@@ -62,6 +62,7 @@ __all__ = [
     'find_latest_pending_cardlink_order_for_user',
     'get_user_payments_stats',
     'get_daily_payments_stats',
+    'get_payments_stats',
     'get_key_payments_history',
     '_int_to_base62',
     'create_pending_order',
@@ -317,9 +318,9 @@ def get_user_payments_stats(user_id: int) -> Dict[str, Any]:
         
         return stats
 
-def get_daily_payments_stats() -> Dict[str, Any]:
+def get_payments_stats(days: int = 1) -> Dict[str, Any]:
     """
-    Receives payment statistics for the last 24 hours.
+    Receives payment statistics for the last N days (1 = last 24 hours).
     
     Returns:
         Dictionary with statistics:
@@ -328,6 +329,7 @@ def get_daily_payments_stats() -> Dict[str, Any]:
         - paid_stars: sum of successful ones in stars
         - pending_count: number of pending (unpaid)
     """
+    period = (f"-{max(1, int(days))} day",)
     with get_db() as conn:
         # 1. We count USDT (crypto)
         cursor = conn.execute("""
@@ -337,8 +339,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             FROM payments
             WHERE status = 'paid' 
             AND payment_type = 'crypto'
-            AND paid_at >= datetime('now', '-1 day')
-        """)
+            AND paid_at >= datetime('now', ?)
+        """, period)
         crypto_row = cursor.fetchone()
         
         # 2. Count Stars
@@ -349,8 +351,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             FROM payments
             WHERE status = 'paid' 
             AND payment_type = 'stars'
-            AND paid_at >= datetime('now', '-1 day')
-        """)
+            AND paid_at >= datetime('now', ?)
+        """, period)
         stars_row = cursor.fetchone()
         
         # 3. We count TG payments (historical payment_type 'cards')
@@ -362,8 +364,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             LEFT JOIN tariffs t ON p.tariff_id = t.id
             WHERE p.status = 'paid' 
             AND p.payment_type = 'cards'
-            AND p.paid_at >= datetime('now', '-1 day')
-        """)
+            AND p.paid_at >= datetime('now', ?)
+        """, period)
         cards_row = cursor.fetchone()
         
         # 4. We count YuKassa (historical payment_type 'yookassa_qr')
@@ -375,8 +377,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             LEFT JOIN tariffs t ON p.tariff_id = t.id
             WHERE p.status = 'paid'
             AND p.payment_type = 'yookassa_qr'
-            AND p.paid_at >= datetime('now', '-1 day')
-        """)
+            AND p.paid_at >= datetime('now', ?)
+        """, period)
         qr_row = cursor.fetchone()
 
         # 5. We count WATA (Card/SBP - Rubles)
@@ -388,8 +390,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             LEFT JOIN tariffs t ON p.tariff_id = t.id
             WHERE p.status = 'paid'
             AND p.payment_type = 'wata'
-            AND p.paid_at >= datetime('now', '-1 day')
-        """)
+            AND p.paid_at >= datetime('now', ?)
+        """, period)
         wata_row = cursor.fetchone()
 
         # 6. Count Platega (Rubles)
@@ -401,8 +403,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             LEFT JOIN tariffs t ON p.tariff_id = t.id
             WHERE p.status = 'paid'
             AND p.payment_type = 'platega'
-            AND p.paid_at >= datetime('now', '-1 day')
-        """)
+            AND p.paid_at >= datetime('now', ?)
+        """, period)
         platega_row = cursor.fetchone()
 
         # 7. We count Cardlink (Card/SBP - Rubles)
@@ -414,8 +416,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             LEFT JOIN tariffs t ON p.tariff_id = t.id
             WHERE p.status = 'paid'
             AND p.payment_type = 'cardlink'
-            AND p.paid_at >= datetime('now', '-1 day')
-        """)
+            AND p.paid_at >= datetime('now', ?)
+        """, period)
         cardlink_row = cursor.fetchone()
 
         # 8. Считаем покупки С САЙТА (anonymous_purchases) — раньше эта
@@ -432,8 +434,8 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             FROM anonymous_purchases ap
             LEFT JOIN tariffs t ON ap.tariff_id = t.id
             WHERE ap.status = 'paid'
-            AND ap.created_at >= datetime('now', '-1 day')
-        """)
+            AND ap.created_at >= datetime('now', ?)
+        """, period)
         site_row = cursor.fetchone()
 
         # Разбивка по каналу продажи — бот отдельно от сайта
@@ -458,6 +460,10 @@ def get_daily_payments_stats() -> Dict[str, Any]:
                     (cardlink_row['total_rub'] if cardlink_row else 0) + \
                     (site_row['total_rub'] if site_row else 0)
 
+        rub_count = sum(
+            (row['count'] if row else 0)
+            for row in (cards_row, qr_row, wata_row, platega_row, cardlink_row, site_row)
+        )
         bot_count = paid_count - site_count
         bot_total_rub = total_rub - site_total_rub
         
@@ -473,7 +479,14 @@ def get_daily_payments_stats() -> Dict[str, Any]:
             'bot_rub': bot_total_rub,
             'site_count': site_count,
             'site_rub': site_total_rub,
+            'rub_count': rub_count,
         }
+
+
+def get_daily_payments_stats() -> Dict[str, Any]:
+    """Payment statistics for the last 24 hours."""
+    return get_payments_stats(1)
+
 
 def get_key_payments_history(key_id: int) -> List[Dict[str, Any]]:
     """
