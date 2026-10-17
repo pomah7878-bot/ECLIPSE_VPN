@@ -192,22 +192,42 @@ def _wait_text(seconds: int) -> str:
 
 
 def _home_kb(close_dice_id: int = 0, via_button: bool = False):
-    """Кнопка «На главную». Если рулетку открыли кнопкой с главной страницы —
-    сообщения рулетки просто закрываются и пользователь остаётся на прежней
-    странице. Если вызвали командой /spin — открывается главная страница."""
+    """Кнопка «На главную». v1.342: всегда обычный возврат на главную — сообщение
+    с результатом превращается в свежую главную (с обновлённым балансом/сроком),
+    а прежнее меню и остатки рулетки убираются."""
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    cb = f"roulette_close:{int(close_dice_id)}" if via_button else "start"
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🈴 На главную", callback_data=cb)],
+        [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
     ])
+
+
+def _track(chat_id: int, *messages) -> None:
+    """Запоминает сообщения рулетки, чтобы они ушли при любом возврате на главную / /start."""
+    try:
+        from bot.services.main_menu_tracker import track_flow_message, track_sensitive
+        for m in messages:
+            mid = int(getattr(m, "message_id", m) or 0)
+            if mid:
+                track_flow_message(chat_id, mid)
+        track_sensitive(chat_id, *messages)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Рулетка: сообщения не запомнены: %s", e)
 
 
 async def _say_base(bot, chat_id: int, text: str, dice_id: int = 0, via_button: bool = False) -> None:
     try:
-        await bot.send_message(chat_id, text, parse_mode="HTML",
-                               reply_markup=_home_kb(dice_id, via_button))
+        msg = await bot.send_message(chat_id, text, parse_mode="HTML",
+                                     reply_markup=_home_kb(dice_id, via_button))
+        _track(chat_id, msg)
     except Exception as e:
         logger.warning("Рулетка: не удалось отправить сообщение %s: %s", chat_id, e)
+        return
+    # Барабан своё отыграл — результат уже в тексте, анимацию из чата убираем
+    if dice_id:
+        try:
+            await bot.delete_message(chat_id, int(dice_id))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Рулетка: барабан %s не удалён: %s", dice_id, e)
 
 
 async def run_spin(bot, chat_id: int, telegram_id: int, via_button: bool = False) -> None:
@@ -266,6 +286,7 @@ async def run_spin(bot, chat_id: int, telegram_id: int, via_button: bool = False
         dice_msg = await bot.send_dice(chat_id, emoji="🎰")
         value = int(dice_msg.dice.value)
         dice_id = dice_msg.message_id
+        _track(chat_id, dice_msg)
     except Exception as e:
         logger.warning("Рулетка: не удалось запустить барабан user=%s: %s", telegram_id, e)
         fail_roulette_spin(spin_id)
