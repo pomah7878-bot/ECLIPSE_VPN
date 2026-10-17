@@ -26,13 +26,21 @@ router = Router()
 
 def _build_tariff_text() -> str:
     """Generates a block of tariffs for the tariff list placeholder.
-    
+
+    v1.348: в «Классическом» виде главной — прежний вид списка (как до изменений),
+    в виде «Приложение» — новый аккуратный блок.
+
     Returns:
         HTML text with a list of tariffs and prices, or an empty line if there are no tariffs
     """
-    from bot.utils.page_dynamic_data import build_tariff_text
-
-    return build_tariff_text()
+    from bot.utils.page_dynamic_data import build_tariff_text, build_tariff_text_legacy
+    try:
+        from bot.services.main_screen import current_view, VIEW_APP
+        if current_view() == VIEW_APP:
+            return build_tariff_text()
+    except Exception:
+        pass
+    return build_tariff_text_legacy()
 
 
 SHOW_ID_PAGE_KEY = 'show_id'

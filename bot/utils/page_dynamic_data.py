@@ -207,6 +207,111 @@ def _fmt_rub(value: int) -> str:
     return f"{value:,}".replace(',', '\u00a0') + ' ₽'
 
 
+def build_tariff_text_legacy(*, group_id: int | None = None, include_title: bool = True) -> str:
+    """Прежний (до v1.338) вид списка тарифов — для «Классического» вида главной (v1.348)."""
+    from database.requests import (
+        get_all_tariffs,
+        get_tariffs_by_group,
+        get_all_groups,
+        get_groups_count,
+        is_cardlink_configured,
+        is_cards_enabled,
+        is_crypto_configured,
+        is_demo_payment_enabled,
+        is_platega_configured,
+        is_stars_enabled,
+        is_wata_configured,
+        is_yookassa_qr_configured,
+    )
+
+    crypto_enabled = is_crypto_configured()
+    stars_enabled = is_stars_enabled()
+    cards_enabled = is_cards_enabled()
+    yookassa_qr_enabled = is_yookassa_qr_configured()
+    wata_enabled = is_wata_configured()
+    platega_enabled = is_platega_configured()
+    cardlink_enabled = is_cardlink_configured()
+    demo_enabled = is_demo_payment_enabled()
+
+    cdn_seen = [False]
+
+    def _cdn_gb(tariff: dict) -> int:
+        try:
+            from bot.services.cdn import effective_tariff_cdn_gb
+            return int(effective_tariff_cdn_gb(tariff.get('id')) or 0)
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _finish(lines: list) -> str:
+        """Склеивает блок; если в списке есть тарифы с CDN — добавляет одну строку-пояснение."""
+        if cdn_seen[0]:
+            lines = list(lines) + ['', '🌐 <i>CDN (обход белых списков) — дополнительное подключение в подписке '
+                                    'для сетей, где работают только «белые» адреса. Его цена уже включена в тариф.</i>']
+        return '\n'.join(lines)
+
+    def _format_tariff_line(tariff: dict) -> str:
+        prices = []
+        if crypto_enabled:
+            price_usd = tariff['price_cents'] / 100
+            price_str = f'{price_usd:g}'.replace('.', ',')
+            prices.append(f'${escape_html(price_str)}')
+        if stars_enabled:
+            prices.append(f"{_eps(tariff)} ⭐")
+        if (
+            cards_enabled
+            or yookassa_qr_enabled
+            or wata_enabled
+            or platega_enabled
+            or cardlink_enabled
+            or demo_enabled
+        ) and tariff.get('price_rub', 0) > 0:
+            prices.append(f"{int(tariff['price_rub'])} ₽")
+        price_display = ' / '.join(prices) if prices else 'Цена не установлена'
+        line = f"• {escape_html(tariff['name'])} — <b>{price_display}</b>"
+        gb = _cdn_gb(tariff)
+        if gb > 0 and tariff.get('price_rub', 0) > 1:
+            cdn_seen[0] = True
+            line += f"\n   🌐 <b>+ CDN (обход белых списков): {gb} ГБ</b>"
+        return line
+
+    group_id = _optional_int(group_id)
+
+    if group_id is not None:
+        if group_id <= 0:
+            return ''
+        tariffs = get_tariffs_by_group(group_id)
+        if not tariffs:
+            return ''
+        lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
+        lines.extend(_format_tariff_line(t) for t in tariffs)
+        return _finish(lines)
+
+    # Группировка: если групп больше одной — показываем тарифы под заголовками групп
+    if get_groups_count() > 1:
+        groups = get_all_groups()
+        lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
+        any_group_shown = False
+        for group in groups:
+            group_tariffs = get_tariffs_by_group(group['id'])
+            if not group_tariffs:
+                continue
+            if any_group_shown:
+                lines.append('')
+            lines.append(f"<b>{escape_html(group['name'])}</b>")
+            lines.extend(_format_tariff_line(t) for t in group_tariffs)
+            any_group_shown = True
+        if not any_group_shown:
+            return ''
+        return _finish(lines)
+
+    tariffs = get_all_tariffs()
+    if not tariffs:
+        return ''
+    lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
+    lines.extend(_format_tariff_line(t) for t in tariffs)
+    return _finish(lines)
+
+
 def build_referral_stats_text(user_internal_id: int) -> str:
     """Generates an HTML block for the referral statistics placeholder."""
     from database.requests import (
