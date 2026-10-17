@@ -181,6 +181,31 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         '%без_тарифов%': '',
     }
 
+    # v1.340: главная «как приложение» — включается, если на странице есть «⚡ Подключиться»
+    app_screen_audience = None
+    try:
+        from bot.services import main_screen as _ms
+        _main_page_row = get_page('main')
+        if _ms.page_uses_app_screen(_main_page_row):
+            _state = _ms.get_user_state(user_id)
+            app_screen_audience = _state['audience']
+            _is_new = app_screen_audience == _ms.AUDIENCE_NEW
+            visibility['btn_trial'] = bool(show_trial) and _is_new
+            visibility['btn_my_keys'] = not _is_new
+            visibility['btn_balance_topup'] = bool(show_balance_button) and not _is_new
+            _first = ''
+            _user = getattr(target, 'from_user', None)
+            if _user is not None:
+                _first = escape_html((getattr(_user, 'first_name', '') or '').strip()[:32])
+            text_replacements.update({
+                '%подписка%': _ms.build_subscription_card(_state),
+                '%имя%': _first or 'Привет',
+                '%от_цены%': _ms.min_month_price_text(),
+                '%предложение%': _ms.build_offer_text(bool(show_trial)),
+            })
+    except Exception as e:
+        logger.warning(f"Главная (новый вид): данные не собраны: {e}")
+
     # Admin Panel button for administrators
     admin_append_buttons = None
     if is_admin:
@@ -189,6 +214,8 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         ]
 
     context = build_page_flow_context(target, telegram_id=user_id, page_key='main')
+    if app_screen_audience:
+        context['audience'] = app_screen_audience
     prepend_buttons = None
     append_buttons = admin_append_buttons
 
@@ -281,6 +308,25 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     except Exception as e:
         logger.warning(f"Не удалось добавить метку Powered by: {e}")
 
+    if renew_rows and app_screen_audience:
+        # главная «как приложение»: спокойная подпись вместо «ПРОДЛИТЬ · Ключ №1 (…)»
+        try:
+            from bot.services.renew_hint import get_renew_keys, days_left as _dl
+            _rk = get_renew_keys(user_id)
+            for _row, _key in zip(renew_rows, _rk):
+                _d = _dl(_key.get('expires_at'))
+                if _d is None or _d < 0:
+                    _t = '🔄 Продлить подписку'
+                elif _d == 0:
+                    _t = '🔄 Продлить · последний день'
+                else:
+                    _t = f'🔄 Продлить · осталось {_d} дн.'
+                if len(_rk) > 1:
+                    _name = str(_key.get('display_name') or '')[:14]
+                    _t = f'{_t} · {_name}' if _name else _t
+                _row[0] = _row[0].model_copy(update={'text': _t})
+        except Exception as e:
+            logger.debug(f"Подписи «Продлить» не обновлены: {e}")
     if renew_rows:
         prepend_buttons = renew_rows + list(prepend_buttons or [])
 

@@ -606,6 +606,9 @@ def _resolve_key_cdn(ctx: dict) -> Optional[dict]:
 def _resolve_balance_topup(ctx: dict) -> Optional[dict]:
     """Кнопка пополнения личного баланса. Если на балансе есть деньги — сумма прямо на кнопке."""
     result = {"callback_data": "balance_topup_menu"}
+    if (ctx or {}).get('audience'):
+        # главная «как приложение»: баланс уже в карточке подписки, кнопка — просто «Пополнить»
+        return result
     try:
         telegram_id = int((ctx or {}).get('telegram_id') or 0)
         if telegram_id > 0:
@@ -813,7 +816,14 @@ def _resolve_start_import_incy(ctx: dict) -> Optional[dict]:
 
 
 # Map: button_id → handler
+def _resolve_connect(ctx: dict) -> Optional[dict]:
+    """«⚡ Подключиться» на главной — ведёт к ключу клиента (v1.340)."""
+    from bot.services.main_screen import resolve_connect_button
+    return resolve_connect_button(ctx)
+
+
 SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
+    "btn_connect":     _resolve_connect,
     "btn_pay_crypto":  _resolve_pay_crypto,
     "btn_pay_stars":   _resolve_pay_stars,
     "btn_pay_cards":   _resolve_pay_cards,

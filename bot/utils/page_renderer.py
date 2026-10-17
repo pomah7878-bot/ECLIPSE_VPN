@@ -675,10 +675,17 @@ def _apply_text_replacements(
     context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Applies HTML page substitutions in the same way as render_page()."""
+    ctx = _normalize_context_mapping(context)
+    text = text or ''
+    # v1.340: части текста для новых / клиентов / истёкших — [новым]…[/новым] и т.п.
+    from bot.services.main_screen import apply_audience_sections, has_audience_sections
+    if has_audience_sections(text):
+        audience = ctx.get('audience')
+        text = apply_audience_sections(text, audience if isinstance(audience, str) else None)
     rendered_text = apply_page_placeholders(
-        text or '',
+        text,
         text_replacements,
-        _normalize_context_mapping(context),
+        ctx,
         mode='html',
     )
     return rendered_text or '(пусто)'
