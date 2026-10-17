@@ -350,22 +350,30 @@ def _payments_count_text(count: int) -> str:
     return f"{count} {_plural(count, 'оплата', 'оплаты', 'оплат')}"
 
 
+def _pct(value: Any) -> str:
+    number = _safe_float(value)
+    return "—" if number is None else f"{int(round(number))}%"
+
+
 def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
+    """Короткие строки, чтобы помещались в ширину телефона без переносов."""
     lines: List[str] = []
     for entry in entries:
         server = entry["server"]
         name = escape_html(str(server.get("name") or "Сервер"))
+        if len(entries) > 1 or entry.get("nodes"):
+            lines.append(f"<b>{name}</b>")
         if not entry.get("is_active"):
-            lines.append(f"⏸ {name} — мониторинг выключен")
+            lines.append("⏸ Мониторинг выключен")
             continue
         if not entry.get("panel_online"):
             error = escape_html(str(entry.get("error") or "нет подключения"))
-            lines.append(f"🔴 {name} — {error}")
+            lines.append(f"🔴 Панель — {error}")
             continue
         stats = entry.get("stats") or {}
-        parts = [f"🟢 {name}", f"🔑 {_safe_int(stats.get('online_clients'))}"]
+        parts = ["🟢 Панель", f"🔑 {_safe_int(stats.get('online_clients'))}"]
         if stats.get("cpu_percent") is not None:
-            parts.append(f"CPU {_format_percent(stats.get('cpu_percent'))}")
+            parts.append(f"CPU {_pct(stats.get('cpu_percent'))}")
         lines.append(" · ".join(parts))
 
         nodes = entry.get("nodes", [])
@@ -374,23 +382,23 @@ def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
             icon = _node_icon(node)
             node_name = escape_html(str(node.get("name") or "Нода"))
             if not node.get("enable", True):
-                lines.append(f"   {icon} {node_name} — выключена")
+                lines.append(f"{icon} {node_name} — выключена")
             elif node.get("status") != "online":
                 detail = escape_html(str(node.get("lastError") or "нет связи"))
-                lines.append(f"   {icon} {node_name} — {detail}")
+                lines.append(f"{icon} {node_name} — {detail}")
             else:
                 node_parts = [
-                    f"   {icon} {node_name}",
+                    f"{icon} {node_name}",
                     f"🔑 {node.get('onlineCount', 0)}",
-                    f"CPU {_format_percent(node.get('cpuPct'))}",
-                    f"RAM {_format_percent(node.get('memPct'))}",
+                    f"CPU {_pct(node.get('cpuPct'))}",
+                    f"RAM {_pct(node.get('memPct'))}",
                 ]
                 if node.get("xray_problem"):
                     node_parts.append(f"Xray {escape_html(str(node.get('xrayState') or ''))}")
                 lines.append(" · ".join(node_parts))
         omitted = len(nodes) - len(selected)
         if omitted > 0:
-            lines.append(f"   … ещё {omitted}")
+            lines.append(f"… ещё {omitted}")
     return lines
 
 
@@ -445,7 +453,6 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
     lines = [
         "⚙️ <b>Админ-панель</b>",
         f"{health} · {updated}",
-        "",
         "<blockquote>" + "\n".join(summary) + "</blockquote>",
     ]
 
