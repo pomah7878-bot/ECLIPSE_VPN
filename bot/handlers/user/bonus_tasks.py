@@ -385,10 +385,22 @@ def _admin_name(callback: CallbackQuery) -> str:
 
 
 async def _finish_admin_message(callback: CallbackQuery, claim: dict, footer: str) -> None:
+    """Проверенная заявка: итог в подписи + навигация. v1.344: сообщение больше не висит —
+    «На главную» превращает его в главную, а /start и возврат на главную его убирают."""
+    msg = callback.message
     try:
-        await callback.message.edit_caption(caption=_claim_caption(claim, footer), parse_mode="HTML", reply_markup=None)
+        await msg.edit_caption(
+            caption=_claim_caption(claim, footer), parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[_nav_row("admin_bonus_tasks")]),
+        )
     except Exception:
         pass
+    try:
+        from bot.services.main_menu_tracker import track_flow_message, track_sensitive
+        track_flow_message(msg.chat.id, msg.message_id)
+        track_sensitive(msg.chat.id, msg)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Бонусные дни: заявка не запомнена для уборки: %s", e)
 
 
 @router.callback_query(F.data.startswith("bonus_ok:"))
