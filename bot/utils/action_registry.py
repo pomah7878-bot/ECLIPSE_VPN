@@ -604,8 +604,20 @@ def _resolve_key_cdn(ctx: dict) -> Optional[dict]:
 
 
 def _resolve_balance_topup(ctx: dict) -> Optional[dict]:
-    """Кнопка пополнения личного баланса."""
-    return {"callback_data": "balance_topup_menu"}
+    """Кнопка пополнения личного баланса. Если на балансе есть деньги — сумма прямо на кнопке."""
+    result = {"callback_data": "balance_topup_menu"}
+    try:
+        telegram_id = int((ctx or {}).get('telegram_id') or 0)
+        if telegram_id > 0:
+            from database.requests import get_user_internal_id, get_user_balance
+            internal_id = get_user_internal_id(telegram_id)
+            cents = int(get_user_balance(internal_id) or 0) if internal_id else 0
+            if cents >= 100:
+                rub = f"{cents // 100:,}".replace(',', '\u202f')
+                result["label"] = f"💰 Баланс: {rub} ₽"
+    except Exception as e:  # noqa: BLE001 — кнопка не должна пропадать из-за подписи
+        logger.debug(f"Баланс для кнопки не получен: {e}")
+    return result
 
 
 def _resolve_key_traffic_chart(ctx: dict) -> Optional[dict]:

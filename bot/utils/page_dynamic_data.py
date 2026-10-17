@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from aiogram.types import InlineKeyboardButton
@@ -74,30 +75,46 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
                                     'для сетей, где работают только «белые» адреса. Его цена уже включена в тариф.</i>']
         return '\n'.join(lines)
 
-    def _format_tariff_line(tariff: dict) -> str:
-        prices = []
-        if crypto_enabled:
-            price_usd = tariff['price_cents'] / 100
-            price_str = f'{price_usd:g}'.replace('.', ',')
-            prices.append(f'${escape_html(price_str)}')
-        if stars_enabled:
-            prices.append(f"{_eps(tariff)} ⭐")
-        if (
-            cards_enabled
-            or yookassa_qr_enabled
-            or wata_enabled
-            or platega_enabled
-            or cardlink_enabled
-            or demo_enabled
-        ) and tariff.get('price_rub', 0) > 0:
-            prices.append(f"{int(tariff['price_rub'])} ₽")
-        price_display = ' / '.join(prices) if prices else 'Цена не установлена'
-        line = f"• {escape_html(tariff['name'])} — <b>{price_display}</b>"
+    rub_enabled = bool(
+        cards_enabled or yookassa_qr_enabled or wata_enabled
+        or platega_enabled or cardlink_enabled or demo_enabled
+    )
+
+    def _price(tariff: dict) -> str:
+        # На витрине — одна понятная цена в рублях; звёзды и крипта видны на экране оплаты.
+        rub = int(tariff.get('price_rub') or 0)
+        if rub_enabled and rub > 0:
+            return _fmt_rub(rub)
+        if stars_enabled and _eps(tariff):
+            return f"{_eps(tariff)} ⭐"
+        if crypto_enabled and int(tariff.get('price_cents') or 0) > 0:
+            return '$' + escape_html(f"{tariff['price_cents'] / 100:g}".replace('.', ','))
+        return 'цена не установлена'
+
+    def _format_tariff_line(tariff: dict, clean: bool) -> str:
+        name = _clean_tariff_name(tariff['name']) if clean else str(tariff['name'])
+        line = f"{escape_html(name)} — <b>{_price(tariff)}</b>"
         gb = _cdn_gb(tariff)
         if gb > 0 and tariff.get('price_rub', 0) > 1:
             cdn_seen[0] = True
-            line += f"\n   🌐 <b>+ CDN (обход белых списков): {gb} ГБ</b>"
+            line += f"\n🌐 + CDN (обход белых списков): {gb} ГБ"
         return line
+
+    def _quote(tariffs: list, clean: bool = False) -> str:
+        # Хвост-лимит в названии срезаем только когда лимит показан в заголовке
+        return '<blockquote>' + '\n'.join(_format_tariff_line(t, clean) for t in tariffs) + '</blockquote>'
+
+    def _footer(lines: list) -> list:
+        extra = []
+        if rub_enabled and stars_enabled:
+            extra.append('звёздами')
+        if rub_enabled and crypto_enabled:
+            extra.append('криптой')
+        if extra:
+            lines = list(lines) + ['', f"⭐ Также можно оплатить {' и '.join(extra)}"]
+        return lines
+
+    title = ['📋 <b>Тарифы</b>'] if include_title else []
 
     group_id = _optional_int(group_id)
 
@@ -107,34 +124,85 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
         tariffs = get_tariffs_by_group(group_id)
         if not tariffs:
             return ''
-        lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
-        lines.extend(_format_tariff_line(t) for t in tariffs)
-        return _finish(lines)
+        return _finish(title + [_quote(tariffs)])
 
-    # Группировка: если групп больше одной — показываем тарифы под заголовками групп
+    # Группировка: если групп больше одной — тарифы под заголовками групп
     if get_groups_count() > 1:
         groups = get_all_groups()
-        lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
+        lines = list(title)
         any_group_shown = False
         for group in groups:
             group_tariffs = get_tariffs_by_group(group['id'])
             if not group_tariffs:
                 continue
-            if any_group_shown:
+            if lines:
                 lines.append('')
-            lines.append(f"<b>{escape_html(group['name'])}</b>")
-            lines.extend(_format_tariff_line(t) for t in group_tariffs)
+            header = _group_header(group['name'])
+            limit = _limit_label(group_tariffs, group)
+            lines.append(f"{header} · {limit}" if limit else header)
+            lines.append(_quote(group_tariffs, clean=bool(limit)))
             any_group_shown = True
         if not any_group_shown:
             return ''
-        return _finish(lines)
+        return _finish(_footer(lines))
 
     tariffs = get_all_tariffs()
     if not tariffs:
         return ''
-    lines = ['📋 <b>Тарифы</b>', '━━━━━━━━━━━━━━━━━━━━'] if include_title else []
-    lines.extend(_format_tariff_line(t) for t in tariffs)
-    return _finish(lines)
+    limit = _limit_label(tariffs)
+    head = list(title)
+    if limit:
+        if head:
+            head[-1] = f"{head[-1]} · {limit}"
+        else:
+            head = [limit]
+    return _finish(_footer(head + [_quote(tariffs, clean=bool(limit))]))
+
+
+_LIMIT_TAIL_RE = re.compile(
+    r"\s*[-–—]\s*(?:♾️?|∞|\([^()]*\))\s*$"
+)
+
+
+def _clean_tariff_name(name: str) -> str:
+    """Срезает с названия хвост-лимит («— ♾️», «— (100 ГБ)»): лимит показывается в заголовке группы."""
+    cleaned = _LIMIT_TAIL_RE.sub('', str(name or '')).strip()
+    return cleaned or str(name or '')
+
+
+def _is_symbol(ch: str) -> bool:
+    import unicodedata
+    return ord(ch) > 0x2000 and unicodedata.category(ch) in ('So', 'Sk', 'Mn', 'Cf') or ch == '\ufe0f'
+
+
+def _group_header(name: str) -> str:
+    """«Premium 👑» → «👑 <b>Premium</b>»: эмодзи в начале, чтобы заголовки стояли ровно."""
+    raw = str(name or '').strip()
+    tail = ''
+    while raw and (_is_symbol(raw[-1]) or (raw[-1] == ' ' and tail)):
+        tail = raw[-1] + tail
+        raw = raw[:-1]
+    raw = raw.strip()
+    tail = tail.strip()
+    if tail and raw:
+        return f"{tail} <b>{escape_html(raw)}</b>"
+    return f"<b>{escape_html(str(name or '').strip())}</b>"
+
+
+def _limit_label(tariffs: list, group: dict | None = None) -> str:
+    """Общий лимит трафика группы: «♾ безлимит» или «100 ГБ в месяц»; пусто, если у тарифов разный."""
+    limits = {int(t.get('traffic_limit_gb') or 0) for t in tariffs}
+    if len(limits) != 1:
+        return ''
+    gb = limits.pop()
+    if gb <= 0:
+        return '♾ безлимит'
+    monthly = bool((group or {}).get('monthly_reset_enabled'))
+    return f"{gb} ГБ в месяц" if monthly else f"{gb} ГБ"
+
+
+def _fmt_rub(value: int) -> str:
+    return f"{int(value):,}".replace(',', '\u202f') + ' ₽'
 
 
 def build_referral_stats_text(user_internal_id: int) -> str:
