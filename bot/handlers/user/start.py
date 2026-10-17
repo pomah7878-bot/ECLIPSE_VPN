@@ -321,7 +321,10 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         try:
             from bot.services.renew_hint import get_renew_keys, days_left as _dl
             _rk = get_renew_keys(user_id)
-            for _row, _key in zip(renew_rows, _rk):
+            _key_rows = [r for r in renew_rows if r and str(getattr(r[0], 'callback_data', '') or '').startswith('key_renew:')]
+            for _row, _key in zip(_key_rows, _rk):
+                if str(_row[0].callback_data) != f"key_renew:{int(_key['id'])}":
+                    continue
                 _d = _dl(_key.get('expires_at'))
                 if _d is None or _d < 0:
                     _t = '🔄 Продлить подписку'
@@ -330,7 +333,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
                 else:
                     _t = f'🔄 Продлить · осталось {_d} дн.'
                 if len(_rk) > 1:
-                    _name = str(_key.get('display_name') or '')[:14]
+                    _name = str(_key.get('display_name') or '').split(' (')[0][:14]
                     _t = f'{_t} · {_name}' if _name else _t
                 _row[0] = _row[0].model_copy(update={'text': _t})
         except Exception as e:

@@ -102,7 +102,13 @@ def _buy_page_tariffs_prefix():
         if any(marker in text for marker in _TARIFF_MARKERS):
             return None
         from bot.utils.page_dynamic_data import build_tariff_text
-        return build_tariff_text() or None
+        block = build_tariff_text() or None
+        # v1.349: у страницы с картинкой подпись ограничена 1024 символами — если тарифы
+        # не помещаются вместе с текстом, не обрезаем условия, а не добавляем блок
+        has_media = bool(page.get('image_custom') if page.get('image_custom') is not None else page.get('image_default'))
+        if block and has_media and len(block) + len(text) > 950:
+            return None
+        return block
     except Exception as e:
         logger.debug(f"Тарифы на экране покупки не добавлены: {e}")
         return None

@@ -157,6 +157,8 @@ def normalize_nav(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
                 kept.append(b)
         if kept:
             rows.append(kept)
+    if back is not None and home is not None and back.callback_data == home.callback_data:
+        back = None  # v1.349: «Назад» вела бы туда же, что и «На главную» — оставляем одну кнопку
     nav = [b for b in (back, home) if b is not None]
     if not nav:
         return markup
