@@ -108,10 +108,16 @@ async def show_my_keys(telegram_id: int, target, is_callback: bool = True):
     """
     await _render_my_keys_page(target, telegram_id, force_new=not is_callback)
 
+# v1.345: карточка ключа, открытая с главной кнопкой «⚡ Подключиться», возвращает «Назад»
+# на главную, а не в список ключей (и после экранов QR/устройств — тоже).
+_KEY_BACK_TO_MAIN: dict = {}
+
+
 @router.callback_query(F.data == 'my_keys')
 async def my_keys_handler(callback: CallbackQuery):
     """List of user VPN keys."""
     telegram_id = callback.from_user.id
+    _KEY_BACK_TO_MAIN.pop(telegram_id, None)
     await show_my_keys(telegram_id, callback)
     await callback.answer()
 
@@ -276,9 +282,20 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         protocol=protocol,
         prepend_html=prepend_text,
     )
+    back_to_main = _KEY_BACK_TO_MAIN.get(int(telegram_id)) == int(key_id)
+    nav_visibility = None
+    nav_append = None
+    if back_to_main:
+        nav_visibility = {'btn_my_keys': False, 'btn_back_main': False}
+        nav_append = [[
+            InlineKeyboardButton(text='⬅️ Назад', callback_data='start'),
+            InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
+        ]]
     await render_page(
         message,
         page_key='key_details',
+        visibility=nav_visibility,
+        append_buttons=nav_append,
         context={
             'telegram_id': telegram_id,
             'key_id': key_id,
@@ -347,8 +364,11 @@ async def key_delete_handler(callback: CallbackQuery):
 @router.callback_query(F.data.startswith('key:'))
 async def key_details_handler(callback: CallbackQuery):
     """Detailed information about the key with improved statistics."""
-    key_id = int(callback.data.split(':')[1])
+    parts = callback.data.split(':')
+    key_id = int(parts[1])
     telegram_id = callback.from_user.id
+    if len(parts) > 2 and parts[2] == 'm':
+        _KEY_BACK_TO_MAIN[telegram_id] = key_id
     await show_key_details(telegram_id, key_id, callback.message)
     await callback.answer()
 

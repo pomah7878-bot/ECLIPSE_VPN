@@ -328,5 +328,5 @@ def resolve_connect_button(ctx: dict) -> Optional[dict]:
     if not active:
         return None
     if len(active) == 1:
-        return {'callback_data': f"key:{int(active[0]['id'])}"}
+        return {'callback_data': f"key:{int(active[0]['id'])}:m"}  # :m — «Назад» ведёт на главную
     return {'callback_data': 'my_keys'}
