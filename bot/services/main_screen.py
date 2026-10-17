@@ -330,3 +330,121 @@ def resolve_connect_button(ctx: dict) -> Optional[dict]:
     if len(active) == 1:
         return {'callback_data': f"key:{int(active[0]['id'])}:m"}  # :m — «Назад» ведёт на главную
     return {'callback_data': 'my_keys'}
+
+
+# ---------------------------------------------------------------- переключение вида главной (v1.347)
+
+VIEW_CLASSIC = 'classic'
+VIEW_APP = 'app'
+_SNAPSHOT_KEY = 'main_view_snapshot:'
+
+# id кнопки → (ряд, колонка, подпись, цвет) для вида «Приложение»
+APP_LAYOUT = {
+    'btn_trial':         (0, 0, '🎁 Попробовать бесплатно', 'success'),
+    CONNECT_BUTTON_ID:   (0, 1, '⚡ Подключиться', 'primary'),
+    'btn_my_keys':       (1, 0, None, None),
+    'btn_buy_key':       (1, 1, '💳 Тарифы', None),
+    'btn_balance_topup': (2, 0, '💰 Пополнить', None),
+    'btn_referral':      (2, 1, '🤝 Пригласить', None),
+    'btn_ai_support':    (3, 0, None, 'secondary'),
+    'btn_help':          (3, 1, '📖 Инструкция', None),
+}
+_CONNECT_BUTTON = {
+    'id': CONNECT_BUTTON_ID, 'label': '⚡ Подключиться', 'color': 'primary', 'row': 0, 'col': 1,
+    'is_hidden': False, 'action_type': 'system', 'action_value': None,
+}
+_APP_TAIL = (
+    "[клиентам]<b>%имя%, всё работает</b> 👋\n[/клиентам]"
+    "%подписка%"
+)
+
+
+def current_view() -> str:
+    from database.requests import get_page
+    return VIEW_APP if page_uses_app_screen(get_page('main')) else VIEW_CLASSIC
+
+
+def _merged_buttons(page: Dict[str, Any]) -> List[Dict[str, Any]]:
+    from bot.utils.page_renderer import _merge_buttons_by_id
+    return [dict(b) for b in _merge_buttons_by_id(page.get('buttons_default') or '[]', page.get('buttons_custom'))]
+
+
+def _build_app_view(page: Dict[str, Any]) -> Dict[str, Any]:
+    """Вид «Приложение» из текущей (классической) главной: ваш текст остаётся для новичков."""
+    buttons = [b for b in _merged_buttons(page) if b.get('id') != CONNECT_BUTTON_ID]
+    buttons.append(dict(_CONNECT_BUTTON))
+    others = [b for b in buttons if b.get('id') not in APP_LAYOUT]
+    for b in buttons:
+        if b.get('id') in APP_LAYOUT:
+            r, c, label, color = APP_LAYOUT[b['id']]
+            b['row'], b['col'] = r, c
+            if label:
+                b['label'] = label
+            if color:
+                b['color'] = color
+    next_row, prev = 4, None
+    for b in sorted(others, key=lambda x: (x.get('row', 0), x.get('col', 0))):
+        if prev is not None and b.get('row', 0) != prev:
+            next_row += 1
+        prev = b.get('row', 0)
+        b['row'] = next_row
+    buttons.sort(key=lambda x: (x.get('row', 0), x.get('col', 0)))
+    classic_text = (page.get('text_custom') or page.get('text_default') or '').strip()
+    text = f"[новым]{classic_text}\n%предложение%[/новым]{_APP_TAIL}"
+    import json as _json
+    return {'text_custom': text, 'buttons_custom': _json.dumps(buttons, ensure_ascii=False)}
+
+
+def _build_classic_view(page: Dict[str, Any]) -> Dict[str, Any]:
+    """Запасной вариант, если классический вид не сохранён: без «Подключиться», текст по умолчанию."""
+    import json as _json
+    buttons = [b for b in _merged_buttons(page) if b.get('id') != CONNECT_BUTTON_ID]
+    return {'text_custom': None, 'buttons_custom': _json.dumps(buttons, ensure_ascii=False)}
+
+
+def save_view_snapshot(view: str, text_custom: Optional[str], buttons_custom: Optional[str]) -> None:
+    import json as _json
+    from database.requests import set_setting
+    set_setting(_SNAPSHOT_KEY + view, _json.dumps(
+        {'text_custom': text_custom, 'buttons_custom': buttons_custom}, ensure_ascii=False))
+
+
+def _load_view_snapshot(view: str) -> Optional[Dict[str, Any]]:
+    import json as _json
+    from database.requests import get_setting
+    raw = get_setting(_SNAPSHOT_KEY + view)
+    if not raw:
+        return None
+    try:
+        data = _json.loads(raw)
+        return data if isinstance(data, dict) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def switch_view(target: str) -> bool:
+    """Переключает вид главной. Текст и кнопки текущего вида сохраняются, чтобы к нему вернуться.
+
+    Возвращает True, если вид изменился. Картинка (баннер) общая и не меняется.
+    """
+    if target not in (VIEW_CLASSIC, VIEW_APP):
+        raise ValueError('unknown view')
+    from database.requests import get_page
+    from database.connection import get_db
+    page = get_page('main')
+    if not page:
+        return False
+    current = VIEW_APP if page_uses_app_screen(page) else VIEW_CLASSIC
+    if current == target:
+        return False
+    save_view_snapshot(current, page.get('text_custom'), page.get('buttons_custom'))
+    snap = _load_view_snapshot(target)
+    if snap is None or (target == VIEW_APP and CONNECT_BUTTON_ID not in str(snap.get('buttons_custom') or '')):
+        snap = _build_app_view(page) if target == VIEW_APP else _build_classic_view(page)
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE pages SET text_custom = ?, buttons_custom = ?, updated_at = CURRENT_TIMESTAMP WHERE page_key = 'main'",
+            (snap.get('text_custom'), snap.get('buttons_custom')),
+        )
+    logger.info('Вид главной переключён: %s → %s', current, target)
+    return True

@@ -35,6 +35,7 @@ from bot.handlers.admin.help_orders import router as help_orders_router
 from bot.handlers.admin.cdn import router as cdn_router
 from bot.handlers.admin.collabs import router as collabs_router
 from bot.handlers.admin.site_ai import router as site_ai_router
+from bot.handlers.admin.main_view import router as main_view_router
 
 admin_router = Router()
 
@@ -54,6 +55,7 @@ admin_router.include_router(users_keys_deleted_router)
 admin_router.include_router(cdn_router)
 admin_router.include_router(expired_key_autodelete_router)
 admin_router.include_router(system_router)
+admin_router.include_router(main_view_router)
 admin_router.include_router(trial_router)
 admin_router.include_router(referral_router)
 admin_router.include_router(promotions_router)

@@ -287,10 +287,8 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
     nav_append = None
     if back_to_main:
         nav_visibility = {'btn_my_keys': False, 'btn_back_main': False}
-        nav_append = [[
-            InlineKeyboardButton(text='⬅️ Назад', callback_data='start'),
-            InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
-        ]]
+        # «Назад» тут тоже вёл бы на главную — две одинаковые кнопки не нужны (v1.347)
+        nav_append = [[InlineKeyboardButton(text='🈴 На главную', callback_data='start')]]
     await render_page(
         message,
         page_key='key_details',
