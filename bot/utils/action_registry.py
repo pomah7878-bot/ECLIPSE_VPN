@@ -613,8 +613,10 @@ def _resolve_balance_topup(ctx: dict) -> Optional[dict]:
             internal_id = get_user_internal_id(telegram_id)
             cents = int(get_user_balance(internal_id) or 0) if internal_id else 0
             if cents >= 100:
-                rub = f"{cents // 100:,}".replace(',', '\u202f')
-                result["label"] = f"💰 Баланс: {rub} ₽"
+                rub = cents // 100
+                rub_text = f"{rub:,}".replace(',', '\u00a0') if rub >= 10000 else str(rub)
+                # коротко, чтобы не обрезалось в половине ряда
+                result["label"] = f"💰 {rub_text} ₽"
     except Exception as e:  # noqa: BLE001 — кнопка не должна пропадать из-за подписи
         logger.debug(f"Баланс для кнопки не получен: {e}")
     return result

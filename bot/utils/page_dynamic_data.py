@@ -111,7 +111,7 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
         if rub_enabled and crypto_enabled:
             extra.append('криптой')
         if extra:
-            lines = list(lines) + ['', f"⭐ Также можно оплатить {' и '.join(extra)}"]
+            lines = list(lines) + [f"⭐ Также можно оплатить {' и '.join(extra)}"]
         return lines
 
     title = ['📋 <b>Тарифы</b>'] if include_title else []
@@ -135,8 +135,6 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
             group_tariffs = get_tariffs_by_group(group['id'])
             if not group_tariffs:
                 continue
-            if lines:
-                lines.append('')
             header = _group_header(group['name'])
             limit = _limit_label(group_tariffs, group)
             lines.append(f"{header} · {limit}" if limit else header)
@@ -202,7 +200,11 @@ def _limit_label(tariffs: list, group: dict | None = None) -> str:
 
 
 def _fmt_rub(value: int) -> str:
-    return f"{int(value):,}".replace(',', '\u202f') + ' ₽'
+    # Четырёхзначные цены без пробела (1699 ₽), от 10 000 — с разделителем
+    value = int(value)
+    if value < 10000:
+        return f"{value} ₽"
+    return f"{value:,}".replace(',', '\u00a0') + ' ₽'
 
 
 def build_referral_stats_text(user_internal_id: int) -> str:
