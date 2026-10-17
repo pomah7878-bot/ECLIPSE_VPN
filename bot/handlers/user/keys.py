@@ -409,7 +409,7 @@ def _build_devices_message(key_id: int, key_name: str, result: dict) -> tuple:
                 callback_data=f'key_device_disconnect:{key_id}:{d["device_id"]}',
             )])
     rows.append([InlineKeyboardButton(text='🔄 Обновить', callback_data=f'key_devices:{key_id}')])
-    rows.append([InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')])
+    rows.append([InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'), InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
     builder.inline_keyboard = rows
 
     return "\n".join(lines), builder
@@ -430,7 +430,8 @@ async def _render_devices_screen(callback: CallbackQuery, key_id: int) -> None:
         await callback.message.edit_text(
             "Ключ ещё не настроен на сервере.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')
+                InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'),
+                InlineKeyboardButton(text='🈴 На главную', callback_data='start')
             ]]),
         )
         return
@@ -444,7 +445,8 @@ async def _render_devices_screen(callback: CallbackQuery, key_id: int) -> None:
         await callback.message.edit_text(
             f"❌ {e}",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}')
+                InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'),
+                InlineKeyboardButton(text='🈴 На главную', callback_data='start')
             ]]),
         )
         return
@@ -454,7 +456,9 @@ async def _render_devices_screen(callback: CallbackQuery, key_id: int) -> None:
             "Не удалось получить список устройств. Попробуйте ещё раз чуть позже.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(text='🔄 Обновить', callback_data=f'key_devices:{key_id}'),
-                InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}'),
+            ], [
+                InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'),
+                InlineKeyboardButton(text='🈴 На главную', callback_data='start'),
             ]]),
         )
         return
@@ -1035,7 +1039,7 @@ async def key_traffic_chart_handler(callback: CallbackQuery):
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     back_kb = InlineKeyboardBuilder()
-    back_kb.row(InlineKeyboardButton(text='⬅️ Назад к ключу', callback_data=f'key:{key_id}'))
+    back_kb.row(InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'), InlineKeyboardButton(text='🈴 На главную', callback_data='start'))
     await callback.message.answer_photo(
         photo=BufferedInputFile(png_bytes, filename="traffic_chart.png"),
         caption=f"📈 <b>Статистика трафика — {keyname}</b>\n\nПоследние 14 дней (данные накапливаются постепенно).",

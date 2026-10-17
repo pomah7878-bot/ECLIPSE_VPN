@@ -100,6 +100,38 @@ def _is_back_like(btn) -> bool:
 
 
 
+_CANCEL_LABELS = ("отмена", "оставить", "отменить")
+
+
+def _is_exit(btn) -> bool:
+    """Кнопка выхода с экрана: «Назад», «⬅️ К …» или «❌ Отмена»."""
+    if not btn.callback_data or btn.callback_data == "start":
+        return False
+    return _is_back_exact(btn) or bool(_BACK_LIKE_RE.match(btn.text or "")) or _label(btn) in _CANCEL_LABELS
+
+
+def ensure_home(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    """v1.346: «🈴 На главную» на каждом вложенном экране.
+
+    Если на экране есть «Назад»/«Отмена», но нет «На главную» — кнопка добавляется рядом
+    (в ту же строку, если выход стоит в строке один), иначе — отдельной последней строкой.
+    Экраны без выхода (главная, уведомления, кнопки оплаты-счёта) не трогаем."""
+    rows = [list(r) for r in markup.inline_keyboard]
+    flat = [b for r in rows for b in r]
+    if not flat or any(_is_home(b) for b in flat):
+        return markup
+    exits = [(i, b) for i, r in enumerate(rows) for b in r if _is_exit(b)]
+    if not exits:
+        return markup
+    home = InlineKeyboardButton(text="🈴 На главную", callback_data="start")
+    i, _ = exits[-1]
+    if len(rows[i]) == 1:
+        rows[i].append(home)
+    else:
+        rows.append([home])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def normalize_nav(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
     """Правило по умолчанию: «Назад» и «На главную» всегда в ОДНОЙ строке
     в самом низу клавиатуры (Назад слева, На главную справа).
@@ -114,7 +146,7 @@ def normalize_nav(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
         for b in row:
             # подписанная кнопка возврата: одна в строке либо уже в паре с «На главную» (повторный проход)
             alone = len(row) == 1 or (len(row) == 2 and any(_is_home(x) for x in row))
-            is_back = _is_back_exact(b) or (has_home and alone and _is_back_like(b))
+            is_back = _is_back_exact(b) or (has_home and alone and (_is_back_like(b) or _label(b) in _CANCEL_LABELS))
             if back is None and is_back:
                 back = b
             elif home is None and _is_home(b):
@@ -139,7 +171,9 @@ class MenuWidthMiddleware(BaseRequestMiddleware):
         try:
             markup = getattr(method, "reply_markup", None)
             if isinstance(markup, InlineKeyboardMarkup):
-                new_markup = normalize_nav(markup)
+                chat_id = getattr(method, "chat_id", None)
+                private = chat_id is None or (isinstance(chat_id, int) and chat_id > 0)
+                new_markup = normalize_nav(ensure_home(markup) if private else markup)
                 if new_markup is not markup:
                     method = method.model_copy(update={"reply_markup": new_markup})
             if (

@@ -72,7 +72,8 @@ async def balance_topup_custom_handler(callback: CallbackQuery, state: FSMContex
         f"✏️ <b>Своя сумма пополнения</b>\n\n"
         f"Введите сумму в рублях (от {MIN_TOPUP_AMOUNT_RUB} до {MAX_TOPUP_AMOUNT_RUB} ₽), например: <code>750</code>",
         reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="❌ Отмена", callback_data="balance_topup_menu")
+            InlineKeyboardButton(text="❌ Отмена", callback_data="balance_topup_menu"),
+            InlineKeyboardButton(text="🈴 На главную", callback_data="start")
         ).as_markup(),
     )
     await callback.answer()

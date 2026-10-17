@@ -101,9 +101,11 @@ def balance_payment_kb(
                 )
             )
     
-    back_cb = f"key_renew:{key_id}" if key_id else "buy_key"
+    # v1.346: «Назад» — к выбору тарифа для оплаты балансом, откуда клиент и пришёл
+    back_cb = f"pay_use_balance:{key_id}" if key_id else "pay_use_balance"
     builder.row(
-        InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb)
+        InlineKeyboardButton(text="⬅️ Назад", callback_data=back_cb),
+        InlineKeyboardButton(text="🈴 На главную", callback_data="start")
     )
     
     return builder.as_markup()
@@ -267,7 +269,8 @@ def cancel_kb(cancel_callback: str) -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="❌ Отмена", callback_data=cancel_callback)
+        InlineKeyboardButton(text="❌ Отмена", callback_data=cancel_callback),
+        InlineKeyboardButton(text="🈴 На главную", callback_data="start")
     )
     return builder.as_markup()
 
@@ -482,7 +485,8 @@ def replace_server_list_kb(servers: list, key_id: int) -> InlineKeyboardMarkup:
         )
     
     builder.row(
-        InlineKeyboardButton(text="❌ Отмена", callback_data=f"key:{key_id}")
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"key:{key_id}"),
+        InlineKeyboardButton(text="🈴 На главную", callback_data="start")
     )
     
     return builder.as_markup()
@@ -511,7 +515,8 @@ def replace_inbound_list_kb(inbounds: list, key_id: int) -> InlineKeyboardMarkup
         )
     
     builder.row(
-        InlineKeyboardButton(text="⬅️ Назад", callback_data=f"key_replace:{key_id}")
+        InlineKeyboardButton(text="⬅️ Назад", callback_data=f"key_replace:{key_id}"),
+        InlineKeyboardButton(text="🈴 На главную", callback_data="start")
     )
     
     return builder.as_markup()
@@ -536,7 +541,8 @@ def replace_confirm_kb(key_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="❌ Отмена",
             callback_data=f"key:{key_id}"
-        )
+        ),
+        InlineKeyboardButton(text="🈴 На главную", callback_data="start")
     )
     
     return builder.as_markup()
