@@ -82,7 +82,30 @@ async def _render_buy_page(target):
         context=context,
         prepend_buttons=renew_rows or None,
         force_new=isinstance(target, Message),
+        text_prefix=_buy_page_tariffs_prefix(),
     )
+
+
+_TARIFF_MARKERS = ('%тарифы%', '%tariffs%', '%без_тарифов%', '%no_tariffs%')
+
+
+def _buy_page_tariffs_prefix():
+    """v1.343: клиент видит цены сразу на экране покупки, а не после выбора способа оплаты.
+
+    Если админ сам поставил %тарифы% в текст страницы — блок встанет туда, где он стоит;
+    %без_тарифов% — отключает показ. Иначе список тарифов выводится над текстом страницы.
+    """
+    try:
+        from database.requests import get_page
+        page = get_page('prepayment') or {}
+        text = str(page.get('text_custom') or page.get('text_default') or '').casefold()
+        if any(marker in text for marker in _TARIFF_MARKERS):
+            return None
+        from bot.utils.page_dynamic_data import build_tariff_text
+        return build_tariff_text() or None
+    except Exception as e:
+        logger.debug(f"Тарифы на экране покупки не добавлены: {e}")
+        return None
 
 
 @router.callback_query(F.data == 'buy_key')

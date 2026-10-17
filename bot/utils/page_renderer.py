@@ -8,6 +8,7 @@ Implements a three-layer button visibility system:
   3. runtime - visibility dict by button id, system handlers and page/route transitions
 """
 import json
+import re
 import logging
 from collections.abc import Mapping
 from typing import Optional, Dict, List, Any
@@ -669,6 +670,16 @@ def _normalize_snapshot_page_data(page_data: Optional[Mapping[str, Any]]) -> Dic
     return dict(page_data)
 
 
+def _insert_after_title(text: str, block: str) -> str:
+    """Вставляет блок сразу под заголовком страницы (первая короткая строка), иначе — сверху."""
+    if not text or text == '(пусто)':
+        return block
+    head, sep, rest = text.partition('\n\n')
+    if sep and '\n' not in head and len(re.sub(r'<[^>]+>', '', head)) <= 60:
+        return f"{head}\n\n{block}\n\n{rest}"
+    return f"{block}\n\n{text}"
+
+
 def _apply_text_replacements(
     text: str,
     text_replacements: Optional[Dict[str, str]],
@@ -953,6 +964,7 @@ async def render_page(
     runtime_media: Any = None,
     runtime_media_type: Optional[str] = None,
     bottom_button_ids: Optional[set] = None,
+    text_prefix: Optional[str] = None,
 ) -> Optional[Message]:
     """
     Retrieves a page from the database and sends/edits a message.
@@ -1009,6 +1021,9 @@ async def render_page(
 
     # 2. Text processing
     text = _apply_text_replacements(page_data["text"], text_replacements, render_context)
+    if text_prefix:
+        # v1.343: служебный блок над текстом страницы (например, тарифы на экране покупки)
+        text = _insert_after_title(text, text_prefix)
 
     # 3. Assembling the keyboard
     kb = _build_keyboard(
