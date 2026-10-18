@@ -800,7 +800,6 @@ async def create_cardlink_payment(
     form.add_field("return_url", return_url)
     form.add_field("success_url", return_url)
     form.add_field("fail_url", return_url)
-    form.add_field("partner_uuid", "6e7e8f22-3410-4224-8b9c-e61430705963")
 
     headers = {
         "Authorization": f"Bearer {api_token}",
