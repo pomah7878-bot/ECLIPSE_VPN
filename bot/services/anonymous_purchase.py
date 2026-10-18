@@ -6,6 +6,7 @@
 import logging
 import time
 import uuid as uuid_module
+from bot.utils.ru_format import days_ru, format_rub
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +244,7 @@ async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str
     except Exception as notify_err:
         logger.warning(f"Ошибка отправки уведомления админам о продлении ключа {key_id} с сайта: {notify_err}")
 
-    return {"ok": True, "message": f"Ключ продлён на {days} дней."}
+    return {"ok": True, "message": f"Ключ продлён на {days_ru(days)}."}
 
 
 async def claim_anonymous_purchase(claim_code: str, telegram_id: int, username: str | None = None) -> dict:

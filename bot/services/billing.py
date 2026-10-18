@@ -24,6 +24,7 @@ _SBP_LOGO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "asset
 
 
 from bot.utils.payment_text import public_description as _pub, clean_description  # v1.147 neutral payment text
+from bot.utils.ru_format import days_ru, format_rub
 
 def _overlay_sbp_logo(qr_img):
     """Накладывает логотип СБП в центр QR-кода (как делают официальные
@@ -1545,7 +1546,7 @@ async def _handle_late_payment(order: Dict[str, Any]) -> str:
                         admin_id,
                         "⚠️ <b>Оплата по закрытому заказу</b>\n\n"
                         f"Заказ: <code>{order_id}</code>, статус: {order.get('status')}\n"
-                        + (f"Зачислено на баланс клиента: {cents / 100:.2f} ₽" if cents else "Сумма не зачислена автоматически — проверьте вручную."),
+                        + (f"Зачислено на баланс клиента: {format_rub(cents, cents=True)}" if cents else "Сумма не зачислена автоматически — проверьте вручную."),
                         parse_mode='HTML',
                         reply_markup=_notify_home(),
                     )
@@ -1554,7 +1555,7 @@ async def _handle_late_payment(order: Dict[str, Any]) -> str:
     except Exception as e:
         logger.warning(f"Не удалось уведомить админов о поздней оплате {order_id}: {e}")
     if cents:
-        return f"✅ Платёж получен, но заказ уже был закрыт. Сумма {cents / 100:.2f} ₽ зачислена на ваш баланс."
+        return f"✅ Платёж получен, но заказ уже был закрыт. Сумма {format_rub(cents, cents=True)} зачислена на ваш баланс."
     return "⚠️ Платёж получен, но заказ уже был закрыт. Обратитесь в поддержку — мы разберёмся."
 
 
@@ -1631,7 +1632,7 @@ async def _process_payment_order_inner(
                 if not _topup.get('ok'):
                     raise RuntimeError(f"Не удалось зачислить пополнение по заказу {order_id}")
         amount_rub = int(order.get('final_amount_cents') or order.get('amount_cents') or 0) / 100
-        text = f"✅ Баланс пополнен на {amount_rub:.2f} ₽!"
+        text = f"✅ Баланс пополнен на {format_rub(amount_rub)}!"
         order["_payment_action"] = "topup"
         return True, text, order
 
@@ -1666,7 +1667,7 @@ async def _process_payment_order_inner(
                 # v1.195: срок не изменился — заказ вернётся в ожидание и будет оформлен повторно
                 raise RuntimeError(f"Ключ {vpn_key_id} не продлён для заказа {order_id}")
         order["_payment_action"] = "renewal"
-        text = f"✅ Подписка продлена на {days} дней!"
+        text = f"✅ Подписка продлена на {days_ru(days)}!"
     else:
         # Новая покупка — черновой ключ, сервер выбирается пользователем позже
         if order['_payment_processed_now']:

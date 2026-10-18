@@ -12,6 +12,7 @@ import logging
 from aiogram import Router, F
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.types import CallbackQuery, Message
+from bot.utils.ru_format import format_rub
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +411,7 @@ def _status_text() -> str:
     ]
     for t in TIERS:
         lines.append(f"• {_chance_pct(t)} · {TIER_NAME[t]}: <b>{prize_text(prizes[t])}</b>")
-    lines += ["", f"В среднем за прокрутку: ≈ {exp_days:.2f} дн. и ≈ {exp_rub:.2f} ₽"]
+    lines += ["", f"В среднем за прокрутку: ≈ {exp_days:.2f} дн. и ≈ {format_rub(exp_rub)}"]
     return "\n".join(lines)
 
 

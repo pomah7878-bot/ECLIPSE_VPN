@@ -8,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from config import ADMIN_IDS
 from database.requests import get_users_stats, get_all_users_paginated, get_user_by_telegram_id, toggle_user_ban, get_user_vpn_keys, get_user_payments_stats, get_vpn_key_by_id, extend_vpn_key, create_vpn_key_admin, get_active_servers, get_all_tariffs, get_user_balance, get_user_referral_coefficient, set_user_referral_coefficient
 from bot.utils.admin import is_admin
+from bot.utils.ru_format import format_rub
 from bot.utils.datetime_format import format_datetime_for_display
 from bot.utils.text import escape_html, safe_edit_or_send
 from bot.utils.panel_email import get_panel_email_prefix
@@ -150,7 +151,7 @@ def _format_user_card(user: dict) -> tuple[str, any]:
     lines.append(f'📅 Зарегистрирован: {created_at}')
     
     balance_rub = balance_cents / 100
-    lines.append(f'💰 Баланс: <b>{balance_rub:.2f} ₽</b>')
+    lines.append(f'💰 Баланс: <b>{format_rub(balance_rub)}</b>')
     lines.append(f'📊 Реферальный коэффициент: <b>{referral_coefficient}x</b>')
     lines.append('')
     if vpn_keys:
@@ -325,7 +326,7 @@ async def show_balance_toast(callback: CallbackQuery):
         await callback.answer('Пользователь не найден', show_alert=True)
         return
     balance_rub = get_user_balance(user['id']) / 100
-    await callback.answer(f'💰 Текущий баланс: {balance_rub:.2f} ₽')
+    await callback.answer(f'💰 Текущий баланс: {format_rub(balance_rub)}')
 
 @router.callback_query(F.data.regexp('^admin_user_balance_add:(\\d+)$'))
 async def start_balance_add(callback: CallbackQuery, state: FSMContext):
@@ -342,7 +343,7 @@ async def start_balance_add(callback: CallbackQuery, state: FSMContext):
     balance_rub = current_balance / 100
     await state.set_state(AdminStates.waiting_balance_amount)
     await state.update_data(balance_user_telegram_id=telegram_id, balance_operation='add')
-    await safe_edit_or_send(callback.message, f'💰 <b>Пополнение баланса</b>\n\n👤 {format_user_display(user)}\n📱 ID: <code>{telegram_id}</code>\n💼 Текущий баланс: <b>{balance_rub:.2f} ₽</b>\n\nВведите сумму пополнения в рублях (например: 100 или 50.5):', reply_markup=back_and_home_kb(f'admin_user_view:{telegram_id}'))
+    await safe_edit_or_send(callback.message, f'💰 <b>Пополнение баланса</b>\n\n👤 {format_user_display(user)}\n📱 ID: <code>{telegram_id}</code>\n💼 Текущий баланс: <b>{format_rub(balance_rub)}</b>\n\nВведите сумму пополнения в рублях (например: 100 или 50.5):', reply_markup=back_and_home_kb(f'admin_user_view:{telegram_id}'))
     await callback.answer()
 
 @router.callback_query(F.data.regexp('^admin_user_balance_deduct:(\\d+)$'))
@@ -360,7 +361,7 @@ async def start_balance_deduct(callback: CallbackQuery, state: FSMContext):
     balance_rub = current_balance / 100
     await state.set_state(AdminStates.waiting_balance_amount)
     await state.update_data(balance_user_telegram_id=telegram_id, balance_operation='deduct')
-    await safe_edit_or_send(callback.message, f'💸 <b>Списание баланса</b>\n\n👤 {format_user_display(user)}\n📱 ID: <code>{telegram_id}</code>\n💼 Текущий баланс: <b>{balance_rub:.2f} ₽</b>\n\nВведите сумму списания в рублях (например: 100 или 50.5):', reply_markup=back_and_home_kb(f'admin_user_view:{telegram_id}'))
+    await safe_edit_or_send(callback.message, f'💸 <b>Списание баланса</b>\n\n👤 {format_user_display(user)}\n📱 ID: <code>{telegram_id}</code>\n💼 Текущий баланс: <b>{format_rub(balance_rub)}</b>\n\nВведите сумму списания в рублях (например: 100 или 50.5):', reply_markup=back_and_home_kb(f'admin_user_view:{telegram_id}'))
     await callback.answer()
 
 @router.message(AdminStates.waiting_balance_amount, F.text, ~F.text.startswith('/'))
@@ -393,7 +394,7 @@ async def process_balance_amount(message: Message, state: FSMContext):
     if operation == 'deduct':
         if amount_cents > current_balance:
             balance_rub = current_balance / 100
-            await safe_edit_or_send(message, f'❌ Недостаточно средств на балансе.\nТекущий баланс: {balance_rub:.2f} ₽\nПопытка списать: {amount_rub:.2f} ₽')
+            await safe_edit_or_send(message, f'❌ Недостаточно средств на балансе.\nТекущий баланс: {format_rub(balance_rub)}\nПопытка списать: {format_rub(amount_rub)}')
             return
         from bot.services.balance import debit_user_balance
 
@@ -410,10 +411,10 @@ async def process_balance_amount(message: Message, state: FSMContext):
             return
         new_balance = int(result.get('balance_after') or get_user_balance(user_id))
         new_balance_rub = new_balance / 100
-        await safe_edit_or_send(message, f'✅ Баланс списан\n\nСписано: {amount_rub:.2f} ₽\nНовый баланс: {new_balance_rub:.2f} ₽')
+        await safe_edit_or_send(message, f'✅ Баланс списан\n\nСписано: {format_rub(amount_rub)}\nНовый баланс: {format_rub(new_balance_rub)}')
         from bot.services.user_notify import notify_user
         await notify_user(message.bot, telegram_id,
-                          f'💸 <b>С вашего баланса списано {amount_rub:.2f} ₽</b>\n\nБаланс: {new_balance_rub:.2f} ₽.')
+                          f'💸 <b>С вашего баланса списано {format_rub(amount_rub)}</b>\n\nБаланс: {format_rub(new_balance_rub)}.')
         logger.info(f'Админ {message.from_user.id} списал {amount_cents} коп с баланса user {user_id}')
     else:
         from bot.services.balance import credit_user_balance
@@ -431,10 +432,10 @@ async def process_balance_amount(message: Message, state: FSMContext):
             return
         new_balance = int(result.get('balance_after') or get_user_balance(user_id))
         new_balance_rub = new_balance / 100
-        await safe_edit_or_send(message, f'✅ Баланс пополнен\n\nПополнено: {amount_rub:.2f} ₽\nНовый баланс: {new_balance_rub:.2f} ₽')
+        await safe_edit_or_send(message, f'✅ Баланс пополнен\n\nПополнено: {format_rub(amount_rub)}\nНовый баланс: {format_rub(new_balance_rub)}')
         from bot.services.user_notify import notify_user
         await notify_user(message.bot, telegram_id,
-                          f'💰 <b>Ваш баланс пополнен на {amount_rub:.2f} ₽</b>\n\nБаланс: {new_balance_rub:.2f} ₽.')
+                          f'💰 <b>Ваш баланс пополнен на {format_rub(amount_rub)}</b>\n\nБаланс: {format_rub(new_balance_rub)}.')
         logger.info(f'Админ {message.from_user.id} пополнил баланс user {user_id} на {amount_cents} коп')
     try:
         await message.delete()

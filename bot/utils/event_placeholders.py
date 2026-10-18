@@ -132,6 +132,10 @@ def render_event_placeholders(
 
     runtime_context.setdefault('event_type', event_type)
 
+    # «%ключ_дней_до_окончания% дней» → «3 дня»: слово подбирается под число
+    from bot.utils.ru_format import fix_days_word
+    text = fix_days_word(str(text), _context_value(runtime_context, 'key_days_left', 'days_left'))
+
     def replace_match(match: re.Match[str]) -> str:
         placeholder = match.group(0)
         name = _EVENT_PLACEHOLDER_ALIASES.get(placeholder.casefold())

@@ -76,10 +76,7 @@ def _format_payment_amount(order: Dict[str, Any]) -> str:
         price_rub = (order.get('final_amount_cents') or 0) / 100
         price_str = f'{price_rub:g}'.replace('.', ',')
         return f'{price_str} ₽'
-    if order.get('final_amount_cents') is not None:
-        price_rub = (order.get('final_amount_cents') or 0) / 100
-    else:
-        price_rub = order.get('price_rub', 0) or 0
+    price_rub = order.get('price_rub', 0) or 0
     if price_rub > 0:
         price_str = f'{price_rub:g}'.replace('.', ',')
         return f'{price_str} ₽'

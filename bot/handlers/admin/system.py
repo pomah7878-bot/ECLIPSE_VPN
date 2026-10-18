@@ -17,6 +17,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import GITHUB_REPO_URL
 from bot.utils.admin import is_admin
+from bot.utils.ru_format import format_rub
 from bot.utils.git_utils import (
     check_git_available,
     get_current_branch,
@@ -2334,7 +2335,7 @@ async def refund_stars_cmd(message: Message):
         from database.db_payments import cancel_pending_order
         cancel_pending_order(parts[0])
     await message.answer(
-        f"↩️ На баланс пользователя зачислено {cents / 100:.2f} ₽ по заказу <code>{parts[0]}</code>. "
+        f"↩️ На баланс пользователя зачислено {format_rub(cents / 100)} по заказу <code>{parts[0]}</code>. "
         "Ключ или подписку, если нужно, отключите вручную.",
         parse_mode="HTML",
     )

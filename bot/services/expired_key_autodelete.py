@@ -81,7 +81,11 @@ async def process_expired_key_autodeletion(bot: Any) -> Dict[str, int]:
     from aiogram.types import InlineKeyboardButton
 
     message_data = get_message_data(MESSAGE_KEY, DEFAULT_NOTICE_TEXT)
-    notice_text = message_data.get('text', DEFAULT_NOTICE_TEXT).replace('{days}', str(days))
+    notice_text = message_data.get('text', DEFAULT_NOTICE_TEXT)
+    # «{days} дней» → «1 день», «30 дней»: слово под число
+    import re as _re
+    from bot.utils.ru_format import days_ru
+    notice_text = _re.sub(r'\{days\}\s+(?:дней|дня|день)(?![а-яё])', days_ru(days), notice_text).replace('{days}', str(days))
 
     notified_count = 0
     deleted_count = 0

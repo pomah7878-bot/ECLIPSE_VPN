@@ -5,6 +5,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from bot.utils.page_flow import build_page_flow_context
+from bot.utils.ru_format import format_rub
 from bot.utils.page_renderer import render_page
 from bot.utils.text import escape_html
 from bot.utils.callbacks import safe_answer_callback
@@ -737,7 +738,7 @@ async def pay_card_balance_handler(callback: CallbackQuery, state: FSMContext):
         provider_data=json.dumps(provider_data),
         reply_markup=(
             InlineKeyboardBuilder()
-            .row(InlineKeyboardButton(text=f'💳 Оплатить {price_rub:.2f} ₽', pay=True))
+            .row(InlineKeyboardButton(text=f'💳 Оплатить {format_rub(price_rub)}', pay=True))
             .row(InlineKeyboardButton(text='❌ Отмена', callback_data=back_cb))
             .as_markup()
         ),
@@ -887,7 +888,7 @@ async def pay_qr_balance_handler(callback: CallbackQuery, state: FSMContext):
         payment_context = build_qr_payment_page_context(
             title='🏦 <b>СБП</b>',
             tariff_name=escape_html(tariff['name']),
-            price_str=f"{remaining_rub:.2f} ₽",
+            price_str=f"{format_rub(remaining_rub)}",
             days=tariff['duration_days'],
             qr_url=qr_url,
             key_name=None,

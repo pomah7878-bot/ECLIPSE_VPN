@@ -11,6 +11,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from config import ADMIN_IDS
 from database.requests import get_or_create_user, is_user_banned, get_all_servers, get_setting, is_referral_enabled, get_user_by_referral_code, set_user_referrer
 from bot.states.user_states import RenameKey, ReplaceKey, PhoneLinking
+from bot.utils.ru_format import format_rub
 from bot.utils.text import escape_html
 from bot.utils.key_status_page import render_key_status_page
 from bot.utils.user_pages import render_access_blocked_page
@@ -46,7 +47,7 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
 
     user_internal_id = get_user_internal_id(telegram_id)
     balance_cents = get_user_balance(user_internal_id) if user_internal_id else 0
-    balance_text = f"{balance_cents // 100} ₽" if balance_cents % 100 == 0 else f"{balance_cents / 100:.2f} ₽"
+    balance_text = format_rub(balance_cents, cents=True)
 
     if not keys:
         await render_page(
@@ -1040,7 +1041,7 @@ async def key_traffic_chart_handler(callback: CallbackQuery):
     back_kb.row(InlineKeyboardButton(text='⬅️ Назад', callback_data=f'key:{key_id}'), InlineKeyboardButton(text='🈴 На главную', callback_data='start'))
     await callback.message.answer_photo(
         photo=BufferedInputFile(png_bytes, filename="traffic_chart.png"),
-        caption=f"📈 <b>Статистика трафика — {keyname}</b>\n\nПоследние 14 дней (данные накапливаются постепенно).",
+        caption=f"📈 <b>Статистика трафика — {escape_html(str(keyname))}</b>\n\nПоследние 14 дней (данные накапливаются постепенно).",
         parse_mode="HTML",
         reply_markup=back_kb.as_markup(),
     )

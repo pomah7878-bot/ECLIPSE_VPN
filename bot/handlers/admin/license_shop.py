@@ -8,6 +8,7 @@
 
 После успешной оплаты ключ выдаётся АВТОМАТИЧЕСКИ — без участия Романа.
 """
+from html import escape as html_escape
 import logging
 
 from aiogram import Router, F
@@ -114,7 +115,7 @@ async def buy_license_tariff_selected(callback: CallbackQuery):
     await callback.message.answer_photo(
         photo=result["qr_image_url"],
         caption=(
-            f"💳 <b>Оплата лицензии «{tariff['name']}»</b>\n\n"
+            f"💳 <b>Оплата лицензии «{html_escape(str(tariff['name']))}»</b>\n\n"
             f"Сумма: {tariff['price_rub']:.0f} ₽\n\n"
             "Отсканируйте QR-код в приложении вашего банка (СБП), затем нажмите «Я оплатил»."
         ),

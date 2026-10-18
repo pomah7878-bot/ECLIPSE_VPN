@@ -46,6 +46,7 @@ from bot.utils.git_utils import check_for_updates
 from bot.utils.update_block import is_update_blocked, get_blocked_message, try_unblock
 from bot.utils.delivery import is_bot_blocked_error
 from bot.utils.text import escape_html
+from bot.utils.ru_format import days_ru, format_rub
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -671,12 +672,16 @@ async def process_auto_renewals(bot: Bot) -> None:
                         chat_id=telegram_id,
                         text=(
                             f"⚠️ <b>Не удалось автопродлить ключ «{keyname_html}»</b>\n\n"
-                            f"Недостаточно средств на балансе. Пополните баланс "
-                            f"или отключите автопродление в разделе «Мои ключи», "
+                            f"• Нужно: {format_rub(price_cents, cents=True)}\n"
+                            f"• На балансе: {format_rub(_balance_cents(user_id), cents=True)}\n\n"
+                            f"Пополните баланс или отключите автопродление в разделе «Мои ключи», "
                             f"иначе ключ истечёт по расписанию."
                         ),
                         parse_mode="HTML",
-                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🈴 На главную", callback_data="start")]]),
+                        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(text="💰 Пополнить баланс", callback_data="balance_topup_menu")],
+                            [InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
+                        ]),
                     )
                 except Exception as e:
                     logger.warning(f"Не удалось отправить уведомление о неудачном автопродлении {telegram_id}: {e}")
@@ -736,8 +741,8 @@ async def process_auto_renewals(bot: Bot) -> None:
                 chat_id=telegram_id,
                 text=(
                     f"✅ <b>Ключ «{keyname_html}» автопродлён</b>\n\n"
-                    f"Списано с баланса: {price_cents / 100:.2f} ₽\n"
-                    f"Новый срок действия: +{duration_days} дн."
+                    f"Списано с баланса: {format_rub(price_cents, cents=True)}\n"
+                    f"Срок продлён на {days_ru(duration_days)}"
                     f"{_cdn_line}"
                 ),
                 parse_mode="HTML",
@@ -776,13 +781,40 @@ def _auto_renew_note(key_id: int) -> str:
             return ""
         balance = (get_user_balance(int(key["user_id"])) or 0) / 100
         if balance + 1e-9 >= price:
-            return (f"\n\n🔁 <b>Автопродление включено:</b> с баланса спишется {price:g} ₽ "
-                    f"(сейчас на балансе {balance:.2f} ₽).")
-        return (f"\n\n🔁 <b>Автопродление включено, но на балансе не хватает денег:</b> нужно {price:g} ₽, "
-                f"сейчас {balance:.2f} ₽. Пополните баланс, иначе ключ истечёт.")
+            return (f"\n\n🔁 <b>Автопродление включено:</b> с баланса спишется {format_rub(price)} "
+                    f"(сейчас на балансе {format_rub(balance)}).")
+        return (f"\n\n🔁 <b>Автопродление включено, но на балансе не хватает денег:</b> нужно {format_rub(price)}, "
+                f"сейчас {format_rub(balance)}. Пополните баланс, иначе ключ истечёт.")
     except Exception as e:
         logger.debug(f"Не удалось добавить строку автопродления в напоминание: {e}")
         return ""
+
+
+def _balance_cents(user_id) -> int:
+    try:
+        from database.requests import get_user_balance
+        return int(get_user_balance(int(user_id)) or 0)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _days_left_ceil(expires_at, fallback) -> int:
+    """Сколько дней осталось до конца ключа, с округлением вверх (минимум 1).
+
+    SQL отдаёт целую часть: ключ, до конца которого 5 часов, получал «через 0 дней».
+    """
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(str(expires_at).replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        seconds = (dt - datetime.now(timezone.utc)).total_seconds()
+        return max(1, int(-(-seconds // 86400)))
+    except Exception:  # noqa: BLE001
+        try:
+            return max(1, int(fallback))
+        except (TypeError, ValueError):
+            return 1
 
 
 async def check_and_send_expiry_notifications(bot: Bot) -> None:
@@ -836,8 +868,8 @@ async def check_and_send_expiry_notifications(bot: Bot) -> None:
         for key_info in expiring_keys:
             vpn_key_id = key_info['vpn_key_id']
             user_telegram_id = key_info['user_telegram_id']
-            days_left = key_info['days_left']
-            keyname = key_info.get('custom_name', f"Key #{vpn_key_id}")
+            days_left = _days_left_ceil(key_info.get('expires_at'), key_info['days_left'])
+            keyname = key_info.get('custom_name') or f"Ключ #{vpn_key_id}"
             
             # Checking if we sent today
             if is_notification_sent_today(vpn_key_id):
