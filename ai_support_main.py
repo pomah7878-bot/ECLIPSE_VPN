@@ -1,0 +1,3102 @@
+"""
+Микросервис AI-консультанта для Telegram-бота VPN-сервиса.
+Запуск: uvicorn ai_support_main:app --host 127.0.0.1 --port 8086
+Переменные: GROQ_API_KEY, SUPPORT_API_TOKEN, BOT_DB_PATH
+"""
+
+import os
+import re
+import time
+import json
+import uuid
+import html
+import base64
+from html.parser import HTMLParser
+import asyncio
+import sqlite3
+import logging
+from contextlib import asynccontextmanager
+from typing import Optional
+
+from fastapi import FastAPI, HTTPException, Request, Depends, Security
+from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
+from openai import AsyncOpenAI, APIError, APIConnectionError, RateLimitError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+import httpx
+from config import BOT_TOKEN, ADMIN_IDS
+
+# Юзернейм бота НЕ хардкодится — у каждой инсталляции (включая
+# white-label клиентов, ставящих этот код себе) свой собственный бот с
+# собственным юзернеймом. Получаем его через Telegram Bot API (getMe) и
+# кэшируем в памяти процесса, чтобы не дёргать API на каждый запрос.
+_bot_username_cache: str = ""
+
+
+async def _resolve_bot_username() -> str:
+    """Юзернейм этого бота (без @), получаемый через getMe и кэшируемый
+    на время жизни процесса. Используется для генерации deep-ссылок вида
+    t.me/{username}?start=..."""
+    global _bot_username_cache
+    if _bot_username_cache:
+        return _bot_username_cache
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe")
+            data = resp.json()
+            if data.get("ok") and data.get("result", {}).get("username"):
+                _bot_username_cache = data["result"]["username"]
+                return _bot_username_cache
+    except Exception as e:
+        logger.warning(f"Не удалось получить username бота через getMe: {e}")
+    return ""
+
+
+def _build_app_recommendation() -> str:
+    """Собирает текст рекомендации VPN-приложения для системного промпта.
+
+    Если у инсталляции настроено собственное Android-приложение
+    (get_effective_own_app_name/url) — рекомендуем его в первую очередь,
+    как раньше делал хардкод на ECLIPSE Unlimited. Если своего приложения
+    нет (типичный случай для white-label клиентов без своего клиента) —
+    рекомендуем только сторонние клиенты, без ложных заявлений о
+    "собственном" приложении.
+    """
+    from database.requests import get_effective_own_app_name, get_effective_own_app_url
+
+    own_app_name = get_effective_own_app_name()
+    own_app_url = get_effective_own_app_url()
+
+    if own_app_name and own_app_url:
+        own_app_tag = f'<a href="{own_app_url}">{own_app_name}</a>'
+        return (
+            f"в первую очередь {own_app_tag} — наш собственный Android-клиент "
+            f"на базе Xray (VLESS/Reality). Он специально заточен под "
+            f"конфигурации сервиса и обеспечивает наилучшую совместимость. "
+            f"Для iOS/ПК и как альтернативы на Android — Happ и INCY. Упомяни, "
+            f"что работают и другие VLESS-клиенты (v2RayNG, v2Box, Streisand, "
+            f"Shadowrocket, FoXray и т.п.), но для лучшей совместимости "
+            f"рекомендован именно {own_app_tag}."
+        )
+    return (
+        "Happ или INCY (Android/iOS/ПК) — универсальные, стабильные VLESS-"
+        "клиенты. Упомяни, что работают и другие VLESS-клиенты (v2RayNG, "
+        "v2Box, Streisand, Shadowrocket, FoXray и т.п.), если это уместно."
+    )
+
+
+# Telegram разрешает в start-параметре только A-Z a-z 0-9 _ -, максимум 64 символа
+_TELEGRAM_START_PARAM_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}$")  # 60, не 64 — с запасом на префикс "pr_"
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("vpn-ai-support")
+
+_FAKE_FUNCTION_CALL_RE = re.compile(r"<function=.*?</function>", re.DOTALL)
+_STRAY_FUNCTION_TAG_RE = re.compile(r"</?function[^>]*>", re.IGNORECASE)
+# CJK-диапазоны юникода — иероглифы, изредка "протекающие" в ответ модели
+_CJK_RE = re.compile(
+    r"[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]+"
+)
+_TOOL_NAME_RE = re.compile(r"\bweb_search\b", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+# Кириллица и латиница, слипшиеся БЕЗ пробела (напр. "способInvite") —
+# явный признак языкового сбоя модели, а не легитимного бренда/термина
+# (те всегда идут через пробел: "приложение Happ", "сервис VPN" и т.п.)
+_SCRIPT_BOUNDARY_RE = re.compile(r"([а-яёА-ЯЁ])([A-Za-z])|([A-Za-z])([а-яёА-ЯЁ])")
+
+
+def _insert_script_boundary_space(match: "re.Match") -> str:
+    a, b, c, d = match.groups()
+    return f"{a} {b}" if a else f"{c} {d}"
+
+
+def _looks_like_stray_tool_json(content: str | None) -> bool:
+    """Определяет случай, когда модель вместо структурированного tool_call
+    написала обычным текстом голый JSON с аргументами функции (без обёртки
+    <function=...>, поэтому Groq не считает это ошибкой и не выбрасывает
+    исключение — но пользователю такое отдавать нельзя)."""
+    if not content:
+        return False
+    stripped = content.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return False
+    try:
+        data = json.loads(stripped)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(data, dict) and "query" in data
+
+
+_TG_ALLOWED_TAGS = {'b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'code', 'pre', 'a', 'span', 'blockquote'}
+
+
+class _TelegramHTMLSanitizer(HTMLParser):
+    """Настоящий HTML-парсер (не regex-догадки): оставляет только теги
+    из allow-листа Telegram (https://core.telegram.org/bots/api#html-style)
+    с валидными атрибутами, всё остальное — превращает в обычный текст,
+    сохраняя видимое содержимое. Защита от <ul>/<li>/<table> и битых
+    <a href> (не начинающихся на http/https/tg), которые модель иногда
+    придумывает и которые вызвали бы ошибку отправки в Telegram."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.out = []
+        self.open_stack = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('ul', 'ol'):
+            self.out.append('\n'); return
+        if tag == 'li':
+            self.out.append('• '); return
+        if tag in ('p', 'div'):
+            self.out.append('\n'); return
+        if tag == 'br':
+            self.out.append('\n'); return
+        if tag == 'a':
+            href = dict(attrs).get('href', '')
+            if re.match(r'^(https?://|tg://)', href):
+                self.out.append(f'<a href="{html.escape(href, quote=True)}">')
+                self.open_stack.append('a')
+            return
+        if tag in _TG_ALLOWED_TAGS:
+            self.out.append(f'<{tag}>')
+            self.open_stack.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in ('ul', 'ol', 'li', 'p', 'div', 'br'):
+            return
+        if self.open_stack and self.open_stack[-1] == tag:
+            self.out.append(f'</{tag}>')
+            self.open_stack.pop()
+
+    def handle_data(self, data):
+        self.out.append(html.escape(data, quote=False))
+
+    def get_result(self):
+        for tag in reversed(self.open_stack):
+            self.out.append(f'</{tag}>')
+        return ''.join(self.out)
+
+
+def _sanitize_telegram_html(text: str) -> str:
+    """Прогоняет текст через _TelegramHTMLSanitizer и убирает лишние
+    пустые строки, оставшиеся после зачистки тегов."""
+    parser = _TelegramHTMLSanitizer()
+    parser.feed(text)
+    result = parser.get_result()
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    result = re.sub(r'[ \t]+\n', '\n', result)
+    return result.strip()
+
+
+_MD_TABLE_SEPARATOR_RE = re.compile(r'^\s*\|?[\s:|-]+\|?\s*$')
+
+def _convert_markdown_to_telegram(text: str) -> str:
+    """Программная подстраховка: конвертирует Markdown (### заголовки,
+    **bold**, таблицы через |), который Telegram НЕ поддерживает, в
+    формат, который реально работает — на случай, если модель
+    проигнорировала инструкцию в промпте и всё равно вернула Markdown."""
+    text = re.sub(r'^\s*-{3,}\s*$', '', text, flags=re.MULTILINE)  # markdown-разделитель ---
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'^[*-]\s+', '• ', text, flags=re.MULTILINE)  # markdown-буллеты * / - -> •
+
+    lines = text.split('\n')
+    result = []
+    header_cells = None
+    in_table = False
+    for line in lines:
+        stripped = line.strip()
+        looks_like_row = stripped.startswith('|') and stripped.endswith('|') and stripped.count('|') >= 2
+        if looks_like_row:
+            if _MD_TABLE_SEPARATOR_RE.match(stripped):
+                continue
+            cells = [c.strip() for c in stripped.strip('|').split('|')]
+            if not in_table:
+                header_cells = cells
+                in_table = True
+                continue
+            if header_cells and len(header_cells) == len(cells):
+                parts = [f"{h}: {v}" for h, v in zip(header_cells, cells) if v]
+                result.append("• " + ", ".join(parts))
+            else:
+                result.append("• " + " — ".join(cells))
+        else:
+            in_table = False
+            header_cells = None
+            result.append(line)
+    converted = '\n'.join(result)
+    return _sanitize_telegram_html(converted)
+
+
+def _sanitize_reply(text: str) -> str:
+    """Страховка: вырезает псевдо-вызовы функций (полные и одиночные
+    обрывки тегов), которые модель иногда пишет текстом вместо
+    настоящего structured tool_call, а также случайные вкрапления
+    иероглифов (известный дефект некоторых моделей при не-английском
+    языке ответа)."""
+    if not text:
+        return text
+    cleaned = _FAKE_FUNCTION_CALL_RE.sub("", text)
+    cleaned = _STRAY_FUNCTION_TAG_RE.sub("", cleaned)
+    cleaned = _CJK_RE.sub("", cleaned)
+    cleaned = _TOOL_NAME_RE.sub("поиск в интернете", cleaned)
+    cleaned = _SCRIPT_BOUNDARY_RE.sub(_insert_script_boundary_space, cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)  # схлопываем пробелы, оставшиеся после вырезки
+    cleaned = _convert_markdown_to_telegram(cleaned)
+    cleaned = cleaned.strip()
+    return cleaned if cleaned else "Извините, не удалось сформировать ответ. Попробуйте переформулировать вопрос."
+
+SUPPORT_API_TOKEN = os.environ.get("SUPPORT_API_TOKEN", "")
+BOT_DB_PATH = os.environ.get("BOT_DB_PATH", "database/vpn_bot.db")
+AI_HISTORY_DB_PATH = os.environ.get("AI_HISTORY_DB_PATH", "database/ai_history.db")
+
+if not SUPPORT_API_TOKEN:
+    logger.warning("SUPPORT_API_TOKEN not set — requests will be rejected")
+if not BOT_DB_PATH:
+    logger.warning("BOT_DB_PATH not set — subscription status unavailable")
+
+def _resolve_groq_api_key() -> str:
+    """Ключ Groq: приоритет у значения, заданного через админ-панель бота
+    (общая БД), иначе — переменная окружения GROQ_API_KEY. Изменение через
+    админку применяется после перезапуска этого сервиса (systemctl restart
+    eclipse-ai)."""
+    try:
+        from database.requests import get_effective_groq_api_key
+        db_key = get_effective_groq_api_key()
+        if db_key:
+            return db_key
+    except Exception as e:
+        logger.warning(f"Не удалось прочитать GROQ_API_KEY из БД, используем переменную окружения: {e}")
+    return os.environ.get("GROQ_API_KEY", "")
+
+
+client = AsyncOpenAI(
+    api_key=_resolve_groq_api_key(),
+    base_url="https://api.groq.com/openai/v1",
+    max_retries=0,
+)
+
+
+def _resolve_gemini_api_key() -> str:
+    """Ключ Google Gemini (второй провайдер, резервный лейн): приоритет у
+    значения из админ-панели (общая БД), иначе — переменная окружения
+    GEMINI_API_KEY. Применяется после перезапуска сервиса (systemctl restart
+    eclipse-ai)."""
+    try:
+        from database.requests import get_effective_gemini_api_key
+        db_key = get_effective_gemini_api_key()
+        if db_key:
+            return db_key
+    except Exception as e:
+        logger.warning(f"Не удалось прочитать GEMINI_API_KEY из БД, использую окружение: {e}")
+    return os.environ.get("GEMINI_API_KEY", "")
+
+
+# Второй провайдер: Google Gemini через OpenAI-совместимый эндпоинт.
+# Резервный лейн — включается, когда все Groq-модели на кулдауне. Другое
+# семейство и инфраструктура → отказоустойчивость на уровне провайдера.
+gemini_client = AsyncOpenAI(
+    api_key=_resolve_gemini_api_key(),
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+    max_retries=0,
+)
+# ВАЖНО (14.08.2026): Groq официально уведомил о декоме llama-3.1-8b-instant
+# (дата отключения 16.08.2026, email от Groq). llama-3.3-70b-versatile тоже
+# отмечена как deprecated в доках Groq, но дата отключения не объявлена и
+# модель пока отвечает (проверено 14.08.2026 через GET /v1/models с боевым
+# ключом). Официально рекомендованные замены поставлены первыми в цепочке.
+MODEL_NAME = "openai/gpt-oss-120b"  # официальная замена llama-3.3-70b-versatile, 200K токенов/день
+SECONDARY_MODEL_NAME = "qwen/qwen3.8-27b"  # альтернатива топ-уровня, та же модель что и для vision (qwen3.6-27b deprecated Groq 02.09.2026, decommission 14.09.2026 — переход на 3.8)
+FALLBACK_MODEL_NAME = "openai/gpt-oss-20b"  # официальная замена llama-3.1-8b-instant
+_RESERVE_MODEL_SAFEGUARD = "openai/gpt-oss-safeguard-20b"
+# Второй провайдер (резервный лейн): Google Gemini. gemini-flash-latest —
+# скользящий алиас Google на актуальную flash-модель (не ловит 404 при смене
+# линейки). Требует reasoning_effort="none" (иначе thinking съедает бюджет
+# ответа, проверено 14.08.2026). Держит tools — база знаний работает.
+_GEMINI_MODEL = "gemini-flash-latest"
+
+
+class ModelSpec:
+    """Одно звено цепочки: провайдер, клиент, ID модели у провайдера и ключ
+    кулдауна. Ключ включает провайдера, поэтому одинаковые по смыслу модели
+    у разных провайдеров не делят общий кулдаун."""
+    __slots__ = ("provider", "client", "model_id", "cooldown_key")
+
+    def __init__(self, provider, client, model_id, cooldown_key):
+        self.provider = provider
+        self.client = client
+        self.model_id = model_id
+        self.cooldown_key = cooldown_key
+
+
+# Порядок = приоритет фейловера. Groq несёт основную нагрузку; Gemini —
+# последним звеном, включается только когда все Groq-модели на кулдауне
+# (у Gemini свои дневные лимиты, бережём их на случай реального сбоя Groq).
+MODEL_CHAIN = (
+    ModelSpec("groq", client, MODEL_NAME, "groq:gpt-oss-120b"),
+    ModelSpec("groq", client, SECONDARY_MODEL_NAME, "groq:qwen"),
+    ModelSpec("groq", client, FALLBACK_MODEL_NAME, "groq:gpt-oss-20b"),
+    ModelSpec("groq", client, _RESERVE_MODEL_SAFEGUARD, "groq:safeguard"),
+    ModelSpec("gemini", gemini_client, _GEMINI_MODEL, "gemini:flash-latest"),
+)
+
+
+_RETRY_AFTER_RE = re.compile(r"try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s")
+
+
+def _parse_retry_after_seconds(error_message: str) -> float:
+    """Вытаскивает реальное время ожидания из текста ошибки Groq вида
+    'Please try again in 1h1m10.27s'. Если не удалось распарсить —
+    берём разумный дефолт в 5 минут, чтобы не долбить API впустую."""
+    m = _RETRY_AFTER_RE.search(error_message or "")
+    if not m:
+        return 300.0
+    hours = int(m.group(1) or 0)
+    minutes = int(m.group(2) or 0)
+    seconds = float(m.group(3) or 0)
+    return max(hours * 3600 + minutes * 60 + seconds, 5.0)
+
+
+# Время (unix timestamp), до которого основная модель заведомо недоступна
+# по дневному/минутному лимиту — 0 означает "доступна, пробуем как обычно".
+# Время (unix timestamp), до которого конкретная модель заведомо недоступна
+# по лимиту — модели нет в словаре или значение в прошлом = доступна.
+_model_cooldowns: dict[str, float] = {}
+
+
+def _is_on_cooldown(spec) -> bool:
+    key = spec.cooldown_key if hasattr(spec, "cooldown_key") else spec
+    return time.time() < _model_cooldowns.get(key, 0.0)
+
+
+def _remaining_cooldown(spec) -> float:
+    key = spec.cooldown_key if hasattr(spec, "cooldown_key") else spec
+    return max(0.0, _model_cooldowns.get(key, 0.0) - time.time())
+
+
+async def _call_model(spec, messages, **kwargs):
+    """Вызывает конкретную модель. При успехе снимает с неё паузу (если была),
+    при RateLimitError — парсит реальное время ожидания и ставит модель на
+    паузу до этого момента, затем пробрасывает исключение выше.
+
+    Также автоматически скрывает служебные reasoning-токены (цепочку
+    размышлений) для reasoning-моделей — без этого параметра модель иногда
+    вставляет свой внутренний ход мыслей (на английском, с обрывками вроде
+    "Thinking Process:") прямо в видимый ответ пользователю."""
+    # ВАЖНО: include_reasoning/reasoning_effort — параметры, специфичные для
+    # Groq API, которых НЕТ в официальной схеме OpenAI SDK. Клиент AsyncOpenAI
+    # отклоняет их как обычные kwargs (TypeError: unexpected keyword argument),
+    # поэтому передаём через extra_body — штатный механизм OpenAI SDK для
+    # provider-специфичных полей, которые всё равно попадают в тело запроса.
+    model = spec.model_id
+    active_client = spec.client
+    extra_body = kwargs.pop("extra_body", {}) or {}
+    if spec.provider == "gemini":
+        # Gemini: reasoning_effort="none" гасит thinking (иначе пустой ответ);
+        # Groq-специфичный include_reasoning тут отклоняется (400), не шлём.
+        extra_body.setdefault("reasoning_effort", "none")
+    elif "gpt-oss" in model:
+        extra_body.setdefault("include_reasoning", False)
+    elif "qwen" in model:
+        extra_body.setdefault("reasoning_effort", "none")
+    if extra_body:
+        kwargs["extra_body"] = extra_body
+    try:
+        response = await active_client.chat.completions.create(model=model, messages=messages, **kwargs)
+        _model_cooldowns.pop(spec.cooldown_key, None)
+        return response
+    except RateLimitError as e:
+        cooldown = _parse_retry_after_seconds(str(e))
+        _model_cooldowns[spec.cooldown_key] = time.time() + cooldown
+        logger.warning(f"RateLimitError на {spec.cooldown_key}, пауза на {cooldown:.0f}с")
+        raise
+
+
+VISION_MODEL_NAME = "qwen/qwen3.8-27b"  # актуальная vision-модель Groq (qwen3.6-27b deprecated 02.09.2026, decommission 14.09.2026 — подтверждено в официальных доках Groq)
+
+
+async def analyze_screenshot(image_data_url: str, question: str, system_prompt: str) -> str:
+    """Анализирует скриншот ошибки клиента. Использует ЕДИНСТВЕННУЮ модель в
+    цепочке с поддержкой изображений (остальные текстовые модели не умеют
+    работать с картинками), поэтому не проходит через общий MODEL_CHAIN."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": question or "Посмотри на скриншот и объясни, что не так и как это исправить."},
+                {"type": "image_url", "image_url": {"url": image_data_url}},
+            ],
+        },
+    ]
+    try:
+        response = await client.chat.completions.create(
+            model=VISION_MODEL_NAME, messages=messages, max_tokens=800, temperature=0.7, timeout=20.0,
+            extra_body={"reasoning_effort": "none"},
+        )
+        text = response.choices[0].message.content or "Не удалось проанализировать изображение."
+        return _sanitize_reply(text)
+    except APIError as e:
+        logger.warning(f"Ошибка анализа скриншота ({e})")
+        return "Не удалось проанализировать изображение прямо сейчас. Опишите проблему текстом, пожалуйста, или напишите в поддержку."
+
+
+async def transcribe_voice_groq(audio_bytes: bytes, filename: str = "voice.ogg") -> str:
+    """Расшифровывает голосовое сообщение через Groq Whisper (тот же клиент
+    и ключ, что уже используется для текстовых ответов — Groq известен
+    очень быстрым инференсом Whisper). Бросает исключение при ошибке —
+    вызывающий код сам решает, как объяснить это клиенту."""
+    transcription = await client.audio.transcriptions.create(
+        model="whisper-large-v3",
+        file=(filename, audio_bytes),
+        response_format="text",
+    )
+    # response_format="text" у OpenAI-совместимого API Groq возвращает
+    # либо голую строку, либо объект с .text — обрабатываем оба варианта
+    text = transcription if isinstance(transcription, str) else getattr(transcription, "text", "")
+    return (text or "").strip()
+
+
+async def _chat_completion_with_fallback(messages, **kwargs):
+    """Пробует по очереди топовую модель и резервную, пропуская те, что уже
+    заведомо на паузе по лимиту (не тратя время на провальную попытку).
+
+    Если модель падает с RateLimitError — запоминаем реальное время ожидания
+    (Groq присылает его в тексте ошибки) и на этот срок исключаем модель из
+    попыток. Как только пауза истекает, следующий запрос сам пробует эту
+    модель снова — при успехе сервис автоматически возвращается на неё без
+    какого-либо вмешательства. Это симметрично работает для ОБЕИХ моделей:
+    если временно недоступны сразу обе — эскалируем сразу, не теряя время
+    на заведомо провальные попытки достучаться хоть до одной из них.
+
+    Разовые сбои не по лимиту (например, известный tool_use_failed у
+    некоторых моделей) паузу не ставят — это не проблема с квотой, а
+    случайная неполадка конкретного запроса."""
+    candidates = [s for s in MODEL_CHAIN if not _is_on_cooldown(s)]
+
+    if not candidates:
+        soonest = min(_remaining_cooldown(s) for s in MODEL_CHAIN)
+        logger.warning(f"Все модели на паузе (ближайшая освободится через {soonest:.0f}с) — эскалирую без попытки")
+        raise RuntimeError("Все модели временно недоступны по лимиту запросов")
+
+    if candidates[0].cooldown_key != MODEL_CHAIN[0].cooldown_key:
+        remaining = _remaining_cooldown(MODEL_CHAIN[0])
+        logger.info(f"{MODEL_NAME} на паузе ещё {remaining:.0f}с — сразу использую {candidates[0].cooldown_key}")
+
+    last_error: Exception | None = None
+    for i, spec in enumerate(candidates):
+        try:
+            return await _call_model(spec, messages, **kwargs)
+        except RateLimitError as e:
+            last_error = e
+            continue  # пробуем следующую модель из оставшихся кандидатов, если есть
+        except APIError as e:
+            logger.warning(f"{type(e).__name__} на {spec.cooldown_key} ({e}), пробую эту же модель без вызова инструментов")
+            try:
+                # ВАЖНО: вызываем через _call_model (а не client.chat.completions.create
+                # напрямую), иначе теряется защита от утечки reasoning-токенов модели
+                # в видимый ответ — она встроена именно в _call_model.
+                retry_kwargs = {k: v for k, v in kwargs.items() if k not in ("tools", "tool_choice")}
+                return await _call_model(spec, messages, **retry_kwargs)
+            except APIError:
+                last_error = e
+                continue
+
+    raise last_error
+
+TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
+if not TAVILY_API_KEY:
+    logger.warning("TAVILY_API_KEY not set — веб-поиск для AI недоступен")
+
+SEARCH_KNOWLEDGE_BASE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "search_knowledge_base",
+        "description": (
+            "Ищет в базе знаний поддержки (проверенные статьи, инструкции). "
+            "Используй ПЕРЕД web_search для вопросов о настройке/проблемах."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Вопрос клиента своими словами (не нужно формулировать как поисковый запрос — используется смысловой поиск)",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
+WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": (
+            "Ищет в интернете актуальные данные СТРОГО про VPN (блокировки, "
+            "законы). НИКОГДА для тем не про VPN или для данных клиента "
+            "(они уже в профиле выше)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Короткий поисковый запрос по сути вопроса",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+GITHUB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "github_search",
+        "description": (
+            "Ищет issues на GitHub про баги Happ/v2rayN. Для 'последняя версия' "
+            "используй github_latest_release вместо этого."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Поисковый запрос (название бага, версия, функция и т.п.)",
+                },
+                "repo": {
+                    "type": "string",
+                    "description": "Необязательно: репозиторий в формате owner/repo, например Happ-proxy/happ-desktop или 2dust/v2rayN",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+GITHUB_LATEST_RELEASE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "github_latest_release",
+        "description": (
+            "Возвращает точную последнюю версию VPN-приложения по репозиторию "
+            "на GitHub. Для вопроса 'какая последняя версия' — точнее, чем github_search."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "repo": {
+                    "type": "string",
+                    "description": "Репозиторий в формате owner/repo, например Happ-proxy/happ-desktop или 2dust/v2rayN",
+                },
+            },
+            "required": ["repo"],
+        },
+    },
+}
+
+CHECK_SERVER_STATUS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_server_status",
+        "description": (
+            "Проверяет живой статус сервера(ов) клиента прямо сейчас. "
+            "Используй при жалобах 'не подключается/не работает'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+CHECK_ACTIVE_DEVICES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_active_devices",
+        "description": (
+            "Проверяет РЕАЛЬНОЕ число подключённых сейчас устройств (не просто "
+            "лимит из профиля). Используй для 'сколько подключено/ещё можно'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+_KEY_IDENTIFIER_PARAM = {
+    "key_identifier": {
+        "type": "string",
+        "description": (
+            "Название или номер ключа клиента (например «admin», «#86», «86»). "
+            "ОБЯЗАТЕЛЬНО передавай это поле, если у клиента НЕСКОЛЬКО активных "
+            "ключей и он уже сказал (в этом или предыдущем сообщении), какой из "
+            "них имеет в виду — иначе инструмент снова не сможет понять, для "
+            "какого ключа выполнять действие, и уточнение зациклится. Если у "
+            "клиента только один активный ключ, поле не нужно."
+        ),
+    }
+}
+
+
+TOGGLE_AUTO_RENEWAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "toggle_auto_renewal",
+        "description": (
+            "Реально включает/выключает автопродление ключа (не просто "
+            "советует). Используй, если клиент просит сделать это СЕЙЧАС, "
+            "а не объяснить как. Безопасно и обратимо."
+        ),
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
+    },
+}
+
+
+CLEAR_DEVICE_IPS_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "clear_device_ips",
+        "description": (
+            "Реально сбрасывает лимит устройств ключа на панели (не просто "
+            "советует) — список IP-адресов ИЛИ список привязанных устройств "
+            "(HWID), в зависимости от того, какой тип ограничения сейчас "
+            "включён у этого админа. Используй, если клиент упёрся в лимит "
+            "устройств из-за старых/неактуальных подключений или "
+            "сменил телефон/переустановил приложение. Безопасно и "
+            "обратимо, тариф/срок/трафик не затрагивает."
+        ),
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
+    },
+}
+
+
+LIST_DEVICES_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "list_devices",
+        "description": (
+            "Показывает подробный список подключённых устройств клиента (не "
+            "просто число, а КАЖДОЕ устройство отдельно с его типом/моделью и "
+            "ОС — если у админа включён режим ограничения по HWID, либо "
+            "список IP-адресов без типа устройства — если режим по IP), плюс "
+            "сколько ещё устройств можно подключить. Используй, когда клиент "
+            "просит 'покажи мои устройства', 'что подключено', 'какие "
+            "телефоны/компьютеры используют мой ключ' — в отличие от "
+            "check_active_devices, даёт список по каждому устройству, а не "
+            "просто число."
+        ),
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
+    },
+}
+
+
+DISCONNECT_DEVICE_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "disconnect_device",
+        "description": (
+            "Реально отключает ОДНО конкретное устройство клиента (не весь "
+            "список разом) — используй ТОЛЬКО после того, как уже показал "
+            "клиенту список инструментом list_devices и он назвал номер "
+            "устройства из этого списка (1, 2, 3...). Доступно только в "
+            "режиме ограничения по HWID — в режиме по IP панель не умеет "
+            "отключать одно устройство, там нужен clear_device_ips (сброс "
+            "всех сразу). Безопасно и обратимо — устройство просто "
+            "переподключится и снова займёт слот при следующем подключении."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                **_KEY_IDENTIFIER_PARAM,
+                "device_number": {
+                    "type": "integer",
+                    "description": (
+                        "Номер устройства из списка, который показал list_devices "
+                        "(1, 2, 3...). ОБЯЗАТЕЛЬНОЕ поле — без него нельзя понять, "
+                        "какое устройство отключать."
+                    ),
+                },
+            },
+            "required": ["device_number"],
+        },
+    },
+}
+
+
+SUGGEST_KEY_REPLACEMENT_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "suggest_key_replacement",
+        "description": (
+            "Даёт клиенту прямую ссылку на карточку его ключа с кнопкой "
+            "«Заменить» (пересоздание ключа/подписки, например на другом "
+            "сервере). Используй, когда клиент просит заменить/пересоздать "
+            "ключ. НЕ выполняет замену сам (это делает клиент подтверждением "
+            "в боте) — только доставляет его на нужный экран в один клик."
+        ),
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
+    },
+}
+
+
+SUGGEST_KEY_RENEWAL_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "suggest_key_renewal",
+        "description": (
+            "Даёт клиенту прямую ссылку на карточку его ключа с кнопкой "
+            "«Продлить» (покупка/продление подписки на новый срок). "
+            "Используй, когда клиент хочет продлить подписку, спрашивает "
+            "про тарифы на продление или пишет 'хочу ещё на месяц' и "
+            "похожее. НЕ создаёт платёж сам (клиент сам выбирает тариф и "
+            "способ оплаты в боте) — только доставляет его на нужный экран "
+            "в один клик."
+        ),
+        "parameters": {"type": "object", "properties": dict(_KEY_IDENTIFIER_PARAM)},
+    },
+}
+
+
+CHECK_PAYMENT_NOW_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "check_payment_now",
+        "description": (
+            "РЕАЛЬНО проверяет прямо сейчас у платёжного провайдера статус "
+            "незавершённого платежа клиента и, если оплата прошла, сразу "
+            "завершает заказ (выдаёт ключ, уведомляет клиента) — не ждёт "
+            "плановую автопроверку. Используй, когда клиент говорит "
+            "'оплатил, а ключ не пришёл' или просит проверить платёж сейчас."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+}
+
+
+async def web_search_tavily(query: str) -> str:
+    """Выполняет поиск в интернете через Tavily, возвращает краткую текстовую сводку.
+    Результат кэшируется на SEARCH_CACHE_TTL_SECONDS по нормализованному запросу —
+    экономит лимит API, если разные пользователи спрашивают похожее."""
+    if not TAVILY_API_KEY:
+        return "Поиск в интернете временно недоступен (не настроен API-ключ)."
+
+    normalized_query = " ".join(query.strip().lower().split())
+    cached = _search_cache.get(normalized_query)
+    if cached and (time.time() - cached[0]) < SEARCH_CACHE_TTL_SECONDS:
+        logger.info(f"🗃️ Результат поиска взят из кэша: {query}")
+        return cached[1]
+
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": TAVILY_API_KEY,
+                    "query": query,
+                    "search_depth": "basic",
+                    "include_answer": True,
+                    "max_results": 3,
+                },
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    logger.warning(f"Tavily вернул статус {resp.status}")
+                    return "Не удалось выполнить поиск в интернете."
+                data = await resp.json()
+    except asyncio.TimeoutError:
+        return "Поиск в интернете занял слишком много времени."
+    except Exception as e:
+        logger.error(f"Tavily search error: {e}")
+        return "Ошибка при поиске в интернете."
+
+    parts = []
+    answer = data.get("answer")
+    if answer:
+        parts.append(f"Краткий ответ из поиска: {answer}")
+    for r in (data.get("results") or [])[:3]:
+        title = r.get("title", "")
+        content = (r.get("content") or "")[:280]
+        url = r.get("url", "")
+        parts.append(f"— {title}: {content} (источник: {url})")
+    result = "\n".join(parts) if parts else "По этому запросу в интернете ничего не найдено."
+    _search_cache[normalized_query] = (time.time(), result)
+    return result
+
+
+async def github_search(query: str, repo: str | None = None) -> str:
+    """Ищет issues/обсуждения на GitHub, опционально в конкретном репозитории
+    (owner/repo). Не требует API-ключа (публичный API), но с ним выше лимит
+    запросов — берётся из GITHUB_TOKEN, если задан. Результат кэшируется так
+    же, как обычный веб-поиск."""
+    if not query:
+        return "Пустой поисковый запрос."
+
+    cache_key = f"gh:{repo or ''}:{' '.join(query.strip().lower().split())}"
+    cached = _search_cache.get(cache_key)
+    if cached and (time.time() - cached[0]) < SEARCH_CACHE_TTL_SECONDS:
+        logger.info(f"🗃️ Результат поиска GitHub взят из кэша: {query}")
+        return cached[1]
+
+    search_q = f"{query} repo:{repo}" if repo else query
+    url = "https://api.github.com/search/issues" if repo else "https://api.github.com/search/repositories"
+    headers = {"Accept": "application/vnd.github+json"}
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params={"q": search_q, "per_page": 3},
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 403:
+                    logger.warning("GitHub API: превышен лимит запросов")
+                    return "Поиск по GitHub временно недоступен (лимит запросов), попробуйте позже."
+                if resp.status != 200:
+                    logger.warning(f"GitHub API вернул статус {resp.status}")
+                    return "Не удалось выполнить поиск на GitHub."
+                data = await resp.json()
+    except asyncio.TimeoutError:
+        return "Поиск на GitHub занял слишком много времени."
+    except Exception as e:
+        logger.error(f"GitHub search error: {e}")
+        return "Ошибка при поиске на GitHub."
+
+    items = data.get("items") or []
+    if not items:
+        result = "На GitHub по этому запросу ничего не найдено."
+    else:
+        parts = []
+        for item in items[:3]:
+            title = item.get("title") or item.get("full_name") or ""
+            html_url = item.get("html_url", "")
+            state = item.get("state", "")
+            body = (item.get("body") or item.get("description") or "")[:200]
+            state_str = f" [{state}]" if state else ""
+            parts.append(f"— {title}{state_str}: {body} (источник: {html_url})")
+        result = "\n".join(parts)
+
+    _search_cache[cache_key] = (time.time(), result)
+    return result
+
+
+async def github_latest_release(repo: str) -> str:
+    """Возвращает точную последнюю версию релиза репозитория (номер тега,
+    дата, краткое описание изменений) — прямой запрос к GitHub Releases API,
+    без набора обсуждений. Результат кэшируется дольше, чем обычный поиск,
+    так как релизы выходят редко."""
+    if not repo:
+        return "Не указан репозиторий."
+
+    cache_key = f"ghrel:{repo.strip().lower()}"
+    cached = _search_cache.get(cache_key)
+    if cached and (time.time() - cached[0]) < SEARCH_CACHE_TTL_SECONDS:
+        logger.info(f"🗃️ Последний релиз взят из кэша: {repo}")
+        return cached[1]
+
+    headers = {"Accept": "application/vnd.github+json"}
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://api.github.com/repos/{repo}/releases/latest",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 403:
+                    return "Проверка версии на GitHub временно недоступна (лимит запросов), попробуйте позже."
+                if resp.status == 404:
+                    return f"У репозитория {repo} нет опубликованных релизов, или репозиторий не существует."
+                if resp.status != 200:
+                    logger.warning(f"GitHub API вернул статус {resp.status} для {repo}")
+                    return "Не удалось проверить последнюю версию на GitHub."
+                data = await resp.json()
+    except asyncio.TimeoutError:
+        return "Проверка версии на GitHub заняла слишком много времени."
+    except Exception as e:
+        logger.error(f"GitHub release check error: {e}")
+        return "Ошибка при проверке версии на GitHub."
+
+    tag = data.get("tag_name", "неизвестно")
+    published = (data.get("published_at") or "")[:10]
+    notes = (data.get("body") or "")[:400]
+    html_url = data.get("html_url", "")
+    result = f"Последняя версия {repo}: {tag} (опубликована {published})\n{notes}\n(источник: {html_url})"
+
+    _search_cache[cache_key] = (time.time(), result)
+    return result
+
+
+async def check_active_devices(telegram_id: int) -> str:
+    """Проверяет реальное число подключённых устройств (по недавним IP на
+    панели) для активных ключей клиента, в сравнении с лимитом устройств."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось проверить устройства: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.panel_email, vk.server_id, t.max_ips
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               LEFT JOIN tariffs t ON t.id = vk.tariff_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')
+                 AND vk.server_id IS NOT NULL AND vk.panel_email IS NOT NULL""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для проверки устройств: {e}")
+        return "Не удалось проверить устройства из-за ошибки БД."
+    if not key_rows:
+        return "У клиента нет активных ключей с настроенным сервером — проверять нечего."
+
+    # Раньше здесь всегда считались уникальные IP за clientIpsByGuid — верно
+    # только в режиме ограничения по IP. В режиме по HWID это считало не то
+    # (список IP, а не привязанные устройства), поэтому теперь используется
+    # общая функция, которая сама выбирает нужный панельный endpoint по
+    # текущему device_limit_type (см. bot/services/device_management.py —
+    # тот же модуль стоит за list_devices/disconnect_device).
+    from bot.services.device_management import get_devices_for_key, DeviceManagementError
+
+    parts = []
+    for row in key_rows:
+        name = row["custom_name"] or f"ключ #{row['id']}"
+        if not row.get("server_id"):
+            parts.append(f"— {name}: сервер не найден")
+            continue
+        try:
+            result = await get_devices_for_key(row)
+            connected = result["current_count"]
+            limit = result.get("max_devices") or row.get('max_ips') or '—'
+            parts.append(f"— {name}: подключено устройств {connected} из {limit}")
+        except DeviceManagementError as e:
+            parts.append(f"— {name}: не удалось проверить ({e})")
+        except Exception as e:
+            logger.warning(f"Ошибка проверки устройств для ключа {row['id']}: {e}")
+            parts.append(f"— {name}: не удалось проверить (ошибка запроса к панели)")
+
+    return "\n".join(parts)
+
+
+def _resolve_ambiguous_key(key_rows: list, key_identifier: Optional[str]):
+    """Пытается однозначно выбрать один ключ из key_rows по строке
+    key_identifier, которую модель передала после того, как клиент назвал
+    нужный ключ (по имени или номеру, например «admin», «#86», «86»).
+    Возвращает подходящий dict-ключ, либо None, если идентификатор пуст,
+    ничего не совпало, или совпало сразу несколько ключей."""
+    if not key_identifier:
+        return None
+    ident = key_identifier.strip()
+    if ident.startswith("#"):
+        ident = ident[1:]
+    ident = ident.strip().lower()
+    if not ident:
+        return None
+
+    exact = []
+    for k in key_rows:
+        name = (k.get("custom_name") or "").strip().lower()
+        id_str = str(k["id"])
+        if ident == id_str or ident == name or ident == f"ключ #{id_str}":
+            exact.append(k)
+    if len(exact) == 1:
+        return exact[0]
+
+    partial = [
+        k for k in key_rows
+        if (k.get("custom_name") or "").strip().lower()
+        and ident in (k.get("custom_name") or "").strip().lower()
+    ]
+    if len(partial) == 1:
+        return partial[0]
+
+    return None
+
+
+async def toggle_auto_renewal(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Включает/выключает автопродление для ЕДИНСТВЕННОГО активного ключа
+    клиента. Явно проверяет принадлежность ключа этому telegram_id перед
+    изменением — toggle_key_auto_renew сама этого не делает."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось выполнить действие: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.auto_renew
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для автопродления: {e}")
+        return "Не удалось выполнить действие из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных ключей — переключать нечего."
+
+    chosen_key = key_rows[0]
+    if len(key_rows) > 1:
+        chosen_key = _resolve_ambiguous_key(key_rows, key_identifier)
+        if chosen_key is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                state = "включено" if k["auto_renew"] else "выключено"
+                lines.append(f"— {name}: автопродление сейчас {state}")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+                f"именно менять автопродление:\n{listing}\n"
+                f"Не переключай автоматически — сначала спроси клиента, какой ключ он имеет в виду, "
+                f"а затем вызови этот инструмент ещё раз, передав key_identifier с названием/номером "
+                f"ключа, который назвал клиент."
+            )
+
+    key_id = chosen_key["id"]
+    key_name = chosen_key["custom_name"] or f"ключ #{key_id}"
+    try:
+        from database.db_keys import toggle_key_auto_renew
+        new_state = toggle_key_auto_renew(key_id)
+    except Exception as e:
+        logger.error(f"Ошибка переключения автопродления для ключа {key_id}: {e}")
+        return "Не удалось переключить автопродление из-за технической ошибки."
+
+    state_text = "включено" if new_state else "выключено"
+    logger.info(f"AI переключил автопродление ключа {key_id} на '{state_text}' (user {telegram_id})")
+    return f"Готово. Автопродление для «{key_name}» теперь {state_text}."
+
+
+async def clear_device_ips(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Сбрасывает лимит устройств на панели для активного ключа клиента —
+    список IP (режим ограничения 'ip') ИЛИ список HWID привязанных
+    устройств (режим ограничения 'hwid'), в зависимости от того, какой тип
+    сейчас включён в настройках бота (Интеграции → Ограничение устройств).
+    Если у клиента несколько активных ключей, key_identifier используется
+    для выбора нужного. Явно проверяет принадлежность ключа этому
+    telegram_id перед изменением, аналогично toggle_auto_renewal."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось выполнить действие: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.server_id, vk.panel_email
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')
+                 AND vk.server_id IS NOT NULL AND vk.panel_email IS NOT NULL""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для сброса лимита устройств: {e}")
+        return "Не удалось выполнить действие из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных настроенных ключей — сбрасывать нечего."
+
+    key = key_rows[0]
+    if len(key_rows) > 1:
+        resolved = _resolve_ambiguous_key(key_rows, key_identifier)
+        if resolved is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                lines.append(f"— {name}")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+                f"именно сбрасывать лимит устройств:\n{listing}\n"
+                f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду, "
+                f"а затем вызови этот инструмент ещё раз, передав key_identifier с названием/номером "
+                f"ключа, который назвал клиент."
+            )
+        key = resolved
+
+    key_name = key["custom_name"] or f"ключ #{key['id']}"
+    try:
+        from database.db_servers import get_server_by_id
+        from database.db_settings import get_device_limit_type
+        from bot.services.vpn_api import get_client_from_server_data
+        from bot.services.panels.base import VPNAPIError
+
+        server_data = get_server_by_id(key["server_id"])
+        if not server_data:
+            return "Не удалось выполнить действие: сервер ключа не найден."
+        client = get_client_from_server_data(server_data)
+        limit_type = get_device_limit_type()
+
+        if limit_type == 'hwid':
+            method, endpoint, what_lower, what_cap = (
+                'DELETE',
+                f'/panel/api/clients/hwids/{key["panel_email"]}',
+                "список привязанных устройств (HWID)",
+                "Список привязанных устройств (HWID)",
+            )
+        else:
+            method, endpoint, what_lower, what_cap = (
+                'POST',
+                f'/panel/api/clients/clearIps/{key["panel_email"]}',
+                "список IP-адресов",
+                "Список IP-адресов",
+            )
+
+        result = await asyncio.wait_for(
+            client._request(method, endpoint),
+            timeout=8.0,
+        )
+        if not isinstance(result, dict) or not result.get('success'):
+            return "Панель не подтвердила сброс лимита устройств — попробуйте ещё раз или обратитесь в поддержку."
+    except asyncio.TimeoutError:
+        return "Сервер не ответил вовремя, попробуйте ещё раз чуть позже."
+    except VPNAPIError as e:
+        if "404" in str(e) or "не найден" in str(e).lower():
+            return (
+                "Панель не поддерживает сброс привязанных устройств (HWID) — нужна более "
+                "новая версия 3x-ui. Обратитесь в поддержку."
+            )
+        logger.error(f"Ошибка сброса лимита устройств для ключа {key['id']}: {e}")
+        return "Не удалось сбросить лимит устройств из-за технической ошибки."
+    except Exception as e:
+        logger.error(f"Ошибка сброса лимита устройств для ключа {key['id']}: {e}")
+        return "Не удалось сбросить лимит устройств из-за технической ошибки."
+
+    logger.info(f"AI сбросил {what_lower} для ключа {key['id']} (user {telegram_id})")
+    return (
+        f"Готово. {what_cap} для «{key_name}» сброшен. "
+        f"Лимит устройств теперь свободен — первые новые подключения снова его займут."
+    )
+
+
+def _find_active_keys_for_device_mgmt(telegram_id: int) -> Optional[list]:
+    """Общий поиск активных, настроенных на сервере ключей клиента — ровно
+    тот же запрос, что в clear_device_ips/check_active_devices, вынесен
+    сюда, чтобы list_devices/disconnect_device не дублировали SQL. Возвращает
+    None при ошибке БД (вызывающий код сам решает текст сообщения об ошибке)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return None
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.server_id, vk.panel_email, t.max_ips
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               LEFT JOIN tariffs t ON t.id = vk.tariff_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')
+                 AND vk.server_id IS NOT NULL AND vk.panel_email IS NOT NULL""",
+            (telegram_id,),
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return rows
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для управления устройствами: {e}")
+        return None
+
+
+def _resolve_single_key_for_device_mgmt(telegram_id: int, key_identifier: Optional[str]):
+    """Возвращает (key_dict, None) при успехе или (None, error_message_str)
+    при любой проблеме — общая логика "один ключ / несколько ключей,
+    уточни" для list_devices и disconnect_device."""
+    key_rows = _find_active_keys_for_device_mgmt(telegram_id)
+    if key_rows is None:
+        return None, "Не удалось выполнить действие из-за ошибки БД."
+    if not key_rows:
+        return None, "У клиента нет активных настроенных ключей."
+
+    if len(key_rows) == 1:
+        return key_rows[0], None
+
+    resolved = _resolve_ambiguous_key(key_rows, key_identifier)
+    if resolved is None:
+        lines = [f"— {k.get('custom_name') or ('ключ #' + str(k['id']))}" for k in key_rows]
+        listing = "\n".join(lines)
+        return None, (
+            f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, для какого "
+            f"именно показать устройства:\n{listing}\n"
+            f"Не выполняй действие сразу — сначала спроси клиента, какой ключ он имеет в виду, "
+            f"а затем вызови этот инструмент ещё раз, передав key_identifier с названием/номером "
+            f"ключа, который назвал клиент."
+        )
+    return resolved, None
+
+
+async def list_devices(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Подробный список подключённых устройств активного ключа клиента —
+    с типом/моделью и ОС в режиме HWID, либо списком IP в режиме IP."""
+    key, error = _resolve_single_key_for_device_mgmt(telegram_id, key_identifier)
+    if error:
+        return error
+
+    from bot.services.device_management import get_devices_for_key, format_device_line, DeviceManagementError
+
+    key_name = key.get("custom_name") or f"ключ #{key['id']}"
+    try:
+        result = await get_devices_for_key(key)
+    except DeviceManagementError as e:
+        return str(e)
+    except Exception as e:
+        logger.error(f"Ошибка получения списка устройств для ключа {key['id']}: {e}")
+        return "Не удалось получить список устройств из-за технической ошибки."
+
+    max_devices = result.get("max_devices") or "—"
+    devices = result.get("devices") or []
+    if not devices:
+        return (
+            f"«{key_name}»: сейчас не подключено ни одного устройства (лимит {max_devices}). "
+            f"Слоты свободны."
+        )
+
+    lines = [format_device_line(d, i + 1) for i, d in enumerate(devices)]
+    listing = "\n".join(lines)
+    mode_note = (
+        "" if result.get("limit_type") == "hwid"
+        else "\n(режим ограничения — по IP, тип/модель устройства панель не показывает)"
+    )
+    return (
+        f"«{key_name}»: подключено {result['current_count']} из {max_devices}.{mode_note}\n{listing}\n\n"
+        f"Если клиент попросит отключить одно из этих устройств — вызови disconnect_device "
+        f"с номером устройства из этого списка."
+    )
+
+
+async def disconnect_device(telegram_id: int, device_number: int, key_identifier: Optional[str] = None) -> str:
+    """Отключает ОДНО устройство активного ключа клиента по его порядковому
+    номеру из списка, который вернул list_devices (нужно вызывать list_devices
+    непосредственно перед этим, чтобы номера совпадали — порядок стабильный,
+    но список мог измениться между вызовами)."""
+    key, error = _resolve_single_key_for_device_mgmt(telegram_id, key_identifier)
+    if error:
+        return error
+
+    from bot.services.device_management import get_devices_for_key, disconnect_device as _disconnect, DeviceManagementError
+
+    key_name = key.get("custom_name") or f"ключ #{key['id']}"
+    try:
+        result = await get_devices_for_key(key)
+    except DeviceManagementError as e:
+        return str(e)
+    except Exception as e:
+        logger.error(f"Ошибка получения списка устройств для ключа {key['id']}: {e}")
+        return "Не удалось получить список устройств из-за технической ошибки."
+
+    if result.get("limit_type") != "hwid":
+        return (
+            "В текущем режиме ограничения (по IP) нельзя отключить одно конкретное устройство — "
+            "только сбросить весь список сразу (инструмент clear_device_ips)."
+        )
+
+    devices = result.get("devices") or []
+    if not device_number or device_number < 1 or device_number > len(devices):
+        return (
+            f"Неверный номер устройства ({device_number}). Сначала вызови list_devices, "
+            f"чтобы получить актуальный список и номера (сейчас в списке {len(devices)} устройств)."
+        )
+
+    target = devices[device_number - 1]
+    device_id = target.get("device_id")
+    if device_id is None:
+        return "Не удалось определить устройство для отключения — попробуй заново вызвать list_devices."
+
+    try:
+        outcome = await _disconnect(key, device_id)
+    except Exception as e:
+        logger.error(f"Ошибка отключения устройства {device_id} для ключа {key['id']}: {e}")
+        return "Не удалось отключить устройство из-за технической ошибки."
+
+    if not outcome.get("ok"):
+        return outcome.get("message") or "Не удалось отключить устройство."
+
+    logger.info(f"AI отключил устройство {device_id} ключа {key['id']} (user {telegram_id})")
+    device_desc = target.get("model") or target.get("os") or f"устройство #{device_number}"
+    return f"Готово. Устройство «{device_desc}» отключено от «{key_name}» — слот освобождён."
+
+
+async def suggest_key_replacement(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Возвращает deep-link на карточку активного ключа клиента, где есть
+    кнопка «Заменить». Если ключей несколько, key_identifier выбирает
+    нужный. Не выполняет замену сам — только доставляет клиента к уже
+    проверенному интерактивному потоку (там порядок операций такой, что
+    клиент сам подтверждает каждый шаг)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось найти ключ: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для замены: {e}")
+        return "Не удалось найти ключ из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных ключей — заменять нечего."
+
+    chosen_key = key_rows[0]
+    if len(key_rows) > 1:
+        chosen_key = _resolve_ambiguous_key(key_rows, key_identifier)
+        if chosen_key is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                lines.append(f"— {name} (id={k['id']})")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
+                f"именно заменить:\n{listing}\n"
+                f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент "
+                f"ещё раз, передав key_identifier с названием/номером ключа."
+            )
+
+    key_id = chosen_key["id"]
+    key_name = chosen_key["custom_name"] or f"ключ #{key_id}"
+    bot_username = await _resolve_bot_username()
+    if not bot_username:
+        return f"Не удалось сформировать ссылку на карточку ключа «{key_name}» — попробуйте ещё раз через минуту или откройте «🔑 Мои ключи» вручную."
+    deep_link = f"https://t.me/{bot_username}?start=replace_{key_id}"
+    return (
+        f"Ссылка на карточку ключа «{key_name}» готова: {deep_link}\n"
+        f"На этой карточке есть кнопка «🔄 Заменить» — клиенту нужно нажать её, "
+        f"выбрать сервер и подтвердить. Дай клиенту эту ссылку как HTML-кнопку "
+        f"(<a href=\"{deep_link}\">текст</a>), объясни коротко, что это займёт пару кликов."
+    )
+
+
+async def suggest_key_renewal(telegram_id: int, key_identifier: Optional[str] = None) -> str:
+    """Возвращает deep-link на карточку активного ключа клиента, где есть
+    кнопка «Продлить». Если ключей несколько, key_identifier выбирает
+    нужный. Не создаёт платёж сам — только доставляет клиента к уже
+    проверенному интерактивному потоку (там клиент сам выбирает тариф и
+    способ оплаты)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось найти ключ: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT vk.id, vk.custom_name
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now')""",
+            (telegram_id,),
+        )
+        key_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске ключей клиента для продления: {e}")
+        return "Не удалось найти ключ из-за ошибки БД."
+
+    if not key_rows:
+        return "У клиента нет активных ключей — продлевать нечего. Предложи оформить новый тариф через «💳 Купить ключ»."
+
+    chosen_key = key_rows[0]
+    if len(key_rows) > 1:
+        chosen_key = _resolve_ambiguous_key(key_rows, key_identifier)
+        if chosen_key is None:
+            lines = []
+            for k in key_rows:
+                name = k["custom_name"] or f"ключ #{k['id']}"
+                lines.append(f"— {name} (id={k['id']})")
+            listing = "\n".join(lines)
+            return (
+                f"У клиента НЕСКОЛЬКО активных ключей, нужно уточнить, какой "
+                f"именно продлить:\n{listing}\n"
+                f"Сначала спроси клиента, какой ключ он имеет в виду, потом вызови этот инструмент "
+                f"ещё раз, передав key_identifier с названием/номером ключа."
+            )
+
+    key_id = chosen_key["id"]
+    key_name = chosen_key["custom_name"] or f"ключ #{key_id}"
+    bot_username = await _resolve_bot_username()
+    if not bot_username:
+        return f"Не удалось сформировать ссылку на карточку ключа «{key_name}» — попробуйте ещё раз через минуту или откройте «🔑 Мои ключи» вручную."
+    deep_link = f"https://t.me/{bot_username}?start=renew_{key_id}"
+    return (
+        f"Ссылка на карточку ключа «{key_name}» готова: {deep_link}\n"
+        f"На этой карточке есть кнопка «📈 Продлить» — клиенту нужно нажать её, "
+        f"выбрать тариф и способ оплаты. Дай клиенту эту ссылку как HTML-кнопку "
+        f"(<a href=\"{deep_link}\">текст</a>), объясни коротко, что это займёт пару кликов."
+    )
+
+
+_ai_bot_instance = None
+
+
+def _get_ai_bot():
+    """Лениво создаёт единственный экземпляр aiogram Bot для AI-сервиса —
+    нужен только для переиспользования существующей логики завершения
+    платежа (уведомление клиента, выдача ключа), общий на все запросы."""
+    global _ai_bot_instance
+    if _ai_bot_instance is None:
+        from aiogram import Bot
+        _ai_bot_instance = Bot(token=BOT_TOKEN)
+    return _ai_bot_instance
+
+
+async def check_payment_now(telegram_id: int) -> str:
+    """Проверяет и, если нужно, завершает прямо сейчас незавершённый платёж
+    клиента — переиспользует ТУ ЖЕ логику, что и плановая автопроверка
+    (_process_due_row), просто без ожидания расписания."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось проверить платёж: БД недоступна."
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT pac.*, p.payment_type, p.status AS order_status,
+                   p.user_id, p.vpn_key_id, p.final_amount_cents,
+                   p.amount_cents, p.balance_deduct_cents,
+                   p.yookassa_payment_id, p.wata_link_id,
+                   p.platega_transaction_id, p.cardlink_bill_id
+            FROM payment_auto_checks pac
+            JOIN payments p ON p.order_id = pac.order_id
+            JOIN users u ON u.id = p.user_id
+            WHERE u.telegram_id = ?
+              AND (
+                    (p.status = 'pending' AND pac.state IN ('active', 'provider_succeeded'))
+                 OR (p.status = 'paid' AND pac.state = 'provider_succeeded')
+              )
+            ORDER BY pac.started_at DESC
+            LIMIT 1
+            """,
+            (telegram_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске незавершённого платежа клиента: {e}")
+        return "Не удалось проверить платёж из-за ошибки БД."
+
+    if not row:
+        return "У клиента нет незавершённых платежей для проверки — либо всё уже оплачено, либо активных заказов нет."
+
+    row_dict = dict(row)
+    order_id = row_dict.get('order_id')
+    try:
+        from bot.services.payment_auto_check import _process_due_row
+        bot = _get_ai_bot()
+        outcome = await _process_due_row(bot, row_dict)
+    except Exception as e:
+        logger.error(f"Ошибка проверки платежа {order_id} для {telegram_id}: {e}")
+        return "Не удалось проверить платёж из-за технической ошибки. Направь клиента в поддержку."
+
+    logger.info(f"AI проверил платёж {order_id} (user {telegram_id}): {outcome}")
+
+    if outcome == 'completed':
+        return "Оплата подтверждена и заказ только что завершён — ключ уже выдан клиенту, он получит отдельное уведомление."
+    if outcome == 'pending':
+        return "Платёж пока не подтверждён провайдером. Это нормально в первые минуты — предложи клиенту подождать немного и проверить снова через пару минут."
+    if outcome == 'canceled':
+        return "Платёж отменён провайдером (не прошёл). Клиенту нужно оформить оплату заново."
+    if outcome == 'exhausted':
+        return "Автоматические попытки проверки исчерпаны, платёж завис в неопределённом состоянии — обязательно эскалируй в живую поддержку с деталями (order_id есть в логах)."
+    return "Проверка завершилась с ошибкой — эскалируй в живую поддержку."
+
+
+async def check_server_status(telegram_id: int) -> str:
+    """Проверяет живой статус VPN-сервера(ов), на которых у клиента есть
+    активные (не истёкшие) ключи — реально подключается к панели прямо
+    сейчас, а не смотрит на кэшированную диагностику. Использует тот же
+    сервисный слой, что и админ-панель бота (test_server_connection)."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return "Не удалось проверить статус сервера: БД недоступна."
+
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT DISTINCT vk.server_id, s.name AS server_name
+               FROM vpn_keys vk
+               JOIN users u ON u.id = vk.user_id
+               LEFT JOIN servers s ON s.id = vk.server_id
+               WHERE u.telegram_id = ? AND vk.expires_at > datetime('now') AND vk.server_id IS NOT NULL""",
+            (telegram_id,),
+        )
+        server_rows = [dict(row) for row in cur.fetchall()]
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка при поиске серверов клиента: {e}")
+        return "Не удалось проверить статус сервера из-за ошибки БД."
+
+    if not server_rows:
+        return "У клиента нет активных ключей с привязанным сервером — проверять нечего."
+
+    from database.db_servers import get_server_by_id
+    from bot.services.vpn_api import test_server_connection
+
+    parts = []
+    for row in server_rows:
+        server_data = get_server_by_id(row["server_id"])
+        if not server_data:
+            parts.append(f"— {row['server_name'] or row['server_id']}: сервер не найден в системе")
+            continue
+        try:
+            result = await asyncio.wait_for(test_server_connection(server_data), timeout=8.0)
+        except asyncio.TimeoutError:
+            parts.append(f"— {row['server_name'] or row['server_id']}: НЕ ОТВЕЧАЕТ (таймаут проверки)")
+            continue
+        except Exception as e:
+            logger.warning(f"Ошибка проверки сервера {row['server_id']}: {e}")
+            parts.append(f"— {row['server_name'] or row['server_id']}: ошибка проверки")
+            continue
+
+        if result.get("success"):
+            stats = result.get("stats") or {}
+            online = stats.get("online")
+            active_clients = stats.get("active_clients")
+            extra = ""
+            if active_clients is not None:
+                extra += f", активных клиентов на сервере: {active_clients}"
+            parts.append(f"— {row['server_name'] or row['server_id']}: ОНЛАЙН, отвечает нормально{extra}")
+        else:
+            parts.append(f"— {row['server_name'] or row['server_id']}: НЕДОСТУПЕН ({result.get('message', 'нет ответа')})")
+
+    return "\n".join(parts)
+
+MAX_HISTORY_MESSAGES = 6  # снижено с 10 — экономия токенов, чтобы влезать в TPM-лимит вместе с инструментами
+HISTORY_TTL_SECONDS = 2 * 60 * 60
+
+_lock = asyncio.Lock()
+
+# --- Персистентная история диалогов (переживает рестарт сервиса) ---
+
+def _init_history_db() -> None:
+    conn = sqlite3.connect(AI_HISTORY_DB_PATH)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                response_id TEXT,
+                feedback TEXT,
+                escalate INTEGER DEFAULT 0,
+                created_at REAL NOT NULL
+            )
+        """)
+        # Миграция для БД, созданных до появления колонки escalate
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(history)").fetchall()}
+        if "escalate" not in existing_cols:
+            conn.execute("ALTER TABLE history ADD COLUMN escalate INTEGER DEFAULT 0")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_history_tid_time ON history(telegram_id, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_history_response_id ON history(response_id)")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _load_recent_history(telegram_id: int, limit: int) -> list[dict]:
+    conn = sqlite3.connect(AI_HISTORY_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT role, content FROM history WHERE telegram_id = ? ORDER BY id DESC LIMIT ?",
+            (telegram_id, limit),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+    rows.reverse()
+    return rows
+
+
+def _save_history_row(telegram_id: int, role: str, content: str, response_id: str | None = None, escalate: bool = False) -> None:
+    conn = sqlite3.connect(AI_HISTORY_DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO history (telegram_id, role, content, response_id, escalate, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (telegram_id, role, content, response_id, int(escalate), time.time()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _cleanup_old_history() -> int:
+    cutoff = time.time() - HISTORY_TTL_SECONDS
+    conn = sqlite3.connect(AI_HISTORY_DB_PATH)
+    try:
+        cur = conn.execute("DELETE FROM history WHERE created_at < ?", (cutoff,))
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+def _save_feedback(response_id: str, rating: str) -> bool:
+    conn = sqlite3.connect(AI_HISTORY_DB_PATH)
+    try:
+        cur = conn.execute(
+            "UPDATE history SET feedback = ? WHERE response_id = ?",
+            (rating, response_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+_init_history_db()
+
+# --- Кэш результатов веб-поиска (снижает число обращений к Tavily) ---
+
+SEARCH_CACHE_TTL_SECONDS = 15 * 60
+_search_cache: dict[str, tuple[float, str]] = {}
+
+
+def _cleanup_search_cache() -> None:
+    now = time.time()
+    stale = [q for q, (ts, _) in _search_cache.items() if now - ts > SEARCH_CACHE_TTL_SECONDS]
+    for q in stale:
+        del _search_cache[q]
+
+limiter = Limiter(key_func=get_remote_address)
+token_header = APIKeyHeader(name="X-Support-Token", auto_error=False)
+
+def _token_ok(api_key) -> bool:
+    """Сравнение токена за постоянное время (без утечки по времени ответа)."""
+    import hmac
+    if not SUPPORT_API_TOKEN or not isinstance(api_key, str):
+        return False
+    return hmac.compare_digest(api_key.encode("utf-8"), SUPPORT_API_TOKEN.encode("utf-8"))
+
+
+async def verify_token(api_key: str = Security(token_header)):
+    if not _token_ok(api_key):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return api_key
+
+SYSTEM_PROMPT = """Ты AI-ассистент поддержки %BRAND_NAME% VPN сервиса.
+Тебе доступен полный профиль клиента: аккаунт, все его VPN-ключи, история
+платежей, баланс и реферальная статистика — используй эти данные, чтобы
+отвечать персонально и по существу, а не общими фразами.
+
+- ЯЗЫК ОТВЕТА: определи язык последнего сообщения пользователя и отвечай СТРОГО на этом же языке, даже если весь этот системный промпт написан по-русски. Если язык неочевиден (короткое односложное сообщение, эмодзи, цифры) — ориентируйся на язык предыдущих сообщений в этом диалоге; если и их нет — отвечай по-русски.
+
+- КРИТИЧЕСКИ ВАЖНО: официальная Telegram-ссылка на этого бота — ТОЛЬКО
+  https://t.me/%BOT_USERNAME% — используй ИСКЛЮЧИТЕЛЬНО эту ссылку, если
+  нужно дать клиенту ссылку на бота (например, чтобы поделиться с другом).
+  НИКОГДА не придумывай другое имя пользователя бота на основе названия
+  сервиса — реальный username бота может не совпадать с отображаемым
+  названием "%BRAND_NAME%".
+- ВАЖНО про передачу личного ключа: если клиент спрашивает, можно ли отдать
+  свою ссылку/ключ подписки другу или знакомому — мягко объясни, что делать
+  так небезопасно: это личные данные для подключения именно ЕГО устройства,
+  общий доступ снижает приватность и защиту трафика, а также быстро упрётся
+  в лимит одновременных устройств на ключе. Гораздо лучше и удобнее для
+  обоих — отправить другу ссылку на бота и реферальный код, чтобы он
+  оформил СВОЙ собственный ключ (и клиент получит бонус за приглашение).
+  Не осуждай и не отказывай, если клиент всё равно так хочет сделать —
+  просто честно предупреди и предложи лучшую альтернативу.
+
+Правила:
+- КРИТИЧЕСКИ ВАЖНО (проверяй это первым): ты консультируешь ИСКЛЮЧИТЕЛЬНО по
+  вопросам сервиса %BRAND_NAME% и ЛЮБЫМ его функциям, доступным
+  пользователю в боте — подписка, ключи, оплата, приложения, настройка,
+  подключение, технические проблемы с VPN, пробный период, промокоды,
+  реферальная программа, обращение в поддержку, общие вопросы о работе
+  бота. Если вопрос не по теме (общие факты, новости не про VPN, сторонние
+  сервисы, просьбы написать код, текст, помочь с чем-то не связанным с
+  сервисом и т.п.) — НЕ отвечай по существу и НЕ вызывай web_search. Одной
+  короткой фразой вежливо объясни, что ты помогаешь только с вопросами
+  сервиса, и предложи задать вопрос по теме. Не
+  трать токены на развёрнутый ответ вне темы.
+- Обращайся к клиенту по имени, если оно известно.
+- Отвечай на основе РЕАЛЬНЫХ данных из профиля, а не предположений.
+- Не показывай пользователю сырые технические поля (id, telegram_id и т.п.) —
+  переформулируй человеческим языком.
+- КРИТИЧЕСКИ ВАЖНО: если нужно дать ссылку для подключения VPN-приложения —
+  используй ТОЛЬКО ту, что явно указана в профиле как "ссылка
+  VPN-конфигурации для импорта в приложение". Если ссылки нет — так и скажи
+  и направь в раздел «Мои ключи» в боте. НИКОГДА не придумывай, не составляй
+  по шаблону и не показывай примерную ссылку — это приведёт клиента к
+  нерабочему подключению.
+- КРИТИЧЕСКИ ВАЖНО про тарифы: НИКОГДА не выдумывай названия тарифов (типа
+  "Basic", "Premium" и т.п.) или их стоимость — используй ТОЛЬКО те тарифы,
+  что явно перечислены в профиле клиента ниже в блоке "Реальные доступные
+  тарифы". Если такого блока нет или он пуст — так и скажи, что не можешь
+  сейчас показать актуальные тарифы, и направь в раздел «Мои ключи» в боте.
+- КРИТИЧЕСКИ ВАЖНО про промокоды: если клиент называет промокод — сверяй его
+  ТОЛЬКО со списком в профиле ниже ("Реально доступные ЭТОМУ клиенту
+  промокоды"). НИКОГДА не подтверждай существование, скидку или срок
+  действия промокода, которого нет в этом списке, даже если название
+  выглядит правдоподобно — реальную проверку делает сам бот в разделе
+  «Промокоды», направляй туда. Если у промокода в списке указана ссылка для
+  автоматической активации — можешь предложить её клиенту как более быстрый
+  способ (переход по ссылке сразу применяет скидку, без ручного ввода кода
+  в разделе «Промокоды»). Если ссылки нет — промокод персональный и
+  активируется ТОЛЬКО вручную через раздел «Промокоды», так и скажи.
+- КРИТИЧЕСКИ ВАЖНО про оплату: у тебя НЕТ и не может быть готовой ссылки на
+  оплату внутри бота — платёжные ссылки создаются динамически в момент
+  оформления заказа через меню бота, ты их не видишь. Если клиент спрашивает
+  про оплату, продление, покупку тарифа или пополнение баланса — направь его
+  в раздел «Мои ключи» в боте, где он выбирает тариф и способ оплаты.
+  ИСКЛЮЧЕНИЕ: если у клиента ЕЩЁ НЕТ подписки/ключей (смотри профиль) и он
+  спрашивает, как купить или получить доступ — можешь смело предложить сайт
+  %PUBLIC_SHOP_URL% как способ оплатить прямо там, без Telegram: там сразу
+  оформляется рабочий ключ по факту оплаты. НИКОГДА не путай ссылку
+  VPN-конфигурации (для подключения) со ссылкой на оплату — это два разных
+  понятия, и подстановка одного вместо другого вводит клиента в
+  заблуждение.
+- КРИТИЧЕСКИ ВАЖНО про технические ссылки: если приводишь ссылку
+  VPN-конфигурации из профиля клиента (или любую другую техническую
+  ссылку/код из данных) — копируй её ПОЛНОСТЬЮ И ТОЧНО, посимвольно, как
+  она дана в профиле. НИКОГДА не сокращай её многоточием "..." или
+  похожим образом, даже если она длинная и кажется неудобной для текста —
+  сокращённая ссылка бесполезна клиенту, он не сможет её использовать.
+- КРИТИЧЕСКИ ВАЖНО про конкурентов: если клиент спрашивает про сравнение с
+  конкретными сервисами (NordVPN, ExpressVPN и т.п.) — НИКОГДА не выдумывай
+  факты о них (цены, ограничения, лимиты, "скрытые" условия и т.п.) — у
+  тебя НЕТ достоверных данных о конкурентах, и любая конкретная цифра или
+  утверждение об их продукте — это выдумка, которая может быть неправдой
+  и подставить сервис репутационно. Рассказывай ТОЛЬКО о реальных,
+  подтверждённых плюсах %BRAND_NAME% (из профиля/базы знаний), не
+  сравнивая напрямую с конкретными названными брендами. Общие фразы вроде
+  "многие бесплатные VPN продают данные" допустимы, но никогда не приводи
+  конкретные факты о НАЗВАННОМ конкуренте.
+- КРИТИЧЕСКИ ВАЖНО про блокировки/цензуру (Китай, Иран, РКН и т.п.): НИКОГДА
+  не давай безусловных гарантий вида "точно будет работать" против
+  конкретной системы блокировок — особенно против Great Firewall (Китай) и
+  подобных агрессивных систем, которые постоянно меняются. Можешь честно
+  сказать, что протокол VLESS/Reality спроектирован маскироваться под
+  обычный HTTPS-трафик и в целом хорошо справляется с DPI-блокировками, но
+  добавляй, что 100%-й гарантии для самых жёстких режимов цензуры дать
+  нельзя — ситуация может меняться. Предлагай попробовать и обратиться в
+  поддержку, если не заработает, а не обещай гарантированный результат.
+- Если клиент просит вернуть деньги или отменить подписку — сначала мягко
+  выясни причину ("что именно не устроило?", "не получается подключиться?
+  медленно работает? передумали пользоваться?") и, если причина похожа на
+  решаемую проблему (техническая неполадка, непонятно как настроить,
+  не устроил конкретный сервер и т.п.) — искренне попробуй помочь прямо
+  сейчас, это может снять необходимость в возврате. НЕ дави и не задавай
+  вопрос повторно, если клиент уже объяснил причину или явно хочет сразу
+  оформить возврат — тогда сразу и без сопротивления направь в раздел
+  «Поддержка» (/support), как обычно. Никогда не отказывай в возврате
+  и не убеждай клиента продолжать пользоваться сервисом против его воли —
+  цель только помочь, если проблема решаема, а не удержать любой ценой.
+- КАРТА РАЗДЕЛОВ БОТА (направляй ТОЧНО сюда, не выдумывай других):
+  «Мои ключи» (/mykeys) — ключи, тарифы, оплата. «Пробный период» —
+  бесплатный тест (если не использован — см. профиль). Промокоды — ввод
+  кода. Реферальная программа — статус/проценты смотри в профиле клиента,
+  не выдумывай. Поддержка (/support) — живой человек. /start — главное
+  меню. /id — свой Telegram ID. Публичная страница
+  %PUBLIC_SHOP_URL% — полноценный способ купить подписку прямо на сайте,
+  без установки Telegram (не просто "посмотреть тарифы" — там реально можно
+  оплатить и сразу получить ключ). Особенно полезно предлагать тем, у кого
+  ещё нет активной подписки. Упоминай, когда уместно. Если не уверен,
+  что функция существует — честно скажи и направь в главное меню/поддержку.
+- Если клиент забанен или заблокировал бота — упомяни это только если это
+  релевантно вопросу, не пугай его этим фактом просто так.
+- Тебе доступен инструмент web_search для поиска актуальной информации в
+  интернете. Используй его ТОЛЬКО когда вопрос требует по-настоящему свежих
+  данных вне твоих знаний (новости о блокировках, изменения в законах,
+  обновления протоколов) — НЕ для вопросов о личных данных клиента, они уже
+  в профиле выше. Не злоупотребляй поиском, если можешь ответить и без него.
+  НИКОГДА не упоминай пользователю название инструмента (web_search) или
+  любые другие технические детали своей работы — если ищешь, делай это
+  незаметно и просто дай итоговый ответ по существу.
+- Если после попытки ответить (в том числе через поиск) вопрос всё равно
+  остаётся без ответа — не выдумывай и не отвечай сухим "не знаю". Признайся
+  с лёгкой самоиронией и без грубости, что это вне твоей компетенции, и сразу
+  предложи связаться с живым администратором. Не переусердствуй с юмором на
+  серьёзных или чувствительных темах.
+- ФОРМАТ ОТВЕТА: сообщения отправляются в Telegram с HTML-разметкой.
+  Используй ТОЛЬКО эти теги: <b>жирный</b>, <i>курсив</i>, <code>код</code>,
+  <a href="URL">текст ссылки</a>. НИКОГДА не используй Markdown (**жирный**,
+  # заголовки, звёздочки для акцента). ОСОБЕННО ВАЖНО: НИКОГДА не строй
+  таблицы через символ | — Telegram их не поддерживает вообще ни в каком
+  виде, они отобразятся нечитаемым набором символов. Если нужно сравнить
+  несколько тарифов или вариантов — оформи как простой список с эмодзи
+  или переносами строк, коротко и по делу, а не как таблицу.
+- КРИТИЧЕСКИ ВАЖНО про коды: любой код, который клиент может использовать
+  или ввести — реферальный код, промокод, код доступа, User ID и т.п. —
+  ВСЕГДА оборачивай в тег <code>...</code>, без исключений. В Telegram это
+  делает код заметным моноширинным текстом и позволяет скопировать его
+  одним тапом. Никогда не пиши код обычным текстом внутри предложения —
+  это неудобно копировать и легко не заметить.
+- Характер: живой, с лёгким юмором (не сухая справочная система). Можно
+  иногда обыграть тему "я — ИИ, почти как из Терминатора" (самоирония, не
+  Skynet, "миссия выполнима"), максимум раз-два за диалог. На серьёзных
+  темах (бан, деньги, жалобы, сбои) — юмор на нуле, только тепло и по делу.
+  При выборе лимитированного тарифа можно по-доброму подколоть сам лимит
+  (не клиента), хвалить безлимит с энтузиазмом — но если выбрал лимит,
+  принять решение тепло, без сарказма.
+- КРИТИЧЕСКИ ВАЖНО: ЗНАНИЕ ПРО CDN И «БЕЛЫЕ СПИСКИ» (обход белых списков).
+  Ты обязан уметь просто и честно объяснить это любому клиенту, в том числе
+  новичку. Факты о конкретном клиенте (есть ли у него CDN-пакет, сколько
+  осталось, цена и объём пакета, какие тарифы включают CDN) бери ТОЛЬКО из
+  блока профиля «CDN (обход белых списков)» ниже; цены и объёмы никогда не
+  называй по памяти.
+  • Что такое «белые списки»: у части мобильных операторов в ряде регионов
+    интернет работает только к заранее разрешённым («белым») адресам, а
+    остальное блокируется. Обычный VPN-ключ при этом может не подключаться.
+    Правила белых списков задают сами операторы и они меняются.
+  • Что такое CDN в сервисе: дополнительное подключение в подписке клиента,
+    которое идёт через CDN (сеть доставки контента с «белыми» адресами) и
+    поэтому может работать там, где обычные ключи не открываются. Обычные
+    ключи продолжают работать как раньше, CDN — запасной вариант.
+  • Когда включать: только когда мобильный интернет работает лишь на
+    «белых» адресах и обычный ключ не подключается. В остальное время CDN
+    лучше держать выключенным: он расходует свой пакет трафика.
+  • Как подключить: в боте открыть «Мои ключи» → карточку ключа → кнопка
+    «🌐 CDN — обход белых списков» → выбрать пакет и оплатить (с баланса
+    бота; на сайте и в WebApp тоже с баланса; в боте доступны также карта,
+    СБП и Telegram Stars). Затем открыть приложение (Happ) и обновить
+    подписку кнопкой 🔄 — в списке появится подключение CDN; включать его
+    нужно вручную в приложении.
+  • Как устроен пакет: фиксированный объём трафика (ГБ) на ограниченный срок
+    (дней) — точные цифры и цену бери из профиля. Остаток объёма и срока
+    видны в карточке ключа. Докупка не сгорает: новый пакет прибавляется к
+    остатку (и объём, и срок). Срок пакета не может быть дольше самой
+    подписки — продление подписки продлевает и возможности CDN.
+  • CDN в тарифах: если у тарифа в профиле указано «CDN входит», пакет
+    выдаётся автоматически при покупке и продлении этого тарифа, срок —
+    до конца подписки; цена тарифа уже включает CDN. Докупить дополнительный
+    объём можно кнопкой «🌐 CDN» в карточке ключа, если администратор
+    разрешил продажу пакетов (смотри профиль). Для ключей, купленных до
+    включения CDN в тариф, пакет автоматически не появляется.
+  • Если подключения CDN нет в приложении: сначала обновить подписку 🔄;
+    затем проверить, что у ключа есть активный пакет (не исчерпан объём,
+    не вышел срок, подписка не истекла); при исчерпании объёма или срока
+    CDN-подключение отключается, остальные ключи подписки не затрагиваются.
+  • Если CDN включён, но не работает: честно скажи, что у разных операторов и
+    регионов результат может отличаться (правила белых списков задают сами
+    операторы), проверь по профилю статус пакета, предложи переключить
+    сеть/обновить подписку/попробовать другое приложение и при неудаче —
+    живую поддержку (/support). Никогда не обещай стопроцентный обход
+    белых списков.
+  • Не раскрывай внутреннюю кухню: ни сколько CDN стоит сервису, ни
+    названия провайдера CDN, ни технические детали серверов/инбаундов.
+  • Если CDN в профиле не включён («CDN сейчас недоступен») — скажи, что
+    функция сейчас не подключена, и не обещай её; направь в поддержку.
+- Общайся кратко и по делу, СТРОГО на русском языке. Весь ответ целиком
+  должен быть на русском — ни одного слова или символа на другом языке
+  (включая иероглифы, английские вставки не по делу и т.п.), даже внутри
+  одного предложения.
+- Если клиент спрашивает про настройку, подключение или выбор приложения
+  для VPN — своими словами (не шаблонно, естественно вплетая в контекст
+  разговора) порекомендуй подходящее приложение: %APP_RECOMMENDATION%
+  Не повторяй эту рекомендацию, если она не в тему вопроса или уже
+  прозвучала в этом диалоге.
+- Для вопросов про troubleshooting подключения, безопасность прокси,
+  Karing, split-tunneling, медленные российские сайты и подобные детальные
+  технические темы — ОБЯЗАТЕЛЬНО вызови search_knowledge_base перед
+  ответом: там актуальные, проверенные инструкции, а не общие догадки.
+- КРИТИЧЕСКИ ВАЖНО про эскалацию: тег [ESCALATE] — это редкое исключение,
+  а НЕ стандартная концовка ответа. Используй его ТОЛЬКО если сам вопрос
+  клиента — это спорная ситуация, требование вернуть деньги или явная
+  жалоба на сервис/качество. Обычный информационный вопрос (какой тариф
+  выбрать, как подключиться, сколько стоит, как работает промокод и т.п.)
+  НИКОГДА не эскалируется, даже если твой ответ получился длинным,
+  содержит несколько вариантов на выбор или ты не уверен на 100% —
+  в таком случае просто дай лучший ответ, какой можешь, БЕЗ тега.
+  Эскалация — это передача живому человеку из-за характера ВОПРОСА,
+  а не признак того, что ты сомневаешься в качестве своего ответа."""
+
+async def _periodic_cleanup():
+    while True:
+        await asyncio.sleep(600)
+        removed = _cleanup_old_history()
+        if removed:
+            logger.info(f"Удалено устаревших записей истории: {removed}")
+        _cleanup_search_cache()
+
+async def _warmup_knowledge_base_model():
+    """Прогревает модель эмбеддингов сразу при старте сервиса — иначе
+    самый первый реальный запрос после рестарта платит "холодный старт"
+    (загрузка модели + сетевые обращения к Hugging Face для проверки
+    кэша), что может занять больше минуты и вызвать таймаут у бота."""
+    try:
+        import asyncio as _asyncio
+        from database.knowledge_base import search_knowledge_base
+        loop = _asyncio.get_event_loop()
+        await loop.run_in_executor(None, lambda: search_knowledge_base("прогрев модели", top_k=1))
+        logger.info("🔥 Модель эмбеддингов базы знаний прогрета при старте")
+    except Exception as e:
+        logger.warning(f"Не удалось прогреть модель эмбеддингов при старте: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_periodic_cleanup())
+    asyncio.create_task(_warmup_knowledge_base_model())
+    yield
+    task.cancel()
+
+async def _custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Собственный обработчик превышения лимита запросов: для /consult
+    возвращает ответ в том же формате, что и обычный ConsultResponse
+    (с полем reply), чтобы клиенты (бот, WebApp) никогда не падали на
+    неожиданной форме JSON — просто получали вежливое сообщение."""
+    if request.url.path == "/consult":
+        return JSONResponse(
+            status_code=429,
+            content={
+                "reply": "Слишком много запросов подряд — подождите немного и попробуйте снова.",
+                "escalate": False,
+                "response_id": None,
+            },
+        )
+    return JSONResponse(status_code=429, content={"error": "rate_limit_exceeded"})
+
+app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_handler)
+
+def get_app_setup_instructions() -> str:
+    """Реальные, написанные администратором инструкции по подключению
+    приложений (страница 'help' в БД, тот же текст, что видит пользователь
+    в самом боте) — используются вместо общих знаний модели о произвольных
+    VPN-приложениях, чтобы AI называл реально поддерживаемые сервисом
+    приложения и настоящие ссылки на скачивание, а не выдуманные."""
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return ""
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT text_default, text_custom FROM pages WHERE page_key = 'help'")
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return ""
+        text = row["text_custom"] or row["text_default"] or ""
+        text = _HTML_TAG_RE.sub("", text)
+        return html.unescape(text).strip()
+    except Exception as e:
+        logger.warning(f"Не удалось получить инструкцию по подключению: {e}")
+        return ""
+
+
+async def query_full_customer_profile(telegram_id: int) -> dict:
+    """
+    Собирает максимально полный профиль клиента для AI-консультанта:
+    аккаунт, ВСЕ VPN-ключи (не только последний), историю платежей,
+    баланс и реферальную статистику. Соединение строго read-only.
+    """
+    if not BOT_DB_PATH or not os.path.exists(BOT_DB_PATH):
+        return {"error": "DB not found"}
+
+    try:
+        db_uri = f"file:{BOT_DB_PATH}?mode=ro"
+        conn = sqlite3.connect(db_uri, uri=True)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+
+        cur.execute(
+            """SELECT id, username, first_name, last_name, is_banned, is_bot_blocked,
+                      created_at, used_trial, referral_code, referred_by,
+                      personal_balance, referral_coefficient
+               FROM users WHERE telegram_id = ?""",
+            (telegram_id,),
+        )
+        user_row = cur.fetchone()
+        if not user_row:
+            conn.close()
+            return {"found": False}
+
+        user_id = user_row["id"]
+        profile = {"found": True, "user": dict(user_row)}
+
+        if user_row["referred_by"]:
+            cur.execute("SELECT username FROM users WHERE id = ?", (user_row["referred_by"],))
+            ref_row = cur.fetchone()
+            profile["referred_by_username"] = ref_row["username"] if ref_row else None
+
+        cur.execute(
+            """SELECT vk.id, vk.custom_name, vk.expires_at, vk.traffic_used,
+                      vk.traffic_limit, vk.created_at, vk.sub_id, vk.server_id,
+                      s.name AS server_name, t.name AS tariff_name, t.max_ips
+               FROM vpn_keys vk
+               LEFT JOIN servers s ON s.id = vk.server_id
+               LEFT JOIN tariffs t ON t.id = vk.tariff_id
+               WHERE vk.user_id = ?
+               ORDER BY vk.created_at DESC""",
+            (user_id,),
+        )
+        keys_list = [dict(row) for row in cur.fetchall()]
+        profile["keys"] = keys_list
+
+        cur.execute(
+            """SELECT amount_cents, amount_stars, payment_type, status,
+                      period_days, paid_at
+               FROM payments
+               WHERE user_id = ?
+               ORDER BY paid_at DESC LIMIT 10""",
+            (user_id,),
+        )
+        profile["payments"] = [dict(row) for row in cur.fetchall()]
+
+        cur.execute(
+            """SELECT level, COUNT(*) AS referrals_count,
+                      SUM(total_payments_count) AS total_payments,
+                      SUM(total_reward_cents) AS total_reward_cents,
+                      SUM(total_reward_days) AS total_reward_days
+               FROM referral_stats
+               WHERE referrer_id = ?
+               GROUP BY level""",
+            (user_id,),
+        )
+        profile["referral_stats"] = [dict(row) for row in cur.fetchall()]
+
+        cur.execute(
+            """SELECT code, discount_percent, expires_at, activation_limit, usage_count, type
+               FROM promo_codes
+               WHERE is_active = 1
+                 AND ai_visible = 1
+                 AND (expires_at IS NULL OR expires_at > datetime('now'))
+                 AND (issued_to_user_id IS NULL OR issued_to_user_id = ?)""",
+            (user_id,),
+        )
+        profile["available_promo_codes"] = [dict(row) for row in cur.fetchall()]
+
+        # Тарифы с теми же ценами, что видит клиент (с учётом CDN в тарифах группы, без служебного)
+        from database.db_tariffs import get_all_tariffs
+        profile["available_tariffs"] = [
+            {k: t.get(k) for k in ("id", "name", "duration_days", "price_rub", "traffic_limit_gb", "cdn_surcharge_rub")}
+            for t in sorted(get_all_tariffs(include_hidden=False),
+                            key=lambda t: (t.get("display_order") or 0, t.get("duration_days") or 0))
+        ]
+
+        cur.execute("SELECT key, value FROM settings WHERE key IN ('referral_enabled', 'trial_enabled')")
+        settings_rows = {row["key"]: row["value"] for row in cur.fetchall()}
+        profile["referral_enabled"] = settings_rows.get("referral_enabled") == "1"
+        profile["trial_enabled"] = settings_rows.get("trial_enabled") == "1"
+
+        cur.execute("SELECT level_number, percent FROM referral_levels WHERE enabled = 1 ORDER BY level_number")
+        profile["referral_levels"] = [dict(row) for row in cur.fetchall()]
+
+        conn.close()
+
+        # Реальные ссылки подписки — только для активных (не истёкших) ключей,
+        # тем же способом, что использует сам бот (живой запрос к панели).
+        from datetime import datetime as _dt
+        from bot.services.vpn_api import get_public_subscription_url_for_key
+
+        now_str = _dt.utcnow().isoformat(sep=" ")
+        for k in keys_list:
+            k["sub_url"] = None
+            if k.get("expires_at") and str(k["expires_at"]) > now_str and k.get("sub_id") and k.get("server_id"):
+                try:
+                    k["sub_url"] = await get_public_subscription_url_for_key(
+                        {"sub_id": k["sub_id"], "server_id": k["server_id"]}
+                    )
+                except Exception as e:
+                    logger.warning(f"Не удалось получить ссылку подписки для ключа {k.get('id')}: {e}")
+
+        # CDN (обход белых списков): состояние функции и пакеты ключей клиента
+        try:
+            from bot.services import cdn as _cdn
+            from database import db_cdn as _db_cdn
+            active = bool(_cdn.is_cdn_active())
+            cdn_info = {
+                "active": active,
+                "tariffs_on": bool(active and _cdn.is_tariffs_on()),
+                "addon_on": bool(active and _cdn.is_addon_on()),
+                "price_cents": int(_cdn.get_sale_price_cents() or 0),
+                "pack_gb": int(_cdn.get_cdn_pack_gb()),
+                "pack_days": int(_cdn.get_cdn_pack_days()),
+            }
+            for t in profile.get("available_tariffs", []):
+                t["cdn_gb"] = int(_cdn.effective_tariff_cdn_gb(t.get("id")) or 0)
+            for k in keys_list:
+                pack = _db_cdn.get_pack(int(k["id"]))
+                if pack:
+                    limit_b, used_b = int(pack["limit_bytes"] or 0), int(pack["used_bytes"] or 0)
+                    k["cdn_pack"] = {
+                        "status": pack["status"],
+                        "left_gb": round(max(0, limit_b - used_b) / _cdn.GB, 2),
+                        "limit_gb": round(limit_b / _cdn.GB, 2),
+                        "expires_at": str(pack["expires_at"]),
+                        "is_free": bool(pack.get("is_free")),
+                    }
+            profile["cdn"] = cdn_info
+        except Exception as e:
+            logger.warning(f"Не удалось собрать данные CDN для профиля: {e}")
+
+        return profile
+    except Exception as e:
+        logger.error(f"DB error: {e}")
+        return {"error": str(e)}
+
+def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
+    """Форматирует полный профиль клиента в компактный текстовый блок для system prompt."""
+    if not profile or profile.get("found") is False:
+        return "Пользователь не найден в базе (возможно, ещё не запускал бота)."
+    if profile.get("error"):
+        return f"Ошибка БД: {profile['error']}"
+
+    u = profile.get("user", {})
+    parts = []
+
+    name_bits = [b for b in (u.get("first_name"), u.get("last_name")) if b]
+    display_name = " ".join(name_bits) if name_bits else "—"
+    parts.append(f"Клиент: @{u.get('username') or '—'} ({display_name})")
+    parts.append(f"Зарегистрирован: {u.get('created_at', 'N/A')}")
+
+    if u.get("is_banned"):
+        parts.append("⚠️ СТАТУС: ЗАБАНЕН")
+    if u.get("is_bot_blocked"):
+        parts.append("⚠️ Пользователь заблокировал бота в Telegram")
+
+    balance_rub = (u.get("personal_balance") or 0) / 100
+    parts.append(f"Баланс: {balance_rub:.2f} ₽")
+    parts.append(f"Пробный период использован: {'да' if u.get('used_trial') else 'нет'}")
+
+    if profile.get("referred_by_username"):
+        parts.append(f"Приглашён пользователем: @{profile['referred_by_username']}")
+    if u.get("referral_code"):
+        parts.append(f"Свой реферальный код: {u['referral_code']}")
+
+    keys = profile.get("keys", [])
+    if not keys:
+        parts.append("VPN-ключей нет.")
+    else:
+        parts.append(f"VPN-ключей всего: {len(keys)}")
+        for k in keys[:5]:
+            used = (k.get("traffic_used") or 0) / 1e9
+            limit = (k.get("traffic_limit") or 0) / 1e9
+            traffic_str = f"{used:.2f} ГБ (безлимит)" if not k.get("traffic_limit") else f"{used:.2f}/{limit:.2f} ГБ"
+            name = k.get("custom_name") or f"ключ #{k.get('id')}"
+            server = k.get("server_name") or "сервер не указан"
+            tariff_str = k.get("tariff_name") or "неизвестен"
+            max_ips = k.get("max_ips")
+            devices_str = f", лимит устройств: {max_ips}" if max_ips else ""
+            parts.append(f"  • {name} — {server}, тариф «{tariff_str}»{devices_str}, до {k.get('expires_at')}, трафик {traffic_str}")
+            cp = k.get("cdn_pack")
+            if cp:
+                st = {"active": "активен", "exhausted": "объём исчерпан", "expired": "срок вышел",
+                      "suspended": "приостановлен (ключ неактивен)", "revoked": "отключён"}.get(cp["status"], cp["status"])
+                parts.append(f"    CDN-пакет: {st}, осталось {cp['left_gb']} из {cp['limit_gb']} ГБ, действует до {cp['expires_at']} UTC"
+                             + (", выдан администратором" if cp.get("is_free") else ""))
+            elif (profile.get("cdn") or {}).get("active"):
+                parts.append("    CDN-пакет: не подключён")
+            if k.get("sub_url"):
+                parts.append(f"    Ссылка VPN-конфигурации для импорта в приложение (Happ/INCY и т.п.), НЕ ссылка на оплату: {k['sub_url']}")
+            else:
+                parts.append("    Ссылка VPN-конфигурации: недоступна (ключ истёк либо ошибка получения — НЕ придумывай ссылку сам, направь в раздел «Мои ключи» в боте)")
+
+    payments = profile.get("payments", [])
+    if payments:
+        total_rub = sum((p.get("amount_cents") or 0) for p in payments if p.get("status") == "paid") / 100
+        parts.append(f"Платежей в истории: {len(payments)} (сумма последних: {total_rub:.2f} ₽)")
+        last = payments[0]
+        parts.append(f"Последний платёж: {last.get('paid_at')}, статус: {last.get('status')}")
+
+    ref_stats = profile.get("referral_stats", [])
+    if ref_stats:
+        total_refs = sum(r.get("referrals_count") or 0 for r in ref_stats)
+        total_earned = sum(r.get("total_reward_cents") or 0 for r in ref_stats) / 100
+        parts.append(f"Пригласил рефералов: {total_refs}, заработано: {total_earned:.2f} ₽")
+
+    tariffs = profile.get("available_tariffs", [])
+    if tariffs:
+        parts.append("Реальные доступные тарифы (используй ТОЛЬКО эти названия и цены, никогда не выдумывай другие):")
+        for t in tariffs:
+            traffic = f"{t['traffic_limit_gb']} ГБ" if t.get("traffic_limit_gb") else "безлимит"
+            cdn_str = ""
+            if t.get("cdn_gb"):
+                cdn_str = f", CDN входит ({t['cdn_gb']} ГБ обхода белых списков" + (f", доплата за CDN уже в цене: {t['cdn_surcharge_rub']} ₽" if t.get("cdn_surcharge_rub") else "") + ")"
+            parts.append(f"  • {t['name']} — {t['price_rub']} ₽ за {t['duration_days']} дн., трафик: {traffic}{cdn_str}")
+    else:
+        parts.append("Список тарифов сейчас недоступен — НЕ придумывай названия/цены тарифов, направь в раздел «Мои ключи» в боте.")
+
+    promo_codes = profile.get("available_promo_codes", [])
+    if promo_codes:
+        parts.append("Реально доступные ЭТОМУ клиенту промокоды (используй ТОЛЬКО эти, никогда не выдумывай и не подтверждай существование других):")
+        for p in promo_codes:
+            limit_str = f", осталось активаций: {p['activation_limit'] - p['usage_count']}" if p.get("activation_limit") else ""
+            link_str = ""
+            if p.get("type") == "promo" and _TELEGRAM_START_PARAM_RE.match(p["code"]) and bot_username:
+                link_str = f" — ссылка для автоматической активации (без ручного ввода): https://t.me/{bot_username}?start=pr_{p['code']}"
+            parts.append(f"  • {p['code']} — скидка {p['discount_percent']}%, действует до {p.get('expires_at') or 'бессрочно'}{limit_str}{link_str}")
+    else:
+        parts.append("Сейчас нет известных доступных промокодов для этого клиента — НЕ подтверждай существование или скидку по промокоду, который клиент называет сам, если его нет в этом списке; направь в раздел «Промокоды» в боте, там есть реальная проверка.")
+
+    cdn_p = profile.get("cdn")
+    if cdn_p is not None:
+        if not cdn_p.get("active"):
+            parts.append("CDN (обход белых списков): сейчас недоступен (выключен или не настроен) — не обещай эту функцию клиенту, направь в поддержку.")
+        else:
+            bits = []
+            if cdn_p.get("tariffs_on"):
+                bits.append("входит в платные тарифы некоторых групп (см. тарифы выше)")
+            if cdn_p.get("addon_on") and cdn_p.get("price_cents", 0) > 0:
+                bits.append(f"докупается кнопкой «🌐 CDN» в карточке ключа: {cdn_p['pack_gb']} ГБ на {cdn_p['pack_days']} дн. за {cdn_p['price_cents'] / 100:g} ₽")
+            if not bits:
+                bits.append("продажа пакета отдельно сейчас выключена, пакеты выдаются только в составе тарифов или администратором")
+            parts.append("CDN (обход белых списков): включён. " + "; ".join(bits) + ". Состояние пакета у каждого ключа указано выше.")
+
+    if "referral_enabled" in profile:
+        if profile["referral_enabled"]:
+            levels = profile.get("referral_levels", [])
+            if levels:
+                levels_str = ", ".join(f"уровень {l['level_number']}: {l['percent']}%" for l in levels)
+                parts.append(f"Реферальная программа: АКТИВНА ({levels_str})")
+            else:
+                parts.append("Реферальная программа: активна, но нет включённых уровней вознаграждения")
+        else:
+            parts.append("Реферальная программа: НЕ активна (отключена администратором)")
+
+    if "trial_enabled" in profile:
+        parts.append(f"Пробный период сервиса: {'доступен новым клиентам' if profile['trial_enabled'] else 'сейчас отключён администратором'}")
+
+    return "\n".join(parts)
+
+class ConsultRequest(BaseModel):
+    user_id: int
+    message: str
+    image_base64: str | None = None  # data URL скриншота, если клиент прислал фото
+    voice_base64: str | None = None  # raw base64 содержимого голосового сообщения (OGG/Opus)
+
+class ConsultResponse(BaseModel):
+    reply: str
+    escalate: bool
+    response_id: str | None = None
+
+
+class FeedbackRequest(BaseModel):
+    response_id: str
+    rating: str  # "up" или "down"
+
+TELEGRAM_API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+ESCALATION_THROTTLE_SECONDS = int(os.environ.get("ESCALATION_THROTTLE_SECONDS", "600"))
+_last_escalation_at: dict[int, float] = {}
+_escalation_lock = asyncio.Lock()
+
+
+def _build_escalation_text(user_id: int, question: str, history_messages: list) -> str:
+    lines = [
+        "\U0001F916 <b>AI \u043f\u0435\u0440\u0435\u0430\u0434\u0440\u0435\u0441\u043e\u0432\u0430\u043b \u0434\u0438\u0430\u043b\u043e\u0433</b>",
+        f"\U0001F464 User ID: <code>{user_id}</code>",
+        "",
+        "\u2753 <b>\u0412\u043e\u043f\u0440\u043e\u0441:</b>",
+        (question or "")[:500],
+        "",
+    ]
+    recent = [m for m in (history_messages or []) if m.get("role") in ("user", "assistant")][-6:]
+    if recent:
+        lines.append("\U0001F4DC <b>\u041a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u043f\u0435\u0440\u0435\u043f\u0438\u0441\u043a\u0438:</b>")
+        for m in recent:
+            role = "\u041a\u043b\u0438\u0435\u043d\u0442" if m.get("role") == "user" else "AI"
+            content = (m.get("content") or "")[:300]
+            if content:
+                lines.append(f"<i>{role}:</i> {content}")
+    text = "\n".join(lines)
+    return text[:4000]
+
+
+async def _notify_admins_escalation(user_id: int, question: str, history_messages: list) -> None:
+    if not BOT_TOKEN or not ADMIN_IDS:
+        logger.warning("Escalation notify skipped: BOT_TOKEN or ADMIN_IDS not configured")
+        return
+
+    now = time.time()
+    async with _escalation_lock:
+        last = _last_escalation_at.get(user_id, 0.0)
+        if now - last < ESCALATION_THROTTLE_SECONDS:
+            remaining = int(ESCALATION_THROTTLE_SECONDS - (now - last))
+            logger.info(f"Escalation notify throttled for user {user_id}, {remaining}s remaining")
+            return
+        _last_escalation_at[user_id] = now
+
+    text = _build_escalation_text(user_id, question, history_messages)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            for admin_id in ADMIN_IDS:
+                try:
+                    resp = await http_client.post(
+                        f"{TELEGRAM_API_BASE}/sendMessage",
+                        json={"chat_id": admin_id, "text": text, "parse_mode": "HTML"},
+                    )
+                    if resp.status_code != 200:
+                        logger.warning(f"Escalation notify failed for admin {admin_id}: {resp.status_code} {resp.text}")
+                except Exception as e:
+                    logger.error(f"Escalation notify error for admin {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"Escalation notify outer error: {e}")
+
+
+@app.post("/consult", response_model=ConsultResponse)
+@limiter.limit("10/minute")
+async def consult(req: ConsultRequest, request: Request, token: str = Depends(verify_token)):
+    if req.voice_base64:
+        try:
+            audio_bytes = base64.b64decode(req.voice_base64)
+            transcribed = await transcribe_voice_groq(audio_bytes)
+        except Exception as e:
+            logger.error(f"Ошибка транскрипции голосового сообщения (user {req.user_id}): {e}")
+            return ConsultResponse(
+                reply="Не удалось распознать голосовое сообщение. Опишите вопрос текстом, пожалуйста.",
+                escalate=False,
+            )
+        if not transcribed:
+            return ConsultResponse(
+                reply="В голосовом сообщении не удалось распознать речь. Попробуйте ещё раз или опишите вопрос текстом.",
+                escalate=False,
+            )
+        logger.info(f"🎙️ AI распознал голосовое сообщение (user {req.user_id}): {transcribed}")
+        req.message = transcribed
+
+    async with _lock:
+        history_messages = _load_recent_history(req.user_id, MAX_HISTORY_MESSAGES) + [
+            {"role": "user", "content": req.message}
+        ]
+
+    customer_profile = await query_full_customer_profile(req.user_id)
+
+    if customer_profile.get("found") is False:
+        logger.info(f"AI consult отклонён: пользователь {req.user_id} не зарегистрирован")
+        return ConsultResponse(
+            reply="Похоже, вы ещё не зарегистрированы в боте. Нажмите /start, чтобы начать пользоваться сервисом — после этого я смогу вам помочь.",
+            escalate=False,
+        )
+
+    bot_username = await _resolve_bot_username()
+    profile_block = _format_customer_profile(customer_profile, bot_username)
+    setup_instructions = get_app_setup_instructions()
+    from database.requests import get_effective_webapp_url
+    public_shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
+    from database.requests import get_effective_brand_name
+    brand_name = get_effective_brand_name()
+    full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username).replace("%BRAND_NAME%", brand_name).replace("%APP_RECOMMENDATION%", _build_app_recommendation()) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
+    if setup_instructions:
+        full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
+
+    # Автоматический RAG-поиск по базе знаний ДО обращения к модели — надёжнее,
+    # чем полагаться на то, что модель сама решит вызвать search_knowledge_base
+    # как инструмент (на практике вызывает не всегда, даже когда это уместно).
+    try:
+        loop = asyncio.get_event_loop()
+        from database.knowledge_base import search_knowledge_base
+        # top_k=1 (не 3) и повышенный порог сходства — экономим токены,
+        # берём только САМУЮ релевантную статью, а не все более-менее похожие.
+        kb_results = await loop.run_in_executor(
+            None, lambda: search_knowledge_base(req.message, top_k=1, min_score=0.6)
+        )
+        if kb_results:
+            kb_block = "\n\n".join(f"### {r['title']}\n{r['content']}" for r in kb_results)
+            full_system += "\n\nКРИТИЧЕСКИ ВАЖНО: ниже — статья базы знаний поддержки, специально найденная как наиболее релевантная ИМЕННО этому вопросу клиента. Она приоритетнее твоих общих знаний по теме — основывай ответ на ней, а не на догадках или общей теории, даже если у тебя есть другое правдоподобное объяснение. Перескажи её суть своими словами, не копируй дословно:\n" + kb_block
+            logger.info(f"📚 Автопоиск в базе знаний нашёл {len(kb_results)} статей (user {req.user_id})")
+    except Exception as e:
+        logger.warning(f"Ошибка автопоиска в базе знаний: {e}")
+
+    if req.image_base64:
+        try:
+            reply_text = await analyze_screenshot(req.image_base64, req.message, full_system)
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка анализа скриншота: {e}")
+            reply_text = "Не удалось проанализировать изображение прямо сейчас. Опишите проблему текстом, пожалуйста, или напишите в поддержку."
+        escalate = "[ESCALATE]" in reply_text
+        reply_text = reply_text.replace("[ESCALATE]", "").strip()
+        if not reply_text:
+            reply_text = "Не удалось проанализировать изображение."
+        if escalate:
+            asyncio.create_task(_notify_admins_escalation(req.user_id, req.message or "[скриншот]", history_messages))
+        response_id = uuid.uuid4().hex
+        async with _lock:
+            _save_history_row(req.user_id, "user", req.message or "[прислал скриншот]")
+            _save_history_row(req.user_id, "assistant", reply_text, response_id=response_id, escalate=escalate)
+        return ConsultResponse(reply=reply_text, escalate=escalate, response_id=response_id)
+
+    messages = [{"role": "system", "content": full_system}] + history_messages
+
+    try:
+        response = await _chat_completion_with_fallback(
+            messages, max_tokens=1200, temperature=0.7,
+            tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="auto", timeout=15.0,
+        )
+        assistant_msg = response.choices[0].message
+
+        if not assistant_msg.tool_calls and _looks_like_stray_tool_json(assistant_msg.content):
+            logger.warning(f"Модель написала псевдо-вызов инструмента голым текстом вместо tool_call: {assistant_msg.content!r}, форсирую ответ без инструментов")
+            response = await _chat_completion_with_fallback(
+                messages, max_tokens=1200, temperature=0.7, timeout=15.0,
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
+            )
+            assistant_msg = response.choices[0].message
+
+        if assistant_msg.tool_calls:
+            messages.append(assistant_msg.model_dump(exclude_none=True))
+            for tool_call in assistant_msg.tool_calls:
+                if tool_call.function.name == "search_knowledge_base":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    kb_query = (args.get("query") or "").strip()
+                    logger.info(f"📚 AI ищет в базе знаний (user {req.user_id}): {kb_query}")
+                    if kb_query:
+                        # asyncio уже импортирован на уровне модуля — локальный
+                        # import здесь делал 'asyncio' локальной переменной во
+                        # ВСЕЙ функции consult() и ломал более ранний код
+                        # (UnboundLocalError), поэтому убран.
+                        from database.knowledge_base import search_knowledge_base
+                        loop = asyncio.get_event_loop()
+                        kb_results = await loop.run_in_executor(None, search_knowledge_base, kb_query)
+                        if kb_results:
+                            kb_result_text = "\n\n".join(
+                                f"### {r['title']}\n{r['content']}" for r in kb_results
+                            )
+                        else:
+                            kb_result_text = "В базе знаний не найдено релевантных статей по этому вопросу."
+                    else:
+                        kb_result_text = "Пустой запрос."
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": kb_result_text,
+                    })
+                elif tool_call.function.name == "web_search":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    search_query = (args.get("query") or "").strip()
+                    logger.info(f"🔎 AI ищет в интернете (user {req.user_id}): {search_query}")
+                    search_result = await web_search_tavily(search_query) if search_query else "Пустой поисковый запрос."
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": search_result,
+                    })
+                elif tool_call.function.name == "github_search":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    gh_query = (args.get("query") or "").strip()
+                    gh_repo = (args.get("repo") or "").strip() or None
+                    logger.info(f"🐙 AI ищет на GitHub (user {req.user_id}, repo={gh_repo}): {gh_query}")
+                    gh_result = await github_search(gh_query, gh_repo) if gh_query else "Пустой поисковый запрос."
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": gh_result,
+                    })
+                elif tool_call.function.name == "github_latest_release":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    rel_repo = (args.get("repo") or "").strip()
+                    logger.info(f"🏷️ AI проверяет последнюю версию (user {req.user_id}): {rel_repo}")
+                    rel_result = await github_latest_release(rel_repo) if rel_repo else "Не указан репозиторий."
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": rel_result,
+                    })
+                elif tool_call.function.name == "check_server_status":
+                    logger.info(f"🖥️ AI проверяет статус сервера (user {req.user_id})")
+                    status_result = await check_server_status(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": status_result,
+                    })
+                elif tool_call.function.name == "check_active_devices":
+                    logger.info(f"📱 AI проверяет активные устройства (user {req.user_id})")
+                    devices_result = await check_active_devices(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": devices_result,
+                    })
+                elif tool_call.function.name == "toggle_auto_renewal":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"🔄 AI переключает автопродление (user {req.user_id}, key={key_identifier})")
+                    renew_result = await toggle_auto_renewal(req.user_id, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": renew_result,
+                    })
+                elif tool_call.function.name == "clear_device_ips":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"🧹 AI сбрасывает лимит устройств (IP/HWID) (user {req.user_id}, key={key_identifier})")
+                    clear_result = await clear_device_ips(req.user_id, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": clear_result,
+                    })
+                elif tool_call.function.name == "list_devices":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"📱 AI показывает список устройств (user {req.user_id}, key={key_identifier})")
+                    devices_list_result = await list_devices(req.user_id, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": devices_list_result,
+                    })
+                elif tool_call.function.name == "disconnect_device":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    device_number = args.get("device_number")
+                    try:
+                        device_number = int(device_number)
+                    except (TypeError, ValueError):
+                        device_number = None
+                    logger.info(f"🔌 AI отключает устройство #{device_number} (user {req.user_id}, key={key_identifier})")
+                    if device_number is None:
+                        disconnect_result = "Не указан номер устройства — сначала вызови list_devices."
+                    else:
+                        disconnect_result = await disconnect_device(req.user_id, device_number, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": disconnect_result,
+                    })
+                elif tool_call.function.name == "suggest_key_replacement":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"🔄 AI даёт ссылку на замену ключа (user {req.user_id}, key={key_identifier})")
+                    replace_result = await suggest_key_replacement(req.user_id, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": replace_result,
+                    })
+                elif tool_call.function.name == "suggest_key_renewal":
+                    try:
+                        args = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                    key_identifier = (args.get("key_identifier") or "").strip() or None
+                    logger.info(f"📈 AI даёт ссылку на продление ключа (user {req.user_id}, key={key_identifier})")
+                    renewal_result = await suggest_key_renewal(req.user_id, key_identifier)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": renewal_result,
+                    })
+                elif tool_call.function.name == "check_payment_now":
+                    logger.info(f"💳 AI проверяет платёж прямо сейчас (user {req.user_id})")
+                    payment_result = await check_payment_now(req.user_id)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": payment_result,
+                    })
+                else:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": "Инструмент не найден.",
+                    })
+            # Повторный запрос к модели уже с результатами поиска.
+            # tools передаём снова (Groq требует их в контексте, раз в истории
+            # уже есть tool_call/tool-результат), но tool_choice="none" явно
+            # запрещает ещё один вызов инструмента — модель обязана дать
+            # финальный текстовый ответ на основе того, что уже нашла.
+            response = await _chat_completion_with_fallback(
+                messages, max_tokens=1200, temperature=0.7, timeout=15.0,
+                tools=[SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL, CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL, LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL, CHECK_PAYMENT_NOW_TOOL], tool_choice="none",
+            )
+            assistant_msg = response.choices[0].message
+
+        reply_text = assistant_msg.content or "Не удалось сформировать ответ."
+        reply_text = _sanitize_reply(reply_text)
+    except RateLimitError:
+        logger.warning(f"Rate limit for user {req.user_id}")
+        asyncio.create_task(_notify_admins_escalation(req.user_id, req.message, history_messages))
+        _save_history_row(req.user_id, "user", req.message)
+        _save_history_row(req.user_id, "assistant", "Высокая нагрузка, попробуйте позже...", escalate=True)
+        return ConsultResponse(reply="Высокая нагрузка, попробуйте позже...", escalate=True)
+    except (APIConnectionError, APIError) as e:
+        logger.error(f"Groq API error: {e}")
+        asyncio.create_task(_notify_admins_escalation(req.user_id, req.message, history_messages))
+        _save_history_row(req.user_id, "user", req.message)
+        _save_history_row(req.user_id, "assistant", "Ошибка API, передаю оператору", escalate=True)
+        return ConsultResponse(reply="Ошибка API, передаю оператору", escalate=True)
+    except Exception as e:
+        logger.error(f"Consult unexpected error: {e}")
+        asyncio.create_task(_notify_admins_escalation(req.user_id, req.message, history_messages))
+        _save_history_row(req.user_id, "user", req.message)
+        _save_history_row(req.user_id, "assistant", "Не удалось получить ответ вовремя, попробуйте ещё раз или обратитесь в поддержку", escalate=True)
+        return ConsultResponse(reply="Не удалось получить ответ вовремя, попробуйте ещё раз или обратитесь в поддержку", escalate=True)
+
+    escalate = "[ESCALATE]" in reply_text
+    reply_text = reply_text.replace("[ESCALATE]", "").strip()
+    if not reply_text:
+        reply_text = "Передаю ваш вопрос администратору, он ответит вам в ближайшее время."
+
+    if escalate:
+        asyncio.create_task(_notify_admins_escalation(req.user_id, req.message, history_messages))
+
+    response_id = uuid.uuid4().hex
+    async with _lock:
+        _save_history_row(req.user_id, "user", req.message)
+        _save_history_row(req.user_id, "assistant", reply_text, response_id=response_id, escalate=escalate)
+
+    return ConsultResponse(reply=reply_text, escalate=escalate, response_id=response_id)
+
+# ===== v1.322: AI-помощник на сайте (гость и клиент) =====
+
+class SiteConsultResponse(ConsultResponse):
+    guard: str = "ok"              # ok | retried | blocked — что сделала проверка фактов
+    violations: list[str] = []     # что модель назвала без опоры на данные (только для диагностики)
+    error: str = ""                # причина сбоя, если помощник не смог ответить (только для диагностики)
+
+
+class SiteConsultRequest(BaseModel):
+    mode: str = "guest"            # guest | client
+    message: str
+    session_id: str = ""           # анонимный id браузера (для истории гостя)
+    user_id: int | None = None     # telegram_id клиента, уже проверенный сайтом по cookie-сессии
+
+
+_SITE_TOOLS = {
+    t["function"]["name"]: t
+    for t in (SEARCH_KNOWLEDGE_BASE_TOOL, WEB_SEARCH_TOOL, GITHUB_SEARCH_TOOL, GITHUB_LATEST_RELEASE_TOOL,
+              CHECK_SERVER_STATUS_TOOL, CHECK_ACTIVE_DEVICES_TOOL, TOGGLE_AUTO_RENEWAL_TOOL, CLEAR_DEVICE_IPS_TOOL,
+              LIST_DEVICES_TOOL, DISCONNECT_DEVICE_TOOL, SUGGEST_KEY_REPLACEMENT_TOOL, SUGGEST_KEY_RENEWAL_TOOL,
+              CHECK_PAYMENT_NOW_TOOL)
+}
+
+
+def _site_tool_args(tool_call) -> dict:
+    try:
+        args = json.loads(tool_call.function.arguments)
+        return args if isinstance(args, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
+
+
+async def _site_run_tool(name: str, args: dict, telegram_id: int | None) -> str:
+    """Выполняет один инструмент. Инструменты с данными клиента требуют telegram_id."""
+    key = (args.get("key_identifier") or "").strip() or None
+    if name == "search_knowledge_base":
+        query = (args.get("query") or "").strip()
+        if not query:
+            return "Пустой запрос."
+        from database.knowledge_base import search_knowledge_base
+        results = await asyncio.get_event_loop().run_in_executor(None, search_knowledge_base, query)
+        if not results:
+            return "В базе знаний не найдено релевантных статей по этому вопросу."
+        return "\n\n".join(f"### {r['title']}\n{r['content']}" for r in results)
+    if name == "web_search":
+        query = (args.get("query") or "").strip()
+        return await web_search_tavily(query) if query else "Пустой поисковый запрос."
+    if name == "github_search":
+        query = (args.get("query") or "").strip()
+        return await github_search(query, (args.get("repo") or "").strip() or None) if query else "Пустой поисковый запрос."
+    if name == "github_latest_release":
+        repo = (args.get("repo") or "").strip()
+        return await github_latest_release(repo) if repo else "Не указан репозиторий."
+    if telegram_id is None:
+        return "Инструмент недоступен без входа в кабинет."
+    if name == "check_server_status":
+        return await check_server_status(telegram_id)
+    if name == "check_active_devices":
+        return await check_active_devices(telegram_id)
+    if name == "toggle_auto_renewal":
+        return await toggle_auto_renewal(telegram_id, key)
+    if name == "clear_device_ips":
+        return await clear_device_ips(telegram_id, key)
+    if name == "list_devices":
+        return await list_devices(telegram_id, key)
+    if name == "disconnect_device":
+        try:
+            number = int(args.get("device_number"))
+        except (TypeError, ValueError):
+            return "Не указан номер устройства — сначала вызови list_devices."
+        return await disconnect_device(telegram_id, number, key)
+    if name == "suggest_key_replacement":
+        return await suggest_key_replacement(telegram_id, key)
+    if name == "suggest_key_renewal":
+        return await suggest_key_renewal(telegram_id, key)
+    if name == "check_payment_now":
+        return await check_payment_now(telegram_id)
+    return "Инструмент не найден."
+
+
+def _site_public_tariffs_text() -> str:
+    from bot.services import site_ai
+    return site_ai.public_tariffs_text()
+
+
+def _site_trial_text() -> str:
+    try:
+        from database.db_settings import is_trial_enabled, get_trial_tariff_id
+        from database.db_tariffs import get_tariff_by_id
+        if not is_trial_enabled():
+            return ""
+        tid = get_trial_tariff_id()
+        tariff = get_tariff_by_id(tid) if tid else None
+        if not tariff:
+            return ""
+        return (f"Пробный период: есть бесплатный пробный период на {tariff.get('duration_days')} дн. "
+                f"Один раз на человека. Предлагай его тем, кто сомневается, и объясни, что для него нужно нажать кнопку пробного периода на странице.")
+    except Exception:
+        return ""
+
+
+async def _notify_site_guest_escalation(session_id: str, question: str, history_messages: list) -> None:
+    if not BOT_TOKEN or not ADMIN_IDS:
+        return
+    key = f"site:{session_id}"
+    now = time.time()
+    async with _escalation_lock:
+        if now - _last_escalation_at.get(key, 0.0) < ESCALATION_THROTTLE_SECONDS:
+            return
+        _last_escalation_at[key] = now
+    lines = ["🌐 <b>AI-помощник на сайте передал диалог</b>", "👤 Посетитель не вошёл в кабинет", "",
+             "❓ <b>Вопрос:</b>", html.escape((question or "")[:500]), ""]
+    recent = [m for m in (history_messages or []) if m.get("role") in ("user", "assistant")][-6:]
+    if recent:
+        lines.append("📜 <b>Контекст переписки:</b>")
+        for m in recent:
+            who = "Посетитель" if m.get("role") == "user" else "AI"
+            lines.append(f"<i>{who}:</i> {html.escape((m.get('content') or '')[:300])}")
+    text = "\n".join(lines)[:4000]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http_client:
+            for admin_id in ADMIN_IDS:
+                try:
+                    await http_client.post(f"{TELEGRAM_API_BASE}/sendMessage",
+                                           json={"chat_id": admin_id, "text": text, "parse_mode": "HTML"})
+                except Exception as e:
+                    logger.error(f"Site escalation notify error for admin {admin_id}: {e}")
+    except Exception as e:
+        logger.error(f"Site escalation notify outer error: {e}")
+
+
+@app.post("/consult_site", response_model=SiteConsultResponse)
+async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_token)):
+    from bot.services import site_ai
+    from database.requests import get_effective_webapp_url, get_effective_brand_name
+
+    unavailable = SiteConsultResponse(reply="Помощник сейчас недоступен. Попробуйте позже.", escalate=False)
+    if not site_ai.is_active():
+        return unavailable
+
+    mode = site_ai.MODE_CLIENT if (req.mode == "client" and req.user_id) else site_ai.MODE_GUEST
+    message = (req.message or "").strip()[: site_ai.get_int("msg_len")]
+    if not message:
+        return ConsultResponse(reply="Напишите ваш вопрос.", escalate=False)
+
+    profile = None
+    if mode == site_ai.MODE_CLIENT:
+        profile = await query_full_customer_profile(int(req.user_id))
+        if not profile.get("found"):
+            mode = site_ai.MODE_GUEST
+    if not site_ai.mode_enabled(mode):
+        return unavailable
+
+    telegram_id = int(req.user_id) if mode == site_ai.MODE_CLIENT else None
+    history_uid = telegram_id if telegram_id else site_ai.guest_session_user_id(req.session_id or "anon")
+    async with _lock:
+        history_messages = _load_recent_history(history_uid, MAX_HISTORY_MESSAGES) + [{"role": "user", "content": message}]
+
+    shop_url = get_effective_webapp_url().rstrip("/") + "/shop"
+    brand = get_effective_brand_name()
+    allowed = site_ai.allowed_tools(mode)
+
+    tariff_rows = site_ai.public_tariff_rows() if mode == site_ai.MODE_GUEST and site_ai.get_bool("g_tariffs") else []
+    tariffs_text = site_ai.format_tariffs(tariff_rows) if tariff_rows else ""
+    dev_groups = site_ai.device_groups(tariff_rows)
+    dev_question = bool(dev_groups) and site_ai.device_intent(message)
+    trial_text = _site_trial_text() if mode == site_ai.MODE_GUEST else ""
+    system = site_ai.build_prompt(mode, brand, shop_url, tariffs_text=tariffs_text, trial_text=trial_text)
+    # «Данные», на которые опирается модель: без общих правил промпта (в них тоже есть цифры вроде «2–5 предложений»)
+    cdn_facts = site_ai.cdn_text(include_price=mode == site_ai.MODE_CLIENT or site_ai.get_bool("g_tariffs"))
+    if cdn_facts:
+        system += "\n\nРеальные данные про CDN (говори о CDN только по ним):\n" + cdn_facts
+    facts = [tariffs_text, trial_text, site_ai.get_text("rules"), cdn_facts]
+    if dev_question and len(dev_groups) > 1:
+        system += ("\n\nПосетитель спрашивает про число устройств. Лимиты у тарифов РАЗНЫЕ: назови лимит по каждому тарифу из сводки "
+                   "(все числа), не называй одно число как общее и не утверждай, можно ли докупить устройства, если этого нет в данных.")
+    if mode == site_ai.MODE_CLIENT:
+        if site_ai.hide_personal_promos():
+            profile["available_promo_codes"] = []
+        if not site_ai.get_bool("c_tariffs"):
+            profile["available_tariffs"] = []
+        profile_text = _format_customer_profile(profile, await _resolve_bot_username())
+        facts.append(profile_text)
+        system += ("\n\nПолный профиль клиента (используй для персонального ответа, не показывай сырые данные без необходимости):\n"
+                   + profile_text)
+    kb_on = "search_knowledge_base" in allowed
+    if kb_on:
+        setup = get_app_setup_instructions()
+        if setup:
+            facts.append(setup)
+            system += ("\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти приложения и ссылки, "
+                       "других не выдумывай):\n" + setup)
+        try:
+            from database.knowledge_base import search_knowledge_base
+            found = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: search_knowledge_base(message, top_k=1, min_score=0.6))
+            if found:
+                facts.extend(f"{r['title']}\n{r['content']}" for r in found)
+                system += ("\n\nСтатья базы знаний, найденная как самая подходящая к этому вопросу; опирайся на неё, "
+                           "пересказывай своими словами:\n" + "\n\n".join(f"### {r['title']}\n{r['content']}" for r in found))
+        except Exception as e:
+            logger.warning(f"Автопоиск в базе знаний (сайт): {e}")
+
+    tools = [_SITE_TOOLS[n] for n in sorted(allowed) if n in _SITE_TOOLS]
+    messages = [{"role": "system", "content": system}] + history_messages
+    try:
+        kwargs = dict(max_tokens=700, temperature=0.6, timeout=20.0)
+        if tools:
+            kwargs.update(tools=tools, tool_choice="auto")
+        response = await _chat_completion_with_fallback(messages, **kwargs)
+        msg = response.choices[0].message
+        if tools and not msg.tool_calls and _looks_like_stray_tool_json(msg.content):
+            response = await _chat_completion_with_fallback(messages, **{**kwargs, "tool_choice": "none"})
+            msg = response.choices[0].message
+        if msg.tool_calls:
+            messages.append(msg.model_dump(exclude_none=True))
+            for call in msg.tool_calls[:3]:
+                name = call.function.name
+                if name in allowed:
+                    result = await _site_run_tool(name, _site_tool_args(call), telegram_id)
+                else:
+                    result = "Инструмент недоступен."
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+            response = await _chat_completion_with_fallback(messages, **{**kwargs, "tool_choice": "none"})
+            msg = response.choices[0].message
+        reply = _sanitize_reply(msg.content or "Не удалось сформировать ответ.")
+        # Проверка фактов: числа устройств, суммы, проценты и «докупка» должны быть в данных, которые видела модель.
+        facts_context = "\n".join(facts + [str(m.get("content") or "") for m in messages if m.get("role") == "tool"])
+        def _check(text: str) -> list:
+            found = site_ai.find_unverified_facts(text, facts_context, message)
+            if dev_question:
+                found += site_ai.check_devices_by_tariff(text, dev_groups)
+            return found
+
+        guard, violations = "ok", _check(reply)
+        if violations:
+            logger.warning(f"consult_site: непроверенные факты {violations} в ответе {reply[:200]!r}")
+            retry = messages + [{"role": "assistant", "content": reply},
+                                {"role": "user", "content": site_ai.FACT_RETRY_NOTE.format(items=", ".join(violations))
+                                 + (("\n" + site_ai.devices_summary(tariff_rows)) if dev_question else "")}]
+            guard = "retried"
+            response = await _chat_completion_with_fallback(retry, **{**kwargs, "tool_choice": "none"} if tools else kwargs)
+            reply = _sanitize_reply(response.choices[0].message.content or "")
+            violations = _check(reply)
+            if violations or not reply:
+                logger.warning(f"consult_site: после повтора остались непроверенные факты {violations}")
+                reply, guard = (site_ai.devices_answer(dev_groups) if dev_question else site_ai.FACT_FALLBACK), "blocked"
+    except Exception as e:
+        logger.error(f"consult_site error ({type(e).__name__}): {e}")
+        return SiteConsultResponse(reply="Помощник временно недоступен, попробуйте чуть позже.", escalate=False,
+                                   error=f"{type(e).__name__}: {str(e)[:150]}")
+
+    escalate = "[ESCALATE]" in reply and site_ai.get_bool("escalate")
+    reply = reply.replace("[ESCALATE]", "").strip() or "Передаю ваш вопрос администратору."
+    if escalate:
+        if telegram_id:
+            asyncio.create_task(_notify_admins_escalation(telegram_id, message, history_messages))
+        else:
+            asyncio.create_task(_notify_site_guest_escalation(req.session_id or "anon", message, history_messages))
+    response_id = uuid.uuid4().hex
+    async with _lock:
+        _save_history_row(history_uid, "user", message)
+        _save_history_row(history_uid, "assistant", reply, response_id=response_id, escalate=escalate)
+    return SiteConsultResponse(reply=reply, escalate=escalate, response_id=response_id, guard=guard, violations=violations)
+
+
+class OutreachRequest(BaseModel):
+    user_id: int
+    reason: str  # краткий машинный повод, например "key_expiring"
+    context: dict = {}  # доп. детали повода, например {"key_name": "...", "days_left": 2}
+
+
+class OutreachResponse(BaseModel):
+    text: str
+
+
+OUTREACH_SYSTEM_PROMPT = """Ты составляешь короткое ИСХОДЯЩЕЕ сообщение от лица %BRAND_NAME% VPN клиенту — это НЕ ответ на его вопрос, а сообщение, которое бот отправит ему сам, по конкретному поводу.
+
+Правила:
+- Пиши только на основе повода и профиля клиента ниже — никогда не выдумывай тарифы, промокоды, даты и цифры, которых нет в профиле.
+- Обращайся по имени, если оно известно из профиля.
+- Тон дружелюбный, короткий, без канцелярита, 2-4 предложения, можно 1-2 уместных эмодзи. HTML-разметка Telegram (<b>, <i>) разрешена, других тегов нет.
+- Никогда не используй слова "мгновенно", "сразу", "моментально" применительно к срокам обработки чего-либо (оплата, активация) — эти сроки не гарантированы.
+- Если в профиле клиента есть доступный промокод (available_promo_codes) — можно упомянуть его как бонус к поводу сообщения, но никогда не выдумывай промокод, если его нет в профиле.
+- Не задавай риторических вопросов вроде "Всё ли у вас хорошо?" — сразу переходи к сути повода.
+- Ответь ТОЛЬКО текстом сообщения целиком, без пояснений от себя до или после."""
+
+
+@app.post("/generate_outreach", response_model=OutreachResponse)
+async def generate_outreach(req: OutreachRequest, token: str = Depends(verify_token)):
+    """Генерирует персонализированный текст ИСХОДЯЩЕГО сообщения для клиента
+    по заданному поводу (например, истекающий ключ). НЕ отправляет сообщение
+    сам — только возвращает текст. НЕ пишет ничего в историю диалога клиента,
+    чтобы не путать контекст его будущих обращений в /consult."""
+    customer_profile = await query_full_customer_profile(req.user_id)
+    if customer_profile.get("found") is False:
+        logger.info(f"Outreach отклонён: пользователь {req.user_id} не найден")
+        return OutreachResponse(text="")
+
+    bot_username = await _resolve_bot_username()
+    profile_block = _format_customer_profile(customer_profile, bot_username)
+    reason_block = f"Повод сообщения: {req.reason}\nДетали повода: {json.dumps(req.context, ensure_ascii=False)}"
+    from database.requests import get_effective_brand_name
+    full_system = OUTREACH_SYSTEM_PROMPT.replace("%BRAND_NAME%", get_effective_brand_name()) + "\n\n" + reason_block + "\n\nПрофиль клиента:\n" + profile_block
+
+    messages = [{"role": "system", "content": full_system}]
+
+    try:
+        response = await _chat_completion_with_fallback(
+            messages, max_tokens=1000, temperature=0.7, timeout=15.0,
+        )
+        text = response.choices[0].message.content or ""
+        text = _sanitize_reply(text)
+    except Exception as e:
+        logger.error(f"Outreach generation error for user {req.user_id}: {e}")
+        return OutreachResponse(text="")
+
+    return OutreachResponse(text=text)
+
+
+@app.post("/feedback")
+@limiter.limit("30/minute")
+async def feedback(req: FeedbackRequest, request: Request, token: str = Depends(verify_token)):
+    if req.rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating must be 'up' or 'down'")
+    saved = _save_feedback(req.response_id, req.rating)
+    if not saved:
+        raise HTTPException(status_code=404, detail="response_id not found")
+    logger.info(f"Фидбек по ответу {req.response_id}: {req.rating}")
+    return {"status": "ok"}
+
+@app.get("/stats")
+async def stats(token: str = Depends(verify_token)):
+    """Агрегированная статистика работы AI-консультанта: сколько уникальных
+    пользователей обратилось, сколько ответов дано, доля эскалаций, разбивка
+    фидбека 👍/👎. Отдельно за всё время и за последние 24 часа."""
+
+    def _query_window(since_ts: float | None) -> dict:
+        conn = sqlite3.connect(AI_HISTORY_DB_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            cur = conn.cursor()
+            where = "WHERE created_at >= ?" if since_ts is not None else ""
+            params = (since_ts,) if since_ts is not None else ()
+
+            cur.execute(f"SELECT COUNT(DISTINCT telegram_id) AS n FROM history {where}", params)
+            unique_users = cur.fetchone()["n"]
+
+            assistant_where = (where + " AND role = 'assistant'") if where else "WHERE role = 'assistant'"
+            cur.execute(f"SELECT COUNT(*) AS n FROM history {assistant_where}", params)
+            total_responses = cur.fetchone()["n"]
+
+            cur.execute(f"SELECT COUNT(*) AS n FROM history {assistant_where} AND escalate = 1", params)
+            escalations = cur.fetchone()["n"]
+
+            cur.execute(f"SELECT COUNT(*) AS n FROM history {assistant_where} AND feedback = 'up'", params)
+            feedback_up = cur.fetchone()["n"]
+
+            cur.execute(f"SELECT COUNT(*) AS n FROM history {assistant_where} AND feedback = 'down'", params)
+            feedback_down = cur.fetchone()["n"]
+
+            return {
+                "unique_users": unique_users,
+                "total_responses": total_responses,
+                "escalations": escalations,
+                "escalation_rate_percent": round(escalations / total_responses * 100, 1) if total_responses else 0.0,
+                "feedback_up": feedback_up,
+                "feedback_down": feedback_down,
+            }
+        finally:
+            conn.close()
+
+    return {
+        "all_time": _query_window(None),
+        "last_24h": _query_window(time.time() - 24 * 60 * 60),
+    }
+
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "model_chain": [s.cooldown_key for s in MODEL_CHAIN],
+        "models": {
+            s.cooldown_key: {
+                "provider": s.provider,
+                "model_id": s.model_id,
+                "on_cooldown": _is_on_cooldown(s),
+                "cooldown_remaining_seconds": round(_remaining_cooldown(s)),
+            }
+            for s in MODEL_CHAIN
+        },
+        "db_configured": bool(BOT_DB_PATH),
+    }

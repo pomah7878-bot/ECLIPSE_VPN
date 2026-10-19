@@ -1,0 +1,393 @@
+"""
+VPN Telegram bot entry point.
+
+Initializes the bot, dispatcher, applies migrations and starts polling.
+"""
+import asyncio
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+import signal
+import sys
+from aiogram import Bot, Dispatcher
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from config import BOT_TOKEN
+from database.migrations import run_migrations
+
+from bot.services.vpn_api import close_all_clients
+from bot.services.scheduler import run_daily_tasks, run_update_check_scheduler, run_traffic_sync_scheduler, run_channel_posts_scheduler, run_duplicate_detection_scheduler, run_license_check_scheduler, run_license_purchase_sweeper
+from bot.services.payment_auto_check import run_payment_auto_check_scheduler, run_anonymous_payment_auto_check_scheduler
+from bot.webapp.server import run_webapp
+
+# Importing routers
+from bot.handlers.user import router as user_router
+from bot.handlers.admin import admin_router
+
+
+# Create a folder for logs if it doesn’t exist (it’s important to do this before basicConfig)
+os.makedirs("logs", exist_ok=True)
+
+
+# Setting up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] [%(levelname)s] [%(name)s] - %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        RotatingFileHandler(
+            "logs/bot.log", 
+            maxBytes=1024 * 1024,  # 1 megabyte
+            backupCount=3, 
+            encoding="utf-8"
+        )
+    ]
+)
+
+# Reducing noise from aiohttp
+logging.getLogger("aiohttp").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+
+
+
+
+
+def _seed_brand_assets_if_missing() -> None:
+    """Восстанавливает logo.png/favicon.* из *.default.* версий, если живого
+    файла нет на диске — это либо совсем новая установка (файл никогда не
+    отслеживался в git, см. .gitignore), либо файл случайно потерялся.
+
+    Не трогает файл, если он УЖЕ есть — админский кастомный логотип не
+    перезаписывается. *.default.* версии — обычные файлы в git, они как раз
+    и переживают git pull/reset при обновлении бота, в отличие от живых.
+    """
+    import shutil
+    static_dir = os.path.join(os.path.dirname(__file__), "bot", "webapp", "static")
+    pairs = (
+        ("logo.default.png", "logo.png"),
+        ("favicon.default.ico", "favicon.ico"),
+        ("favicon-32x32.default.png", "favicon-32x32.png"),
+        ("favicon-16x16.default.png", "favicon-16x16.png"),
+    )
+    for default_name, live_name in pairs:
+        live_path = os.path.join(static_dir, live_name)
+        default_path = os.path.join(static_dir, default_name)
+        if os.path.exists(live_path) or not os.path.exists(default_path):
+            continue
+        try:
+            shutil.copy2(default_path, live_path)
+            logger.info(f"Бренд-ассет {live_name} восстановлен из {default_name} (файла не было на диске)")
+        except Exception as e:
+            logger.warning(f"Не удалось восстановить бренд-ассет {live_name}: {e}")
+
+
+async def on_startup(bot: Bot):
+    """Actions when starting a bot."""
+    logger.info("🚀 Бот запускается...")
+    
+    # Applying database migrations
+    run_migrations()
+
+    _seed_brand_assets_if_missing()
+
+    from bot.utils.telegram_links import load_telegram_link_domain
+
+    load_telegram_link_domain()
+
+    from bot.utils.update_block import try_unblock
+
+    try_unblock()
+
+    from bot.utils.custom_extensions import load_custom_extensions
+    extensions_result = load_custom_extensions()
+    if extensions_result.skipped:
+        logger.info("Custom extensions не загружены: %s", extensions_result.reason)
+    else:
+        logger.info(
+            "Custom extensions: загружено %s, ошибок %s",
+            len(extensions_result.loaded),
+            len(extensions_result.failed),
+        )
+
+    try:
+        from bot.services.custom_payment_webhooks import start_custom_payment_webhook_server
+
+        bot.custom_payment_webhook_server = await start_custom_payment_webhook_server(bot)
+    except Exception as e:
+        logger.warning(f"Не удалось запустить custom payment webhook server: {e}")
+    
+    # Bot information
+    bot_info = await bot.get_me()
+    bot.my_username = bot_info.username
+    logger.info(f"✅ Бот запущен: @{bot_info.username}")
+
+    try:
+        from database.requests import get_setting, set_setting
+        pending_admin_id = get_setting('pending_restart_notify_admin_id', '')
+        if pending_admin_id:
+            set_setting('pending_restart_notify_admin_id', '')
+            await bot.send_message(
+                int(pending_admin_id),
+                "✅ <b>Бот перезапущен и снова готов к работе.</b>\n\n"
+                "Нажмите /start, чтобы открыть меню — старые кнопки в чате "
+                "после перезапуска могли устареть.",
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.warning(f"Не удалось отправить уведомление о завершении перезапуска: {e}")
+
+    await _notify_admins_about_deploy(bot)
+
+    try:
+        from bot.services.bot_commands import sync_bot_commands, sync_menu_button
+        await sync_bot_commands(bot)
+        await sync_menu_button(bot)
+    except Exception as e:
+        logger.warning(f"Не удалось синхронизировать меню команд/кнопку WebApp: {e}")
+    
+    # If updates are blocked, we immediately notify the admins
+    from bot.utils.update_block import is_update_blocked, get_blocked_message
+    if is_update_blocked():
+        from config import ADMIN_IDS
+        from aiogram.types import InlineKeyboardButton
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+        
+        msg = get_blocked_message()
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="✅ OK", callback_data="dismiss_msg"))
+        kb = builder.as_markup()
+        
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=msg,
+                    reply_markup=kb,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление о блокировке админу {admin_id}: {e}")
+
+
+async def _notify_admins_about_deploy(bot: Bot) -> None:
+    """Если бот запустился на коммите, отличном от последнего замеченного —
+    значит код обновился (auto_deploy.sh подтянул с GitHub и перезапустил
+    сервис, или админ обновил вручную по SSH) — присылает админам changelog:
+    что изменилось с прошлого запуска.
+
+    Работает при ЛЮБОМ способе обновления кода, в отличие от кнопки
+    "Обновить бота" в самом боте (она уведомляет только того админа, кто её
+    нажал) и планировщика проверки обновлений (он уведомляет ДО обновления,
+    о коммитах на GitHub, которые ещё не подтянуты) — а auto_deploy.sh
+    вообще никого не уведомляет, просто тихо перезапускает сервис по cron.
+    """
+    try:
+        from database.requests import get_setting, set_setting
+        from bot.utils.git_utils import get_current_commit, run_git_command
+        from bot.utils.text import escape_html
+        from config import ADMIN_IDS
+
+        current_commit = get_current_commit()
+        if not current_commit:
+            return
+
+        last_notified = get_setting('last_notified_deploy_commit', '')
+
+        if not last_notified:
+            # Первый запуск с этой фичей (или совсем новая установка) — просто
+            # запоминаем текущий коммит, без рассылки. Иначе при первом же
+            # старте после обновления бота админы получат "changelog" длиной
+            # во всю историю репозитория.
+            set_setting('last_notified_deploy_commit', current_commit)
+            return
+
+        if last_notified == current_commit:
+            return
+
+        success, log_output = run_git_command([
+            'log', '--format=%h %B', f'{last_notified}..HEAD', '-n', '30',
+        ])
+        set_setting('last_notified_deploy_commit', current_commit)
+
+        if not success or not log_output.strip():
+            # Коммит изменился, но получить лог не удалось (например,
+            # last_notified больше не существует в истории после
+            # git reset --hard/force-push) — просто фиксируем текущий
+            # коммит без рассылки, чем слать админам бесполезное сообщение.
+            return
+
+        text = (
+            "🔄 <b>Бот обновился и перезапустился</b>\n"
+            f"<code>{last_notified}</code> → <code>{current_commit}</code>\n\n"
+            f"<b>Что изменилось:</b>\n<pre>{escape_html(log_output)}</pre>"
+        )
+
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.send_message(admin_id, text, parse_mode="HTML")
+            except Exception as e:
+                logger.warning(f"Не удалось отправить changelog обновления админу {admin_id}: {e}")
+    except Exception as e:
+        logger.warning(f"Ошибка при уведомлении админов об обновлении: {e}")
+
+
+async def on_shutdown(bot: Bot):
+    """Actions to take when stopping the bot."""
+    logger.info("🛑 Бот останавливается...")
+
+    webhook_server = getattr(bot, 'custom_payment_webhook_server', None)
+    if webhook_server is not None:
+        try:
+            await webhook_server.stop()
+        except Exception as e:
+            logger.warning(f"Не удалось остановить custom payment webhook server: {e}")
+    
+    # Close all VPN API sessions
+    await close_all_clients()
+    
+    logger.info("✅ Бот остановлен")
+
+
+async def main():
+    """The main function of launching the bot."""
+    # Importing a custom session with fallback for Markdown errors
+    from bot.middlewares.parse_mode_fallback import SafeParseSession
+    
+    # Creating a bot with a custom session and a dispatcher
+    session = SafeParseSession()
+    bot = Bot(token=BOT_TOKEN, session=session)
+
+    # Единая ширина «пузыря» сообщений с кнопками (настройка menu_min_width)
+    from bot.middlewares.menu_width import MenuWidthMiddleware
+    bot.session.middleware(MenuWidthMiddleware())
+
+    # Порядок в чате: запоминаем служебные сообщения клиента (см. bot/middlewares/chat_trail.py)
+    from bot.middlewares.chat_trail import TrackSentMessagesMiddleware, UserContextMiddleware
+    bot.session.middleware(TrackSentMessagesMiddleware())
+
+    # Регистрируем экземпляр в нейтральном модуле-посреднике — см.
+    # bot/utils/runtime_state.py про то, почему `from main import bot`
+    # не работает (проблема __main__ vs main при запуске python3 main.py).
+    from bot.utils.runtime_state import set_bot_instance
+    set_bot_instance(bot)
+    # v1.334: магические фильтры F выполняются без перехода в поток (см. bot/utils/fast_filters.py)
+    from bot.utils.fast_filters import install_fast_magic_filters
+    install_fast_magic_filters()
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
+
+    from bot.middlewares.bot_blocked import BotBlockedResetMiddleware
+    bot_blocked_reset = BotBlockedResetMiddleware()
+    dp.message.outer_middleware(bot_blocked_reset)
+    dp.callback_query.outer_middleware(bot_blocked_reset)
+    _user_ctx = UserContextMiddleware()
+    dp.message.outer_middleware(_user_ctx)
+    dp.callback_query.outer_middleware(_user_ctx)
+    from bot.handlers.user.keys import ConnCleanupMiddleware
+    dp.callback_query.outer_middleware(ConnCleanupMiddleware())
+    
+    # Registering routers
+    # The order is important: first the more specific, then the general
+    dp.include_router(admin_router)           # Admin panel (general)
+    dp.include_router(user_router)            # User (has a strict internal order)
+    
+    # Global Network Error Handler
+    from aiogram.exceptions import TelegramNetworkError
+    from aiogram.types import ErrorEvent
+    from bot.utils.callbacks import is_expired_callback_error
+    
+    _ERR_NOTICE_AT: dict = {}
+
+    @dp.errors()
+    async def global_error_handler(event: ErrorEvent):
+        """Intercepts safe Telegram network/callback errors with short warnings."""
+        exception = event.exception
+        if isinstance(exception, TelegramNetworkError):
+            logger.warning(f"⚠️ Нет связи с Telegram API: {exception}")
+            return True  # The error has been processed, do not forward it further
+        if is_expired_callback_error(exception):
+            logger.warning("⚠️ Просроченный Telegram callback: %s", exception)
+            return True
+        # v1.213: экран перерисован с тем же содержимым (например, повторное «Обновить») —
+        # это не ошибка, пользователю ничего показывать не нужно
+        from aiogram.exceptions import TelegramBadRequest as _TgBadRequest
+        if isinstance(exception, _TgBadRequest) and "message is not modified" in str(exception).lower():
+            logger.debug("Экран не изменился (message is not modified)")
+            return True
+        # We log the rest of the errors as usual
+        logger.error(f"Необработанная ошибка: {exception}", exc_info=True)
+        # v1.214: человек не должен гадать, «висит» бот или нет — коротко сообщаем и просим повторить
+        try:
+            import time as _t
+            _upd = event.update
+            _msg = getattr(_upd, "message", None)
+            _cb = getattr(_upd, "callback_query", None)
+            _uid = (_msg.from_user.id if _msg and _msg.from_user else (_cb.from_user.id if _cb and _cb.from_user else None))
+            _last = _ERR_NOTICE_AT.get(_uid, 0)
+            if _uid and _t.time() - _last > 30:
+                _ERR_NOTICE_AT[_uid] = _t.time()
+                if _cb:
+                    await _cb.answer("⚠️ Что-то пошло не так. Попробуйте ещё раз.", show_alert=False)
+                elif _msg:
+                    await _msg.answer("⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start.")
+        except Exception:
+            pass
+        return True
+    
+    # Registering startup/shutdown
+    dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
+
+    # v1.214: сторож цикла событий (пишет в журнал, где завис бот)
+    from bot.utils.loop_watchdog import start_loop_watchdog
+    start_loop_watchdog()
+    
+    # Remove old updates and run polling
+    await bot.delete_webhook(drop_pending_updates=True)
+    
+
+    
+    # Launch the daily task scheduler (statistics + backups)
+    daily_tasks = asyncio.create_task(run_daily_tasks(bot))
+    # Launch the update check scheduler
+    update_tasks = asyncio.create_task(run_update_check_scheduler(bot))
+    # Launch the traffic synchronization scheduler (every 5 minutes)
+    traffic_tasks = asyncio.create_task(run_traffic_sync_scheduler(bot))
+    payment_check_tasks = asyncio.create_task(run_payment_auto_check_scheduler(bot))
+    anonymous_payment_check_tasks = asyncio.create_task(run_anonymous_payment_auto_check_scheduler(bot))
+    channel_posts_tasks = asyncio.create_task(run_channel_posts_scheduler(bot))
+    duplicate_detection_tasks = asyncio.create_task(run_duplicate_detection_scheduler(bot))
+    from bot.services.device_limit_notify import run_ip_limit_scheduler
+    ip_limit_tasks = asyncio.create_task(run_ip_limit_scheduler(bot))
+    license_check_tasks = asyncio.create_task(run_license_check_scheduler(bot))
+    license_purchase_tasks = asyncio.create_task(run_license_purchase_sweeper(bot))
+    from bot.services.creator_chat import run_creator_chat_poller
+    creator_chat_tasks = asyncio.create_task(run_creator_chat_poller(bot))
+    from bot.services.help_orders import run_help_payment_sweeper
+    help_sweep_tasks = asyncio.create_task(run_help_payment_sweeper())
+    from bot.services.cdn import run_cdn_scheduler
+    cdn_tasks = asyncio.create_task(run_cdn_scheduler(bot))
+    from bot.services.health_alerts import run_health_alert_scheduler
+    health_alert_tasks = asyncio.create_task(run_health_alert_scheduler(bot))
+    webapp_task = asyncio.create_task(
+        run_webapp(host="127.0.0.1", port=3000)
+    )
+    background_tasks = [daily_tasks, update_tasks, traffic_tasks, payment_check_tasks, anonymous_payment_check_tasks, channel_posts_tasks, duplicate_detection_tasks, ip_limit_tasks, license_check_tasks, license_purchase_tasks, creator_chat_tasks, help_sweep_tasks, cdn_tasks, health_alert_tasks, webapp_task]
+    
+    try:
+        await dp.start_polling(bot)
+    finally:
+        for task in background_tasks:
+            task.cancel()
+        await asyncio.gather(*background_tasks, return_exceptions=True)
+        await close_all_clients()
+        await bot.session.close()
+
+
+if __name__ == "__main__":
+    # Let's launch the bot
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Получен сигнал остановки")
