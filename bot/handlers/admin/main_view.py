@@ -29,7 +29,13 @@ def view_label() -> str:
         return '🏛 Классический'
 
 
+def _webapp_on() -> bool:
+    from bot.services.main_screen import webapp_app_view_enabled
+    return webapp_app_view_enabled()
+
+
 def _text(view: str) -> str:
+    wa = '🟢 включён' if _webapp_on() else '⚪ выключен'
     return (
         "🏠 <b>Вид главной страницы</b>\n\n"
         f"Сейчас: <b>{VIEW_LABELS.get(view, view)}</b>\n\n"
@@ -40,6 +46,10 @@ def _text(view: str) -> str:
         "• новичку — короткое предложение и «🎁 Попробовать бесплатно»\n"
         "• клиенту — карточка подписки и «⚡ Подключиться»\n"
         "• если подписка кончилась — «🔄 Продлить»\n\n"
+        f"<b>🌐 Вид «Приложение» в мини-приложении:</b> {wa}\n"
+        "• переключается отдельно от бота\n"
+        "• новичку — предложение и «🎁 Попробовать», клиенту — карточка подписки, "
+        "при истёкшей — «🔄 Продлить»\n\n"
         "<i>Текст и кнопки каждого вида сохраняются: переключайтесь в любой момент, "
         "ничего не потеряется. Картинка (баннер) общая для обоих видов.</i>"
     )
@@ -53,6 +63,10 @@ def _kb(view: str) -> InlineKeyboardMarkup:
             'Приложение', 'admin_main_view_set:app',
             right_active_emoji='🟢',
         )),
+        [InlineKeyboardButton(
+            text=('🟢 Webapp: «Приложение» — выключить' if _webapp_on() else '⚪ Webapp: «Приложение» — включить'),
+            callback_data='admin_webapp_view_toggle',
+        )],
         [back_button('admin_bot_settings'), home_button()],
     ])
 
@@ -93,3 +107,20 @@ async def cb_main_view_set(callback: CallbackQuery):
         f"✅ Включён вид «{VIEW_LABELS[target].split(' ', 1)[1]}». Нажмите /start, чтобы посмотреть."
         if changed else 'Этот вид уже включён'
     )
+
+
+@router.callback_query(F.data == 'admin_webapp_view_toggle')
+async def cb_webapp_view_toggle(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    from bot.services.main_screen import set_webapp_app_view
+    new = not _webapp_on()
+    try:
+        set_webapp_app_view(new)
+    except Exception as e:  # noqa: BLE001
+        logger.error('Не удалось переключить вид webapp: %s', e)
+        await callback.answer('❌ Не удалось переключить', show_alert=True)
+        return
+    await _show(callback)
+    await callback.answer('✅ Webapp: вид «Приложение» ' + ('включён' if new else 'выключен'))

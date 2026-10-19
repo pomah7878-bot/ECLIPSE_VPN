@@ -364,6 +364,23 @@ def current_view() -> str:
     return VIEW_APP if page_uses_app_screen(get_page('main')) else VIEW_CLASSIC
 
 
+WEBAPP_VIEW_KEY = 'webapp_app_view'
+
+
+def webapp_app_view_enabled() -> bool:
+    """Вид «Приложение» в мини-приложении — отдельный переключатель, по умолчанию выключен."""
+    try:
+        from database.requests import get_setting
+        return str(get_setting(WEBAPP_VIEW_KEY) or '0') == '1'
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def set_webapp_app_view(enabled: bool) -> None:
+    from database.requests import set_setting
+    set_setting(WEBAPP_VIEW_KEY, '1' if enabled else '0')
+
+
 def _merged_buttons(page: Dict[str, Any]) -> List[Dict[str, Any]]:
     from bot.utils.page_renderer import _merge_buttons_by_id
     return [dict(b) for b in _merge_buttons_by_id(page.get('buttons_default') or '[]', page.get('buttons_custom'))]

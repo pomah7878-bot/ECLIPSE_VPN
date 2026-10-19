@@ -1441,6 +1441,23 @@
             `;
         }
 
+        // Вид «Приложение» (включается отдельно в админке): одна карточка вместо сводки.
+        function renderAppHome(status) {
+            if (status.bot_username) BOT_USERNAME = status.bot_username;
+            const total = status.total_keys || 0, active = status.active_keys || 0;
+            const card = (title, text, btns) => `<div class="card rounded-2xl p-5 mb-4 text-center"><div class="text-lg font-bold mb-1">${title}</div><div class="text-sm text-mist-dim mb-4">${text}</div>${btns}</div>`;
+            const b = (fn, label, cls) => `<button onclick="${fn}" class="w-full py-3 ${cls} rounded-xl text-sm font-bold transition mt-2">${label}</button>`;
+            if (total === 0) {
+                return card('Добро пожаловать 👋', 'VPN, который просто работает.',
+                    (window._trialAvailable ? b('goTrial()', '🎁 Попробовать бесплатно', 'btn-primary') : '') + b('goBuy()', 'Выбрать тариф', window._trialAvailable ? 'btn-secondary' : 'btn-primary'));
+            }
+            if (active === 0) {
+                return card('Подписка закончилась', 'Продлите, чтобы снова подключиться.', b('goBuy()', '🔄 Продлить', 'btn-primary'));
+            }
+            const n = status.nearest_expiry;
+            return card('Всё работает ✅', n ? `Осталось ${escapeHtml(String(n.remaining_human || n.date))}` : 'Подписка активна', '');
+        }
+
         function renderEmpty() {
             return `
                 <div class="text-center py-14 fade-in">
@@ -1867,14 +1884,15 @@
 
                 if (statusRes.status === 'fulfilled') {
                     if (statusRes.value.trial_available) window._trialAvailable = true;
-                    html += renderSummary(statusRes.value);
+                    html += statusRes.value.app_view ? renderAppHome(statusRes.value) : renderSummary(statusRes.value);
+                    window._appView = !!statusRes.value.app_view;
                 } else { html += renderSummary(null); }
 
                 if (keysRes.status === 'fulfilled') {
                     const keys = keysRes.value.keys || [];
                     _cachedKeys = keys;
                     if (keys.length === 0) {
-                        html += renderEmpty();
+                        if (!window._appView) html += renderEmpty();
                     } else {
                         html += '<div class="space-y-3" id="keyListContainer">';
                         keys.forEach(key => { html += renderKey(key); });

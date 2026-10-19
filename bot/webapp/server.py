@@ -509,6 +509,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "has_keys": len(keys) > 0,
             "bot_username": bot_username,
             "trial_available": trial_available,
+            "app_view": _webapp_app_view(),
         })
 
     except Exception as e:
@@ -516,6 +517,14 @@ async def handle_status(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": "internal_error"}, status=500
         )
+
+
+def _webapp_app_view() -> bool:
+    try:
+        from bot.services.main_screen import webapp_app_view_enabled
+        return webapp_app_view_enabled()
+    except Exception:
+        return False
 
 
 async def handle_ai_consult(request: web.Request) -> web.Response:
