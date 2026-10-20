@@ -156,9 +156,9 @@
             background: radial-gradient(120% 80% at 50% 0%, rgba(124,92,255,.22), rgba(124,92,255,0) 62%), var(--panel);
         }
         body.cosmic .app-eclipse::after {
-            content: ''; position: absolute; inset: -30px; border-radius: 50%;
+            content: ''; position: absolute; inset: -12px; border-radius: 50%;
             border: 1px dashed rgba(182,168,255,.28); animation: orbitSpin 40s linear infinite;
-            background: radial-gradient(circle 5px at 50% 0, #7FE6FF 0 4px, transparent 5px);
+            background: radial-gradient(circle 4px at 50% 5px, #7FE6FF 0 3px, transparent 4px);
         }
         @keyframes orbitSpin { to { transform: rotate(360deg); } }
         @media (prefers-reduced-motion: reduce) {
@@ -2003,6 +2003,7 @@
                     html += statusRes.value.app_view ? renderAppHome(statusRes.value) : renderSummary(statusRes.value);
                     window._appView = !!statusRes.value.app_view;
                     document.body.classList.toggle('cosmic', !!statusRes.value.cosmic);
+                    if (statusRes.value.cosmic) { try { tg?.setHeaderColor?.('#04050D'); tg?.setBackgroundColor?.('#04050D'); } catch (e) {} }
                 } else { html += renderSummary(null); }
 
                 if (keysRes.status === 'fulfilled') {
