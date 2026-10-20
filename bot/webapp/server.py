@@ -512,6 +512,7 @@ async def handle_status(request: web.Request) -> web.Response:
             "bot_username": bot_username,
             "trial_available": trial_available,
             "app_view": _webapp_app_view(),
+            "cosmic": _webapp_cosmic(),
         })
 
     except Exception as e:
@@ -525,6 +526,14 @@ def _webapp_app_view() -> bool:
     try:
         from bot.services.main_screen import webapp_app_view_enabled
         return webapp_app_view_enabled()
+    except Exception:
+        return False
+
+
+def _webapp_cosmic() -> bool:
+    try:
+        from bot.services.main_screen import webapp_cosmic_enabled
+        return webapp_cosmic_enabled()
     except Exception:
         return False
 

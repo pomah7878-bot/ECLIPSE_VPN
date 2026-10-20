@@ -381,6 +381,23 @@ def set_webapp_app_view(enabled: bool) -> None:
     set_setting(WEBAPP_VIEW_KEY, '1' if enabled else '0')
 
 
+WEBAPP_COSMIC_KEY = 'webapp_cosmic'
+
+
+def webapp_cosmic_enabled() -> bool:
+    """Космическая тема мини-приложения — отдельный переключатель, по умолчанию выключен."""
+    try:
+        from database.requests import get_setting
+        return str(get_setting(WEBAPP_COSMIC_KEY) or '0') == '1'
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def set_webapp_cosmic(enabled: bool) -> None:
+    from database.requests import set_setting
+    set_setting(WEBAPP_COSMIC_KEY, '1' if enabled else '0')
+
+
 def _merged_buttons(page: Dict[str, Any]) -> List[Dict[str, Any]]:
     from bot.utils.page_renderer import _merge_buttons_by_id
     return [dict(b) for b in _merge_buttons_by_id(page.get('buttons_default') or '[]', page.get('buttons_custom'))]

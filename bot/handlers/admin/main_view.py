@@ -34,7 +34,13 @@ def _webapp_on() -> bool:
     return webapp_app_view_enabled()
 
 
+def _cosmic_on() -> bool:
+    from bot.services.main_screen import webapp_cosmic_enabled
+    return webapp_cosmic_enabled()
+
+
 def _text(view: str) -> str:
+    cs = '🟢 включена' if _cosmic_on() else '⚪ выключена'
     wa = '🟢 включён' if _webapp_on() else '⚪ выключен'
     return (
         "🏠 <b>Вид главной страницы</b>\n\n"
@@ -50,6 +56,9 @@ def _text(view: str) -> str:
         "• переключается отдельно от бота\n"
         "• новичку — предложение и «🎁 Попробовать», клиенту — карточка подписки, "
         "при истёкшей — «🔄 Продлить»\n\n"
+        f"<b>🌌 Космическая тема мини-приложения:</b> {cs}\n"
+        "• звёздное небо, туманности и свечение на всех экранах\n"
+        "• включается отдельно, функции кабинета не меняются\n\n"
         "<i>Текст и кнопки каждого вида сохраняются: переключайтесь в любой момент, "
         "ничего не потеряется. Картинка (баннер) общая для обоих видов.</i>"
     )
@@ -66,6 +75,10 @@ def _kb(view: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text=('🟢 Webapp: «Приложение» — выключить' if _webapp_on() else '⚪ Webapp: «Приложение» — включить'),
             callback_data='admin_webapp_view_toggle',
+        )],
+        [InlineKeyboardButton(
+            text=('🟢 Космическая тема — выключить' if _cosmic_on() else '⚪ Космическая тема — включить'),
+            callback_data='admin_webapp_cosmic_toggle',
         )],
         [back_button('admin_bot_settings'), home_button()],
     ])
@@ -124,3 +137,20 @@ async def cb_webapp_view_toggle(callback: CallbackQuery):
         return
     await _show(callback)
     await callback.answer('✅ Webapp: вид «Приложение» ' + ('включён' if new else 'выключен'))
+
+
+@router.callback_query(F.data == 'admin_webapp_cosmic_toggle')
+async def cb_webapp_cosmic_toggle(callback: CallbackQuery):
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    from bot.services.main_screen import set_webapp_cosmic
+    new = not _cosmic_on()
+    try:
+        set_webapp_cosmic(new)
+    except Exception as e:  # noqa: BLE001
+        logger.error('Не удалось переключить космическую тему: %s', e)
+        await callback.answer('❌ Не удалось переключить', show_alert=True)
+        return
+    await _show(callback)
+    await callback.answer('✅ Космическая тема ' + ('включена' if new else 'выключена'))
