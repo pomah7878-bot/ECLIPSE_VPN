@@ -3629,9 +3629,8 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         tg_user = get_user_by_telegram_id(account["telegram_id"])
         if tg_user:
             balance_cents = get_user_balance(tg_user["id"]) or 0
-        rub = balance_cents // 100
-        kop = balance_cents % 100
-        balance_human = f"{rub} ₽" if kop == 0 else f"{rub}.{kop:02d} ₽"
+        from bot.utils.ru_format import format_rub
+        balance_human = format_rub(balance_cents, cents=True)
 
         return web.json_response({
             "ok": True, "logged_in": True, "account_type": "telegram",
@@ -4645,12 +4644,8 @@ async def handle_referral(request: web.Request) -> web.Response:
             conn.close()
 
         # Format balance
-        rub = balance_cents // 100
-        kop = balance_cents % 100
-        if kop == 0:
-            balance_human = f"{rub} ₽"
-        else:
-            balance_human = f"{rub}.{kop:02d} ₽"
+        from bot.utils.ru_format import format_rub
+        balance_human = format_rub(balance_cents, cents=True)
 
         return web.json_response({
             "referral_link": referral_link,
