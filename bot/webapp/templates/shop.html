@@ -1770,6 +1770,14 @@
             }
         }
 
+        // Как в кабинете: 3 замера параллельно, минимум, пополам (запрос к узлу занимает ~2 круга сети).
+        // shortcut: для обычного TLS с валидным сертификатом кругов 3, значение завышено ~на треть.
+        async function devicePing(host, port) {
+            const r = (await Promise.all([clientPing(host, port), clientPing(host, port), clientPing(host, port)]))
+                .filter(v => v !== null);
+            return r.length ? Math.max(1, Math.round(Math.min(...r) / 2)) : null;
+        }
+
         async function measureClientPings(keyId, groups) {
             for (let gi = 0; gi < groups.length; gi++) {
                 const group = groups[gi];
@@ -1777,13 +1785,15 @@
                 for (let ii = 0; ii < group.inbounds.length; ii++) {
                     const ib = group.inbounds[ii];
                     if (UDP_PROTOCOLS.includes(ib.protocol)) continue;
-                    const ms = await clientPing(group.host, ib.port);
+                    const ms = await devicePing(group.host, ib.port);
                     const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
                     if (el) el.textContent = ms !== null ? ms + 'мс' : '—';
                     if (ms !== null) tcpPings.push(ms);
                 }
                 if (tcpPings.length) {
-                    const approx = Math.round(tcpPings.reduce((a, b) => a + b, 0) / tcpPings.length);
+                    const approx = Math.min(...tcpPings);
+                    const hostEl = document.getElementById(`ping-host-${keyId}-${gi}`);
+                    if (hostEl) hostEl.textContent = '· задержка ≈ ' + approx + ' мс';
                     group.inbounds.forEach((ib, ii) => {
                         if (UDP_PROTOCOLS.includes(ib.protocol)) {
                             const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
@@ -1798,7 +1808,7 @@
             if (!groups.length) return '<p class="text-xs text-mist py-3 text-center">Нет данных о подключениях</p>';
             return groups.map((g, gi) => `
                 <div class="mb-3">
-                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)}</div>
+                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)} <span id="ping-host-${keyId}-${gi}" class="text-teal normal-case"></span></div>
                     ${g.inbounds.map((ib, ii) => {
                         const ping = '…';
                         return `
