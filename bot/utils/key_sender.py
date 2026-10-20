@@ -5,7 +5,7 @@ import logging
 from types import SimpleNamespace
 from typing import Mapping, Optional
 
-from aiogram.types import BufferedInputFile, InlineKeyboardMarkup, Message
+from aiogram.types import BufferedInputFile, CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from bot.services.vpn_api import get_client
 from bot.utils.key_generator import generate_link, generate_json, generate_qr_code
@@ -37,8 +37,8 @@ DEFAULT_KEY_DELIVERY_TEXT = (
 
 
 def format_key_copy_value(raw_value: str) -> str:
-    """Formats the key/subscription as a copyable monospace fragment."""
-    return f"<code>{escape_html(raw_value)}</code>"
+    """Formats the key/subscription as a copyable block: on phones <pre> is a visible box, <code> blends into the text."""
+    return f"<pre>{escape_html(raw_value)}</pre>"
 
 
 def format_key_plain_link(raw_value: str) -> str:
@@ -177,6 +177,17 @@ def _get_bot_username(messageable) -> str:
     )
 
 
+def _with_copy_button(markup: Optional[InlineKeyboardMarkup], raw_value: str) -> Optional[InlineKeyboardMarkup]:
+    """Adds a «Скопировать ссылку» row on top: one tap puts the link into the clipboard."""
+    if not markup or not raw_value or len(raw_value) > 256:  # shortcut: copy_text limit is 256 chars, longer links keep the text block only
+        return markup
+    rows = [list(r) for r in markup.inline_keyboard]
+    if any(getattr(b, 'copy_text', None) for r in rows for b in r):
+        return markup
+    rows.insert(0, [InlineKeyboardButton(text='📋 Скопировать ссылку', copy_text=CopyTextButton(text=raw_value))])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def _get_key_delivery_markup(
     fallback_markup: Optional[InlineKeyboardMarkup],
     raw_value: str,
@@ -204,7 +215,7 @@ def _get_key_delivery_markup(
             context=render_context,
             text_replacements=build_key_delivery_replacements(raw_value),
         )
-        return markup or fallback_markup
+        return _with_copy_button(markup, raw_value) or fallback_markup
     except Exception as e:
         logger.warning("Не удалось собрать клавиатуру страницы выдачи ключа: %s", e)
         return fallback_markup
