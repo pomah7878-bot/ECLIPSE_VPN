@@ -1547,7 +1547,9 @@
                     ? '<div class="font-display text-[52px] font-bold leading-none text-alert">0</div><div class="text-[11px] text-mist mt-1">дней</div>'
                     : `<div class="font-display text-[52px] font-bold leading-none" style="color:${color}">${days}</div><div class="text-[11px] text-mist mt-1">${daysWord(days)} до конца</div>`;
             const title = { new: 'VPN, который просто работает', ok: warn ? 'Скоро закончится' : 'Всё работает', expired: 'Доступ приостановлен' }[state];
-            const sub = { new: 'Подключение за минуту, без оплаты на старте.', ok: `Подписка до ${escapeHtml(String(n.date || ''))}`, expired: 'Продлите подписку, чтобы снова подключиться.' }[state];
+            const nAct = (keys || []).filter(k => k.is_active).length;
+            window._appHeroCta = state !== 'ok';
+            const sub = { new: 'Подключение за минуту, без оплаты на старте.', ok: nAct > 1 ? `Ближайшее окончание: ${escapeHtml(String(n.date || ''))}` : 'Защита включена', expired: 'Продлите подписку, чтобы снова подключиться.' }[state];
             const chips = state === 'new'
                 ? ['Историю сайтов не храним', 'AI-помощник', 'iOS · Android · Windows · macOS']
                 : [];
@@ -1558,8 +1560,6 @@
                      + btn('goBuy()', 'Выбрать тариф', window._trialAvailable ? 'btn-secondary' : 'btn-primary');
             } else if (state === 'expired') {
                 btns = btn('goBuy()', 'Продлить подписку', 'btn-primary');
-            } else if (warn) {
-                btns = btn('goBuy()', 'Продлить', 'btn-primary');
             }
             // Плитки с полезными цифрами (только при активной подписке): всё берётся из уже загруженных данных.
             let tiles = '';
@@ -1567,9 +1567,10 @@
                 const act = (keys || []).filter(k => k.is_active);
                 const unl = act.length > 0 && act.every(k => k.traffic && k.traffic.is_unlimited);
                 const tile = (label, val, sub, id) => `<div class="rounded-2xl px-3 py-2.5 text-left" style="background:var(--panel-2);border:1px solid var(--hairline)"><div class="text-[10.5px] text-mist">${label}</div><div class="font-display text-[17px] font-bold mt-0.5"${id ? ` id="${id}"` : ''}>${val}</div><div class="text-[10.5px] text-mist-dim">${sub}</div></div>`;
+                // Трафик и задержка одного ключа уже есть в его карточке ниже — плитки только для нескольких ключей.
                 tiles = '<div class="grid grid-cols-2 gap-2 mt-4">'
-                    + tile('Трафик', escapeHtml(String(status.traffic_total_used || '0 B')), unl ? 'без лимита' : 'использовано')
-                    + tile('Задержка', '…', 'до сервера', 'app-ping')
+                    + (nAct > 1 ? tile('Трафик', escapeHtml(String(status.traffic_total_used || '0 B')), unl ? 'без лимита' : 'всего')
+                        + tile('Задержка', '…', 'лучшая', 'app-ping') : '')
                     + tile('Баланс', escapeHtml(String((ref && ref.balance_human) || '0 ₽')), 'на счёте')
                     + tile('Друзья', String((ref && ref.referrals_count) || 0), 'приглашено')
                     + '</div>';
@@ -1632,7 +1633,7 @@
                         <div class="flex-1 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3 py-2.5 text-[11px] text-mist break-all font-mono" id="refLink">${escapeHtml(link)}</div>
                         <button onclick="copyRefLink()" class="px-4 btn-secondary rounded-xl text-sm transition flex-shrink-0">⧉</button>
                     </div>
-                    <div class="grid grid-cols-2 gap-3 mt-4">
+                    ${window._appView ? '' : `<div class="grid grid-cols-2 gap-3 mt-4">
                         <div class="text-center">
                             <div class="font-display text-xl font-bold text-teal">${balance}</div>
                             <div class="text-[10px] text-mist-dim uppercase tracking-wide mt-1">Баланс</div>
@@ -1641,7 +1642,7 @@
                             <div class="font-display text-xl font-bold text-gold">${count}</div>
                             <div class="text-[10px] text-mist-dim uppercase tracking-wide mt-1">Приглашено</div>
                         </div>
-                    </div>
+                    </div>`}
                 </div>
             `;
         }
@@ -2042,9 +2043,11 @@
                     html += renderReferral(refRes.value);
                 }
 
-                html += '<div class="mt-4"><button onclick="goBuy()" class="px-8 py-3.5 btn-primary rounded-xl font-bold text-base transition w-full">Купить подписку</button></div>';
+                // В виде «Приложение» новичку и истёкшей подписке кнопки уже есть в карточке сверху.
+                const heroHasCta = window._appView && window._appHeroCta;
+                if (!heroHasCta) html += '<div class="mt-4"><button onclick="goBuy()" class="px-8 py-3.5 btn-primary rounded-xl font-bold text-base transition w-full">Купить подписку</button></div>';
 
-                if (window._trialAvailable) {
+                if (window._trialAvailable && !heroHasCta) {
                     html += '<div class="mt-2"><button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full">Пробная подписка</button></div>';
                 }
 
