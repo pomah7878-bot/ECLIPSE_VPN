@@ -1263,7 +1263,10 @@
                     if (ms !== null) tcpPings.push(ms);
                 }
                 if (tcpPings.length) {
-                    const approx = Math.round(tcpPings.reduce((a, b) => a + b, 0) / tcpPings.length);
+                    // Минимум, а не среднее: порты с TLS-ответом сайта медленнее из-за рукопожатия и тянули цифру вверх.
+                    const approx = Math.min(...tcpPings);
+                    const hostEl = document.getElementById(`ping-host-${keyId}-${gi}`);
+                    if (hostEl) hostEl.textContent = '· задержка ≈ ' + approx + ' мс';
                     group.inbounds.forEach((ib, ii) => {
                         if (UDP_PROTOCOLS.includes(ib.protocol)) {
                             const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
@@ -1278,7 +1281,7 @@
             if (!groups.length) return '<p class="text-xs text-mist py-3 text-center">Нет данных о подключениях</p>';
             return groups.map((g, gi) => `
                 <div class="mb-3">
-                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)}</div>
+                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)} <span id="ping-host-${keyId}-${gi}" class="text-teal normal-case"></span></div>
                     ${g.inbounds.map((ib, ii) => {
                         const ping = '…'; // измеряется асинхронно в measureClientPings()
                         return `
