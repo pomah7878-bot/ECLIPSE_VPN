@@ -792,6 +792,9 @@
                     const el = document.getElementById('ping-' + key.id);
                     if (el) el.innerHTML = getPingHtml(key.server_id);
                 });
+                const best = Object.values(_cachedPings).filter(v => typeof v === 'number');
+                const ap = document.getElementById('app-ping');
+                if (ap) ap.textContent = best.length ? Math.min(...best) + ' мс' : '—';
             } catch(e) { console.error('Ping fetch failed:', e); }
         }
         async function rePingKey() {
@@ -1527,7 +1530,7 @@
         }
 
         // Вид «Приложение» (включается отдельно в админке): затмение — кольцо срока вокруг диска.
-        function renderAppHome(status) {
+        function renderAppHome(status, keys, ref) {
             setGreeting();
             if (status.bot_username) BOT_USERNAME = status.bot_username;
             const total = status.total_keys || 0, active = status.active_keys || 0;
@@ -1558,6 +1561,19 @@
             } else if (warn) {
                 btns = btn('goBuy()', 'Продлить', 'btn-primary');
             }
+            // Плитки с полезными цифрами (только при активной подписке): всё берётся из уже загруженных данных.
+            let tiles = '';
+            if (state === 'ok') {
+                const act = (keys || []).filter(k => k.is_active);
+                const unl = act.length > 0 && act.every(k => k.traffic && k.traffic.is_unlimited);
+                const tile = (label, val, sub, id) => `<div class="rounded-2xl px-3 py-2.5 text-left" style="background:var(--panel-2);border:1px solid var(--hairline)"><div class="text-[10.5px] text-mist">${label}</div><div class="font-display text-[17px] font-bold mt-0.5"${id ? ` id="${id}"` : ''}>${val}</div><div class="text-[10.5px] text-mist-dim">${sub}</div></div>`;
+                tiles = '<div class="grid grid-cols-2 gap-2 mt-4">'
+                    + tile('Трафик', escapeHtml(String(status.traffic_total_used || '0 B')), unl ? 'без лимита' : 'использовано')
+                    + tile('Задержка', '…', 'до сервера', 'app-ping')
+                    + tile('Баланс', escapeHtml(String((ref && ref.balance_human) || '0 ₽')), 'на счёте')
+                    + tile('Друзья', String((ref && ref.referrals_count) || 0), 'приглашено')
+                    + '</div>';
+            }
             return `<div class="app-hero card rounded-[28px] px-5 pt-7 pb-5 mb-4 text-center">
                 <div class="app-eclipse" style="--c:${color}${state === 'expired' ? ';opacity:.55' : ''}">
                     <svg viewBox="0 0 180 180" width="100%" height="100%" aria-hidden="true">
@@ -1569,6 +1585,7 @@
                 </div>
                 <div class="font-display text-[22px] font-bold mt-5">${title}</div>
                 <div class="text-[13.5px] text-mist mt-1.5">${sub}</div>
+                ${tiles}
                 ${chips.length ? `<div class="flex flex-wrap justify-center gap-1.5 mt-4">${chips.map(c => `<span class="text-[11.5px] text-mist px-2.5 py-1 rounded-full" style="border:1px solid var(--hairline)">${c}</span>`).join('')}</div>` : ''}
                 ${btns ? `<div class="mt-5">${btns}</div>` : ''}
             </div>`;
@@ -2000,7 +2017,7 @@
 
                 if (statusRes.status === 'fulfilled') {
                     if (statusRes.value.trial_available) window._trialAvailable = true;
-                    html += statusRes.value.app_view ? renderAppHome(statusRes.value) : renderSummary(statusRes.value);
+                    html += statusRes.value.app_view ? renderAppHome(statusRes.value, keysRes.status === 'fulfilled' ? keysRes.value.keys : [], refRes.status === 'fulfilled' ? refRes.value : null) : renderSummary(statusRes.value);
                     window._appView = !!statusRes.value.app_view;
                     document.body.classList.toggle('cosmic', !!statusRes.value.cosmic);
                     if (statusRes.value.cosmic) { try { tg?.setHeaderColor?.('#04050D'); tg?.setBackgroundColor?.('#04050D'); } catch (e) {} }
