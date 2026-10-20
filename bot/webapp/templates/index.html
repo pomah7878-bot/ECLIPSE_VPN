@@ -735,7 +735,13 @@
         async function fetchPings() {
             try {
                 const data = await fetchAPI('ping');
-                _cachedPings = data.pings || {};
+                const targets = data.targets || {};
+                _cachedPings = {};
+                // Меряем с устройства пользователя; если не вышло — «нет ответа», серверное значение не подставляем.
+                await Promise.all(Object.keys(targets).map(async sid => {
+                    _cachedPings[sid] = await devicePing(targets[sid].host, targets[sid].port);
+                }));
+                Object.keys(data.pings || {}).forEach(k => { if (!(k in _cachedPings)) _cachedPings[k] = null; });
                 _cachedKeys.forEach(key => {
                     const el = document.getElementById('ping-' + key.id);
                     if (el) el.innerHTML = getPingHtml(key.server_id);
@@ -1234,6 +1240,16 @@
             }
         }
 
+        // Пинг с устройства: 3 замера параллельно, минимум, пополам. Запрос к узлу занимает ~2 круга
+        // сети (TCP + TLS; ответ или ошибка сертификата приходит после ServerHello), поэтому одно
+        // плечо — половина. shortcut: для обычного TLS с валидным сертификатом кругов 3, значение
+        // завышено ~на треть; точный TCP/«через прокси» — только в Android-приложении.
+        async function devicePing(host, port) {
+            const r = (await Promise.all([clientPing(host, port), clientPing(host, port), clientPing(host, port)]))
+                .filter(v => v !== null);
+            return r.length ? Math.max(1, Math.round(Math.min(...r) / 2)) : null;
+        }
+
         async function measureClientPings(keyId, groups) {
             for (let gi = 0; gi < groups.length; gi++) {
                 const group = groups[gi];
@@ -1241,7 +1257,7 @@
                 for (let ii = 0; ii < group.inbounds.length; ii++) {
                     const ib = group.inbounds[ii];
                     if (UDP_PROTOCOLS.includes(ib.protocol)) continue;
-                    const ms = await clientPing(group.host, ib.port);
+                    const ms = await devicePing(group.host, ib.port);
                     const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
                     if (el) el.textContent = ms !== null ? ms + 'мс' : '—';
                     if (ms !== null) tcpPings.push(ms);

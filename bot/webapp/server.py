@@ -318,6 +318,7 @@ async def handle_ping(request: web.Request) -> web.Response:
         server_ids = set(k.get("server_id") for k in keys if k.get("server_id"))
 
         pings = {}
+        targets = {}
         conn = get_connection()
         try:
             for sid in server_ids:
@@ -325,6 +326,7 @@ async def handle_ping(request: web.Request) -> web.Response:
                     "SELECT host, port FROM servers WHERE id=?", (sid,)
                 ).fetchone()
                 if row:
+                    targets[str(sid)] = {"host": row["host"], "port": row["port"]}
                     # 3 замера, берём медиану для стабильности
                     samples = []
                     for _ in range(3):
@@ -339,7 +341,7 @@ async def handle_ping(request: web.Request) -> web.Response:
         finally:
             conn.close()
 
-        return web.json_response({"pings": pings})
+        return web.json_response({"pings": pings, "targets": targets})
 
     except Exception as e:
         logger.error(f"WebApp /api/ping error: {e}", exc_info=True)
