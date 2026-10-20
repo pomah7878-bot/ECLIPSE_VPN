@@ -615,6 +615,17 @@
         }
         function daysWord(n) { return ruPlural(n, 'день', 'дня', 'дней'); }
 
+        // Приветствие по имени и времени суток на устройстве пользователя.
+        function setGreeting() {
+            const el = document.getElementById('user-greeting');
+            if (!el) return;
+            const u = tg?.initDataUnsafe?.user;
+            const name = u && (u.first_name || u.username);
+            const h = new Date().getHours();
+            const hello = h >= 5 && h < 12 ? 'Доброе утро' : h < 18 ? (h >= 12 ? 'Добрый день' : 'Доброй ночи') : h < 23 ? 'Добрый вечер' : 'Доброй ночи';
+            el.textContent = name ? `${hello}, ${name}!` : `${hello}!`;
+        }
+
         function renderSummary(status) {
             if (status && status.bot_username) BOT_USERNAME = status.bot_username;
             if (!status) return '';
@@ -623,14 +634,7 @@
                 ? (status.nearest_expiry.remaining_human || status.nearest_expiry.date)
                 : '—';
 
-            const user = tg?.initDataUnsafe?.user;
-            if (user) {
-                const greetEl = document.getElementById('user-greeting');
-                if (greetEl) {
-                    const name = user.first_name || user.username || 'Пользователь';
-                    greetEl.textContent = `Привет, ${name}!`;
-                }
-            }
+            setGreeting();
 
             const total = status.total_keys || 0;
             const active = status.active_keys || 0;
@@ -1459,6 +1463,7 @@
 
         // Вид «Приложение» (включается отдельно в админке): затмение — кольцо срока вокруг диска.
         function renderAppHome(status) {
+            setGreeting();
             if (status.bot_username) BOT_USERNAME = status.bot_username;
             const total = status.total_keys || 0, active = status.active_keys || 0;
             const n = status.nearest_expiry || {};
