@@ -536,7 +536,7 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
     key_lines = [
         "🔑 <b>Ключи</b>",
         f"Активных: {_safe_int(keys.get('active'))}",
-        f"Истекут: за сутки {exp_1} · за 3 дня {exp_3}",
+        f"Истекут: {exp_1} за 1д · {exp_3} за 3д",
         f"Создано за сутки: {_safe_int(keys.get('created_today'))}",
     ]
     lines.append("<blockquote expandable>" + "\n".join(key_lines) + "</blockquote>")
