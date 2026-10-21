@@ -427,6 +427,7 @@ async def safe_edit_or_send(
             
         if 'there is no text in the message' in error_msg or \
            'message can\'t be edited' in error_msg or \
+           'message to edit not found' in error_msg or \
            'there is no media in the message' in error_msg:
             # Fallback: delete and send again
             try:
