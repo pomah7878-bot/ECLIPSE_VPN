@@ -24,6 +24,19 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+def _clients_text() -> str:
+    """«100 клиентов» для плейсхолдера %клиентов% в тексте главной (реальное число пользователей)."""
+    try:
+        from database.requests import get_all_users_count
+        from bot.utils.ru_format import NBSP, plural_ru
+        n = int(get_all_users_count() or 0)
+        return f"{n}{NBSP}{plural_ru(n, 'клиент', 'клиента', 'клиентов')}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Плейсхолдер %%клиентов%%: %s", e)
+        return ''
+
+
+
 def _build_tariff_text() -> str:
     """Generates a block of tariffs for the tariff list placeholder.
 
@@ -187,6 +200,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         '%no_tariffs%': '',
         '%тарифы%': tariff_text,
         '%без_тарифов%': '',
+        '%клиентов%': _clients_text(),
     }
 
     # v1.340: главная «как приложение» — включается, если на странице есть «⚡ Подключиться»
