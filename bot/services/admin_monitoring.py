@@ -536,8 +536,9 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
     key_lines = [
         "🔑 <b>Ключи</b>",
         f"Активных: {_safe_int(keys.get('active'))}",
-        f"Истекут: {exp_1} за 1д · {exp_3} за 3д",
         f"Создано за сутки: {_safe_int(keys.get('created_today'))}",
+        # самая длинная строка — после третьей: в свёрнутом виде стрелка не закрывает текст
+        f"Истекут: за сутки {exp_1} · за 3 дня {exp_3}",
     ]
     lines.append("<blockquote expandable>" + "\n".join(key_lines) + "</blockquote>")
 
