@@ -279,6 +279,52 @@
             pointer-events: none;
         }
         #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        /* ===== Космическая тема (включается в админке, body.cosmic) ===== */
+        body.cosmic {
+            --void: #04050D; --panel: rgba(18,20,46,0.58); --panel-2: rgba(32,34,74,0.62);
+            --hairline: rgba(165,175,255,0.16);
+            --gold: #B6A8FF; --gold-bright: #7FE6FF; --teal: #5CF2C8; --amber: #FFC36B; --alert: #FF6F9C;
+            --ink: #F1F2FF; --mist: #9DA3C9; --mist-dim: #626894;
+            background:
+                radial-gradient(60% 45% at 85% 4%, rgba(124,92,255,0.34), transparent 70%),
+                radial-gradient(55% 40% at 8% 38%, rgba(0,200,255,0.16), transparent 70%),
+                radial-gradient(70% 50% at 70% 100%, rgba(255,92,200,0.17), transparent 70%),
+                var(--void);
+            background-attachment: fixed;
+        }
+        body.cosmic::before {
+            content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+            background-image:
+                radial-gradient(1.2px 1.2px at 20px 30px, rgba(255,255,255,.9), transparent 60%),
+                radial-gradient(1px 1px at 90px 120px, rgba(190,210,255,.8), transparent 60%),
+                radial-gradient(1.6px 1.6px at 150px 60px, rgba(255,255,255,.95), transparent 60%),
+                radial-gradient(1px 1px at 60px 170px, rgba(255,220,255,.7), transparent 60%);
+            background-size: 173px 197px, 251px 233px, 347px 311px, 131px 149px;
+            opacity: .75; animation: starTwinkle 7s ease-in-out infinite;
+        }
+        @keyframes starTwinkle { 0%,100% { opacity: .55; } 50% { opacity: .95; } }
+        body.cosmic .card, body.cosmic .bg-panel, body.cosmic .bg-panel-2 {
+            -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%);
+            box-shadow: 0 10px 40px -18px rgba(90,80,255,.5), inset 0 1px 0 rgba(255,255,255,.06);
+        }
+        body.cosmic .btn-primary {
+            background: linear-gradient(135deg, #7C5CFF, #38D6FF); color: #05061A;
+            box-shadow: 0 8px 28px -8px rgba(110,100,255,.75);
+        }
+        body.cosmic .btn-secondary { background: rgba(40,42,92,.55); }
+        body.cosmic .app-hero {
+            background: radial-gradient(120% 80% at 50% 0%, rgba(124,92,255,.22), rgba(124,92,255,0) 62%), var(--panel);
+        }
+        body.cosmic .app-eclipse::after {
+            content: ''; position: absolute; inset: -12px; border-radius: 50%;
+            border: 1px dashed rgba(182,168,255,.28); animation: orbitSpin 40s linear infinite;
+            background: radial-gradient(circle 4px at 50% 5px, #7FE6FF 0 3px, transparent 4px);
+        }
+        @keyframes orbitSpin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            body.cosmic::before, body.cosmic .app-eclipse::after { animation: none; }
+        }
+
     </style>
 </head>
 <body>
@@ -605,6 +651,7 @@
         (async function applyBrand() {
             try {
                 const site = await siteInfoPromise;
+                if (site.cosmic) document.body.classList.add('cosmic');
                 if (site.shop_theme_id && site.shop_theme_id !== 'classic') {
                     document.body.dataset.theme = site.shop_theme_id;
                 }

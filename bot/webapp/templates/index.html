@@ -778,6 +778,20 @@
             const ms = _cachedPings[serverId];
             return '<span class="ping-chip text-[11px] font-mono font-semibold ' + getPingClass(ms) + '" onclick="rePingKey()">● ' + getPingText(ms) + '</span>';
         }
+        // Устройства «2 из 3» в карточках ключей (только вид «Приложение»).
+        async function fetchDevices() {
+            try {
+                const data = await fetchAPI('devices');
+                Object.entries(data.keys || {}).forEach(([id, d]) => {
+                    const el = document.getElementById('dev-' + id);
+                    if (!el) return;
+                    el.textContent = d.max ? `${d.count} из ${d.max}` : String(d.count);
+                    el.className = 'text-[13px] font-semibold ' + (d.max && d.count >= d.max ? 'text-amber' : 'text-ink');
+                });
+                document.querySelectorAll('[id^="dev-"]').forEach(el => { if (el.textContent === '…') el.textContent = '—'; });
+            } catch (e) { console.error('Devices fetch failed:', e); }
+        }
+
         async function fetchPings() {
             try {
                 const data = await fetchAPI('ping');
@@ -1433,9 +1447,28 @@
                 ? `<p class="text-[11px] text-amber mt-1.5">Продлите в течение ${key.expiry.days_left} ${daysWord(key.expiry.days_left)}, чтобы не потерять доступ</p>`
                 : '';
 
-            const primaryBtn = isActive
+            let primaryBtn = isActive
                 ? `<button onclick="goRenew(${key.id})" class="w-full py-3 btn-primary rounded-xl text-sm font-bold transition mt-4">Продлить</button>`
                 : `<button onclick="goRenew(${key.id})" class="w-full py-3 btn-primary rounded-xl text-sm font-bold transition mt-4">Возобновить</button>`;
+            let devicesRow = '';
+            if (window._appView && isActive) {
+                // Вид «Приложение»: главное действие — подключиться; «Продлить» выходит вперёд, когда осталось ≤ 7 дней.
+                const ci = window._cabinetImportEnabled || {};
+                const app = key.sub_url && window._appImportEnabled ? ['happ', 'incy', 'karing'].find(a => ci[a]) : null;
+                const connect = app
+                    ? `onclick="importToApp('${app}', ${key.id})"`
+                    : (key.sub_url ? `onclick="copySubLink(${key.id})"` : '');
+                const soon = key.expiry.days_left <= 7;
+                if (connect) {
+                    const connectBtn = `<button ${connect} class="w-full py-3 ${soon ? 'btn-secondary' : 'btn-primary'} rounded-xl text-sm font-bold transition mt-4">${app ? 'Подключить' : 'Скопировать ссылку'}</button>`;
+                    const renewBtn = `<button onclick="goRenew(${key.id})" class="w-full py-3 ${soon ? 'btn-primary' : 'btn-secondary'} rounded-xl text-sm font-bold transition mt-2">Продлить</button>`;
+                    primaryBtn = soon ? renewBtn.replace('mt-2', 'mt-4') + connectBtn.replace('mt-4', 'mt-2') : connectBtn + renewBtn;
+                }
+                devicesRow = `<div class="flex justify-between items-center mt-3 pt-3 divider-top">
+                        <span class="text-[11px] text-mist-dim uppercase tracking-wide">Устройства</span>
+                        <span id="dev-${key.id}" class="text-[13px] font-semibold text-mist-dim">…</span>
+                    </div>`;
+            }
 
             let iconRow = '';
             if (isActive) {
@@ -1516,6 +1549,7 @@
                         <span class="text-[11px] text-mist-dim uppercase tracking-wide">Срок действия</span>
                         <span class="text-[13px] font-semibold ${expiryColor}">${escapeHtml(expiryText)}</span>
                     </div>
+                    ${devicesRow}
                     ${urgentNote}
                     ${key.is_trial ? '<p class="text-[11px] text-ink mt-1.5">🎁 Пробный период. Нажмите «Продлить» и выберите тариф — оставшиеся дни добавятся, ключ и подписка не изменятся.</p>' : ''}
                     ${primaryBtn}
@@ -2055,6 +2089,7 @@
 
                 container.innerHTML = translateHtml(html);
                 fetchPings();
+                if (window._appView) fetchDevices();
 
                 if (window._trialAvailable) {
                     const trialBtnEmpty = document.getElementById('trial-btn-empty');

@@ -304,6 +304,44 @@ async def _measure_ping(host: str, port: int, timeout: float = 5.0) -> Optional[
         return None
 
 
+_devices_cache: Dict[Any, Any] = {}
+
+
+async def handle_devices(request: web.Request) -> web.Response:
+    """GET /api/devices — сколько устройств подключено к каждому активному ключу и лимит
+    (для карточки ключа в виде «Приложение»). Ответ кэшируется на 30 с на пользователя,
+    чтобы открытие кабинета не нагружало панели."""
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    import time as _t
+    now = _t.monotonic()
+    cached = _devices_cache.get(telegram_id)
+    if cached and now - cached[0] < 30:
+        return web.json_response(cached[1])
+    from database.db_keys import get_user_keys_for_display
+    from database.requests import get_key_details_by_id
+    from bot.services.device_management import get_devices_for_key
+
+    async def one(k):
+        try:
+            full = get_key_details_by_id(k["id"])
+            if not full or not full.get("panel_email"):
+                return None
+            r = await asyncio.wait_for(get_devices_for_key(full), timeout=6)
+            return str(k["id"]), {"count": r.get("current_count", 0), "max": r.get("max_devices")}
+        except Exception:
+            return None
+
+    keys = [k for k in get_user_keys_for_display(telegram_id) if k.get("is_active", 0) == 1][:10]
+    found = await asyncio.gather(*[one(k) for k in keys])
+    data = {"keys": dict(x for x in found if x)}
+    if len(_devices_cache) > 2000:
+        _devices_cache.clear()
+    _devices_cache[telegram_id] = (now, data)
+    return web.json_response(data)
+
+
 async def handle_ping(request: web.Request) -> web.Response:
     """GET /api/ping — задержка до VPN-сервера для каждого ключа."""
     telegram_id = _get_telegram_id(request)
@@ -1423,6 +1461,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "bot_username": bot_username,
         "cabinet_theme_id": get_cabinet_theme_id(),
         "shop_theme_id": get_shop_theme_id(),
+        "cosmic": _webapp_cosmic(),
         "news_channel_url": channel_url,
         "code_login_enabled": is_site_auth_method_enabled('code'),
         "phone_login_enabled": phone_login_enabled,
@@ -4995,6 +5034,7 @@ _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/awg-open/",
     "/api/status",
     "/api/ping",
+    "/api/devices",
     "/api/license/",
     "/api/creator/",
     "/static/",
@@ -5074,6 +5114,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/key/{key_id}/inbounds", handle_public_key_inbounds)
     app.router.add_get("/api/status", handle_status)
     app.router.add_get("/api/ping", handle_ping)
+    app.router.add_get("/api/devices", handle_devices)
     app.router.add_get("/api/language", handle_language)
     app.router.add_post("/api/ai-consult", handle_ai_consult)
     app.router.add_post("/api/ai-feedback", handle_ai_feedback)
