@@ -1089,6 +1089,22 @@
             document.getElementById('sheetOverlay').classList.add('active');
             if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
         }
+        // «Подключить»: выбор приложения для импорта (только доступные), а также копирование ссылки и QR.
+        function openConnect(keyId) {
+            const key = _cachedKeys.find(k => k.id === keyId);
+            if (!key || !key.sub_url) { showToast('Ссылка недоступна'); return; }
+            const ci = window._cabinetImportEnabled || {};
+            const can = !!window._appImportEnabled;
+            const apps = [['happ', 'Happ'], ['incy', 'INCY'], ['karing', 'Karing']].filter(a => can && ci[a[0]]);
+            let rows = '<div class="text-xs text-mist px-1 pb-2">Куда добавить подписку?</div>';
+            apps.forEach(a => { rows += actionRow('↗', `Открыть в ${a[1]}`, `importToApp('${a[0]}', ${key.id})`); });
+            rows += actionRow('⧉', 'Скопировать ссылку', `copySubLink(${key.id})`);
+            rows += actionRow('▦', 'Показать QR-код', `showQR(${key.id})`);
+            rows += `<button onclick="closeSheet()" class="w-full text-center py-3 mt-1 text-xs font-semibold text-mist-dim">Отмена</button>`;
+            document.getElementById('sheetContent').innerHTML = rows;
+            document.getElementById('sheetOverlay').classList.add('active');
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
         function closeSheet() { document.getElementById('sheetOverlay').classList.remove('active'); }
 
         async function renameKey(keyId) {
@@ -1453,14 +1469,10 @@
             let devicesRow = '';
             if (window._appView && isActive) {
                 // Вид «Приложение»: главное действие — подключиться; «Продлить» выходит вперёд, когда осталось ≤ 7 дней.
-                const ci = window._cabinetImportEnabled || {};
-                const app = key.sub_url && window._appImportEnabled ? ['happ', 'incy', 'karing'].find(a => ci[a]) : null;
-                const connect = app
-                    ? `onclick="importToApp('${app}', ${key.id})"`
-                    : (key.sub_url ? `onclick="copySubLink(${key.id})"` : '');
+                const connect = key.sub_url ? `onclick="openConnect(${key.id})"` : '';
                 const soon = key.expiry.days_left <= 7;
                 if (connect) {
-                    const connectBtn = `<button ${connect} class="w-full py-3 ${soon ? 'btn-secondary' : 'btn-primary'} rounded-xl text-sm font-bold transition mt-4">${app ? 'Подключить' : 'Скопировать ссылку'}</button>`;
+                    const connectBtn = `<button ${connect} class="w-full py-3 ${soon ? 'btn-secondary' : 'btn-primary'} rounded-xl text-sm font-bold transition mt-4">Подключить</button>`;
                     const renewBtn = `<button onclick="goRenew(${key.id})" class="w-full py-3 ${soon ? 'btn-primary' : 'btn-secondary'} rounded-xl text-sm font-bold transition mt-2">Продлить</button>`;
                     primaryBtn = soon ? renewBtn.replace('mt-2', 'mt-4') + connectBtn.replace('mt-4', 'mt-2') : connectBtn + renewBtn;
                 }
