@@ -25,7 +25,9 @@ from bot.utils.text import escape_html
 logger = logging.getLogger(__name__)
 
 CONNECT_BUTTON_ID = 'btn_connect'
-MORE_BUTTON_ID = 'btn_app_more'
+MORE_BUTTON_ID = 'btn_app_more'   # 1.374: «Ещё» — убрана в 1.375, id нужен для миграции
+MONEY_BUTTON_ID = 'btn_app_money'
+HELP_BUTTON_ID = 'btn_app_help'
 
 AUDIENCE_NEW = 'new'
 AUDIENCE_CLIENT = 'client'
@@ -340,30 +342,38 @@ VIEW_APP = 'app'
 _SNAPSHOT_KEY = 'main_view_snapshot:'
 
 # id кнопки → (ряд, колонка, подпись, цвет) для вида «Приложение»
-# v1.373: на главной только главное — «Подключиться», «Мои ключи», «Тарифы» и «Ещё»;
-# баланс, друзья, помощь и бонусы собраны на экране «Ещё» (bot/handlers/user/app_more.py).
+# v1.375: на главной «Подключиться», «Мои ключи», «Тарифы» и два раздела — «Баланс и бонусы»
+# и «Помощь» (bot/handlers/user/app_more.py); остальное лежит внутри разделов.
 APP_LAYOUT = {
     'btn_trial':         (0, 0, '🎁 Попробовать бесплатно', 'success'),
     CONNECT_BUTTON_ID:   (0, 1, '⚡ Подключиться', 'primary'),
     'btn_my_keys':       (1, 0, None, None),
     'btn_buy_key':       (1, 1, '💳 Тарифы', None),
-    MORE_BUTTON_ID:      (2, 0, '⋯ Ещё', 'secondary'),
+    MONEY_BUTTON_ID:     (2, 0, None, None),
+    HELP_BUTTON_ID:      (2, 1, None, None),
 }
 # Кнопки, которые переехали с главной на экран «Ещё»
 APP_MORE_IDS = (
     'btn_balance_topup', 'btn_referral', 'btn_help', 'btn_ai_support',
     'btn_support', 'btn_roulette', 'btn_bonus_tasks',
 )
-# Раскладка 1.340–1.372: по ней узнаём, что админ главную вручную не менял
+# Раскладка 1.340–1.373: по ней узнаём, что админ главную вручную не менял
 _OLD_APP_POSITIONS = {
     'btn_trial': (0, 0), CONNECT_BUTTON_ID: (0, 1), 'btn_my_keys': (1, 0),
     'btn_buy_key': (1, 1), 'btn_balance_topup': (2, 0), 'btn_referral': (2, 1),
     'btn_ai_support': (3, 0), 'btn_help': (3, 1),
 }
-_MORE_BUTTON = {
-    'id': MORE_BUTTON_ID, 'label': '⋯ Ещё', 'color': 'secondary', 'row': 2, 'col': 0,
-    'is_hidden': False, 'action_type': 'internal', 'action_value': 'cmd_app_more',
+# Раскладка 1.374 («⋯ Ещё»): тоже собрана автоматически и обновляется до 1.375
+_POSITIONS_1374 = {
+    'btn_trial': (0, 0), CONNECT_BUTTON_ID: (0, 1), 'btn_my_keys': (1, 0),
+    'btn_buy_key': (1, 1), MORE_BUTTON_ID: (2, 0),
 }
+_SECTION_BUTTONS = (
+    {'id': MONEY_BUTTON_ID, 'label': '💰 Баланс и бонусы', 'color': 'secondary', 'row': 2, 'col': 0,
+     'is_hidden': False, 'action_type': 'internal', 'action_value': 'cmd_app_money'},
+    {'id': HELP_BUTTON_ID, 'label': '🛟 Помощь', 'color': 'secondary', 'row': 2, 'col': 1,
+     'is_hidden': False, 'action_type': 'internal', 'action_value': 'cmd_app_help'},
+)
 _CONNECT_BUTTON = {
     'id': CONNECT_BUTTON_ID, 'label': '⚡ Подключиться', 'color': 'primary', 'row': 0, 'col': 1,
     'is_hidden': False, 'action_type': 'system', 'action_value': None,
@@ -423,9 +433,10 @@ def apply_app_layout(buttons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     Незнакомые (партнёрские) кнопки остаются на главной под основными, в своём порядке.
     """
-    buttons = [b for b in buttons if b.get('id') not in (CONNECT_BUTTON_ID, MORE_BUTTON_ID)]
+    buttons = [b for b in buttons if b.get('id') not in (
+        CONNECT_BUTTON_ID, MORE_BUTTON_ID, MONEY_BUTTON_ID, HELP_BUTTON_ID)]
     buttons.append(dict(_CONNECT_BUTTON))
-    buttons.append(dict(_MORE_BUTTON))
+    buttons.extend(dict(b) for b in _SECTION_BUTTONS)
     others = [b for b in buttons if b.get('id') not in APP_LAYOUT]
     for b in buttons:
         if b.get('id') in APP_LAYOUT:
@@ -448,7 +459,7 @@ def apply_app_layout(buttons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def relayout_if_untouched(buttons_json: Optional[str]) -> Optional[str]:
-    """Для установок, где главная в виде «Приложение» собрана автоматически (раскладка 1.340–1.372).
+    """Для установок, где главная в виде «Приложение» собрана автоматически (раскладка 1.340–1.374).
 
     Если админ или партнёр положения кнопок менял вручную — возвращает None и ничего не трогает.
     """
@@ -460,10 +471,11 @@ def relayout_if_untouched(buttons_json: Optional[str]) -> Optional[str]:
     if not isinstance(buttons, list) or not all(isinstance(b, dict) for b in buttons):
         return None
     ids = {b.get('id') for b in buttons}
-    if CONNECT_BUTTON_ID not in ids or MORE_BUTTON_ID in ids:
+    if CONNECT_BUTTON_ID not in ids or MONEY_BUTTON_ID in ids:
         return None
+    positions = _POSITIONS_1374 if MORE_BUTTON_ID in ids else _OLD_APP_POSITIONS
     for b in buttons:
-        old = _OLD_APP_POSITIONS.get(b.get('id'))
+        old = positions.get(b.get('id'))
         if old is not None and (b.get('row'), b.get('col')) != old:
             return None
     return _json.dumps(apply_app_layout(buttons), ensure_ascii=False)

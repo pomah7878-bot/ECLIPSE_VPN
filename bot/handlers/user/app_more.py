@@ -1,8 +1,8 @@
-"""Экран «⋯ Ещё» вида «Приложение»: всё, что не нужно на главной, по четырём разделам.
+"""Разделы вида «Приложение»: 💰 Баланс и бонусы и 🛟 Помощь — кнопки прямо на главной.
 
-Главная остаётся короткой (Подключиться / Мои ключи / Тарифы / Ещё), а здесь — разделы
-не больше шести кнопок по две в ряд: 💰 Баланс и бонусы, 🛟 Помощь, 🔑 Мой доступ, ℹ️ О сервисе.
+Внутри раздела не больше шести кнопок по две в ряд; «Назад» и «На главную» — в одной строке.
 Кнопки показываются по тем же правилам, что и на классической главной.
+Экран «app_more» (бывшая кнопка «Ещё», 1.374) оставлен для установок, которые ещё не обновили главную.
 """
 import logging
 
@@ -17,8 +17,6 @@ router = Router()
 SECTIONS = {
     'money': '💰 Баланс и бонусы',
     'help': '🛟 Помощь',
-    'access': '🔑 Мой доступ',
-    'about': 'ℹ️ О сервисе',
 }
 
 
@@ -42,19 +40,6 @@ def _enabled(user_id: int) -> dict:
     except Exception:  # noqa: BLE001
         flags['bonus'] = False
     return flags
-
-
-def _links() -> list:
-    """Новости и сайт — только если настроены (у каждой установки свои)."""
-    from database.requests import get_marketing_channel_id, get_effective_webapp_url
-    buttons = []
-    channel = (get_marketing_channel_id() or '').lstrip('@')
-    if channel:
-        buttons.append(InlineKeyboardButton(text='📰 Новости', url=f'https://t.me/{channel}'))
-    site = (get_effective_webapp_url() or '').rstrip('/')
-    if site:
-        buttons.append(InlineKeyboardButton(text='🌐 Сайт', url=f'{site}/shop'))
-    return buttons
 
 
 def _cb(text: str, data: str) -> InlineKeyboardButton:
@@ -82,18 +67,15 @@ def build_section(section: str, user_id: int) -> tuple:
             buttons.append(_cb('🎁 Бонусные дни', 'bonus_tasks'))
         if flags['roulette']:
             buttons.append(_cb('🎰 Рулетка', 'roulette_spin'))
-    elif section == 'help':
+    else:
+        section = 'help'
         buttons = [_cb('📖 Инструкция', 'help')]
         if flags['ai']:
             buttons.append(_cb('🤖 AI-помощник', 'ai_support_open'))
         buttons.append(_cb('💬 Поддержка', 'support_start'))
         buttons.append(_cb('📡 Статус серверов', 'server_status'))
-    elif section == 'access':
-        buttons = [_cb('🔑 Мои ключи', 'my_keys'), _cb('💳 Тарифы', 'buy_key'), _cb('🆔 Мой ID', 'show_id')]
-    else:
-        section = 'about'
-        buttons = _links()
-    rows = _rows(buttons) + [_nav('app_more')]
+        buttons.append(_cb('🆔 Мой ID', 'show_id'))
+    rows = _rows(buttons) + [_nav('start')]
     text = f"<b>{SECTIONS[section]}</b>"
     if not buttons:
         text += "\n\nПока здесь пусто."
@@ -102,10 +84,7 @@ def build_section(section: str, user_id: int) -> tuple:
 
 def build_menu(user_id: int) -> tuple:
     """(текст, клавиатура) экрана «Ещё»: четыре раздела 2×2, ниже — «На главную»."""
-    sections = list(SECTIONS)
-    if not _links():
-        sections.remove('about')
-    buttons = [_cb(SECTIONS[s], f'app_more:{s}') for s in sections]
+    buttons = [_cb(title, f'app_more:{key}') for key, title in SECTIONS.items()]
     rows = _rows(buttons) + [[_cb('🈴 На главную', 'start')]]
     return '<b>⋯ Ещё</b>\n\nВыберите раздел:', InlineKeyboardMarkup(inline_keyboard=rows)
 

@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 159
+LATEST_VERSION = 160
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3608,6 +3608,13 @@ def migration_156(conn: sqlite3.Connection) -> None:
     logger.info("Migration v156 applied: функции collabs и connection_probe для full-лицензий")
 
 
+def migration_160(conn: sqlite3.Connection) -> None:
+    """Версия 1.375: «⋯ Ещё» убрана — на главной два раздела («Баланс и бонусы», «Помощь»).
+    Тот же безопасный перенос, что в v159: только для автоматически собранной раскладки."""
+    migration_159(conn)
+    logger.info("Migration v160 applied: разделы на главной вместо «Ещё»")
+
+
 def migration_159(conn: sqlite3.Connection) -> None:
     """Версия 1.374: вид «Приложение» — на главной только главное, остальное на экране «Ещё».
 
@@ -3750,6 +3757,7 @@ MIGRATIONS = {
     157: migration_157,
     158: migration_158,
     159: migration_159,
+    160: migration_160,
 }
 
 
