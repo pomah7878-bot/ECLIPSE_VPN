@@ -192,8 +192,6 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         'btn_referral': show_referral,
         'btn_balance_topup': show_balance_button,
         'btn_ai_support': show_ai_support,
-        # раздел вида «Приложение» без единой кнопки внутри на главной не нужен
-        'btn_app_money': bool(show_balance_button or show_referral or show_roulette or show_bonus),
     }
 
     # Substitution text

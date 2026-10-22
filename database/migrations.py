@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 160
+LATEST_VERSION = 161
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3609,40 +3609,71 @@ def migration_156(conn: sqlite3.Connection) -> None:
 
 
 def migration_160(conn: sqlite3.Connection) -> None:
-    """Версия 1.375: «⋯ Ещё» убрана — на главной два раздела («Баланс и бонусы», «Помощь»).
-    Тот же безопасный перенос, что в v159: только для автоматически собранной раскладки."""
-    migration_159(conn)
-    logger.info("Migration v160 applied: разделы на главной вместо «Ещё»")
+    """Версия 1.375: раскладка с разделами на главной (откатана в 1.376, см. migration_161)."""
+    logger.info("Migration v160: без изменений (раскладка откатана в 1.376)")
 
 
 def migration_159(conn: sqlite3.Connection) -> None:
-    """Версия 1.374: вид «Приложение» — на главной только главное, остальное на экране «Ещё».
+    """Версия 1.374: раскладка «Ещё» (откатана в 1.376, см. migration_161)."""
+    logger.info("Migration v159: без изменений (раскладка откатана в 1.376)")
 
-    Перестраивает кнопки главной (и сохранённый снимок вида «Приложение») только если
-    раскладка собрана автоматически; ручные правки админа и партнёров не затрагиваются."""
-    try:
-        from bot.services.main_screen import relayout_if_untouched
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Migration v159: пропущена (%s)", exc)
-        return
+
+def migration_161(conn: sqlite3.Connection) -> None:
+    """Версия 1.376: возврат главной вида «Приложение» к раскладке 1.373.
+
+    Убирает кнопки «Ещё»/«Баланс и бонусы»/«Помощь» (1.374–1.375), возвращает на главную
+    спрятанные кнопки и прежние ряды. Только там, где эти кнопки есть — то есть раскладка
+    собрана автоматически; у остальных ничего не меняется."""
+    import json as _json
+    drop = {"btn_app_more", "btn_app_money", "btn_app_help"}
+    unhide = {"btn_balance_topup", "btn_referral", "btn_help", "btn_ai_support",
+              "btn_support", "btn_roulette", "btn_bonus_tasks"}
+    core = {"btn_trial": (0, 0), "btn_connect": (0, 1), "btn_my_keys": (1, 0), "btn_buy_key": (1, 1),
+            "btn_balance_topup": (2, 0), "btn_referral": (2, 1), "btn_ai_support": (3, 0), "btn_help": (3, 1)}
+
+    def restore(raw):
+        try:
+            buttons = _json.loads(raw or "[]")
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(buttons, list) or not all(isinstance(b, dict) for b in buttons):
+            return None
+        if not any(b.get("id") in drop for b in buttons):
+            return None
+        buttons = [b for b in buttons if b.get("id") not in drop]
+        for b in buttons:
+            if b.get("id") in core:
+                b["row"], b["col"] = core[b["id"]]
+            if b.get("id") in unhide:
+                b["is_hidden"] = False
+        # остальные кнопки — под основными, начиная с 4-го ряда, в прежнем порядке
+        next_row, prev = 4, None
+        for b in sorted((x for x in buttons if x.get("id") not in core),
+                        key=lambda x: (x.get("row", 0), x.get("col", 0))):
+            if prev is not None and b.get("row", 0) != prev:
+                next_row += 1
+            prev = b.get("row", 0)
+            b["row"] = next_row
+        buttons.sort(key=lambda x: (x.get("row", 0), x.get("col", 0)))
+        return _json.dumps(buttons, ensure_ascii=False)
+
     row = conn.execute("SELECT buttons_custom FROM pages WHERE page_key = 'main'").fetchone()
     if row and row[0]:
-        new = relayout_if_untouched(row[0])
+        new = restore(row[0])
         if new:
             conn.execute("UPDATE pages SET buttons_custom = ? WHERE page_key = 'main'", (new,))
     snap = conn.execute("SELECT value FROM settings WHERE key = 'main_view_snapshot:app'").fetchone()
     if snap and snap[0]:
-        import json as _json
         try:
             data = _json.loads(snap[0])
-            new = relayout_if_untouched(data.get('buttons_custom'))
+            new = restore(data.get("buttons_custom"))
             if new:
-                data['buttons_custom'] = new
+                data["buttons_custom"] = new
                 conn.execute("UPDATE settings SET value = ? WHERE key = 'main_view_snapshot:app'",
                              (_json.dumps(data, ensure_ascii=False),))
         except (TypeError, ValueError):
             pass
-    logger.info("Migration v159 applied: вид «Приложение» — экран «Ещё»")
+    logger.info("Migration v161 applied: главная возвращена к раскладке 1.373")
 
 
 def migration_158(conn: sqlite3.Connection) -> None:
@@ -3758,6 +3789,7 @@ MIGRATIONS = {
     158: migration_158,
     159: migration_159,
     160: migration_160,
+    161: migration_161,
 }
 
 
