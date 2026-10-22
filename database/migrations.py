@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 157
+LATEST_VERSION = 158
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3608,6 +3608,16 @@ def migration_156(conn: sqlite3.Connection) -> None:
     logger.info("Migration v156 applied: функции collabs и connection_probe для full-лицензий")
 
 
+def migration_158(conn: sqlite3.Connection) -> None:
+    """Версия 1.371: посты канала с медиа — тип и file_id фото/видео/GIF."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(scheduled_channel_posts)")}
+    if "media_type" not in columns:
+        conn.execute("ALTER TABLE scheduled_channel_posts ADD COLUMN media_type TEXT")
+    if "media_file_id" not in columns:
+        conn.execute("ALTER TABLE scheduled_channel_posts ADD COLUMN media_file_id TEXT")
+    logger.info("Migration v158 applied: медиа в постах канала")
+
+
 def migration_157(conn: sqlite3.Connection) -> None:
     """Версия 1.322: платная функция «site_ai» (AI-помощник на сайте).
     Лицензиям и тарифам tier='full' добавляется автоматически, custom — вручную."""
@@ -3708,6 +3718,7 @@ MIGRATIONS = {
     155: migration_155,
     156: migration_156,
     157: migration_157,
+    158: migration_158,
 }
 
 

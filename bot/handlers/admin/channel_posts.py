@@ -29,6 +29,39 @@ router = Router()
 
 MSK_OFFSET_HOURS = 3
 POST_TEXT_LIMIT = 4096
+# Подпись к фото/видео/GIF в Telegram — 1024 символа; 24 оставлены под строку с датой в превью.
+POST_CAPTION_LIMIT = 1000
+MEDIA_ICONS = {'photo': '🖼', 'video': '🎬', 'animation': '🎞'}
+
+
+def _extract_media(message: Message):
+    """(тип, file_id) фото, видео или GIF из сообщения админа; иначе (None, None)."""
+    if message.photo:
+        return 'photo', message.photo[-1].file_id
+    if message.video:
+        return 'video', message.video.file_id
+    if message.animation:
+        return 'animation', message.animation.file_id
+    return None, None
+
+
+async def _compose_post(message: Message, has_media: bool):
+    """Текст сообщения админа → HTML поста с подвалом. Возвращает (текст, ошибка)."""
+    from bot.utils.post_format import convert_post_text
+    from database.requests import is_post_footer_enabled
+    text = convert_post_text(message)
+    if is_post_footer_enabled():
+        text = (text + (await _build_post_footer(message.bot))).strip()
+    limit = POST_CAPTION_LIMIT if has_media else POST_TEXT_LIMIT
+    n = _visible_len(text)
+    if n > limit:
+        what = 'Подпись к медиа' if has_media else 'Пост'
+        return None, (
+            f'❌ {what} слишком длинн{"ая" if has_media else "ый"}: {n} символов из {limit} (с учётом подвала). '
+            f'Сократите текст минимум на {n - limit} и отправьте снова. '
+            'Иначе Telegram обрежет конец вместе со ссылками.'
+        )
+    return text, None
 
 
 def _visible_len(html_text: str) -> int:
@@ -209,10 +242,25 @@ async def start_channel_post_new(callback: CallbackQuery, state: FSMContext):
         callback.message,
         '✏️ <b>Текст поста</b>\n\n'
         'Отправьте текст поста в любом формате: форматирование Telegram, HTML-теги или Markdown (**жирный**, > цитата, [текст](ссылка)). '
-        'Бот сам приведёт его к нужному виду.',
+        'Бот сам приведёт его к нужному виду.\n\n'
+        '🖼 Чтобы добавить фото, видео или GIF, отправьте его сразу с текстом в подписи (до 1000 символов).',
         reply_markup=channel_post_cancel_kb(),
     )
     await callback.answer()
+
+
+async def _accept_post_text(message: Message, state: FSMContext, media_type, media_id) -> None:
+    text, error = await _compose_post(message, bool(media_id))
+    if error:
+        await _step(message, state, error, channel_post_cancel_kb())
+        return
+    await state.update_data(post_text=text, post_media_type=media_type, post_media_id=media_id)
+    await state.set_state(AdminStates.channel_post_date)
+    await _step(
+        message, state,
+        '📅 <b>Дата публикации</b>\n\nВведите дату в формате ДД.ММ.ГГГГ (например, 15.08.2026).',
+        channel_post_cancel_kb(),
+    )
 
 
 @router.message(AdminStates.channel_post_text, F.text, ~F.text.startswith('/'))
@@ -220,27 +268,16 @@ async def process_channel_post_text(message: Message, state: FSMContext):
     """Сохраняет текст поста, запрашивает дату публикации."""
     if not is_admin(message.from_user.id):
         return
-    from bot.utils.post_format import convert_post_text
-    text = convert_post_text(message)
-    from database.requests import is_post_footer_enabled
-    text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
-    _n = _visible_len(text_with_footer)
-    if _n > POST_TEXT_LIMIT:
-        await _step(
-            message, state,
-            f'❌ Пост слишком длинный: {_n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
-            f'Сократите текст минимум на {_n - POST_TEXT_LIMIT} и отправьте его снова. '
-            'Иначе Telegram обрежет конец поста вместе со ссылками.',
-            channel_post_cancel_kb(),
-        )
+    await _accept_post_text(message, state, None, None)
+
+
+@router.message(AdminStates.channel_post_text, F.photo | F.video | F.animation)
+async def process_channel_post_media(message: Message, state: FSMContext):
+    """Фото/видео/GIF с подписью: подпись станет текстом поста."""
+    if not is_admin(message.from_user.id):
         return
-    await state.update_data(post_text=text_with_footer)
-    await state.set_state(AdminStates.channel_post_date)
-    await _step(
-        message, state,
-        '📅 <b>Дата публикации</b>\n\nВведите дату в формате ДД.ММ.ГГГГ (например, 15.08.2026).',
-        channel_post_cancel_kb(),
-    )
+    media_type, media_id = _extract_media(message)
+    await _accept_post_text(message, state, media_type, media_id)
 
 
 @router.message(AdminStates.channel_post_date, F.text, ~F.text.startswith('/'))
@@ -265,6 +302,21 @@ async def process_channel_post_date(message: Message, state: FSMContext):
         '🕐 <b>Время публикации (по Москве)</b>\n\nВведите время в формате ЧЧ:ММ (например, 14:00).',
         channel_post_cancel_kb(),
     )
+
+
+async def _show_media_preview(message: Message, state: FSMContext, caption: str, data: dict) -> None:
+    """Превью поста с медиа: само медиа с подписью и кнопками подтверждения."""
+    for mid in (message.message_id, data.get('cp_msg')):
+        if mid:
+            try:
+                await message.bot.delete_message(message.chat.id, mid)
+            except Exception:
+                pass
+    sent = await safe_edit_or_send(
+        message, caption, reply_markup=channel_post_preview_kb(),
+        media=data['post_media_id'], media_type=data.get('post_media_type'), force_new=True,
+    )
+    await state.update_data(cp_msg=sent.message_id)
 
 
 @router.message(AdminStates.channel_post_time, F.text, ~F.text.startswith('/'))
@@ -296,6 +348,9 @@ async def process_channel_post_time(message: Message, state: FSMContext):
     from database.requests import get_marketing_channel_id
     channel_id = get_marketing_channel_id() or '—'
     post_text = data['post_text']
+    if data.get('post_media_id'):
+        await _show_media_preview(message, state, f"📅 {msk_display} МСК\n\n{post_text}", data)
+        return
     preview_msg = (
         f"👀 <b>Превью поста</b>\n\n"
         f"📅 Публикация: {msk_display} МСК\n"
@@ -319,7 +374,10 @@ async def confirm_channel_post(callback: CallbackQuery, state: FSMContext):
         await callback.answer('⚠️ Канал не настроен, публикация отменена', show_alert=True)
         await state.clear()
         return
-    post_id = create_scheduled_post(channel_id, data['post_text'], data['scheduled_at'])
+    post_id = create_scheduled_post(
+        channel_id, data['post_text'], data['scheduled_at'],
+        data.get('post_media_type'), data.get('post_media_id'),
+    )
     await state.clear()
     logger.info(f"Админ {callback.from_user.id} запланировал пост #{post_id} на {data['msk_display']} МСК")
     await safe_edit_or_send(
@@ -347,7 +405,7 @@ async def show_channel_posts_queue(callback: CallbackQuery, state: FSMContext):
         buttons_data = []
         for p in raw_posts:
             msk_time = (datetime.fromisoformat(p['scheduled_at']) + timedelta(hours=MSK_OFFSET_HOURS)).strftime('%d.%m %H:%M')
-            preview = escape_html(p['content_preview'] or '')
+            preview = MEDIA_ICONS.get(p.get('media_type'), '') + ' ' + escape_html(p['content_preview'] or '') if p.get('media_type') else escape_html(p['content_preview'] or '')
             buttons_data.append({'id': p['id'], 'msk_time': msk_time, 'preview': preview})
 
     await safe_edit_or_send(callback.message, text, reply_markup=channel_posts_queue_kb(buttons_data))
@@ -368,6 +426,14 @@ async def show_post_detail(callback: CallbackQuery, state: FSMContext):
         return
 
     msk_time = (datetime.fromisoformat(post['scheduled_at']) + timedelta(hours=MSK_OFFSET_HOURS)).strftime('%d.%m.%Y %H:%M')
+    if post.get('media_file_id'):
+        await safe_edit_or_send(
+            callback.message, f"📅 {msk_time} МСК\n\n{post['content']}",
+            reply_markup=channel_post_detail_kb(post_id),
+            media=post['media_file_id'], media_type=post.get('media_type'),
+        )
+        await callback.answer()
+        return
     text = (
         f"👀 <b>Пост в очереди</b>\n\n"
         f"📅 Публикация: {msk_time} МСК\n"
@@ -420,54 +486,57 @@ async def start_edit_post(callback: CallbackQuery, state: FSMContext):
     post_id = int(callback.data.split(':')[1])
     await state.update_data(editing_post_id=post_id)
     await state.set_state(AdminStates.channel_post_edit_text)
-    await state.update_data(cp_msg=callback.message.message_id)
-    await safe_edit_or_send(
+    sent = await safe_edit_or_send(
         callback.message,
         '✏️ <b>Новый текст поста</b>\n\n'
         'Отправьте новый текст — он полностью заменит текущий (дата и время публикации не изменятся). '
-        'Ссылки на бота и магазин будут добавлены автоматически.',
+        'Ссылки на бота и магазин будут добавлены автоматически.\n\n'
+        '🖼 Отправьте фото, видео или GIF с подписью, чтобы заменить и медиа.',
         reply_markup=channel_post_edit_cancel_kb(post_id),
     )
+    await state.update_data(cp_msg=getattr(sent, 'message_id', callback.message.message_id))
     await callback.answer()
 
 
-@router.message(AdminStates.channel_post_edit_text, F.text, ~F.text.startswith('/'))
-async def process_edit_post_text(message: Message, state: FSMContext):
-    """Сохраняет новый текст, заменяя содержимое поста."""
-    if not is_admin(message.from_user.id):
-        return
+async def _apply_post_edit(message: Message, state: FSMContext, media_type, media_id) -> None:
     data = await state.get_data()
     post_id = data.get('editing_post_id')
     if not post_id:
         await state.clear()
         return
-
-    from bot.utils.post_format import convert_post_text
-    text = convert_post_text(message)
-    from database.requests import is_post_footer_enabled
-    text_with_footer = text + (await _build_post_footer(message.bot)) if is_post_footer_enabled() else text
-
-    _n = _visible_len(text_with_footer)
-    if _n > POST_TEXT_LIMIT:
-        await _step(
-            message, state,
-            f'❌ Пост слишком длинный: {_n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
-            f'Сократите текст минимум на {_n - POST_TEXT_LIMIT} и отправьте его снова.',
-            channel_post_edit_cancel_kb(post_id),
-        )
+    from database.requests import get_scheduled_post_full, update_scheduled_post_content
+    post = get_scheduled_post_full(post_id) or {}
+    has_media = bool(media_id or post.get('media_file_id'))
+    text, error = await _compose_post(message, has_media)
+    if error:
+        await _step(message, state, error, channel_post_edit_cancel_kb(post_id))
         return
-
-    from database.requests import update_scheduled_post_content
-    updated = update_scheduled_post_content(post_id, text_with_footer)
-    logger.info(f"Админ {message.from_user.id} заменил текст поста #{post_id}: {updated}")
-
+    updated = update_scheduled_post_content(post_id, text, media_type, media_id)
+    logger.info(f"Админ {message.from_user.id} заменил пост #{post_id}: {updated}")
     await _step(
         message, state,
-        f'✅ Текст поста #{post_id} заменён.' if updated
+        f'✅ Пост #{post_id} заменён.' if updated
         else '⚠️ Не удалось заменить — возможно, пост уже опубликован.',
         channel_posts_menu_kb(),
     )
     await state.clear()
+
+
+@router.message(AdminStates.channel_post_edit_text, F.text, ~F.text.startswith('/'))
+async def process_edit_post_text(message: Message, state: FSMContext):
+    """Сохраняет новый текст, заменяя содержимое поста (медиа остаётся прежним)."""
+    if not is_admin(message.from_user.id):
+        return
+    await _apply_post_edit(message, state, None, None)
+
+
+@router.message(AdminStates.channel_post_edit_text, F.photo | F.video | F.animation)
+async def process_edit_post_media(message: Message, state: FSMContext):
+    """Новое медиа с подписью заменяет и медиа, и текст поста."""
+    if not is_admin(message.from_user.id):
+        return
+    media_type, media_id = _extract_media(message)
+    await _apply_post_edit(message, state, media_type, media_id)
 
 
 @router.message(AdminStates.channel_post_text, ~F.text)
@@ -481,8 +550,7 @@ async def channel_post_non_text(message: Message, state: FSMContext):
     kb = channel_post_edit_cancel_kb(pid) if pid and await state.get_state() == AdminStates.channel_post_edit_text.state else channel_post_cancel_kb()
     await _step(
         message, state,
-        '⚠️ Сейчас пост можно создать только из текста. Отправьте текст сообщением '
-        '(форматирование Telegram и HTML-теги сохранятся). Фото и видео не поддерживаются — '
-        'если нужна картинка, опубликуйте её в канале вручную.',
+        '⚠️ Такой тип сообщения не подходит. Отправьте текст или фото, видео, GIF '
+        'с текстом в подписи (форматирование Telegram и HTML-теги сохранятся).',
         kb,
     )

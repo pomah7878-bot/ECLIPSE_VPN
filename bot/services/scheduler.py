@@ -1538,9 +1538,21 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
                 post_id = post['id']
                 channel_id = post['channel_id']
                 try:
-                    msg = await bot.send_message(
-                        channel_id, post['content'], parse_mode='HTML',
-                    )
+                    media_id = post.get('media_file_id')
+                    if media_id:
+                        media_type = post.get('media_type')
+                        send, arg = {
+                            'video': (bot.send_video, 'video'),
+                            'animation': (bot.send_animation, 'animation'),
+                        }.get(media_type, (bot.send_photo, 'photo'))
+                        msg = await send(
+                            channel_id, **{arg: media_id},
+                            caption=post['content'] or None, parse_mode='HTML',
+                        )
+                    else:
+                        msg = await bot.send_message(
+                            channel_id, post['content'], parse_mode='HTML',
+                        )
                     mark_scheduled_post_sent(post_id)
                     logger.info(f"📢 Пост #{post_id} опубликован в {channel_id}, message_id={msg.message_id}")
                     preview = post['content'][:80].replace('\n', ' ')

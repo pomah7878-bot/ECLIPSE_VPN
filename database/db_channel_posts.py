@@ -24,7 +24,9 @@ __all__ = [
 ]
 
 
-def create_scheduled_post(channel_id: str, content: str, scheduled_at: str) -> int:
+def create_scheduled_post(channel_id: str, content: str, scheduled_at: str,
+                          media_type: Optional[str] = None,
+                          media_file_id: Optional[str] = None) -> int:
     """
     Добавляет пост в очередь на публикацию.
 
@@ -32,15 +34,17 @@ def create_scheduled_post(channel_id: str, content: str, scheduled_at: str) -> i
         channel_id: Username или ID канала (например, '@eclipse_unlimited_news')
         content: HTML-текст поста
         scheduled_at: Время публикации в формате 'YYYY-MM-DD HH:MM:SS' (UTC)
+        media_type, media_file_id: фото/видео/GIF к посту (текст тогда идёт подписью)
 
     Returns:
         ID созданной записи
     """
     with get_db() as conn:
         cursor = conn.execute(
-            """INSERT INTO scheduled_channel_posts (channel_id, content, scheduled_at)
-               VALUES (?, ?, ?)""",
-            (channel_id, content, scheduled_at),
+            """INSERT INTO scheduled_channel_posts
+                   (channel_id, content, scheduled_at, media_type, media_file_id)
+               VALUES (?, ?, ?, ?, ?)""",
+            (channel_id, content, scheduled_at, media_type, media_file_id),
         )
         return cursor.lastrowid
 
@@ -49,7 +53,7 @@ def get_due_scheduled_posts(limit: int = 10) -> List[Dict[str, Any]]:
     """Возвращает посты, время публикации которых уже наступило."""
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT id, channel_id, content, scheduled_at
+            """SELECT id, channel_id, content, scheduled_at, media_type, media_file_id
                FROM scheduled_channel_posts
                WHERE status = 'pending' AND scheduled_at <= datetime('now')
                ORDER BY scheduled_at ASC
@@ -108,7 +112,7 @@ def get_pending_scheduled_posts_list(limit: int = 20) -> List[Dict[str, Any]]:
     """Возвращает только ещё не опубликованные посты (для управления очередью)."""
     with get_db() as conn:
         rows = conn.execute(
-            """SELECT id, channel_id, scheduled_at,
+            """SELECT id, channel_id, scheduled_at, media_type,
                       substr(content, 1, 40) as content_preview
                FROM scheduled_channel_posts
                WHERE status = 'pending'
@@ -139,13 +143,23 @@ def delete_scheduled_post(post_id: int) -> bool:
         return cursor.rowcount > 0
 
 
-def update_scheduled_post_content(post_id: int, new_content: str) -> bool:
-    """Заменяет текст ещё не опубликованного поста, сохраняя время публикации."""
+def update_scheduled_post_content(post_id: int, new_content: str,
+                                  media_type: Optional[str] = None,
+                                  media_file_id: Optional[str] = None) -> bool:
+    """Заменяет текст (и, если передано, медиа) ещё не опубликованного поста, сохраняя время."""
     with get_db() as conn:
-        cursor = conn.execute(
-            "UPDATE scheduled_channel_posts SET content = ? WHERE id = ? AND status = 'pending'",
-            (new_content, post_id),
-        )
+        if media_file_id:
+            cursor = conn.execute(
+                """UPDATE scheduled_channel_posts
+                   SET content = ?, media_type = ?, media_file_id = ?
+                   WHERE id = ? AND status = 'pending'""",
+                (new_content, media_type, media_file_id, post_id),
+            )
+        else:
+            cursor = conn.execute(
+                "UPDATE scheduled_channel_posts SET content = ? WHERE id = ? AND status = 'pending'",
+                (new_content, post_id),
+            )
         return cursor.rowcount > 0
 
 
