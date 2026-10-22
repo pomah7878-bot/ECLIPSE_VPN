@@ -291,7 +291,9 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         )
         channel_id = get_marketing_channel_id()
         news_button_row = []
-        if channel_id:
+        from bot.services.main_screen import MORE_BUTTON_ID as _MORE_ID
+        _more_on_main = _MORE_ID in str((get_page('main') or {}).get('buttons_custom') or '')
+        if channel_id and not _more_on_main:
             channel_username = channel_id.lstrip('@')
             unread_count = count_unread_channel_posts(user_id)
             news_label = f'📰 Новости ({unread_count})' if unread_count > 0 else '📰 Новости'
@@ -310,7 +312,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         # кнопка новостей — нельзя хардкодить чужой домен для всех
         # инсталляций.
         webapp_url = (get_effective_webapp_url() or '').rstrip('/')
-        if webapp_url:
+        if webapp_url and not _more_on_main:
             news_button_row.append(InlineKeyboardButton(text='🌐 Сайт', url=f'{webapp_url}/shop'))
 
         if news_button_row:

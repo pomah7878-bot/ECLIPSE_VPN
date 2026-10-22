@@ -42,6 +42,7 @@ ACTION_REGISTRY: Dict[str, str] = {
     "cmd_import_incy":    "import_incy",
     "cmd_import_karing":  "import_karing",
     "cmd_import_eclipse": "import_eclipse",
+    "cmd_app_more":       "app_more",
 }
 
 

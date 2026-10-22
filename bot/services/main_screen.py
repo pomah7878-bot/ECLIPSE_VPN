@@ -25,6 +25,7 @@ from bot.utils.text import escape_html
 logger = logging.getLogger(__name__)
 
 CONNECT_BUTTON_ID = 'btn_connect'
+MORE_BUTTON_ID = 'btn_app_more'
 
 AUDIENCE_NEW = 'new'
 AUDIENCE_CLIENT = 'client'
@@ -339,15 +340,29 @@ VIEW_APP = 'app'
 _SNAPSHOT_KEY = 'main_view_snapshot:'
 
 # id кнопки → (ряд, колонка, подпись, цвет) для вида «Приложение»
+# v1.373: на главной только главное — «Подключиться», «Мои ключи», «Тарифы» и «Ещё»;
+# баланс, друзья, помощь и бонусы собраны на экране «Ещё» (bot/handlers/user/app_more.py).
 APP_LAYOUT = {
     'btn_trial':         (0, 0, '🎁 Попробовать бесплатно', 'success'),
     CONNECT_BUTTON_ID:   (0, 1, '⚡ Подключиться', 'primary'),
     'btn_my_keys':       (1, 0, None, None),
     'btn_buy_key':       (1, 1, '💳 Тарифы', None),
-    'btn_balance_topup': (2, 0, '💰 Пополнить', None),
-    'btn_referral':      (2, 1, '🤝 Пригласить', None),
-    'btn_ai_support':    (3, 0, None, 'secondary'),
-    'btn_help':          (3, 1, '📖 Инструкция', None),
+    MORE_BUTTON_ID:      (2, 0, '⋯ Ещё', 'secondary'),
+}
+# Кнопки, которые переехали с главной на экран «Ещё»
+APP_MORE_IDS = (
+    'btn_balance_topup', 'btn_referral', 'btn_help', 'btn_ai_support',
+    'btn_support', 'btn_roulette', 'btn_bonus_tasks',
+)
+# Раскладка 1.340–1.372: по ней узнаём, что админ главную вручную не менял
+_OLD_APP_POSITIONS = {
+    'btn_trial': (0, 0), CONNECT_BUTTON_ID: (0, 1), 'btn_my_keys': (1, 0),
+    'btn_buy_key': (1, 1), 'btn_balance_topup': (2, 0), 'btn_referral': (2, 1),
+    'btn_ai_support': (3, 0), 'btn_help': (3, 1),
+}
+_MORE_BUTTON = {
+    'id': MORE_BUTTON_ID, 'label': '⋯ Ещё', 'color': 'secondary', 'row': 2, 'col': 0,
+    'is_hidden': False, 'action_type': 'internal', 'action_value': 'cmd_app_more',
 }
 _CONNECT_BUTTON = {
     'id': CONNECT_BUTTON_ID, 'label': '⚡ Подключиться', 'color': 'primary', 'row': 0, 'col': 1,
@@ -403,10 +418,14 @@ def _merged_buttons(page: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [dict(b) for b in _merge_buttons_by_id(page.get('buttons_default') or '[]', page.get('buttons_custom'))]
 
 
-def _build_app_view(page: Dict[str, Any]) -> Dict[str, Any]:
-    """Вид «Приложение» из текущей (классической) главной: ваш текст остаётся для новичков."""
-    buttons = [b for b in _merged_buttons(page) if b.get('id') != CONNECT_BUTTON_ID]
+def apply_app_layout(buttons: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Расставляет кнопки вида «Приложение»: главное на виду, остальное — в «Ещё».
+
+    Незнакомые (партнёрские) кнопки остаются на главной под основными, в своём порядке.
+    """
+    buttons = [b for b in buttons if b.get('id') not in (CONNECT_BUTTON_ID, MORE_BUTTON_ID)]
     buttons.append(dict(_CONNECT_BUTTON))
+    buttons.append(dict(_MORE_BUTTON))
     others = [b for b in buttons if b.get('id') not in APP_LAYOUT]
     for b in buttons:
         if b.get('id') in APP_LAYOUT:
@@ -416,13 +435,43 @@ def _build_app_view(page: Dict[str, Any]) -> Dict[str, Any]:
                 b['label'] = label
             if color:
                 b['color'] = color
-    next_row, prev = 4, None
+    next_row, prev = 3, None
     for b in sorted(others, key=lambda x: (x.get('row', 0), x.get('col', 0))):
+        if b.get('id') in APP_MORE_IDS:
+            b['is_hidden'] = True
         if prev is not None and b.get('row', 0) != prev:
             next_row += 1
         prev = b.get('row', 0)
         b['row'] = next_row
     buttons.sort(key=lambda x: (x.get('row', 0), x.get('col', 0)))
+    return buttons
+
+
+def relayout_if_untouched(buttons_json: Optional[str]) -> Optional[str]:
+    """Для установок, где главная в виде «Приложение» собрана автоматически (раскладка 1.340–1.372).
+
+    Если админ или партнёр положения кнопок менял вручную — возвращает None и ничего не трогает.
+    """
+    import json as _json
+    try:
+        buttons = _json.loads(buttons_json or '[]')
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(buttons, list) or not all(isinstance(b, dict) for b in buttons):
+        return None
+    ids = {b.get('id') for b in buttons}
+    if CONNECT_BUTTON_ID not in ids or MORE_BUTTON_ID in ids:
+        return None
+    for b in buttons:
+        old = _OLD_APP_POSITIONS.get(b.get('id'))
+        if old is not None and (b.get('row'), b.get('col')) != old:
+            return None
+    return _json.dumps(apply_app_layout(buttons), ensure_ascii=False)
+
+
+def _build_app_view(page: Dict[str, Any]) -> Dict[str, Any]:
+    """Вид «Приложение» из текущей (классической) главной: ваш текст остаётся для новичков."""
+    buttons = apply_app_layout(_merged_buttons(page))
     classic_text = (page.get('text_custom') or page.get('text_default') or '').strip()
     text = f"[новым]{classic_text}\n%предложение%[/новым]{_APP_TAIL}"
     import json as _json

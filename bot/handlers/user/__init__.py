@@ -15,6 +15,7 @@ from .roulette import router as roulette_router
 from .cdn import router as cdn_router
 from .bonus_tasks import router as bonus_tasks_router
 from .server_status import router as server_status_router
+from .app_more import router as app_more_router
 
 # These are packages/modules that were explicitly standalone
 from .referral import router as referral_router
@@ -32,6 +33,7 @@ router.callback_query.outer_middleware(UserAccessGuardMiddleware())
 router.include_router(payments_router)
 router.include_router(bonus_tasks_router)
 router.include_router(server_status_router)
+router.include_router(app_more_router)
 router.include_router(referral_router)
 router.include_router(support_router)
 router.include_router(ai_handler_router)

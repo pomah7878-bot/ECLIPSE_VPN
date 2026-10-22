@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 158
+LATEST_VERSION = 159
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3608,6 +3608,36 @@ def migration_156(conn: sqlite3.Connection) -> None:
     logger.info("Migration v156 applied: функции collabs и connection_probe для full-лицензий")
 
 
+def migration_159(conn: sqlite3.Connection) -> None:
+    """Версия 1.374: вид «Приложение» — на главной только главное, остальное на экране «Ещё».
+
+    Перестраивает кнопки главной (и сохранённый снимок вида «Приложение») только если
+    раскладка собрана автоматически; ручные правки админа и партнёров не затрагиваются."""
+    try:
+        from bot.services.main_screen import relayout_if_untouched
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Migration v159: пропущена (%s)", exc)
+        return
+    row = conn.execute("SELECT buttons_custom FROM pages WHERE page_key = 'main'").fetchone()
+    if row and row[0]:
+        new = relayout_if_untouched(row[0])
+        if new:
+            conn.execute("UPDATE pages SET buttons_custom = ? WHERE page_key = 'main'", (new,))
+    snap = conn.execute("SELECT value FROM settings WHERE key = 'main_view_snapshot:app'").fetchone()
+    if snap and snap[0]:
+        import json as _json
+        try:
+            data = _json.loads(snap[0])
+            new = relayout_if_untouched(data.get('buttons_custom'))
+            if new:
+                data['buttons_custom'] = new
+                conn.execute("UPDATE settings SET value = ? WHERE key = 'main_view_snapshot:app'",
+                             (_json.dumps(data, ensure_ascii=False),))
+        except (TypeError, ValueError):
+            pass
+    logger.info("Migration v159 applied: вид «Приложение» — экран «Ещё»")
+
+
 def migration_158(conn: sqlite3.Connection) -> None:
     """Версия 1.371: посты канала с медиа — тип и file_id фото/видео/GIF."""
     columns = {row[1] for row in conn.execute("PRAGMA table_info(scheduled_channel_posts)")}
@@ -3719,6 +3749,7 @@ MIGRATIONS = {
     156: migration_156,
     157: migration_157,
     158: migration_158,
+    159: migration_159,
 }
 
 
