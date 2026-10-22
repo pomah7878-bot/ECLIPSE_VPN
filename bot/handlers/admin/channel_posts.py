@@ -68,7 +68,7 @@ def _is_split_post(text: str, media_id) -> bool:
     return bool(media_id) and _visible_len(text) > POST_CAPTION_LIMIT
 
 
-SPLIT_NOTE = '🖼 Медиа выйдет отдельным сообщением, текст — сразу под ним (он длиннее подписи в 1000 символов).\n\n'
+SPLIT_NOTE = '🖼 Текст длиннее подписи в 1000 символов: фото выйдет большим превью над текстом, одним сообщением (видео и GIF — отдельным сообщением над текстом).\n\n'
 
 
 def _visible_len(html_text: str) -> int:

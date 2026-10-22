@@ -1547,16 +1547,24 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
                         }.get(media_type, (bot.send_photo, 'photo'))
                         from bot.handlers.admin.channel_posts import _is_split_post
                         split = _is_split_post(post['content'], media_id)
-                        msg = await send(
-                            channel_id, **{arg: media_id},
-                            caption=None if split else (post['content'] or None), parse_mode='HTML',
-                        )
-                        if split:
-                            # Текст длиннее подписи (1024): вторым сообщением, ответом на медиа.
-                            await bot.send_message(
-                                channel_id, post['content'], parse_mode='HTML',
-                                reply_to_message_id=msg.message_id,
+                        msg = None
+                        if split and media_type not in ('video', 'animation'):
+                            # Фото + длинный текст: одним сообщением (фото превью над текстом).
+                            from bot.utils.post_media import publish_photo_with_long_text
+                            msg = await publish_photo_with_long_text(
+                                bot, channel_id, post_id, media_id, post['content'],
                             )
+                        if msg is None:
+                            msg = await send(
+                                channel_id, **{arg: media_id},
+                                caption=None if split else (post['content'] or None), parse_mode='HTML',
+                            )
+                            if split:
+                                # Текст длиннее подписи (1024): вторым сообщением, ответом на медиа.
+                                await bot.send_message(
+                                    channel_id, post['content'], parse_mode='HTML',
+                                    reply_to_message_id=msg.message_id,
+                                )
                     else:
                         msg = await bot.send_message(
                             channel_id, post['content'], parse_mode='HTML',
