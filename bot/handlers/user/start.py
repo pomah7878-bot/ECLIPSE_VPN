@@ -215,6 +215,9 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
             visibility['btn_trial'] = bool(show_trial) and _is_new
             visibility['btn_my_keys'] = not _is_new
             visibility['btn_balance_topup'] = bool(show_balance_button) and not _is_new
+            # В виде «Приложение» вся поддержка идёт через AI-помощника (он сам зовёт админа)
+            if show_ai_support:
+                visibility['btn_support'] = False
             _first = ''
             _user = getattr(target, 'from_user', None)
             if _user is not None:
