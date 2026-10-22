@@ -1545,10 +1545,18 @@ async def run_channel_posts_scheduler(bot: Bot) -> None:
                             'video': (bot.send_video, 'video'),
                             'animation': (bot.send_animation, 'animation'),
                         }.get(media_type, (bot.send_photo, 'photo'))
+                        from bot.handlers.admin.channel_posts import _is_split_post
+                        split = _is_split_post(post['content'], media_id)
                         msg = await send(
                             channel_id, **{arg: media_id},
-                            caption=post['content'] or None, parse_mode='HTML',
+                            caption=None if split else (post['content'] or None), parse_mode='HTML',
                         )
+                        if split:
+                            # Текст длиннее подписи (1024): вторым сообщением, ответом на медиа.
+                            await bot.send_message(
+                                channel_id, post['content'], parse_mode='HTML',
+                                reply_to_message_id=msg.message_id,
+                            )
                     else:
                         msg = await bot.send_message(
                             channel_id, post['content'], parse_mode='HTML',

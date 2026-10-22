@@ -30,6 +30,7 @@ router = Router()
 MSK_OFFSET_HOURS = 3
 POST_TEXT_LIMIT = 4096
 # Подпись к фото/видео/GIF в Telegram — 1024 символа; 24 оставлены под строку с датой в превью.
+# Текст длиннее — публикуется отдельным сообщением сразу после медиа.
 POST_CAPTION_LIMIT = 1000
 MEDIA_ICONS = {'photo': '🖼', 'video': '🎬', 'animation': '🎞'}
 
@@ -52,16 +53,22 @@ async def _compose_post(message: Message, has_media: bool):
     text = convert_post_text(message)
     if is_post_footer_enabled():
         text = (text + (await _build_post_footer(message.bot))).strip()
-    limit = POST_CAPTION_LIMIT if has_media else POST_TEXT_LIMIT
     n = _visible_len(text)
-    if n > limit:
-        what = 'Подпись к медиа' if has_media else 'Пост'
+    if n > POST_TEXT_LIMIT:
         return None, (
-            f'❌ {what} слишком длинн{"ая" if has_media else "ый"}: {n} символов из {limit} (с учётом подвала). '
-            f'Сократите текст минимум на {n - limit} и отправьте снова. '
+            f'❌ Пост слишком длинный: {n} символов из {POST_TEXT_LIMIT} (с учётом подвала). '
+            f'Сократите текст минимум на {n - POST_TEXT_LIMIT} и отправьте снова. '
             'Иначе Telegram обрежет конец вместе со ссылками.'
         )
     return text, None
+
+
+def _is_split_post(text: str, media_id) -> bool:
+    """Текст не влезает в подпись к медиа: медиа и текст уходят двумя сообщениями."""
+    return bool(media_id) and _visible_len(text) > POST_CAPTION_LIMIT
+
+
+SPLIT_NOTE = '🖼 Медиа выйдет отдельным сообщением, текст — сразу под ним (он длиннее подписи в 1000 символов).\n\n'
 
 
 def _visible_len(html_text: str) -> int:
@@ -243,7 +250,8 @@ async def start_channel_post_new(callback: CallbackQuery, state: FSMContext):
         '✏️ <b>Текст поста</b>\n\n'
         'Отправьте текст поста в любом формате: форматирование Telegram, HTML-теги или Markdown (**жирный**, > цитата, [текст](ссылка)). '
         'Бот сам приведёт его к нужному виду.\n\n'
-        '🖼 Чтобы добавить фото, видео или GIF, отправьте его сразу с текстом в подписи (до 1000 символов).',
+        '🖼 Чтобы добавить фото, видео или GIF, отправьте его сразу с текстом в подписи. '
+        'Если текст длиннее 1000 символов, медиа выйдет первым сообщением, а текст — вторым.',
         reply_markup=channel_post_cancel_kb(),
     )
     await callback.answer()
@@ -348,13 +356,14 @@ async def process_channel_post_time(message: Message, state: FSMContext):
     from database.requests import get_marketing_channel_id
     channel_id = get_marketing_channel_id() or '—'
     post_text = data['post_text']
-    if data.get('post_media_id'):
+    if data.get('post_media_id') and not _is_split_post(post_text, data['post_media_id']):
         await _show_media_preview(message, state, f"📅 {msk_display} МСК\n\n{post_text}", data)
         return
     preview_msg = (
         f"👀 <b>Превью поста</b>\n\n"
         f"📅 Публикация: {msk_display} МСК\n"
         f"📢 Канал: {channel_id}\n\n"
+        + (SPLIT_NOTE if data.get('post_media_id') else '') +
         f"—————————\n\n"
         f"{post_text}"
     )
@@ -426,7 +435,8 @@ async def show_post_detail(callback: CallbackQuery, state: FSMContext):
         return
 
     msk_time = (datetime.fromisoformat(post['scheduled_at']) + timedelta(hours=MSK_OFFSET_HOURS)).strftime('%d.%m.%Y %H:%M')
-    if post.get('media_file_id'):
+    split = _is_split_post(post['content'], post.get('media_file_id'))
+    if post.get('media_file_id') and not split:
         await safe_edit_or_send(
             callback.message, f"📅 {msk_time} МСК\n\n{post['content']}",
             reply_markup=channel_post_detail_kb(post_id),
@@ -438,6 +448,7 @@ async def show_post_detail(callback: CallbackQuery, state: FSMContext):
         f"👀 <b>Пост в очереди</b>\n\n"
         f"📅 Публикация: {msk_time} МСК\n"
         f"📢 Канал: {post['channel_id']}\n\n"
+        + (SPLIT_NOTE if split else '') +
         f"—————————\n\n"
         f"{post['content']}"
     )
