@@ -21,27 +21,34 @@ def bot_settings_kb(current_mode: str = 'subscription') -> InlineKeyboardMarkup:
         'admin_select_bot_mode:key',
         right_active_emoji='🟢',
     ))
-    builder.row(InlineKeyboardButton(text='🔄 Обновления', callback_data='admin_update_bot'))
-    builder.row(InlineKeyboardButton(text='🌐 Интеграции (сайт, AI, вход)', callback_data='admin_integrations'))
-    builder.row(InlineKeyboardButton(text='✏️ Изменить тексты', callback_data='admin_edit_texts'))
     try:
         from bot.handlers.admin.main_view import view_label
-        _view = view_label()
+        _view = view_label().split(" ", 1)[1]
     except Exception:
-        _view = '🏛 Классический'
-    builder.row(InlineKeyboardButton(text=f'🏠 Вид главной: {_view.split(" ", 1)[1]}', callback_data='admin_main_view'))
-    builder.row(InlineKeyboardButton(text='🔒 Обязательная подписка', callback_data='admin_channel_gate'))
+        _view = 'Классический'
     try:
-        from database.requests import get_menu_min_width
+        from database.requests import get_menu_min_width, is_channel_gate_enabled
         _w = get_menu_min_width()
+        _gate = 'вкл' if is_channel_gate_enabled() else 'выкл'
     except Exception:
-        _w = 40
-    builder.row(InlineKeyboardButton(
-        text=f"📏 Ширина меню: {_w if _w else 'выкл'}",
-        callback_data='admin_menu_width',
-    ))
-    builder.row(InlineKeyboardButton(text='📥 Скачать логи', callback_data='admin_logs_menu'))
-    builder.row(InlineKeyboardButton(text='🛑 Остановить бота', callback_data='admin_stop_bot'))
+        _w, _gate = 40, 'выкл'
+    # По две кнопки в ряд; подписи короткие, но с текущим значением
+    builder.row(
+        InlineKeyboardButton(text='🔄 Обновления', callback_data='admin_update_bot'),
+        InlineKeyboardButton(text='🌐 Интеграции', callback_data='admin_integrations'),
+    )
+    builder.row(
+        InlineKeyboardButton(text='✏️ Тексты бота', callback_data='admin_edit_texts'),
+        InlineKeyboardButton(text=f'🏠 Вид: {_view}', callback_data='admin_main_view'),
+    )
+    builder.row(
+        InlineKeyboardButton(text=f'🔒 Канал: {_gate}', callback_data='admin_channel_gate'),
+        InlineKeyboardButton(text=f"📏 Меню: {_w if _w else 'выкл'}", callback_data='admin_menu_width'),
+    )
+    builder.row(
+        InlineKeyboardButton(text='📥 Логи', callback_data='admin_logs_menu'),
+        InlineKeyboardButton(text='🛑 Остановить', callback_data='admin_stop_bot'),
+    )
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 
