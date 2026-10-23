@@ -81,19 +81,22 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
     if is_license_server():
         # Раздел управления whitelabel-лицензиями партнёров — только на
         # ГЛАВНОЙ инсталляции (IS_LICENSE_SERVER=1 в secrets.env).
-        builder.row(InlineKeyboardButton(text='🔑 Лицензии партнёров', callback_data='admin_licenses'))
         from bot.services import creator_chat as _cc
-        builder.row(InlineKeyboardButton(
-            text=f"💼 Помощь для админа: {'вкл' if _cc.server_enabled() else 'выкл'}",
-            callback_data='ho_home'))
+        builder.row(
+            InlineKeyboardButton(text='🔑 Лицензии', callback_data='admin_licenses'),
+            InlineKeyboardButton(
+                text=f"💼 Помощь: {'вкл' if _cc.server_enabled() else 'выкл'}",
+                callback_data='ho_home'),
+        )
     else:
         # Обратная сторона — на ЛЮБОЙ другой инсталляции (партнёрской,
         # включая совсем новую, где лицензия ещё не введена вообще)
         # показываем кнопку покупки/ввода/проверки СВОЕЙ лицензии.
-        builder.row(InlineKeyboardButton(text='💳 Моя лицензия', callback_data='my_license'))
         from bot.services import creator_chat as _cc
+        row = [InlineKeyboardButton(text='💳 Моя лицензия', callback_data='my_license')]
         if _cc.help_enabled():
-            builder.row(InlineKeyboardButton(text='🆘 Помощь для админа', callback_data='creator_chat'))
+            row.append(InlineKeyboardButton(text='🆘 Помощь', callback_data='creator_chat'))
+        builder.row(*row)
     builder.row(home_button())
     return builder.as_markup()
 
