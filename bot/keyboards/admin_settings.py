@@ -39,7 +39,7 @@ def bot_settings_kb(current_mode: str = 'subscription') -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text='✏️ Тексты бота', callback_data='admin_edit_texts'),
-        InlineKeyboardButton(text=f'🏠 Вид: {_view}', callback_data='admin_main_view'),
+        InlineKeyboardButton(text=f"🏠 {'Классика' if _view == 'Классический' else _view}", callback_data='admin_main_view'),
     )
     builder.row(
         InlineKeyboardButton(text=f'🔒 Канал: {_gate}', callback_data='admin_channel_gate'),
