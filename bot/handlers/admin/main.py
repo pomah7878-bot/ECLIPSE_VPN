@@ -40,7 +40,7 @@ async def get_admin_stats_text() -> str:
     Returns:
         Formatted text for the message
     """
-    snapshot = await collect_admin_monitoring_snapshot()
+    snapshot = await collect_admin_monitoring_snapshot(max_age=30)
     return build_admin_summary_text(snapshot)
 
 

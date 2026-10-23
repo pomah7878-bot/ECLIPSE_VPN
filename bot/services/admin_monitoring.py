@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -220,7 +221,26 @@ def _node_problem_line(server: Dict[str, Any], node: Dict[str, Any]) -> Optional
     return {"severity": node.get("severity", 0), "text": text}
 
 
+# Панель, которая отвечает дольше, не должна держать открытым весь экран админки
+SERVER_ENTRY_TIMEOUT = 6.0
+_snapshot_cache: Dict[str, Any] = {"at": 0.0, "data": None}
+
+
 async def _collect_server_entry(server: Dict[str, Any]) -> Dict[str, Any]:
+    started = time.monotonic()
+    try:
+        entry = await asyncio.wait_for(_collect_server_entry_inner(server), SERVER_ENTRY_TIMEOUT)
+    except asyncio.TimeoutError:
+        logger.warning(f"Мониторинг панели {server.get('name')}: нет ответа за {SERVER_ENTRY_TIMEOUT:.0f} с")
+        return {"server": server, "is_active": bool(server.get("is_active")), "panel_online": False,
+                "stats": {}, "nodes": [], "error": "нет ответа"}
+    elapsed = time.monotonic() - started
+    if elapsed > 2.0:
+        logger.info(f"Мониторинг панели {server.get('name')}: ответ за {elapsed:.1f} с")
+    return entry
+
+
+async def _collect_server_entry_inner(server: Dict[str, Any]) -> Dict[str, Any]:
     entry: Dict[str, Any] = {
         "server": server,
         "is_active": bool(server.get("is_active")),
@@ -235,19 +255,21 @@ async def _collect_server_entry(server: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         client = get_client_from_server_data(server)
-        stats = await client.get_stats()
+        # Статистика и ноды — независимые запросы: идут одновременно, а не друг за другом
+        stats, raw_nodes = await asyncio.gather(client.get_stats(), client.get_nodes(), return_exceptions=True)
+        if isinstance(stats, BaseException):
+            raise stats
         entry["stats"] = stats
         entry["panel_online"] = bool(stats.get("online"))
         if not entry["panel_online"]:
             entry["error"] = stats.get("error") or "нет подключения"
             return entry
 
-        try:
-            raw_nodes = await client.get_nodes()
-            entry["nodes"] = _flatten_nodes(raw_nodes)
-        except Exception as e:
-            logger.debug(f"Не удалось получить ноды панели {server.get('name')}: {e}")
+        if isinstance(raw_nodes, BaseException):
+            logger.debug(f"Не удалось получить ноды панели {server.get('name')}: {raw_nodes}")
             entry["nodes"] = []
+        else:
+            entry["nodes"] = _flatten_nodes(raw_nodes)
     except Exception as e:
         logger.warning(f"Ошибка получения мониторинга панели {server.get('name')}: {e}")
         entry["error"] = "ошибка подключения"
@@ -255,8 +277,18 @@ async def _collect_server_entry(server: Dict[str, Any]) -> Dict[str, Any]:
     return entry
 
 
-async def collect_admin_monitoring_snapshot() -> Dict[str, Any]:
-    """Collects a common snapshot for the main admin panel and the servers section."""
+async def collect_admin_monitoring_snapshot(max_age: float = 0.0) -> Dict[str, Any]:
+    """Collects a common snapshot for the main admin panel and the servers section.
+
+    max_age > 0 — можно вернуть снимок не старше max_age секунд (главная админки открывается сразу)."""
+    if max_age > 0 and _snapshot_cache["data"] is not None and time.monotonic() - _snapshot_cache["at"] < max_age:
+        return _snapshot_cache["data"]
+    snapshot = await _collect_admin_monitoring_snapshot()
+    _snapshot_cache.update(at=time.monotonic(), data=snapshot)
+    return snapshot
+
+
+async def _collect_admin_monitoring_snapshot() -> Dict[str, Any]:
     servers = get_all_servers()
     entries = await asyncio.gather(*[_collect_server_entry(server) for server in servers]) if servers else []
 
