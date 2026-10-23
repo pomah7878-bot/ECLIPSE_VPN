@@ -229,13 +229,20 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
     """Меню раздела «Интеграции» — теперь разбито на категории, чтобы не
     показывать один длинный список из 20+ кнопок."""
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text='🌐 Сайт и витрина', callback_data='admin_integrations_site'))
-    builder.row(InlineKeyboardButton(text='🔐 Способы входа на сайт', callback_data='admin_integrations_auth'))
-    builder.row(InlineKeyboardButton(text='📞 Верификация телефона (Zvonok)', callback_data='admin_integrations_zvonok'))
-    builder.row(InlineKeyboardButton(text='📱 Happ', callback_data='admin_integrations_happ'))
-    builder.row(InlineKeyboardButton(text='⚡ INCY', callback_data='admin_integrations_incy'))
+    # По две кнопки в ряд; подписи короче, смысл тот же
+    builder.row(
+        InlineKeyboardButton(text='🌐 Сайт и витрина', callback_data='admin_integrations_site'),
+        InlineKeyboardButton(text='🔐 Вход на сайт', callback_data='admin_integrations_auth'),
+    )
+    builder.row(
+        InlineKeyboardButton(text='📞 Телефон (Zvonok)', callback_data='admin_integrations_zvonok'),
+        InlineKeyboardButton(text='⚙️ Лимиты устройств', callback_data='admin_integrations_limits'),
+    )
+    builder.row(
+        InlineKeyboardButton(text='📱 Happ', callback_data='admin_integrations_happ'),
+        InlineKeyboardButton(text='⚡ INCY', callback_data='admin_integrations_incy'),
+    )
     builder.row(InlineKeyboardButton(text='🤖 AI-суппорт: ключи и настройки', callback_data='admin_integrations_apikeys'))
-    builder.row(InlineKeyboardButton(text='⚙️ Ограничения устройств', callback_data='admin_integrations_limits'))
     builder.row(back_button('admin_bot_settings'), home_button())
     return builder.as_markup()
 
