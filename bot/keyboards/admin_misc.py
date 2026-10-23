@@ -97,7 +97,7 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
         if _cc.help_enabled():
             row.append(InlineKeyboardButton(text='🆘 Помощь', callback_data='creator_chat'))
         builder.row(*row)
-    builder.row(back_button('start'), home_button())
+    builder.row(home_button())
     return builder.as_markup()
 
 def marketing_menu_kb() -> InlineKeyboardMarkup:
