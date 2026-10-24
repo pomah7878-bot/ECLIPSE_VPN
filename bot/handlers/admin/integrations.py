@@ -2759,8 +2759,26 @@ def _happ_routing_menu_text() -> str:
         "Задан свой JSON-профиль — используется он целиком, дефолтный профиль "
         "ECLIPSE игнорируется."
     )
+    import json as _json
+    from database.requests import get_setting
+    from bot.utils.datetime_format import format_datetime_for_display
+    try:
+        _pub = _json.loads(get_setting('routing_published', '') or '{}').get('ts')
+    except Exception:
+        _pub = None
+    def _when(ts):
+        try:
+            from datetime import datetime, timezone
+            return format_datetime_for_display(datetime.fromtimestamp(int(ts), timezone.utc))
+        except Exception:
+            return 'ещё не было'
+    status = (
+        "📊 <b>Состояние</b>\n"
+        f"• Новая версия опубликована: {_when(_pub)}\n"
+        f"• Клиент получил профиль последний раз: {_when(get_setting('routing_last_served', ''))}\n\n"
+    )
     return (
-        "🗺 <b>Маршрутизация (routing)</b>\n\n"
+        "🗺 <b>Маршрутизация (routing)</b>\n\n" + status +
         "Необязательный заголовок подписки — задаёт профиль маршрутизации "
         "(какие сайты/IP идут напрямую, через прокси или блокируются). Работает "
         "одинаково для <b>Happ и INCY</b> (общий движок, одна и та же настройка "

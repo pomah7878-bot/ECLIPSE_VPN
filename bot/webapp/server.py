@@ -2013,6 +2013,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 import base64 as _base64
                 profile_b64 = _base64.b64encode(profile_json.encode("utf-8")).decode("ascii")
                 headers["routing"] = f"{scheme}://routing/{routing_mode}/{profile_b64}"
+                # Для админки: когда клиент последний раз получил профиль (не чаще раза в минуту)
+                import time as _t
+                from database.requests import get_setting as _gs, set_setting as _ss
+                if _t.time() - float(_gs('routing_last_served', '0') or 0) > 60:
+                    _ss('routing_last_served', str(int(_t.time())))
 
     if "subscription-userinfo" not in headers:
         # Далёкая дата (условно "безлимитный срок") в expires_at — тот же
