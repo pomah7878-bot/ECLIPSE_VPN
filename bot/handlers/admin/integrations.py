@@ -2766,6 +2766,11 @@ def _happ_routing_menu_text() -> str:
         _pub = _json.loads(get_setting('routing_published', '') or '{}').get('ts')
     except Exception:
         _pub = None
+    try:
+        _d = _json.loads(get_setting('routing_devices', '') or '{}')
+        _got = len(_d.get('ids', [])) if _d.get('ts') == _pub else 0
+    except Exception:
+        _got = 0
     def _when(ts):
         try:
             from datetime import datetime, timezone
@@ -2775,7 +2780,8 @@ def _happ_routing_menu_text() -> str:
     status = (
         "📊 <b>Состояние</b>\n"
         f"• Новая версия опубликована: {_when(_pub)}\n"
-        f"• Клиент получил профиль последний раз: {_when(get_setting('routing_last_served', ''))}\n\n"
+        f"• Клиент получил профиль последний раз: {_when(get_setting('routing_last_served', ''))}\n"
+        f"• Устройств получили эту версию: {_got}\n\n"
     )
     return (
         "🗺 <b>Маршрутизация (routing)</b>\n\n" + status +

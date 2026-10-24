@@ -2018,6 +2018,19 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 from database.requests import get_setting as _gs, set_setting as _ss
                 if _t.time() - float(_gs('routing_last_served', '0') or 0) > 60:
                     _ss('routing_last_served', str(int(_t.time())))
+                # Счётчик устройств, получивших текущую версию профиля (по HWID, без самих HWID)
+                import json as _j
+                try:
+                    _ts = _j.loads(_gs('routing_published', '') or '{}').get('ts', '')
+                    _dev = hashlib.sha1(f"{sub_id}:{forward_headers.get('X-HWID', '')}".encode()).hexdigest()[:12]
+                    _d = _j.loads(_gs('routing_devices', '') or '{}')
+                    if _d.get('ts') != _ts:
+                        _d = {'ts': _ts, 'ids': []}
+                    if _dev not in _d['ids'] and len(_d['ids']) < 20000:
+                        _d['ids'].append(_dev)
+                        _ss('routing_devices', _j.dumps(_d))
+                except Exception:
+                    pass
 
     if "subscription-userinfo" not in headers:
         # Далёкая дата (условно "безлимитный срок") в expires_at — тот же
