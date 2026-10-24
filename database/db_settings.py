@@ -1015,6 +1015,9 @@ def get_default_happ_routing_profile_json(variant=None) -> str:
     import json as _json
     from database.db_settings import get_effective_brand_name
     name = get_happ_routing_profile_name() or get_effective_brand_name()
+    variant = variant or get_happ_routing_variant()
+    if variant == 'whitelist':
+        name += ' • БС'  # другое название — клиент сразу видит в приложении, какой вариант применён
     profile = {'Name': name}
     live = _get_live_profile(variant)
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
