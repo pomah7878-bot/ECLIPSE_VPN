@@ -56,6 +56,7 @@ GATED_FEATURES = {
     "connection_probe": "🧪 Проверка подключений и оповещения о них",
     "site_ai": "🌐 AI-помощник на сайте (продажи и поддержка)",
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
+    "routing": "🗺 Маршрутизация Happ/INCY (профили, выбор клиентом)",
 }
 
 HIDE_POWERED_BY_FEATURE = "hide_powered_by"

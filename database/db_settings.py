@@ -794,7 +794,15 @@ def get_happ_routing_mode() -> str:
       'off'      — happ://routing/off — отключает маршрутизацию у клиента
     'add'/'onadd' требуют заданного happ_routing_profile_json."""
     value = get_setting('happ_routing_mode', 'disabled')
-    return value if value in HAPP_ROUTING_MODES else 'disabled'
+    if value not in HAPP_ROUTING_MODES:
+        return 'disabled'
+    try:  # платная функция: без лицензии заголовок маршрутизации клиентам не отправляется
+        from bot.services.license import is_feature_available
+        if not is_feature_available('routing'):
+            return 'disabled'
+    except Exception:
+        return 'disabled'
+    return value
 
 
 def set_happ_routing_mode(mode: str) -> None:

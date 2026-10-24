@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 163
+LATEST_VERSION = 164
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3745,6 +3745,22 @@ def migration_163(conn: sqlite3.Connection) -> None:
     logger.info("Migration v163 applied: профиль БС будет опубликован заново")
 
 
+def migration_164(conn: sqlite3.Connection) -> None:
+    """Версия 1.392: платная функция «routing» (маршрутизация Happ/INCY и выбор клиентом).
+    Лицензиям и тарифам tier='full' добавляется автоматически, custom — вручную."""
+    for table in ("partner_licenses", "license_tariffs"):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not {"tier", "features"} <= columns:
+            continue
+        for row in conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall():
+            current = {f for f in (row[1] or "").split(",") if f}
+            current.add("routing")
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), row[0]))
+    logger.info("Migration v164 applied: функция routing для full-лицензий")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3835,6 +3851,7 @@ MIGRATIONS = {
     161: migration_161,
     162: migration_162,
     163: migration_163,
+    164: migration_164,
 }
 
 

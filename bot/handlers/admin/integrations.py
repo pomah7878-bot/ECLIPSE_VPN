@@ -2785,8 +2785,15 @@ def _happ_routing_menu_text() -> str:
         f"• Клиент получил профиль последний раз: {_when(get_setting('routing_last_served', ''))}\n"
         f"• Устройств получили эту версию: {_got}\n\n"
     )
+    try:
+        from bot.services.license import is_feature_available
+        _lock = "" if is_feature_available('routing') else (
+            "🔒 <b>Недоступно на вашей лицензии.</b> Маршрутизация — платная функция: "
+            "пока она не включена в лицензию, клиентам ничего не отправляется.\n\n")
+    except Exception:
+        _lock = ""
     return (
-        "🗺 <b>Маршрутизация (routing)</b>\n\n" + status +
+        "🗺 <b>Маршрутизация (routing)</b>\n\n" + _lock + status +
         "Необязательный заголовок подписки — задаёт профиль маршрутизации "
         "(какие сайты/IP идут напрямую, через прокси или блокируются). Работает "
         "одинаково для <b>Happ и INCY</b> (общий движок, одна и та же настройка "
