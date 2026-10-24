@@ -195,22 +195,38 @@ def _thread_text(thread_id: int) -> str:
     return "\n".join(lines)
 
 
+def _chats_screen():
+    """Текст и клавиатура списка чатов с установками (команда и кнопка в админке)."""
+    from bot.services import creator_chat as cc
+    from bot.keyboards.admin_misc import back_button, home_button
+    threads = cc.list_threads(10)
+    nav_row = [back_button('admin_panel'), home_button()]
+    if not threads:
+        return "Пока никто не писал.", InlineKeyboardMarkup(inline_keyboard=[nav_row])
+    rows = [[InlineKeyboardButton(
+        text=f"{'🚫 ' if t['blocked'] else ''}#{t['id']} {cc.thread_title(t)}"[:60],
+        callback_data=f"cr_open:{t['id']}")] for t in threads]
+    return "✉️ <b>Чаты с админами</b>\nВыберите установку, чтобы увидеть переписку.", InlineKeyboardMarkup(inline_keyboard=rows + [nav_row])
+
+
 @router.message(Command("creator_chats"))
 async def creator_chats_list(message: Message):
     if not _creator_only(message.from_user.id):
         return
-    from bot.services import creator_chat as cc
-    threads = cc.list_threads(10)
-    from bot.keyboards.admin_misc import back_button, home_button
-    nav_row = [back_button('ho_home'), home_button()]
-    if not threads:
-        await message.answer("Пока никто не писал.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[nav_row]))
+    text, kb = _chats_screen()
+    await message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "creator_chats_list")
+async def creator_chats_button(callback: CallbackQuery, state: FSMContext):
+    if not _creator_only(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    rows = [[InlineKeyboardButton(
-        text=f"{'🚫 ' if t['blocked'] else ''}#{t['id']} {cc.thread_title(t)}"[:60],
-        callback_data=f"cr_open:{t['id']}")] for t in threads]
-    await message.answer("✉️ <b>Чаты с установками</b>", parse_mode="HTML",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=rows + [nav_row]))
+    await state.clear()
+    from bot.utils.text import safe_edit_or_send
+    text, kb = _chats_screen()
+    await safe_edit_or_send(callback.message, text, reply_markup=kb)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("cr_open:"))

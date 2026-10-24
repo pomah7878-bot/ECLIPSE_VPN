@@ -88,6 +88,7 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
                 text=f"💼 Помощь: {'вкл' if _cc.server_enabled() else 'выкл'}",
                 callback_data='ho_home'),
         )
+        builder.row(InlineKeyboardButton(text='✉️ Чаты с админами', callback_data='creator_chats_list'))
     else:
         # Обратная сторона — на ЛЮБОЙ другой инсталляции (партнёрской,
         # включая совсем новую, где лицензия ещё не введена вообще)
