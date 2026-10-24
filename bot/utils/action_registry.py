@@ -571,6 +571,27 @@ def _resolve_key_devices(ctx: dict) -> Optional[dict]:
     return {"callback_data": f"key_devices:{key_id}"}
 
 
+def _resolve_key_routing(ctx: dict) -> Optional[dict]:
+    """«🗺 Маршрутизация» на карточке ключа: клиент сам выбирает вариант профиля
+    (Умный / БС). Скрыта, если админ выключил выбор, задал свой JSON-профиль или
+    маршрутизация выключена."""
+    key_id = _get_key_details_id(ctx)
+    if not key_id:
+        return None
+    if _key_details_is_unconfigured(ctx) or not ctx.get('has_sub_id'):
+        return None
+    try:
+        from database.requests import (
+            get_routing_user_choice_enabled, get_happ_routing_profile_json, get_happ_routing_mode,
+        )
+        if (not get_routing_user_choice_enabled() or get_happ_routing_profile_json()
+                or get_happ_routing_mode() not in ('add', 'onadd')):
+            return None
+    except Exception:
+        return None
+    return {"callback_data": f"key_routing:{key_id}"}
+
+
 def _resolve_key_cdn(ctx: dict) -> Optional[dict]:
     """v1.226: «🌐 CDN (обход белых списков)» на карточке ключа. Показывается только
     для ключей с подпиской, если админ настроил CDN-инбаунд и цену пакета (или у
@@ -839,6 +860,7 @@ SYSTEM_BUTTONS: Dict[str, Callable[[dict], Optional[dict]]] = {
     "btn_key_rename": _resolve_key_rename,
     "btn_key_auto_renew_toggle": _resolve_key_auto_renew_toggle,
     "btn_key_devices": _resolve_key_devices,
+    "btn_key_routing": _resolve_key_routing,
     "btn_key_protocols": _resolve_key_protocols,
     "btn_key_cdn": _resolve_key_cdn,
     "btn_balance_topup": _resolve_balance_topup,

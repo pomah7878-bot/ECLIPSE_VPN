@@ -582,6 +582,13 @@ def happ_routing_menu_kb() -> InlineKeyboardMarkup:
                                  callback_data='admin_set_happ_routing_variant:whitelist'),
         )
 
+    if not profile_json:
+        from database.requests import get_routing_user_choice_enabled
+        builder.row(InlineKeyboardButton(
+            text=f"👤 Выбор клиентом: {'✅ вкл' if get_routing_user_choice_enabled() else '⚪ выкл'}",
+            callback_data='admin_toggle_routing_user_choice',
+        ))
+
     mode_labels = {
         'disabled': '⚪ Выключено (заголовок не отправляется)',
         'add': '➕ Добавить профиль (add)',

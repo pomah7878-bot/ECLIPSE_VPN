@@ -31,6 +31,13 @@ __all__ = [
     'get_happ_routing_mode',
     'get_happ_routing_variant',
     'set_happ_routing_variant',
+    'get_routing_user_choice_enabled',
+    'set_routing_user_choice_enabled',
+    'get_user_routing_variant',
+    'set_user_routing_variant',
+    'resolve_routing_variant',
+    'routing_min_ts',
+    'HAPP_ROUTING_VARIANTS',
     'set_happ_routing_mode',
     'get_happ_routing_profile_json',
     'set_happ_routing_profile_json',
@@ -805,7 +812,7 @@ def get_happ_routing_profile_json() -> Optional[str]:
 
 def set_happ_routing_profile_json(profile_json: str) -> None:
     set_setting('happ_routing_profile_json', profile_json.strip())
-    set_setting('routing_force_publish', '1')
+    set_setting('routing_force_publish', _force_token())
 
 
 def get_menu_min_width() -> int:
@@ -833,7 +840,7 @@ def get_happ_routing_profile_name() -> str:
 
 def set_happ_routing_profile_name(name: str) -> None:
     set_setting('happ_routing_profile_name', name.strip())
-    set_setting('routing_force_publish', '1')
+    set_setting('routing_force_publish', _force_token())
 
 
 _HAPP_ROUTING_DEFAULT_TEMPLATE = {
@@ -873,6 +880,59 @@ _LIVE_PROFILE_TTL = 3600
 _live_profile_cache = {v: {"data": None, "ts": 0.0, "busy": False} for v in HAPP_ROUTING_VARIANTS}
 
 
+def _force_token() -> str:
+    import time as _time
+    return str(_time.time_ns())
+
+
+def get_routing_user_choice_enabled() -> bool:
+    """Может ли клиент сам выбрать вариант маршрутизации (кнопки на карточке ключа)."""
+    return get_setting('routing_user_choice', '1') != '0'
+
+
+def set_routing_user_choice_enabled(value: bool) -> None:
+    set_setting('routing_user_choice', '1' if value else '0')
+
+
+def get_user_routing_variant(telegram_id) -> Optional[str]:
+    """Личный выбор клиента или None («как у всех»)."""
+    value = get_setting(f'routing_variant_user:{int(telegram_id)}', '')
+    return value if value in HAPP_ROUTING_VARIANTS else None
+
+
+def set_user_routing_variant(telegram_id, variant: Optional[str]) -> None:
+    if variant is not None and variant not in HAPP_ROUTING_VARIANTS:
+        raise ValueError(f"Недопустимый вариант маршрутизации: {variant}")
+    set_setting(f'routing_variant_user:{int(telegram_id)}', variant or '')
+    set_setting(f'routing_variant_user_ts:{int(telegram_id)}', str(int(__import__('time').time())))
+
+
+def routing_min_ts(telegram_id=None) -> int:
+    """Нижняя граница LastUpdated: время последней смены варианта (админом или самим клиентом).
+    Happ/INCY принимают профиль с тем же Name только при БОЛЬШЕМ LastUpdated, а у варианта
+    «БС» своя метка публикации — без этого при переключении клиент мог бы не применить новый."""
+    def _i(key):
+        try:
+            return int(get_setting(key, '') or 0)
+        except Exception:
+            return 0
+    own = _i(f'routing_variant_user_ts:{int(telegram_id)}') if telegram_id else 0
+    return max(_i('routing_variant_epoch'), own)
+
+
+def resolve_routing_variant(telegram_id=None) -> str:
+    """Вариант профиля для клиента: личный выбор (если разрешён и нет своего JSON у админа),
+    иначе общий вариант из админки."""
+    if telegram_id and get_routing_user_choice_enabled() and not get_happ_routing_profile_json():
+        try:
+            own = get_user_routing_variant(telegram_id)
+        except Exception:
+            own = None
+        if own:
+            return own
+    return get_happ_routing_variant()
+
+
 def get_happ_routing_variant() -> str:
     value = get_setting('happ_routing_variant', 'smart')
     return value if value in HAPP_ROUTING_VARIANTS else 'smart'
@@ -882,7 +942,8 @@ def set_happ_routing_variant(variant: str) -> None:
     if variant not in HAPP_ROUTING_VARIANTS:
         raise ValueError(f"Недопустимый вариант маршрутизации: {variant}")
     set_setting('happ_routing_variant', variant)
-    set_setting('routing_force_publish', '1')
+    set_setting('routing_variant_epoch', str(int(__import__('time').time())))
+    set_setting('routing_force_publish', _force_token())
 
 
 def _live_setting_key(variant: str) -> str:
@@ -943,7 +1004,7 @@ def _get_live_profile(variant=None):
 
 
 
-def get_default_happ_routing_profile_json() -> str:
+def get_default_happ_routing_profile_json(variant=None) -> str:
     """Профиль маршрутизации 'из коробки' — компактные geo-базы ECLIPSE
     (форк mvrvntn/routing, проверено что не превышает лимит памяти туннеля
     на слабых устройствах, в отличие от полного Loyalsoldier v2ray-rules-dat).
@@ -955,19 +1016,19 @@ def get_default_happ_routing_profile_json() -> str:
     from database.db_settings import get_effective_brand_name
     name = get_happ_routing_profile_name() or get_effective_brand_name()
     profile = {'Name': name}
-    live = _get_live_profile()
+    live = _get_live_profile(variant)
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
     if live:
         profile.update({k: v for k, v in live.items() if k not in ('Name', 'LastUpdated')})
     return _json.dumps(profile, ensure_ascii=False)
 
 
-def get_effective_happ_routing_profile_json() -> str:
+def get_effective_happ_routing_profile_json(variant=None) -> str:
     """JSON, который реально уходит клиенту в заголовке 'routing': свой,
     если админ задал его целиком вручную, иначе — дефолтный ECLIPSE-профиль
     (см. get_default_happ_routing_profile_json)."""
     custom = get_happ_routing_profile_json()
-    return custom if custom else get_default_happ_routing_profile_json()
+    return custom if custom else get_default_happ_routing_profile_json(variant)
 
 
 def _in_publish_window() -> bool:
@@ -989,10 +1050,10 @@ def _in_publish_window() -> bool:
 
 def request_routing_publish() -> None:
     """Опубликовать изменения профиля сразу (при ручной правке админом)."""
-    set_setting('routing_force_publish', '1')
+    set_setting('routing_force_publish', _force_token())
 
 
-def prepare_routing_profile(profile_json: str, app: str) -> str:
+def prepare_routing_profile(profile_json: str, app: str, variant=None, min_ts: int = 0) -> str:
     """Готовит JSON профиля маршрутизации к отправке клиенту.
 
     LastUpdated (Unix-время, строкой): Happ и INCY обновляют уже добавленный
@@ -1019,18 +1080,23 @@ def prepare_routing_profile(profile_json: str, app: str) -> str:
         body = {k: v for k, v in profile.items() if k != 'LastUpdated'}
         fingerprint = _json.dumps(body, sort_keys=True, ensure_ascii=False) + "|" + get_setting('live_geo_version', '')
         digest = _hl.sha1(fingerprint.encode('utf-8')).hexdigest()
+        variant = variant or get_happ_routing_variant()
+        pub_key = 'routing_published' if variant == 'smart' else f'routing_published_{variant}'
         try:
-            pub = _json.loads(get_setting('routing_published', '') or '{}')
+            pub = _json.loads(get_setting(pub_key, '') or '{}')
         except Exception:
             pub = {}
-        force = get_setting('routing_force_publish', '') == '1'
+        # токен срочной публикации: у каждого варианта профиля своя «отметка», что он его уже учёл
+        token = get_setting('routing_force_publish', '')
+        force = bool(token) and pub.get('ftok') != token
         if not pub.get('profile') or (pub.get('digest') != digest and (force or _in_publish_window())):
-            pub = {'digest': digest, 'ts': str(int(_time.time())), 'profile': body}
-            set_setting('routing_published', _json.dumps(pub, ensure_ascii=False))
-        if force:
-            set_setting('routing_force_publish', '')
+            pub = {'digest': digest, 'ts': str(int(_time.time())), 'profile': body, 'ftok': token}
+            set_setting(pub_key, _json.dumps(pub, ensure_ascii=False))
+        elif force:
+            pub['ftok'] = token
+            set_setting(pub_key, _json.dumps(pub, ensure_ascii=False))
         profile = dict(pub['profile'])
-        profile['LastUpdated'] = pub['ts']
+        profile['LastUpdated'] = str(max(int(pub['ts']), int(min_ts or 0)))
     if app == 'incy' and 'useChunkFiles' not in profile:
         chunk = profile.get('UseChunkFiles')
         if chunk is not None:

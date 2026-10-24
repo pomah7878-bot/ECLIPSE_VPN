@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 161
+LATEST_VERSION = 162
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3702,6 +3702,42 @@ def migration_157(conn: sqlite3.Connection) -> None:
     logger.info("Migration v157 applied: функция site_ai для full-лицензий")
 
 
+def migration_162(conn: sqlite3.Connection) -> None:
+    """Версия 1.388: кнопка «🗺 Маршрутизация» на карточке ключа (key_details) —
+    клиент сам выбирает вариант профиля. Идемпотентно; показывается только когда
+    выбор включён (см. _resolve_key_routing)."""
+    row = conn.execute(
+        "SELECT buttons_default, buttons_custom FROM pages WHERE page_key = 'key_details'"
+    ).fetchone()
+    if row:
+        for column_index, column_name in ((0, "buttons_default"), (1, "buttons_custom")):
+            raw = row[column_index]
+            if not raw:
+                continue
+            try:
+                buttons = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            if any(b.get("id") == "btn_key_routing" for b in buttons):
+                continue
+            nav = [b for b in buttons if b.get("id") in ("btn_my_keys", "btn_back_main")]
+            if nav:  # новая строка — над «Назад / На главную»
+                next_row = min(int(b.get("row", 0)) for b in nav)
+                for b in nav:
+                    b["row"] = int(b.get("row", 0)) + 1
+            else:
+                next_row = max([int(b.get("row", 0)) for b in buttons] + [-1]) + 1
+            buttons.append({
+                "id": "btn_key_routing", "label": "🗺 Маршрутизация", "color": "secondary",
+                "row": next_row, "col": 0, "is_hidden": False, "action_type": "system", "action_value": None,
+            })
+            conn.execute(
+                f"UPDATE pages SET {column_name} = ? WHERE page_key = 'key_details'",
+                (json.dumps(buttons, ensure_ascii=False),)
+            )
+    logger.info("Migration v162 applied: кнопка btn_key_routing на key_details")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3790,6 +3826,7 @@ MIGRATIONS = {
     159: migration_159,
     160: migration_160,
     161: migration_161,
+    162: migration_162,
 }
 
 

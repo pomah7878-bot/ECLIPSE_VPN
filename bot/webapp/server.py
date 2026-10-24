@@ -1974,6 +1974,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         # клиенту неподдерживаемое значение.
         from database.requests import get_happ_routing_mode, get_effective_happ_routing_profile_json
         routing_mode = get_happ_routing_mode()
+        from database.requests import resolve_routing_variant, get_user_routing_variant
+        routing_variant = resolve_routing_variant(key.get("telegram_id"))
         scheme = detected_app  # "happ" или "incy"
         if detected_app == "incy" and routing_mode != "disabled":
             # INCY берёт маршрутизацию в порядке: заголовок autorouting →
@@ -1997,7 +1999,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             # бренд/заданное админом, а не «ECLIPSE RU» из репозитория, и
             # учитывается свой JSON-профиль админа.
             if _tg_on("incy", "autorouting") and _site:
-                headers["autorouting"] = f"incy://autorouting/onadd/{_site}/routing/profile.json"
+                _own = get_user_routing_variant(key["telegram_id"]) if key.get("telegram_id") else None
+                from database.requests import routing_min_ts as _mts
+                _t = _mts(key.get("telegram_id"))
+                _q = f"?v={routing_variant}&t={_t}" if (_own or _t) else ""
+                headers["autorouting"] = f"incy://autorouting/onadd/{_site}/routing/profile.json{_q}"
                 _incy_auto = True
         if _incy_auto:
             pass
@@ -2006,10 +2012,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             # INCY: incy://routing/off — docs.incy.cc/routing)
             headers["routing"] = f"{detected_app}://routing/off"
         elif routing_mode in ("add", "onadd"):
-            profile_json = get_effective_happ_routing_profile_json()
+            profile_json = get_effective_happ_routing_profile_json(routing_variant)
             if profile_json:
                 from database.requests import prepare_routing_profile
-                profile_json = prepare_routing_profile(profile_json, detected_app)
+                from database.requests import routing_min_ts
+                profile_json = prepare_routing_profile(profile_json, detected_app, routing_variant, routing_min_ts(key.get("telegram_id")))
                 import base64 as _base64
                 profile_b64 = _base64.b64encode(profile_json.encode("utf-8")).decode("ascii")
                 headers["routing"] = f"{scheme}://routing/{routing_mode}/{profile_b64}"
@@ -2021,14 +2028,19 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 # Счётчик устройств, получивших текущую версию профиля (по HWID, без самих HWID)
                 import json as _j
                 try:
-                    _ts = _j.loads(_gs('routing_published', '') or '{}').get('ts', '')
+                    _pk = 'routing_published' if routing_variant == 'smart' else f'routing_published_{routing_variant}'
+                    _ts = _j.loads(_gs(_pk, '') or '{}').get('ts', '')
                     _dev = hashlib.sha1(f"{sub_id}:{forward_headers.get('X-HWID', '')}".encode()).hexdigest()[:12]
-                    _d = _j.loads(_gs('routing_devices', '') or '{}')
+                    _all = _j.loads(_gs('routing_devices', '') or '{}')
+                    if 'ts' in _all:  # формат до 1.388: один счётчик без вариантов
+                        _all = {}
+                    _d = _all.get(routing_variant) or {}
                     if _d.get('ts') != _ts:
                         _d = {'ts': _ts, 'ids': []}
                     if _dev not in _d['ids'] and len(_d['ids']) < 20000:
                         _d['ids'].append(_dev)
-                        _ss('routing_devices', _j.dumps(_d))
+                        _all[routing_variant] = _d
+                        _ss('routing_devices', _j.dumps(_all))
                 except Exception:
                     pass
 
@@ -2140,7 +2152,16 @@ async def handle_routing_profile(request: web.Request) -> web.Response:
         get_effective_happ_routing_profile_json, prepare_routing_profile,
     )
     app_name = "incy" if request.query.get("app", "incy") == "incy" else "happ"
-    profile = prepare_routing_profile(get_effective_happ_routing_profile_json(), app_name)
+    from database.requests import HAPP_ROUTING_VARIANTS, get_happ_routing_variant
+    variant = request.query.get("v")
+    if variant not in HAPP_ROUTING_VARIANTS:
+        variant = get_happ_routing_variant()
+    try:
+        import time as _tm
+        min_ts = min(max(int(request.query.get("t", "0")), 0), int(_tm.time()))
+    except ValueError:
+        min_ts = 0
+    profile = prepare_routing_profile(get_effective_happ_routing_profile_json(variant), app_name, variant, min_ts)
     return web.Response(
         text=profile, content_type="application/json", charset="utf-8",
         headers={"Cache-Control": "public, max-age=600"},

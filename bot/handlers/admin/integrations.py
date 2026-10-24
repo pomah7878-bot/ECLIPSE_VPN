@@ -2762,12 +2762,14 @@ def _happ_routing_menu_text() -> str:
     import json as _json
     from database.requests import get_setting
     from bot.utils.datetime_format import format_datetime_for_display
+    from database.requests import get_happ_routing_variant
+    _v = get_happ_routing_variant()
     try:
-        _pub = _json.loads(get_setting('routing_published', '') or '{}').get('ts')
+        _pub = _json.loads(get_setting('routing_published' if _v == 'smart' else f'routing_published_{_v}', '') or '{}').get('ts')
     except Exception:
         _pub = None
     try:
-        _d = _json.loads(get_setting('routing_devices', '') or '{}')
+        _d = (_json.loads(get_setting('routing_devices', '') or '{}').get(_v) or {})
         _got = len(_d.get('ids', [])) if _d.get('ts') == _pub else 0
     except Exception:
         _got = 0
@@ -2801,6 +2803,9 @@ def _happ_routing_menu_text() -> str:
         "из белого списка, всё остальное через VPN. Строже; подходит, если приложения "
         "банков и Госуслуг капризничают.\n"
         "После смены клиенты получат новый профиль при следующем обновлении подписки.\n\n"
+        "<b>Выбор клиентом</b> — на карточке ключа появляется кнопка «🗺 Маршрутизация»: "
+        "клиент сам выбирает «Умный», «БС» или «Как у всех» (= вариант выше). "
+        "Работает, пока свой JSON-профиль не задан и режим add/onadd.\n\n"
         "«Добавить» (add) — профиль появится в списке у клиента, но не станет "
         "активным автоматически, если уже есть другой активный. «Добавить и "
         "активировать» (onadd) — станет активным сразу, даже поверх другого "
@@ -2819,6 +2824,18 @@ async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
     from bot.keyboards.admin_settings import happ_routing_menu_kb
     await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_toggle_routing_user_choice")
+async def toggle_routing_user_choice(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_routing_user_choice_enabled, set_routing_user_choice_enabled
+    set_routing_user_choice_enabled(not get_routing_user_choice_enabled())
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
+    await callback.answer("✅ Готово")
 
 
 @router.callback_query(F.data.startswith("admin_set_happ_routing_variant:"))
