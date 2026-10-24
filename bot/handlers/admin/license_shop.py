@@ -39,10 +39,18 @@ def _license_tariffs_kb(tariffs, trial_days=None):
             tier_label = "Базовый"
         else:
             tier_label = f"{len(enabled)} функций"
-        builder.row(InlineKeyboardButton(
-            text=f"{t['name']} — {tier_label}, {duration_text} — {t['price_rub']:.0f} ₽",
-            callback_data=f"buy_license_tariff:{t['id']}",
-        ))
+        from database.db_licenses import tariff_final_price, tariff_term_savings
+        parts = [t['name']]
+        if tier_label != "Полный":
+            parts.append(tier_label)
+        parts += [duration_text, f"{tariff_final_price(t):.0f} ₽"]
+        label = " · ".join(parts)
+        if t.get("discount_percent"):
+            label = f"🔥 {label} (−{int(t['discount_percent'])}%)"
+        savings = tariff_term_savings(t, tariffs)
+        if savings:
+            label += f" · выгода {savings}%"
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"buy_license_tariff:{t['id']}"))
     return builder.as_markup()
 
 
@@ -68,7 +76,8 @@ async def show_license_tariffs(message: Message, user_id: int):
         "🏢 <b>Whitelabel-лицензия ECLIPSE</b>\n\n"
         "Запустите собственный VPN-бот под своим брендом на нашей платформе.\n\n"
         + ("Можно сначала попробовать бесплатно, без оплаты.\n\n" if offer_days else "")
-        + ("Выберите тариф:" if tariffs else ""),
+        + ("Чем дольше срок, тем дешевле день: «выгода» показывает, на сколько "
+           "процентов он дешевле, чем в самом коротком тарифе. 🔥 — действует скидка.\n\nВыберите тариф:" if tariffs else ""),
         parse_mode="HTML",
         reply_markup=_license_tariffs_kb(tariffs, offer_days),
     )
@@ -77,7 +86,9 @@ async def show_license_tariffs(message: Message, user_id: int):
 @router.callback_query(F.data.startswith("buy_license_tariff:"))
 async def buy_license_tariff_selected(callback: CallbackQuery):
     """Создаёт оплату ЮKassa (QR/СБП) для выбранного тарифа лицензии."""
-    from database.db_licenses import get_license_tariff_by_id, create_license_purchase, save_license_purchase_payment_id
+    from database.db_licenses import (
+        get_license_tariff_by_id, create_license_purchase, save_license_purchase_payment_id, tariff_final_price,
+    )
     from bot.services.billing import create_yookassa_qr_payment
 
     tariff_id = int(callback.data.split(":")[1])
@@ -97,7 +108,7 @@ async def buy_license_tariff_selected(callback: CallbackQuery):
         bot_instance = callback.bot
         bot_info = await bot_instance.get_me()
         result = await create_yookassa_qr_payment(
-            amount_rub=tariff["price_rub"],
+            amount_rub=tariff_final_price(tariff),
             order_id=order_id,
             description=f"Whitelabel-лицензия «{tariff['name']}»",
             bot_name=bot_info.username,
@@ -116,7 +127,7 @@ async def buy_license_tariff_selected(callback: CallbackQuery):
         photo=result["qr_image_url"],
         caption=(
             f"💳 <b>Оплата лицензии «{html_escape(str(tariff['name']))}»</b>\n\n"
-            f"Сумма: {tariff['price_rub']:.0f} ₽\n\n"
+            f"Сумма: {tariff_final_price(tariff):.0f} ₽\n\n"
             "Отсканируйте QR-код в приложении вашего банка (СБП), затем нажмите «Я оплатил»."
         ),
         parse_mode="HTML",

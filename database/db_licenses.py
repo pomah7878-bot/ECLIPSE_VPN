@@ -168,6 +168,27 @@ def create_license_tariff(name: str, features, price_rub: float, duration_days: 
         return cursor.lastrowid
 
 
+def tariff_final_price(t: Dict[str, Any]) -> float:
+    """Цена к оплате с учётом скидки тарифа (discount_percent, 0–90)."""
+    price = float(t.get("price_rub") or 0)
+    pct = max(0, min(90, int(t.get("discount_percent") or 0)))
+    return round(price * (1 - pct / 100))
+
+
+def tariff_term_savings(t: Dict[str, Any], tariffs: List[Dict[str, Any]]) -> int:
+    """На сколько % день лицензии дешевле, чем в самом коротком тарифе (0 — не дешевле).
+    Сравнивается цена к оплате; бессрочные тарифы в сравнении не участвуют."""
+    timed = [x for x in tariffs if x.get("duration_days")]
+    if not t.get("duration_days") or not timed:
+        return 0
+    base = min(timed, key=lambda x: x["duration_days"])
+    base_day = tariff_final_price(base) / base["duration_days"]
+    if base_day <= 0 or t["id"] == base["id"]:
+        return 0
+    pct = round((1 - (tariff_final_price(t) / t["duration_days"]) / base_day) * 100)
+    return pct if pct > 0 else 0
+
+
 def get_active_license_tariffs() -> List[Dict[str, Any]]:
     with get_db() as conn:
         rows = conn.execute(
@@ -203,7 +224,7 @@ def create_license_purchase(order_id: str, telegram_id: int, license_tariff_id: 
             "INSERT INTO license_purchases (order_id, telegram_id, license_tariff_id, status, "
             "features, duration_days, price_rub) VALUES (?, ?, ?, 'pending', ?, ?, ?)",
             (order_id, telegram_id, license_tariff_id, tariff.get("features") or "",
-             tariff.get("duration_days"), tariff.get("price_rub")),
+             tariff.get("duration_days"), tariff_final_price(tariff) if tariff else None),
         )
         conn.commit()
 
@@ -292,7 +313,7 @@ def get_abandoned_license_purchases(older_than_minutes: int = 5) -> List[Dict[st
 def update_license_tariff_field(tariff_id: int, field: str, value) -> bool:
     """Обновляет ОДНО поле тарифа. field должно быть из белого списка —
     защита от SQL-инъекции через имя столбца."""
-    allowed_fields = {"name", "tier", "features", "duration_days", "price_rub", "is_active", "display_order"}
+    allowed_fields = {"name", "tier", "features", "duration_days", "price_rub", "is_active", "display_order", "discount_percent"}
     if field not in allowed_fields:
         raise ValueError(f"Недопустимое поле для обновления: {field}")
     with get_db() as conn:

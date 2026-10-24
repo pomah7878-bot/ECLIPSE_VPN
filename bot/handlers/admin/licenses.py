@@ -558,6 +558,14 @@ async def refresh_my_license(callback: CallbackQuery):
 # ПРОСМОТР И РЕДАКТИРОВАНИЕ ОТДЕЛЬНОГО ТАРИФА НА ЛИЦЕНЗИЮ
 # ============================================================================
 
+def _price_line(t: dict) -> str:
+    from database.db_licenses import tariff_final_price
+    pct = int(t.get("discount_percent") or 0)
+    if pct:
+        return f"Цена: <s>{t['price_rub']:.0f} ₽</s> → {tariff_final_price(t):.0f} ₽ (скидка {pct}%)"
+    return f"Цена: {t['price_rub']:.0f} ₽"
+
+
 def _format_tariff_detail_text(t: dict) -> str:
     from bot.services.license import features_from_str, GATED_FEATURES
 
@@ -573,7 +581,7 @@ def _format_tariff_detail_text(t: dict) -> str:
     return (
         f"🏷 <b>{t['name']}</b>\n\n"
         f"Срок действия лицензии: {duration_text}\n"
-        f"Цена: {t['price_rub']:.0f} ₽\n"
+        f"{_price_line(t)}\n"
         f"Статус: {status_text}\n\n"
         f"{features_list}"
     )
@@ -686,6 +694,53 @@ async def license_tariff_edit_price_entered(message: Message, state: FSMContext)
     t = get_license_tariff_by_id(tariff_id)
     await message.answer(
         f"✅ Цена обновлена.\n\n{_format_tariff_detail_text(t)}",
+        parse_mode="HTML",
+        reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
+    )
+
+
+@router.callback_query(F.data.startswith("license_tariff_edit_discount:"))
+async def license_tariff_edit_discount_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    tariff_id = int(callback.data.split(":", 1)[1])
+    await state.set_state(AdminStates.license_tariff_edit_discount)
+    await state.update_data(editing_tariff_id=tariff_id)
+    await safe_edit_or_send(
+        callback.message,
+        "🎁 Введите скидку на этот тариф в процентах (от 1 до 90, например: 15).\n"
+        "Чтобы убрать скидку, введите 0. Покупателям покажется цена со скидкой.",
+        reply_markup=license_tariff_edit_cancel_kb(tariff_id),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.license_tariff_edit_discount)
+async def license_tariff_edit_discount_entered(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id):
+        return
+
+    text = (message.text or "").strip().replace("%", "")
+    if not text.isdigit() or not 0 <= int(text) <= 90:
+        await message.answer("❌ Введите целое число от 0 до 90, например: 15")
+        return
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    data = await state.get_data()
+    tariff_id = data["editing_tariff_id"]
+    from database.db_licenses import update_license_tariff_field, get_license_tariff_by_id
+    update_license_tariff_field(tariff_id, "discount_percent", int(text))
+    await state.set_state(AdminStates.admin_menu)
+
+    t = get_license_tariff_by_id(tariff_id)
+    await message.answer(
+        f"✅ {'Скидка установлена' if int(text) else 'Скидка убрана'}.\n\n{_format_tariff_detail_text(t)}",
         parse_mode="HTML",
         reply_markup=license_tariff_detail_kb(tariff_id, bool(t["is_active"])),
     )

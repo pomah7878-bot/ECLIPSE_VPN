@@ -186,6 +186,7 @@ class AdminStates(StatesGroup):
     license_tariff_create_name = State()   # Ввод названия тарифа на продажу
     license_tariff_create_price = State()  # Ввод цены тарифа на продажу
     license_tariff_edit_name = State()     # Редактирование названия существующего тарифа
+    license_tariff_edit_discount = State()  # Скидка (%) на тариф лицензии
     license_tariff_edit_price = State()    # Редактирование цены существующего тарифа
     my_license_enter_code = State()        # Партнёр вводит код лицензии, выданный напрямую
     creator_chat_message = State()         # Установка пишет сообщение создателю

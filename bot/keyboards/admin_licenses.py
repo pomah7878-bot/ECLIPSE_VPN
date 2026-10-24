@@ -85,6 +85,14 @@ def license_create_duration_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def _tariff_price_text(t: dict) -> str:
+    pct = int(t.get("discount_percent") or 0)
+    if not pct:
+        return f"{t['price_rub']:.0f}₽"
+    final = round(float(t["price_rub"]) * (1 - pct / 100))
+    return f"{final:.0f}₽ (−{pct}%)"
+
+
 def license_tariffs_menu_kb(tariffs: list) -> InlineKeyboardMarkup:
     """Список тарифов на продажу лицензий (для /buy_license) — включая
     неактивные (отмечены значком), чтобы можно было их снова включить."""
@@ -93,7 +101,7 @@ def license_tariffs_menu_kb(tariffs: list) -> InlineKeyboardMarkup:
         duration_text = f"{t['duration_days']}дн" if t["duration_days"] else "бессрочно"
         status_icon = "" if t["is_active"] else "🚫 "
         builder.row(InlineKeyboardButton(
-            text=f"{status_icon}{t['name']} — {t['price_rub']:.0f}₽ ({duration_text})",
+            text=f"{status_icon}{t['name']} — {_tariff_price_text(t)} ({duration_text})",
             callback_data=f"license_tariff_view:{t['id']}",
         ))
     builder.row(InlineKeyboardButton(text="➕ Новый тариф на продажу", callback_data="license_tariff_create_start"))
@@ -105,7 +113,10 @@ def license_tariff_detail_kb(tariff_id: int, is_active: bool) -> InlineKeyboardM
     """Действия для конкретного тарифа — редактирование всех полей."""
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="✏️ Название", callback_data=f"license_tariff_edit_name:{tariff_id}"))
-    builder.row(InlineKeyboardButton(text="💰 Цена", callback_data=f"license_tariff_edit_price:{tariff_id}"))
+    builder.row(
+        InlineKeyboardButton(text="💰 Цена", callback_data=f"license_tariff_edit_price:{tariff_id}"),
+        InlineKeyboardButton(text="🎁 Скидка", callback_data=f"license_tariff_edit_discount:{tariff_id}"),
+    )
     builder.row(InlineKeyboardButton(text="📅 Срок действия", callback_data=f"license_tariff_edit_duration:{tariff_id}"))
     builder.row(InlineKeyboardButton(text="🔧 Настроить функции", callback_data=f"license_tariff_edit_tier:{tariff_id}"))
     if is_active:

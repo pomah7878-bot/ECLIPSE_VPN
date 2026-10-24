@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 164
+LATEST_VERSION = 165
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3761,6 +3761,23 @@ def migration_164(conn: sqlite3.Connection) -> None:
     logger.info("Migration v164 applied: функция routing для full-лицензий")
 
 
+def migration_165(conn: sqlite3.Connection) -> None:
+    """Версия 1.397: скидка на тарифы лицензий (discount_percent) и цены, где больший срок
+    выгоднее: Рост 3990 → 3390, Максимум 6990 → 5690. Цены меняются только у тарифов с прежними
+    стандартными названием, сроком и ценой — если вы правили их вручную, ничего не трогается."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='license_tariffs'").fetchone():
+        return
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(license_tariffs)")}
+    if "discount_percent" not in columns:
+        conn.execute("ALTER TABLE license_tariffs ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0")
+    for name, days, old, new_price in (("Рост", 180, 3990, 3390), ("Максимум", 365, 6990, 5690)):
+        conn.execute(
+            "UPDATE license_tariffs SET price_rub = ? WHERE name LIKE ? AND duration_days = ? AND price_rub = ?",
+            (new_price, f"%{name}%", days, old),
+        )
+    logger.info("Migration v165 applied: скидки на тарифы лицензий, цены по сроку")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3852,6 +3869,7 @@ MIGRATIONS = {
     162: migration_162,
     163: migration_163,
     164: migration_164,
+    165: migration_165,
 }
 
 
