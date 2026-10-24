@@ -572,6 +572,16 @@ def happ_routing_menu_kb() -> InlineKeyboardMarkup:
             callback_data='admin_edit_happ_routing_name',
         ))
 
+    if not profile_json:
+        from database.requests import get_happ_routing_variant
+        variant = get_happ_routing_variant()
+        builder.row(
+            InlineKeyboardButton(text=('✅ ' if variant == 'smart' else '') + '🧠 Умный',
+                                 callback_data='admin_set_happ_routing_variant:smart'),
+            InlineKeyboardButton(text=('✅ ' if variant == 'whitelist' else '') + '🏦 БС (whitelist)',
+                                 callback_data='admin_set_happ_routing_variant:whitelist'),
+        )
+
     mode_labels = {
         'disabled': '⚪ Выключено (заголовок не отправляется)',
         'add': '➕ Добавить профиль (add)',

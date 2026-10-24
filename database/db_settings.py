@@ -29,6 +29,8 @@ __all__ = [
     'set_happ_proxy_registered_domain_hash',
     'HAPP_ROUTING_MODES',
     'get_happ_routing_mode',
+    'get_happ_routing_variant',
+    'set_happ_routing_variant',
     'set_happ_routing_mode',
     'get_happ_routing_profile_json',
     'set_happ_routing_profile_json',
@@ -860,23 +862,46 @@ _HAPP_ROUTING_DEFAULT_TEMPLATE = {
 # --- live geo profile v1.143 ---
 _LIVE_PROFILE_URL = "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/HAPP/DEFAULT.JSON"
 INCY_AUTOROUTING_URL = _LIVE_PROFILE_URL
+# Варианты дефолтного профиля: «Умный» (RU напрямую, остальное через прокси) и «БС»
+# (напрямую только банки/госсервисы из whitelist, всё остальное через прокси)
+_LIVE_PROFILE_URLS = {
+    'smart': _LIVE_PROFILE_URL,
+    'whitelist': _LIVE_PROFILE_URL.replace('DEFAULT.JSON', 'WHITELIST.JSON'),
+}
+HAPP_ROUTING_VARIANTS = ('smart', 'whitelist')
 _LIVE_PROFILE_TTL = 3600
-_live_profile_cache = {"data": None, "ts": 0.0, "busy": False}
+_live_profile_cache = {v: {"data": None, "ts": 0.0, "busy": False} for v in HAPP_ROUTING_VARIANTS}
 
 
-def _live_profile_refresh():
+def get_happ_routing_variant() -> str:
+    value = get_setting('happ_routing_variant', 'smart')
+    return value if value in HAPP_ROUTING_VARIANTS else 'smart'
+
+
+def set_happ_routing_variant(variant: str) -> None:
+    if variant not in HAPP_ROUTING_VARIANTS:
+        raise ValueError(f"Недопустимый вариант маршрутизации: {variant}")
+    set_setting('happ_routing_variant', variant)
+    set_setting('routing_force_publish', '1')
+
+
+def _live_setting_key(variant: str) -> str:
+    return 'live_routing_profile' if variant == 'smart' else f'live_routing_profile_{variant}'
+
+
+def _live_profile_refresh(variant="smart"):
     import json as _json, time as _time, urllib.request as _rq
     try:
-        with _rq.urlopen(_LIVE_PROFILE_URL, timeout=8) as r:
+        with _rq.urlopen(_LIVE_PROFILE_URLS[variant], timeout=8) as r:
             data = _json.loads(r.read().decode("utf-8"))
         ok = (isinstance(data, dict) and data.get("Geoipurl") and data.get("Geositeurl")
               and isinstance(data.get("DirectSites"), list))
         if ok:
-            _live_profile_cache["data"] = data
+            _live_profile_cache[variant]["data"] = data
             try:
                 # переживает перезапуск бота: иначе первые запросы после старта
                 # получали бы урезанный встроенный шаблон, а клиенты — смену профиля туда-обратно
-                set_setting('live_routing_profile', _json.dumps(data, ensure_ascii=False))
+                set_setting(_live_setting_key(variant), _json.dumps(data, ensure_ascii=False))
             except Exception:
                 pass
             try:
@@ -894,25 +919,26 @@ def _live_profile_refresh():
     except Exception:
         pass
     finally:
-        _live_profile_cache["ts"] = _time.time()
-        _live_profile_cache["busy"] = False
+        _live_profile_cache[variant]["ts"] = _time.time()
+        _live_profile_cache[variant]["busy"] = False
 
 
-def _get_live_profile():
+def _get_live_profile(variant=None):
     """Свежий профиль из GitHub (кэш, фоновое обновление). None — пока нет данных."""
     import time as _time, threading as _th
-    c = _live_profile_cache
+    variant = variant or get_happ_routing_variant()
+    c = _live_profile_cache[variant]
     if c["data"] is None and c["ts"] == 0.0:
         try:
             import json as _json
-            saved = get_setting('live_routing_profile', '')
+            saved = get_setting(_live_setting_key(variant), '')
             if saved:
                 c["data"] = _json.loads(saved)
         except Exception:
             pass
     if (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
         c["busy"] = True
-        _th.Thread(target=_live_profile_refresh, daemon=True).start()
+        _th.Thread(target=_live_profile_refresh, args=(variant,), daemon=True).start()
     return c["data"]
 
 

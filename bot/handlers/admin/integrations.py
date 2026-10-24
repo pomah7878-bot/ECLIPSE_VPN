@@ -2795,6 +2795,12 @@ def _happ_routing_menu_text() -> str:
         "маршрутизации) — для них ничего не отправляется. По умолчанию "
         "выключено — ничего не отправляется, поведение клиентов не меняется.\n\n"
         f"{default_note}\n\n"
+        "<b>Вариант профиля</b> (если свой JSON не задан):\n"
+        "• 🧠 Умный — российские сайты напрямую, зарубежные и AI через VPN.\n"
+        "• 🏦 БС (whitelist) — напрямую только банки, госсервисы, операторы и маркетплейсы "
+        "из белого списка, всё остальное через VPN. Строже; подходит, если приложения "
+        "банков и Госуслуг капризничают.\n"
+        "После смены клиенты получат новый профиль при следующем обновлении подписки.\n\n"
         "«Добавить» (add) — профиль появится в списке у клиента, но не станет "
         "активным автоматически, если уже есть другой активный. «Добавить и "
         "активировать» (onadd) — станет активным сразу, даже поверх другого "
@@ -2813,6 +2819,23 @@ async def show_happ_routing_menu(callback: CallbackQuery, state: FSMContext):
     from bot.keyboards.admin_settings import happ_routing_menu_kb
     await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_set_happ_routing_variant:"))
+async def set_happ_routing_variant_run(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    variant = callback.data.split(":", 1)[1]
+    from database.requests import set_happ_routing_variant
+    try:
+        set_happ_routing_variant(variant)
+    except ValueError:
+        await callback.answer("Неизвестный вариант", show_alert=True)
+        return
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
+    await callback.answer("✅ Вариант обновлён")
 
 
 @router.callback_query(F.data.startswith("admin_set_happ_routing_mode:"))
