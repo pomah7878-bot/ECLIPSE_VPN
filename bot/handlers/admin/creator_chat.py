@@ -200,7 +200,7 @@ def _chats_screen():
     from bot.services import creator_chat as cc
     from bot.keyboards.admin_misc import back_button, home_button
     threads = cc.list_threads(10)
-    nav_row = [back_button('admin_panel'), home_button()]
+    nav_row = [back_button('ho_home'), home_button()]
     if not threads:
         return "Пока никто не писал.", InlineKeyboardMarkup(inline_keyboard=[nav_row])
     rows = [[InlineKeyboardButton(
