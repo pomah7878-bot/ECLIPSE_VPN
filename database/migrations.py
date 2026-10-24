@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 162
+LATEST_VERSION = 163
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3738,6 +3738,13 @@ def migration_162(conn: sqlite3.Connection) -> None:
     logger.info("Migration v162 applied: кнопка btn_key_routing на key_details")
 
 
+def migration_163(conn: sqlite3.Connection) -> None:
+    """Версия 1.390: сбрасывает опубликованный профиль «БС» (1.388–1.389 могли опубликовать его
+    с правилами «Умного», пока база из GitHub не загрузилась) — заново соберётся при первом запросе."""
+    conn.execute("DELETE FROM settings WHERE key IN ('routing_published_whitelist', 'routing_devices')")
+    logger.info("Migration v163 applied: профиль БС будет опубликован заново")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3827,6 +3834,7 @@ MIGRATIONS = {
     160: migration_160,
     161: migration_161,
     162: migration_162,
+    163: migration_163,
 }
 
 

@@ -866,6 +866,16 @@ _HAPP_ROUTING_DEFAULT_TEMPLATE = {
 }
 
 
+# Запасной вариант «БС», пока профиль не скачан из GitHub (иначе клиент получил бы правила «Умного»)
+_HAPP_ROUTING_WHITELIST_OVERRIDES = {
+    "DirectSites": ["geosite:private", "geosite:whitelist"],
+    "DirectIp": ["geoip:private", "geoip:whitelist"],
+    "ProxySites": [],
+    "ProxyIp": [],
+    "BlockSites": ["geosite:win-spy", "geosite:torrent", "geosite:category-ads"],
+}
+
+
 # --- live geo profile v1.143 ---
 _LIVE_PROFILE_URL = "https://raw.githubusercontent.com/pomah7878-bot/eclipse-routing/main/HAPP/DEFAULT.JSON"
 INCY_AUTOROUTING_URL = _LIVE_PROFILE_URL
@@ -997,7 +1007,12 @@ def _get_live_profile(variant=None):
                 c["data"] = _json.loads(saved)
         except Exception:
             pass
-    if (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
+    if c["data"] is None and c["ts"] == 0.0 and not c["busy"]:
+        # данных нет вообще (первый запрос после установки/старта): скачиваем сразу,
+        # иначе в публикацию попали бы запасные правила, а не профиль из GitHub
+        c["busy"] = True
+        _live_profile_refresh(variant)
+    elif (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
         c["busy"] = True
         _th.Thread(target=_live_profile_refresh, args=(variant,), daemon=True).start()
     return c["data"]
@@ -1021,6 +1036,8 @@ def get_default_happ_routing_profile_json(variant=None) -> str:
     profile = {'Name': name}
     live = _get_live_profile(variant)
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
+    if (variant or get_happ_routing_variant()) == 'whitelist':
+        profile.update(_HAPP_ROUTING_WHITELIST_OVERRIDES)
     if live:
         profile.update({k: v for k, v in live.items() if k not in ('Name', 'LastUpdated')})
     return _json.dumps(profile, ensure_ascii=False)
