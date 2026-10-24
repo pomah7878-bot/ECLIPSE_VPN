@@ -239,7 +239,7 @@ async def creator_thread_open(callback: CallbackQuery, state: FSMContext):
     thread_id = int(callback.data.split(":", 1)[1])
     t = cc.get_thread(thread_id)
     await callback.message.answer(_thread_text(thread_id), parse_mode="HTML",
-                                  reply_markup=cc.creator_kb(thread_id, bool(t and t["blocked"])))
+                                  reply_markup=cc.creator_kb(thread_id, bool(t and t["blocked"]), with_history=False))
     await callback.answer()
 
 
@@ -295,7 +295,11 @@ async def creator_thread_block(callback: CallbackQuery):
     now_blocked = not t["blocked"]
     cc.set_blocked(thread_id, now_blocked)
     try:
-        await callback.message.edit_reply_markup(reply_markup=cc.creator_kb(thread_id, now_blocked))
+        had_history = any((b.callback_data or "").startswith("cr_open:")
+                          for r in (callback.message.reply_markup.inline_keyboard if callback.message.reply_markup else [])
+                          for b in r)
+        await callback.message.edit_reply_markup(
+            reply_markup=cc.creator_kb(thread_id, now_blocked, with_history=had_history))
     except Exception:
         pass
     await callback.answer("🚫 Установка заблокирована" if now_blocked else "✅ Разблокирована")

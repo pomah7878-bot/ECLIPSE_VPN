@@ -235,7 +235,7 @@ def _creator_order_kb(o) -> InlineKeyboardMarkup:
         rows.append([_btn("🎁 Скидка", f"ho_disc:{no}"), _btn("🚫 Отказать", f"ho_dec:{no}")])
     if st in ("paid", "in_progress", "delivered"):
         rows.append([_btn("🔒 Закрыть (возврат или нет)", f"ho_close:{no}")])
-    rows.append([_btn("💼 Все заказы", "ho_list"), _btn("🈴 На главную", "start")])
+    rows.append([_btn("⬅️ Назад", "ho_list"), _btn("🈴 На главную", "start")])
     return _kb(rows)
 
 
@@ -244,8 +244,7 @@ def home_view():
     from bot.services import creator_chat as cc
     on = cc.server_enabled()
     text = ("💼 <b>Помощь для админа</b>\n\n"
-            f"Кнопка у установок: <b>{'включена' if on else 'выключена'}</b>\n"
-            "Предложения выставляются из чата с установкой («✉️ Чаты с админами» или /creator_chats).")
+            "Предложения выставляются из чата с установкой — откройте «✉️ Чаты с админами».")
     kb = _kb([
         [_btn(f"🆘 Кнопка у всех: {'вкл' if on else 'выкл'}", "creator_help_toggle")],
         [_btn("✉️ Чаты с админами", "creator_chats_list")],

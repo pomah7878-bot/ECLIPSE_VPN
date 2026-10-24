@@ -258,15 +258,15 @@ def thread_title(t: Dict[str, Any]) -> str:
     return f"{who} · {bot}" + (f" · {extra}" if extra else "")
 
 
-def creator_kb(thread_id: int, blocked: bool = False):
+def creator_kb(thread_id: int, blocked: bool = False, with_history: bool = True):
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💼 Выставить предложение", callback_data=f"ho_new:{thread_id}")],
         [InlineKeyboardButton(text="✍️ Ответить", callback_data=f"cr_reply:{thread_id}"),
          InlineKeyboardButton(text="✅ Разблокировать" if blocked else "🚫 Заблокировать",
                               callback_data=f"cr_block:{thread_id}")],
-        [InlineKeyboardButton(text="💼 Заказы и прайс", callback_data="ho_home"),
-         InlineKeyboardButton(text="📜 История", callback_data=f"cr_open:{thread_id}")],
+        [InlineKeyboardButton(text="💼 Заказы и прайс", callback_data="ho_home")]
+        + ([InlineKeyboardButton(text="📜 История", callback_data=f"cr_open:{thread_id}")] if with_history else []),
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="creator_chats_list"),
          InlineKeyboardButton(text="🈴 На главную", callback_data="start")],
     ])
