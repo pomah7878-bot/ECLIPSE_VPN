@@ -10,7 +10,7 @@ VARIANT_TITLES = {'smart': '🧠 Умный', 'whitelist': '🏦 БС'}
 
 
 def _screen(key_id: int, telegram_id: int):
-    from database.requests import get_user_routing_variant, get_happ_routing_variant
+    from database.requests import get_user_routing_variant, get_happ_routing_variant, get_user_routing_served
     own = get_user_routing_variant(telegram_id)
     default = get_happ_routing_variant()
     current = own or default
@@ -29,14 +29,24 @@ def _screen(key_id: int, telegram_id: int):
         "<b>Как применить</b>\n"
         "1. Выберите вариант ниже.\n"
         "2. В приложении (Happ или INCY) обновите подписку.\n"
-        "3. В списке профилей маршрутизации появится нужное название: "
-        "у «БС» оно заканчивается на «• БС». Это значит, что вариант применился.\n"
-        "4. Если не помогло, перезапустите приложение.\n\n"
+        "3. Новый профиль заменит прежний в разделе маршрутизации приложения "
+        "(название то же, правила другие).\n"
+        "4. Если не поменялось, перезапустите приложение.\n\n"
         "Работает в Happ и INCY."
     )
 
     def mark(active):
         return '✅ ' if active else ''
+
+    served = get_user_routing_served(telegram_id)
+    if served:
+        from bot.utils.datetime_format import format_datetime_for_display
+        from datetime import datetime, timezone
+        when = format_datetime_for_display(datetime.fromtimestamp(served[1], timezone.utc))
+        text += (f"\n\n📲 <b>Приложение получило:</b> {VARIANT_TITLES.get(served[0], served[0])} ({when})\n"
+                 "Если здесь не тот вариант, который вы выбрали, обновите подписку в приложении.")
+    else:
+        text += "\n\n📲 Приложение ещё не получало профиль. Обновите подписку в приложении."
 
     rows = [
         [InlineKeyboardButton(text=mark(own == 'smart') + VARIANT_TITLES['smart'],

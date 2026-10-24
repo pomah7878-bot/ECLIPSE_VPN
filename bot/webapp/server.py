@@ -2025,6 +2025,12 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 from database.requests import get_setting as _gs, set_setting as _ss
                 if _t.time() - float(_gs('routing_last_served', '0') or 0) > 60:
                     _ss('routing_last_served', str(int(_t.time())))
+                try:
+                    if key.get("telegram_id"):
+                        from database.requests import record_user_routing_served
+                        record_user_routing_served(key["telegram_id"], routing_variant)
+                except Exception:
+                    pass
                 # Счётчик устройств, получивших текущую версию профиля (по HWID, без самих HWID)
                 import json as _j
                 try:

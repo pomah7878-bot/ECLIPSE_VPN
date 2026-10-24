@@ -37,6 +37,8 @@ __all__ = [
     'set_user_routing_variant',
     'resolve_routing_variant',
     'routing_min_ts',
+    'record_user_routing_served',
+    'get_user_routing_served',
     'HAPP_ROUTING_VARIANTS',
     'set_happ_routing_mode',
     'get_happ_routing_profile_json',
@@ -917,6 +919,26 @@ def set_user_routing_variant(telegram_id, variant: Optional[str]) -> None:
     set_setting(f'routing_variant_user_ts:{int(telegram_id)}', str(int(__import__('time').time())))
 
 
+def record_user_routing_served(telegram_id, variant: str) -> None:
+    """Запоминает, какой вариант профиля и когда получило приложение клиента (для экрана выбора)."""
+    import time as _time
+    key = f'routing_served_user:{int(telegram_id)}'
+    old = get_setting(key, '') or ''
+    old_variant, _, old_ts = old.partition('|')
+    now = int(_time.time())
+    if old_variant != variant or not old_ts.isdigit() or now - int(old_ts) > 60:
+        set_setting(key, f'{variant}|{now}')
+
+
+def get_user_routing_served(telegram_id):
+    """(вариант, unix-время) последней выдачи профиля клиенту или None."""
+    value = (get_setting(f'routing_served_user:{int(telegram_id)}', '') or '')
+    variant, _, ts = value.partition('|')
+    if variant in HAPP_ROUTING_VARIANTS and ts.isdigit():
+        return variant, int(ts)
+    return None
+
+
 def routing_min_ts(telegram_id=None) -> int:
     """Нижняя граница LastUpdated: время последней смены варианта (админом или самим клиентом).
     Happ/INCY принимают профиль с тем же Name только при БОЛЬШЕМ LastUpdated, а у варианта
@@ -1031,8 +1053,7 @@ def get_default_happ_routing_profile_json(variant=None) -> str:
     from database.db_settings import get_effective_brand_name
     name = get_happ_routing_profile_name() or get_effective_brand_name()
     variant = variant or get_happ_routing_variant()
-    if variant == 'whitelist':
-        name += ' • БС'  # другое название — клиент сразу видит в приложении, какой вариант применён
+    # Название одно для всех вариантов: Happ/INCY заменяют профиль с тем же Name на новый
     profile = {'Name': name}
     live = _get_live_profile(variant)
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
