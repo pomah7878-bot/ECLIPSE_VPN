@@ -61,3 +61,4 @@ patch_*.py
 /*.db-shm
 *.bundle
 purge_*.sh
+bot/webapp/static/posts/
