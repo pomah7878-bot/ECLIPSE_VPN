@@ -40,6 +40,18 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(apply_balance_operation(operation_type="debit", cents=900, **kw)["status"], "insufficient_funds")
         self.assertEqual(apply_balance_operation(operation_type="debit", cents=200, **kw)["balance_after"], 300)
 
+    def test_balance_parallel_debits(self):
+        import threading
+        with get_db() as c:
+            c.execute("INSERT INTO users (telegram_id, personal_balance) VALUES (778, 1000)")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 778").fetchone()["id"]
+        res = []
+        def go():
+            res.append(apply_balance_operation(user_id=uid, operation_type="debit", cents=300, source="t", reason="t")["ok"])
+        ts = [threading.Thread(target=go) for _ in range(6)]
+        [t.start() for t in ts]; [t.join() for t in ts]
+        self.assertEqual(sum(res), 3)  # 1000 коп хватает ровно на три списания по 300
+
     def test_routing_does_not_freeze_fallback(self):
         # профиль из GitHub ещё не загружен: публикация не должна фиксировать запасной шаблон
         st._live_profile_cache["smart"].update(data=None, ts=1e18, busy=True)

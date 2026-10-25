@@ -238,6 +238,9 @@ def apply_balance_operation(
 
     with get_db() as conn:
         create_business_operation_tables(conn)
+        # сразу берём блокировку записи: чтение и изменение баланса идут как одно целое,
+        # параллельная операция ждёт, а не падает с «database is locked»
+        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT personal_balance FROM users WHERE id = ?",
             (user_id,),
