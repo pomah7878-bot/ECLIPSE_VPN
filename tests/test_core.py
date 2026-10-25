@@ -40,6 +40,17 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(apply_balance_operation(operation_type="debit", cents=900, **kw)["status"], "insufficient_funds")
         self.assertEqual(apply_balance_operation(operation_type="debit", cents=200, **kw)["balance_after"], 300)
 
+    def test_session_revoked_by_logout(self):
+        import asyncio, time
+        from unittest import mock
+        from bot.webapp import server as sv
+        with mock.patch.object(sv, "_get_session_secret", return_value=b"k"):
+            c = sv._sign_session(42)
+            self.assertEqual(sv._verify_session(c), 42)
+            st.set_setting("site_session_min_42", str(int(time.time()) + 5))
+            st.invalidate_settings_cache()
+            self.assertIsNone(sv._verify_session(c))
+
     def test_balance_parallel_debits(self):
         import threading
         with get_db() as c:

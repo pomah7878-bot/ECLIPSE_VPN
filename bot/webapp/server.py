@@ -2530,6 +2530,11 @@ def _verify_session(cookie_value: Optional[str]) -> Optional[int]:
             return None
         if int(expires_str) < int(time.time()):
             return None
+        # выход на сервере: куки, выданные раньше метки выхода, больше не действуют
+        from database.db_settings import get_setting
+        issued = int(expires_str) - _SESSION_TTL_SECONDS
+        if issued < int(get_setting(f"site_session_min_{int(account_id_str)}", "0") or 0):
+            return None
         return int(account_id_str)
     except (ValueError, AttributeError, TypeError):
         return None
@@ -3804,6 +3809,13 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
 
 async def handle_public_account_logout(request: web.Request) -> web.Response:
     """POST /api/public/account/logout — выход из личного кабинета."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if account_id:
+        # не только стираем cookie: украденная копия после выхода тоже перестаёт работать
+        import time
+        from database.db_settings import set_setting, invalidate_settings_cache
+        set_setting(f"site_session_min_{account_id}", str(int(time.time())))
+        invalidate_settings_cache()
     resp = web.json_response({"ok": True})
     resp.del_cookie("site_session")
     return resp
