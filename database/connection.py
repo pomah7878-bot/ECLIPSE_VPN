@@ -18,7 +18,10 @@ except ModuleNotFoundError as e:
     config = None
 
 # Path to database file
-DB_PATH = Path(__file__).parent / "vpn_bot.db"
+import os
+
+# ECLIPSE_DB_PATH нужен только для пробного прогона миграций на копии базы при обновлении
+DB_PATH = Path(os.environ.get("ECLIPSE_DB_PATH") or Path(__file__).parent / "vpn_bot.db")
 
 DEFAULT_SQLITE_JOURNAL_MODE = "WAL"
 DEFAULT_SQLITE_SYNCHRONOUS = "NORMAL"

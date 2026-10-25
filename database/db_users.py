@@ -34,8 +34,6 @@ __all__ = [
     'get_user_referrer',
     'ensure_user_referral_code',
     'get_user_balance',
-    'add_to_balance',
-    'deduct_from_balance',
     'get_user_referral_coefficient',
     'set_user_referral_coefficient',
     'get_user_language',
@@ -611,47 +609,6 @@ def get_user_balance(user_id: int) -> int:
         row = cursor.fetchone()
         return row['personal_balance'] if row else 0
 
-def add_to_balance(user_id: int, cents: int) -> bool:
-    """
-    Add to balance. SYNCHRONOUS function, called inside async with user_locks[user_id].
-    
-    Args:
-        user_id: Internal user ID
-        cents: Amount in kopecks
-    
-    Returns:
-        True if successful
-    """
-    with get_db() as conn:
-        cursor = conn.execute(
-            "UPDATE users SET personal_balance = personal_balance + ? WHERE id = ?",
-            (cents, user_id)
-        )
-        success = cursor.rowcount > 0
-        if success:
-            logger.info(f"Баланс пользователя {user_id} пополнен на {cents} копеек")
-        return success
-
-def deduct_from_balance(user_id: int, cents: int) -> bool:
-    """
-    Write off from balance sheet. SYNCHRONOUS function, called inside async with user_locks[user_id].
-    
-    Args:
-        user_id: Internal user ID
-        cents: Amount in kopecks
-    
-    Returns:
-        True if successful
-    """
-    with get_db() as conn:
-        cursor = conn.execute(
-            "UPDATE users SET personal_balance = personal_balance - ? WHERE id = ? AND personal_balance >= ?",
-            (cents, user_id, cents)
-        )
-        success = cursor.rowcount > 0
-        if success:
-            logger.info(f"С баланса пользователя {user_id} списано {cents} копеек")
-        return success
 
 def get_user_referral_coefficient(user_id: int) -> float:
     """

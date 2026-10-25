@@ -1037,12 +1037,8 @@ def _get_live_profile(variant=None):
                 c["data"] = _json.loads(saved)
         except Exception:
             pass
-    if c["data"] is None and c["ts"] == 0.0 and not c["busy"]:
-        # данных нет вообще (первый запрос после установки/старта): скачиваем сразу,
-        # иначе в публикацию попали бы запасные правила, а не профиль из GitHub
-        c["busy"] = True
-        _live_profile_refresh(variant)
-    elif (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
+    # скачивание всегда в фоне: запрос к GitHub не должен держать подписки (см. prepare_routing_profile)
+    if (_time.time() - c["ts"] > _LIVE_PROFILE_TTL) and not c["busy"]:
         c["busy"] = True
         _th.Thread(target=_live_profile_refresh, args=(variant,), daemon=True).start()
     return c["data"]
@@ -1138,14 +1134,20 @@ def prepare_routing_profile(profile_json: str, app: str, variant=None, min_ts: i
         # токен срочной публикации: у каждого варианта профиля своя «отметка», что он его уже учёл
         token = get_setting('routing_force_publish', '')
         force = bool(token) and pub.get('ftok') != token
-        if not pub.get('profile') or (pub.get('digest') != digest and (force or _in_publish_window())):
-            pub = {'digest': digest, 'ts': str(int(_time.time())), 'profile': body, 'ftok': token}
-            set_setting(pub_key, _json.dumps(pub, ensure_ascii=False))
-        elif force:
-            pub['ftok'] = token
-            set_setting(pub_key, _json.dumps(pub, ensure_ascii=False))
-        profile = dict(pub['profile'])
-        profile['LastUpdated'] = str(max(int(pub['ts']), int(min_ts or 0)))
+        if (not pub.get('profile') and not get_happ_routing_profile_json()
+                and _get_live_profile(variant) is None):
+            # профиль из GitHub ещё скачивается: запасной шаблон не публикуем (не «замораживаем»),
+            # клиент получит его без LastUpdated, а публикация произойдёт со следующим запросом
+            profile = body
+        else:
+            if not pub.get('profile') or (pub.get('digest') != digest and (force or _in_publish_window())):
+                pub = {'digest': digest, 'ts': str(int(_time.time())), 'profile': body, 'ftok': token}
+                set_setting(pub_key, _json.dumps(pub, ensure_ascii=False))
+            elif force:
+                pub['ftok'] = token
+                set_setting(pub_key, _json.dumps(pub, ensure_ascii=False))
+            profile = dict(pub['profile'])
+            profile['LastUpdated'] = str(max(int(pub['ts']), int(min_ts or 0)))
     if app == 'incy' and 'useChunkFiles' not in profile:
         chunk = profile.get('UseChunkFiles')
         if chunk is not None:

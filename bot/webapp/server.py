@@ -2568,14 +2568,6 @@ def _get_client_ip(request: web.Request) -> str:
                 return str(_ipaddress.ip_address(candidate))
             except ValueError:
                 pass
-    # Необязательно: если сайт стоит за CDN (например Cloudflare), в переменной
-    # окружения CLIENT_IP_HEADER можно указать его заголовок (CF-Connecting-IP).
-    # Включайте, только если nginx не пропускает этот заголовок от посторонних.
-    custom_header = os.environ.get("CLIENT_IP_HEADER", "").strip()
-    if custom_header:
-        custom_ip = request.headers.get(custom_header, "").split(",")[0].strip()
-        if custom_ip:
-            return custom_ip
     forwarded = request.headers.get("X-Forwarded-For", "")
     if forwarded:
         parts = [p.strip() for p in forwarded.split(",") if p.strip()]

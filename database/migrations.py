@@ -3886,6 +3886,27 @@ def run_migrations() -> None:
             pass
 
 
+def _backup_before_migration(current: int) -> None:
+    """Копия базы перед миграцией (рядом с базой, хранятся 2 последние). Сбой копии не мешает запуску."""
+    import sqlite3
+    from database.connection import DB_PATH
+    try:
+        target = DB_PATH.with_name(f"{DB_PATH.name}.pre-v{current}.bak")
+        src = sqlite3.connect(DB_PATH)
+        dst = sqlite3.connect(target)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        old = sorted(DB_PATH.parent.glob(f"{DB_PATH.name}.pre-v*.bak"), key=lambda p: p.stat().st_mtime)
+        for p in old[:-2]:
+            p.unlink(missing_ok=True)
+        logger.info(f"💾 Копия БД перед миграцией: {target.name}")
+    except Exception as e:
+        logger.warning(f"Не удалось сделать копию БД перед миграцией: {e}")
+
+
 def _run_migrations_impl() -> None:
     """
     Runs all necessary migrations.
@@ -3911,7 +3932,9 @@ def _run_migrations_impl() -> None:
             )
         
         logger.info(f"🔄 Требуется миграция БД с версии {current} до {LATEST_VERSION}")
-        
+        if current > 0:
+            _backup_before_migration(current)
+
         with get_db() as conn:
             # New installation - creating a database from scratch
             if current == 0:

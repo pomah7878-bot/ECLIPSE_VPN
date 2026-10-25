@@ -394,8 +394,41 @@ def _validate_pulled_code() -> Tuple[bool, str]:
             return False, f'Ошибка запуска проверки импорта: {e}'
         if result.returncode != 0:
             return False, (result.stderr or result.stdout or 'Неизвестная ошибка импорта')[-800:]
-        return True, ''
+        return _check_migrations_on_copy(python_bin, project_root)
     return False, 'Проверка импорта не выполнена'
+
+
+def _check_migrations_on_copy(python_bin: str, project_root: str) -> Tuple[bool, str]:
+    """Прогоняет миграции нового кода на КОПИИ базы: сломанная миграция не должна убить бота после рестарта."""
+    import sqlite3, subprocess as _subprocess, tempfile
+    db_file = os.path.join(project_root, 'database', 'vpn_bot.db')
+    if not os.path.exists(db_file):
+        return True, ''
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_path = os.path.join(tmp, 'vpn_bot.db')
+        try:
+            src = sqlite3.connect(db_file)
+            dst = sqlite3.connect(copy_path)
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+            result = _subprocess.run(
+                [python_bin, '-c', 'from database.migrations import run_migrations; run_migrations()'],
+                cwd=project_root,
+                env={**os.environ, 'ECLIPSE_DB_PATH': copy_path},
+                capture_output=True,
+                text=True,
+                timeout=IMPORT_CHECK_TIMEOUT,
+            )
+        except Exception as e:
+            # сама проверка не смогла запуститься — не блокируем обновление, бот при старте сделает копию БД
+            logger.warning(f'Пробный прогон миграций не выполнен: {e}')
+            return True, ''
+        if result.returncode != 0:
+            return False, 'Миграции не прошли на копии базы:\n' + (result.stderr or result.stdout or '')[-700:]
+    return True, ''
 
 
 def force_pull_updates() -> Tuple[bool, str]:
