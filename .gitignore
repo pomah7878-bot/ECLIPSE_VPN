@@ -6,7 +6,6 @@
 config.py
 secrets.env
 logs/
-tests/
 docs/
 results.md
 AGENTS.md
