@@ -723,8 +723,16 @@
             setTimeout(() => el.classList.remove('show'), 2200);
         }
 
+        // Запрос с ограничением по времени: на слабой мобильной сети fetch без таймаута
+        // мог висеть бесконечно, и на экране вечно крутилась загрузка
+        function fetchTimeout(url, opts, ms) {
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), ms || 30000);
+            return fetch(url, Object.assign({}, opts || {}, { signal: ctl.signal })).finally(() => clearTimeout(timer));
+        }
+
         async function postAPI(endpoint, body) {
-            const res = await fetch(`/api/public/${endpoint}`, {
+            const res = await fetchTimeout(`/api/public/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -739,11 +747,17 @@
         // с понятным текстом ошибки в JSON (например "номер уже использован") —
         // с обычным postAPI этот текст терялся бы, улетая сразу в catch.
         async function postAPISafe(endpoint, body) {
-            const res = await fetch(`/api/public/${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            let res;
+            try {
+                res = await fetchTimeout(`/api/public/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } catch (e) {
+                // нет связи или сервер не ответил вовремя — вызывающий код покажет сообщение вместо вечной загрузки
+                return { error: 'network', message: 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.' };
+            }
             try {
                 return await res.json();
             } catch (e) {
@@ -752,7 +766,7 @@
         }
 
         async function fetchAPI(endpoint) {
-            const res = await fetch(`/api/public/${endpoint}`);
+            const res = await fetchTimeout(`/api/public/${endpoint}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.json();
         }
