@@ -1057,7 +1057,15 @@ def get_default_happ_routing_profile_json(variant=None) -> str:
     from database.db_settings import get_effective_brand_name
     name = get_happ_routing_profile_name() or get_effective_brand_name()
     variant = variant or get_happ_routing_variant()
-    # Название одно для всех вариантов: Happ/INCY заменяют профиль с тем же Name на новый
+    # Название зависит от варианта, чтобы в приложении было видно, какой профиль включён
+    if variant == 'whitelist':
+        _wl_name = get_setting('happ_routing_profile_name_whitelist', '')
+        if _wl_name:
+            name = _wl_name
+        elif 'Умный режим' in name:
+            name = name.replace('🧭', '🏦').replace('Умный режим', 'БС режим')
+        else:
+            name = f"🏦 БС · {name}"
     profile = {'Name': name}
     live = _get_live_profile(variant)
     profile.update(_HAPP_ROUTING_DEFAULT_TEMPLATE)
