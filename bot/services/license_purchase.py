@@ -50,7 +50,7 @@ async def issue_license_for_order(
     from database.db_licenses import (
         get_license_purchase_by_order_id, get_license_tariff_by_id, claim_license_purchase,
         release_license_purchase_claim, complete_license_purchase, mark_license_purchase_status,
-        create_partner_license,
+        create_partner_license, find_partner_license_key_by_order,
     )
     from bot.services.billing import check_yookassa_payment_status
 
@@ -99,7 +99,9 @@ async def issue_license_for_order(
             duration_days = tariff["duration_days"]
             tariff_name = tariff.get("name") or ""
         name = partner_name or f"user_{purchase['telegram_id']}"
-        license_key = create_partner_license(
+        # ключ по этому заказу мог быть создан раньше (сбой между созданием и пометкой «выдан») —
+        # берём его, а не создаём второй
+        license_key = find_partner_license_key_by_order(order_id) or create_partner_license(
             partner_name=name,
             features=features,
             duration_days=duration_days,

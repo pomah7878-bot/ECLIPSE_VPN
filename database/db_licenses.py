@@ -48,6 +48,17 @@ def get_partner_license(license_key: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+def find_partner_license_key_by_order(order_id: str) -> Optional[str]:
+    """Ключ, уже выданный по этому заказу (метка order_id=<id>, в notes), иначе None.
+    Нужен, чтобы повторная выдача после сбоя не создавала второй ключ."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT license_key FROM partner_licenses WHERE instr(notes, ?) > 0 ORDER BY rowid LIMIT 1",
+            (f"order_id={order_id},",),
+        ).fetchone()
+        return row["license_key"] if row else None
+
+
 def list_partner_licenses() -> List[Dict[str, Any]]:
     with get_db() as conn:
         rows = conn.execute("SELECT * FROM partner_licenses ORDER BY created_at DESC").fetchall()

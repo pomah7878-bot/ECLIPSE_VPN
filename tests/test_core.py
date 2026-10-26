@@ -40,6 +40,44 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(apply_balance_operation(operation_type="debit", cents=900, **kw)["status"], "insufficient_funds")
         self.assertEqual(apply_balance_operation(operation_type="debit", cents=200, **kw)["balance_after"], 300)
 
+    def test_license_found_by_order(self):
+        from database.db_licenses import create_partner_license, find_partner_license_key_by_order
+        key = create_partner_license("t", "", 30, notes="Куплено через бота, order_id=LIC_AB12, telegram_id=1")
+        self.assertEqual(find_partner_license_key_by_order("LIC_AB12"), key)
+        self.assertIsNone(find_partner_license_key_by_order("AB12"))      # чужой суффикс не совпадает
+        self.assertIsNone(find_partner_license_key_by_order("LIC_AB1"))   # и чужой префикс тоже
+        self.assertIsNone(find_partner_license_key_by_order("LIC_ZZ99"))
+
+    def test_license_retry_does_not_issue_second_key(self):
+        import asyncio
+        from unittest import mock
+        from database import db_licenses as L
+        import bot.services.license_purchase as lp, bot.services.billing as bl
+        tid = L.create_license_tariff("T", "", 1000, 30)
+        L.create_license_purchase("ORD_RETRY", 5, tid)
+        with get_db() as c:
+            c.execute("UPDATE license_purchases SET yookassa_payment_id='yk' WHERE order_id='ORD_RETRY'")
+
+        async def paid(*a, **k):
+            return "succeeded"
+
+        real, calls = L.complete_license_purchase, {"n": 0}
+
+        def flaky(o, k):  # первый раз падает уже ПОСЛЕ создания ключа
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("db locked")
+            return real(o, k)
+
+        with mock.patch.object(bl, "check_yookassa_payment_status", paid), \
+                mock.patch.object(L, "complete_license_purchase", flaky):
+            s1, _ = asyncio.run(lp.issue_license_for_order("ORD_RETRY"))
+            s2, info = asyncio.run(lp.issue_license_for_order("ORD_RETRY"))
+        self.assertEqual((s1, s2), ("error", "issued"))
+        with get_db() as c:
+            n = c.execute("SELECT COUNT(*) FROM partner_licenses WHERE instr(notes, 'order_id=ORD_RETRY,') > 0").fetchone()[0]
+        self.assertEqual(n, 1)
+
     def test_session_revoked_by_logout(self):
         import asyncio, time
         from unittest import mock
