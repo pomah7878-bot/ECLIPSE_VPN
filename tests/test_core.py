@@ -78,6 +78,36 @@ class CoreTests(unittest.TestCase):
             n = c.execute("SELECT COUNT(*) FROM partner_licenses WHERE instr(notes, 'order_id=ORD_RETRY,') > 0").fetchone()[0]
         self.assertEqual(n, 1)
 
+    def test_daily_tasks_catch_up(self):
+        import asyncio, json
+        from datetime import datetime
+        import bot.services.scheduler as sc
+        now = datetime.now()
+        before = now.replace(hour=1, minute=0, second=0, microsecond=0)
+        st.set_setting("daily_done", "")
+        # первый запуск: ничего не догоняем, состояние создаётся
+        self.assertFalse(sc._daily_pending(now, 0, 0))
+        self.assertFalse(sc._daily_pending(now, 0, 0))
+        # бот перезапустили посреди задач: выполнен только один шаг
+        st.set_setting("daily_done", json.dumps({"date": now.strftime("%Y-%m-%d"), "steps": ["stats"]}))
+        self.assertTrue(sc._daily_pending(now, 0, 0))
+        self.assertFalse(sc._daily_pending(before, 3, 0))  # время запуска ещё не наступило
+        # шаг с ключом выполняется один раз за день
+        runs = []
+
+        async def work():
+            runs.append(1)
+
+        asyncio.run(sc._run_daily_step("t", work(), "backup"))
+        asyncio.run(sc._run_daily_step("t", work(), "backup"))
+        self.assertEqual(len(runs), 1)
+        for step in sc._DAILY_STEPS:
+            sc._daily_mark(step)
+        self.assertFalse(sc._daily_pending(now, 0, 0))
+        # новый день — снова все шаги к выполнению
+        st.set_setting("daily_done", json.dumps({"date": "2000-01-01", "steps": list(sc._DAILY_STEPS)}))
+        self.assertTrue(sc._daily_pending(now, 0, 0))
+
     def test_session_revoked_by_logout(self):
         import asyncio, time
         from unittest import mock

@@ -947,14 +947,61 @@ def get_seconds_until(target_hour: int, target_minute: int = 0) -> int:
     return int((target - now).total_seconds())
 
 
-async def _run_daily_step(name: str, coro) -> None:
-    """v1.157: ошибка одного шага не прерывает остальные ежедневные задачи."""
+_DAILY_STEPS = ("stats", "backup", "expiry", "autorenew", "snapshot")
+
+
+def _daily_state() -> Dict[str, Any]:
+    """Какие шаги ежедневных задач уже выполнены сегодня: {'date': 'ГГГГ-ММ-ДД', 'steps': [...]}."""
+    import json as _json
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        state = _json.loads(get_setting("daily_done", "") or "{}")
+    except Exception:
+        state = {}
+    if not isinstance(state, dict) or state.get("date") != today:
+        return {"date": today, "steps": [], "fresh": not state}
+    state.setdefault("steps", [])
+    return state
+
+
+def _daily_mark(step: str) -> None:
+    import json as _json
+    from database.requests import set_setting
+    state = _daily_state()
+    if step not in state["steps"]:
+        state["steps"].append(step)
+    set_setting("daily_done", _json.dumps({"date": state["date"], "steps": state["steps"]}))
+
+
+def _daily_pending(now: datetime, target_hour: int, target_minute: int) -> bool:
+    """Есть ли невыполненные сегодня шаги, хотя время запуска уже прошло (бот был выключен
+    или перезапущен в это время). При самом первом запуске ничего не догоняем."""
+    import json as _json
+    if now < now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0):
+        return False
+    if not (get_setting("daily_done", "") or "").strip():
+        from database.requests import set_setting
+        set_setting("daily_done", _json.dumps({"date": now.strftime("%Y-%m-%d"), "steps": list(_DAILY_STEPS)}))
+        return False
+    state = _daily_state()
+    required = _DAILY_STEPS + (("monthly",) if now.day == 1 else ())
+    return any(step not in state["steps"] for step in required)
+
+
+async def _run_daily_step(name: str, coro, key: Optional[str] = None) -> None:
+    """v1.157: ошибка одного шага не прерывает остальные ежедневные задачи.
+    key — шаг запоминается как выполненный сегодня (оборванный перезапуском повторится при старте)."""
+    if key and key in _daily_state()["steps"]:
+        coro.close()
+        return
     try:
         await coro
     except asyncio.CancelledError:
         raise
     except Exception as e:
         logger.error(f"Ошибка шага ежедневных задач «{name}»: {e}", exc_info=True)
+    if key:
+        _daily_mark(key)
 
 
 async def run_daily_tasks(bot: Bot) -> None:
@@ -981,14 +1028,19 @@ async def run_daily_tasks(bot: Bot) -> None:
                 target_hour, target_minute = 3, 0
 
             # We wait until the specified time
-            seconds_to_wait = get_seconds_until(target_hour, target_minute)
-            logger.info(f"Следующий запуск задач ({time_str}) через {seconds_to_wait // 3600}ч {(seconds_to_wait % 3600) // 60}м")
+            if _daily_pending(datetime.now(), target_hour, target_minute):
+                # бот был выключен или перезапущен во время запуска задач — догоняем невыполненное
+                seconds_to_wait = 90
+                logger.info("Ежедневные задачи за сегодня не завершены — догоняю через 90 с")
+            else:
+                seconds_to_wait = get_seconds_until(target_hour, target_minute)
+                logger.info(f"Следующий запуск задач ({time_str}) через {seconds_to_wait // 3600}ч {(seconds_to_wait % 3600) // 60}м")
             
             await asyncio.sleep(seconds_to_wait)
             
             # Sending statistics
             logger.info("📊 Запуск отправки суточной статистики...")
-            await _run_daily_step("суточная статистика", send_daily_stats(bot))
+            await _run_daily_step("суточная статистика", send_daily_stats(bot), "stats")
 
             # Автоочистка панели от осиротевших ключей (user_*, которых нет в БД)
             try:
@@ -1032,23 +1084,23 @@ async def run_daily_tasks(bot: Bot) -> None:
             
             # Sending a backup
             logger.info("📦 Запуск создания и отправки бэкапа...")
-            await _run_daily_step("бэкап", send_backup_archive(bot))
+            await _run_daily_step("бэкап", send_backup_archive(bot), "backup")
             
             # Wait 5 minutes
             await asyncio.sleep(300)
             
             # Sending notifications to users
-            await _run_daily_step("уведомления об истечении", check_and_send_expiry_notifications(bot))
+            await _run_daily_step("уведомления об истечении", check_and_send_expiry_notifications(bot), "expiry")
 
             # Автопродление ключей с личного баланса
-            await _run_daily_step("автопродление", process_auto_renewals(bot))
+            await _run_daily_step("автопродление", process_auto_renewals(bot), "autorenew")
 
             # Снапшот трафика для графика статистики
-            await _run_daily_step("снапшот трафика", snapshot_daily_traffic())
+            await _run_daily_step("снапшот трафика", snapshot_daily_traffic(), "snapshot")
             
             # Monthly traffic reset (1st day of every month)
             if datetime.now().day == 1:
-                await _run_daily_step("ежемесячное обслуживание", monthly_traffic_reset(bot))
+                await _run_daily_step("ежемесячное обслуживание", monthly_traffic_reset(bot), "monthly")
             
             # We wait a little so as not to start again at the same minute
             await asyncio.sleep(60)
