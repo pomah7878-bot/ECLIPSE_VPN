@@ -274,3 +274,38 @@ class AutoRenewSelectionTests(unittest.TestCase):
         self.assertIn(ids["expired"], due)
         for name in ("far", "off", "banned"):
             self.assertNotIn(ids[name], due, name)
+
+
+class DomainProvisionFallbackTests(unittest.TestCase):
+    def _run(self, cf_result):
+        import asyncio
+        from bot.services import domain_provisioning as dp
+
+        async def fake_ip():
+            return "203.0.113.5"
+
+        async def fake_cf(token, domain, ip):
+            return cf_result
+
+        async def fake_wait(domain, ip, timeout=240, interval=5):
+            return False  # дальше DNS не идём: проверяем только развилку
+
+        saved = (dp.get_server_public_ip, dp.cloudflare_create_or_update_a_record, dp.wait_for_dns_propagation)
+        dp.get_server_public_ip, dp.cloudflare_create_or_update_a_record, dp.wait_for_dns_propagation = fake_ip, fake_cf, fake_wait
+        try:
+            async def collect():
+                return [s async for s in dp._provision_backup_domain_impl("shop.example.com", "tok", 1)]
+            return asyncio.run(collect())
+        finally:
+            dp.get_server_public_ip, dp.cloudflare_create_or_update_a_record, dp.wait_for_dns_propagation = saved
+
+    def test_zone_not_found_falls_back_to_manual_record(self):
+        from bot.services.domain_provisioning import ZONE_NOT_FOUND_PREFIX
+        steps = self._run((False, ZONE_NOT_FOUND_PREFIX + " для домена shop.example.com"))
+        self.assertTrue(any("Значение: 203.0.113.5" in s for s in steps))
+        self.assertTrue(any("Проверяю распространение DNS" in s for s in steps))
+
+    def test_token_error_still_stops(self):
+        steps = self._run((False, "Cloudflare отклонил запрос (проверьте токен): bad"))
+        self.assertFalse(any("Проверяю распространение DNS" in s for s in steps))
+        self.assertTrue(steps[-1].startswith("❌"))

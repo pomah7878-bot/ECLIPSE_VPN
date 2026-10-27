@@ -29,6 +29,10 @@ NGINX_SITES_ENABLED = Path("/etc/nginx/sites-enabled")
 WEBAPP_LOCAL_PORT = 3000  # см. bot/webapp/server.py — "WebApp started on http://127.0.0.1:3000"
 
 
+# Сообщение «зона не найдена» — не ошибка токена: домен просто не в этом аккаунте Cloudflare
+ZONE_NOT_FOUND_PREFIX = "Не нашёл зону Cloudflare"
+
+
 class ProvisionError(Exception):
     """Ошибка на одном из шагов автонастройки — с понятным для админа текстом."""
 
@@ -81,7 +85,7 @@ async def cloudflare_create_or_update_a_record(api_token: str, domain: str, ip: 
                 zone_name = candidate
                 break
         if not zone_id:
-            return False, f"Не нашёл зону Cloudflare для домена {domain} — проверьте, что домен добавлен в ваш аккаунт Cloudflare."
+            return False, f"{ZONE_NOT_FOUND_PREFIX} для домена {domain} — проверьте, что домен добавлен в ваш аккаунт Cloudflare."
 
         # 2. Ищем существующую A-запись с этим именем
         async with session.get(
@@ -274,10 +278,18 @@ async def _provision_backup_domain_impl(
     if cloudflare_api_token:
         yield f"☁️ Создаю A-запись в Cloudflare: {domain} → {server_ip}..."
         ok, msg = await cloudflare_create_or_update_a_record(cloudflare_api_token, domain, server_ip)
-        if not ok:
+        if not ok and msg.startswith(ZONE_NOT_FOUND_PREFIX):
+            # домен у другого DNS-провайдера: не обрываем, а даём ручную запись и ждём её
+            yield (
+                f"ℹ️ Домен {domain} не найден в аккаунте Cloudflare — DNS-запись нужно добавить вручную "
+                f"у того, где он обслуживается:\n\nТип: A\nИмя: {domain}\nЗначение: {server_ip}\n\n"
+                f"⏳ Жду, пока запись распространится..."
+            )
+        elif not ok:
             yield f"❌ {msg}"
             return
-        yield f"✅ {msg}"
+        else:
+            yield f"✅ {msg}"
     else:
         yield (
             f"📋 Cloudflare-токен не настроен. Добавьте вручную у вашего регистратора:\n\n"
