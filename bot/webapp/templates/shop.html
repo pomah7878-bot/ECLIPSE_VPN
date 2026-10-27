@@ -934,15 +934,34 @@
                 <div id="turnstileWidget" class="flex justify-center mb-4"></div>
                 <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Отмена</button>
             `;
-            if (window.turnstile) {
-                window.turnstile.render('#turnstileWidget', {
-                    sitekey: TURNSTILE_SITE_KEY,
-                    callback: onTurnstileSuccess,
-                    'error-callback': () => showToast('Не удалось загрузить проверку. Обновите страницу.'),
-                });
-            } else {
-                box.innerHTML = '<p class="text-sm text-alert py-4 text-center">Проверка недоступна. Обновите страницу и попробуйте снова.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
-            }
+            // Капча Cloudflare может грузиться медленно или быть недоступной в сети клиента:
+            // ждём её до 8 секунд, а если не пришла — предлагаем получить пробный период в боте
+            const showTrialUnavailable = () => {
+                const link = BOT_USERNAME
+                    ? `<a href="https://t.me/${encodeURIComponent(BOT_USERNAME)}" target="_blank" rel="noopener" class="block w-full py-3 btn-primary rounded-xl font-semibold text-sm text-center mb-2">Получить в Telegram-боте</a>`
+                    : '';
+                box.innerHTML = '<p class="text-sm text-alert py-4 text-center">Проверка не загрузилась — в вашей сети она может быть недоступна. Пробный период можно получить в Telegram-боте.</p>'
+                    + link + '<button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>';
+            };
+            const renderTurnstile = () => {
+                try {
+                    window.turnstile.render('#turnstileWidget', {
+                        sitekey: TURNSTILE_SITE_KEY,
+                        callback: onTurnstileSuccess,
+                        'error-callback': showTrialUnavailable,
+                    });
+                } catch (e) { showTrialUnavailable(); }
+            };
+            if (window.turnstile) { renderTurnstile(); return; }
+            document.getElementById('turnstileWidget').innerHTML = '<div class="spinner"></div>';
+            let waited = 0;
+            if (_payPollTimer) clearInterval(_payPollTimer);
+            _payPollTimer = setInterval(() => {
+                waited += 200;
+                if (!document.getElementById('turnstileWidget')) { clearInterval(_payPollTimer); _payPollTimer = null; return; }  // экран сменился
+                if (window.turnstile) { clearInterval(_payPollTimer); _payPollTimer = null; document.getElementById('turnstileWidget').innerHTML = ''; renderTurnstile(); }
+                else if (waited >= 8000) { clearInterval(_payPollTimer); _payPollTimer = null; showTrialUnavailable(); }
+            }, 200);
         }
 
         async function onTurnstileSuccess(token) {
