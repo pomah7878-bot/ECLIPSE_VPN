@@ -717,6 +717,11 @@ async def get_connection_links(client, key_id: int, sub_id: str) -> str:
                 raw = f"{raw}\n{extra}".strip()
     except Exception as e:  # noqa: BLE001
         logger.debug("CDN: ссылки CDN-клиента не добавлены в список подключений: %s", e)
+    try:
+        from bot.services.tuic_fallback import add_missing_tuic_text
+        raw = await add_missing_tuic_text(raw, client, sub_id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("TUIC: не добавлены в список подключений: %s", e)
     return raw
 
 

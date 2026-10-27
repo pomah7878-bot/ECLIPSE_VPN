@@ -1815,6 +1815,13 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     except Exception as _cdn_err:
         logger.warning(f"handle_happ_subscription: CDN-ссылки не добавлены ({sub_id[:8]}...): {_cdn_err}")
 
+    # панель 3x-ui 3.11 может отдать вместо TUIC пустые строки — добираем из Clash-подписки
+    try:
+        from bot.services import tuic_fallback as _tuic_fb
+        body = await _tuic_fb.merge_tuic_into_subscription(body, key, forward_headers)
+    except Exception as _tuic_err:
+        logger.debug(f"handle_happ_subscription: TUIC не добавлены ({sub_id[:8]}...): {_tuic_err}")
+
     from database.requests import get_effective_brand_name, get_effective_webapp_url
     if "Content-Type" not in headers:
         headers["Content-Type"] = "text/plain; charset=utf-8"

@@ -309,3 +309,75 @@ class DomainProvisionFallbackTests(unittest.TestCase):
         steps = self._run((False, "Cloudflare отклонил запрос (проверьте токен): bad"))
         self.assertFalse(any("Проверяю распространение DNS" in s for s in steps))
         self.assertTrue(steps[-1].startswith("❌"))
+
+
+class TuicFallbackTests(unittest.TestCase):
+    CLASH = """
+proxies:
+- alpn:
+  - h3
+  congestion-controller: bbr
+  name: "Gaming & Calls FI"
+  password: pw-1
+  port: 19817
+  reduce-rtt: true
+  server: a.example.com
+  type: tuic
+  udp-relay-mode: native
+  uuid: 11111111-1111-1111-1111-111111111111
+- alpn:
+  - h3
+  congestion-controller: bbr
+  name: Gaming DE
+  password: p:w@2
+  port: 10411
+  server: b.example.com
+  sni: sni.example.com
+  type: tuic
+  udp-relay-mode: native
+  uuid: 22222222-2222-2222-2222-222222222222
+- name: vless-one
+  type: vless
+  server: c.example.com
+  port: 443
+"""
+
+    def test_links_from_clash(self):
+        from bot.services.tuic_fallback import tuic_links_from_clash
+        from bot.utils.inbound_links import parse_inbound_link
+        links = tuic_links_from_clash(self.CLASH)
+        self.assertEqual(len(links), 2)
+        first = parse_inbound_link(links[0])
+        self.assertEqual((first["protocol"], first["host"], first["port"]), ("tuic", "a.example.com", 19817))
+        self.assertEqual(first["name"], "Gaming & Calls FI")
+        self.assertIn("sni=a.example.com", links[0])   # sni нет в записи → домен сервера
+        self.assertIn("sni=sni.example.com", links[1])
+        self.assertIn("p%3Aw%402", links[1])           # спецсимволы пароля экранированы
+        self.assertEqual(tuic_links_from_clash("не yaml: [ "), [])
+
+    def test_merge_adds_only_when_missing(self):
+        import asyncio
+        import base64
+        from bot.services import tuic_fallback as fb
+
+        calls = []
+
+        async def fake_fetch(client, sub_id, headers=None):
+            calls.append(sub_id)
+            return ["tuic://u:p@h.example.com:1?alpn=h3#n"]
+
+        class FakeClient:
+            server_id = 1
+
+        saved = fb.fetch_tuic_links
+        fb.fetch_tuic_links = fake_fetch
+        try:
+            without = "vless://x@h.example.com:443#a\n\nvpn://abc"
+            out = asyncio.run(fb.add_missing_tuic_text(without, FakeClient(), "s1"))
+            self.assertIn("tuic://u:p@h.example.com:1", out)
+            self.assertNotIn("\n\n", out)
+            already = "vless://x@h.example.com:443#a\ntuic://u:p@h.example.com:2#b"
+            self.assertEqual(asyncio.run(fb.add_missing_tuic_text(already, FakeClient(), "s2")), already)
+            self.assertEqual(calls, ["s1"])  # при наличии tuic:// панель не дёргаем
+        finally:
+            fb.fetch_tuic_links = saved
