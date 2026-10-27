@@ -223,6 +223,19 @@ async def process_custom_payment_webhook(
         return {'ok': False, 'reason': 'order_not_found', 'http_status': 404}
 
     status = str(webhook_result['status'])
+    # Если платёжка сообщила сумму — «оплачено» принимаем только когда она не меньше суммы заказа.
+    # Поле необязательное: расширения, которые сумму не присылают, работают как раньше.
+    paid_cents = webhook_result.get('amount_cents')
+    if status == 'succeeded' and paid_cents is not None:
+        expected = order.get('final_amount_cents')
+        if expected is None:
+            expected = order.get('amount_cents')
+        if expected is not None and paid_cents < int(expected):
+            logger.warning(
+                "Custom payment %s: сумма %s меньше суммы заказа %s (order_id=%s) — заказ не завершён",
+                provider.provider_id, paid_cents, expected, order_id,
+            )
+            return {'ok': False, 'reason': 'amount_mismatch', 'order_id': order_id, 'http_status': 409}
     update_payment_provider_order_status(
         order_id,
         status,

@@ -7,7 +7,6 @@ import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 import os
-import signal
 import sys
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage

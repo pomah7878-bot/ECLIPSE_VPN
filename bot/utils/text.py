@@ -1,4 +1,4 @@
-from aiogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaDocument, InputMediaAnimation, LinkPreviewOptions, InaccessibleMessage
+from aiogram.types import Message, InputMediaPhoto, InputMediaVideo, InputMediaAnimation, LinkPreviewOptions, InaccessibleMessage
 from aiogram.exceptions import TelegramBadRequest
 from typing import Literal, Optional, Union
 from html import escape as escape_attr

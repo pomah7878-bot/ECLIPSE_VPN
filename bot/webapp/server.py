@@ -101,31 +101,7 @@ def _validate_init_data(init_data: str, bot_token: str) -> Optional[int]:
         return None
 
 
-# v1.157: простой лимитер запросов в памяти процесса
-_RL_BUCKETS: Dict[str, list] = {}
-
-
-def _rl_prune(key: str, window: float) -> list:
-    import time as _t
-    now = _t.time()
-    items = [t for t in _RL_BUCKETS.get(key, []) if now - t < window]
-    if items:
-        _RL_BUCKETS[key] = items
-    else:
-        _RL_BUCKETS.pop(key, None)
-    if len(_RL_BUCKETS) > 5000:
-        for k in [k for k, v in _RL_BUCKETS.items() if not v or now - v[-1] > 3600]:
-            _RL_BUCKETS.pop(k, None)
-    return items
-
-
-def _rl_allowed(key: str, limit: int, window: float) -> bool:
-    return len(_rl_prune(key, window)) < limit
-
-
-def _rl_record(key: str) -> None:
-    import time as _t
-    _RL_BUCKETS.setdefault(key, []).append(_t.time())
+from bot.webapp.ratelimit import rl_allowed as _rl_allowed, rl_record as _rl_record  # noqa: E402
 
 
 def _tariff_cdn_gb(tariff_id) -> int:
@@ -1744,6 +1720,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             # Панель ответила успешно — запоминаем на случай, если она
             # временно ляжет до следующего запроса (см. ниже).
             _HAPP_SUB_CACHE[sub_id] = (body, dict(headers))
+            while len(_HAPP_SUB_CACHE) > 5000:  # самые старые уходят первыми (порядок вставки)
+                _HAPP_SUB_CACHE.pop(next(iter(_HAPP_SUB_CACHE)))
     except Exception as e:
         cached = _HAPP_SUB_CACHE.get(sub_id)
         if cached:
@@ -1990,10 +1968,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             body = _name_awg_lines(body)
         _incy_auto = False
         if detected_app == "incy" and routing_mode in ("add", "onadd"):
-            from database.requests import (
-                is_client_toggle_enabled as _tg_on, get_happ_routing_profile_json as _custom_rp,
-                INCY_AUTOROUTING_URL as _auto_url,
-            )
+            from database.requests import is_client_toggle_enabled as _tg_on
             _site = (get_effective_webapp_url() or "").rstrip("/")
             # Ссылка ведёт на САМ бот (а не на файл в GitHub): так имя профиля —
             # бренд/заданное админом, а не «ECLIPSE RU» из репозитория, и
@@ -2542,7 +2517,6 @@ def _verify_session(cookie_value: Optional[str]) -> Optional[int]:
 
 # Защита пробного периода от ботов: простой rate-limit по IP в памяти
 # процесса (без внешних зависимостей) + проверка Cloudflare Turnstile.
-_trial_attempts_by_ip: dict[str, list[float]] = {}
 _TRIAL_RATE_LIMIT_WINDOW_SEC = 3600  # 1 час
 _TRIAL_RATE_LIMIT_MAX_ATTEMPTS = 3   # максимум попыток с одного IP за окно
 
@@ -2660,17 +2634,11 @@ async def handle_public_connection_status(request: web.Request) -> web.Response:
 
 def _trial_rate_limit_check(ip: str) -> bool:
     """True, если можно пробовать — не превышен лимит попыток с этого IP."""
-    import time
-    now = time.time()
-    attempts = _trial_attempts_by_ip.get(ip, [])
-    attempts = [t for t in attempts if now - t < _TRIAL_RATE_LIMIT_WINDOW_SEC]
-    _trial_attempts_by_ip[ip] = attempts
-    return len(attempts) < _TRIAL_RATE_LIMIT_MAX_ATTEMPTS
+    return _rl_allowed(f"trial:{ip}", _TRIAL_RATE_LIMIT_MAX_ATTEMPTS, _TRIAL_RATE_LIMIT_WINDOW_SEC)
 
 
 def _trial_rate_limit_record(ip: str) -> None:
-    import time
-    _trial_attempts_by_ip.setdefault(ip, []).append(time.time())
+    _rl_record(f"trial:{ip}")
 
 
 async def _verify_turnstile_token(token: str, remote_ip: str) -> bool:

@@ -160,3 +160,117 @@ class WebLogoTest(unittest.TestCase):
             m = os.path.getmtime(out)
             self.assertTrue(build_web_logo(d))
             self.assertEqual(os.path.getmtime(out), m)  # свежая копия не пересоздаётся
+
+
+class WebAuthAndLimiterTests(unittest.TestCase):
+    TOKEN = "123456:TEST-TOKEN"
+
+    def _signed(self, uid, age_seconds=0, token=None):
+        import hashlib, hmac, time, urllib.parse
+        fields = {"auth_date": str(int(time.time()) - age_seconds),
+                  "user": json.dumps({"id": uid, "first_name": "T"}, separators=(",", ":"))}
+        check = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+        secret = hmac.new(b"WebAppData", (token or self.TOKEN).encode(), hashlib.sha256).digest()
+        fields["hash"] = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        return urllib.parse.urlencode(fields)
+
+    def test_init_data_accepts_only_fresh_correctly_signed(self):
+        from bot.webapp.server import _validate_init_data as v
+        self.assertEqual(v(self._signed(42), self.TOKEN), 42)
+        self.assertIsNone(v(self._signed(42, token="1:OTHER"), self.TOKEN))        # подпись чужим токеном
+        self.assertIsNone(v(self._signed(42).replace("%22id%22%3A42", "%22id%22%3A43"), self.TOKEN))  # подмена id
+        self.assertIsNone(v(self._signed(42, age_seconds=3 * 86400), self.TOKEN))  # старше 48 часов
+
+    def test_rate_limiter_counts_window_and_forgets_empty_keys(self):
+        from bot.webapp import ratelimit as rl
+        rl._BUCKETS.clear()
+        for _ in range(3):
+            self.assertTrue(rl.rl_allowed("t:1", 3, 60))
+            rl.rl_record("t:1")
+        self.assertFalse(rl.rl_allowed("t:1", 3, 60))
+        self.assertTrue(rl.rl_allowed("t:2", 3, 60))      # другой ключ не затронут
+        self.assertTrue(rl.rl_allowed("t:1", 3, 0.0))     # окно прошло — записи не считаются
+        self.assertNotIn("t:1", rl._BUCKETS)              # и пустой ключ удалён, не копится
+
+    def test_rate_limiter_cleanup_keeps_entries_needed_by_day_windows(self):
+        import time
+        from bot.webapp import ratelimit as rl
+        rl._BUCKETS.clear()
+        rl._BUCKETS["day:1"] = [time.time() - 7200]                  # 2 часа назад, окно — сутки
+        for i in range(rl._MAX_KEYS + 1):
+            rl._BUCKETS[f"x:{i}"] = []
+        rl.rl_allowed("probe", 1, 60)                                  # запускает общую чистку
+        self.assertIn("day:1", rl._BUCKETS)                            # суточный лимит не потерян
+
+
+class CustomWebhookAmountTests(unittest.TestCase):
+    def _run(self, webhook_result, order):
+        import asyncio
+        from unittest import mock
+        import bot.services.custom_payments as cp
+
+        done = []
+
+        async def fake_complete(order_id, **kw):
+            done.append(order_id)
+            return {"ok": True, "processed_now": True}
+
+        async def fake_handler(provider_id, ctx):
+            return webhook_result
+
+        with mock.patch.object(cp, "get_payment_provider", lambda pid: mock.Mock(provider_id="p")), \
+                mock.patch.object(cp, "handle_payment_webhook", fake_handler), \
+                mock.patch.object(cp, "_find_provider_order_for_webhook", lambda *a: {"order_id": "O1", "provider_id": "p"}), \
+                mock.patch.object(cp, "find_order_by_order_id", lambda oid: order), \
+                mock.patch.object(cp, "update_payment_provider_order_status", lambda *a, **k: True), \
+                mock.patch.object(cp, "update_payment_auto_check", lambda *a, **k: True), \
+                mock.patch.object(cp, "complete_custom_payment_order", fake_complete):
+            result = asyncio.run(cp.process_custom_payment_webhook("p", {}))
+        return result, done
+
+    def test_underpaid_order_is_not_completed(self):
+        res, done = self._run({"ignored": False, "status": "succeeded", "amount_cents": 5000}, {"final_amount_cents": 10000})
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["reason"], "amount_mismatch")
+        self.assertEqual(done, [])
+
+    def test_full_or_missing_amount_is_completed(self):
+        for amount in (10000, 12000, None):  # ровно, с переплатой и без суммы (старые расширения)
+            res, done = self._run({"ignored": False, "status": "succeeded", "amount_cents": amount}, {"final_amount_cents": 10000})
+            self.assertTrue(res["ok"], amount)
+            self.assertEqual(done, ["O1"], amount)
+
+    def test_webhook_rejects_non_integer_amount(self):
+        from bot.utils.payment_provider_registry import _normalize_webhook_result as n
+        self.assertEqual(n({"status": "succeeded", "order_id": "O1", "amount_cents": 500})["amount_cents"], 500)
+        for bad in ("500", 5.5, -1, True):
+            with self.assertRaises(ValueError):
+                n({"status": "succeeded", "order_id": "O1", "amount_cents": bad})
+
+
+class AutoRenewSelectionTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_due_keys_are_only_enabled_unbanned_and_expiring_within_a_day(self):
+        from database.db_keys import get_keys_due_for_auto_renewal
+        with get_db() as c:
+            tid = c.execute("INSERT INTO tariffs (name, duration_days, price_cents, price_stars, price_rub) "
+                            "VALUES ('AR', 30, 100, 1, 100)").lastrowid
+            ids = {}
+            for name, tg, banned, auto, when in (
+                    ("soon", 9101, 0, 1, "+2 hours"),       # подходит
+                    ("expired", 9102, 0, 1, "-3 days"),     # уже истёк, но не обработан — подходит
+                    ("far", 9103, 0, 1, "+5 days"),         # ещё рано
+                    ("off", 9104, 0, 0, "+2 hours"),        # автопродление выключено
+                    ("banned", 9105, 1, 1, "+2 hours")):    # клиент заблокирован
+                uid = c.execute("INSERT INTO users (telegram_id, is_banned) VALUES (?, ?)", (tg, banned)).lastrowid
+                ids[name] = c.execute(
+                    "INSERT INTO vpn_keys (user_id, tariff_id, expires_at, auto_renew) "
+                    "VALUES (?, ?, datetime('now', ?), ?)", (uid, tid, when, auto)).lastrowid
+        due = {k["id"] for k in get_keys_due_for_auto_renewal(hours=24)}
+        self.assertIn(ids["soon"], due)
+        self.assertIn(ids["expired"], due)
+        for name in ("far", "off", "banned"):
+            self.assertNotIn(ids[name], due, name)

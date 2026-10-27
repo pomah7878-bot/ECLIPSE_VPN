@@ -344,8 +344,13 @@ def _normalize_webhook_result(raw_result: Mapping[str, Any] | None) -> dict[str,
             'metadata': dict(metadata),
         }
 
+    amount_cents = result.get('amount_cents')
+    if amount_cents is not None and (isinstance(amount_cents, bool) or not isinstance(amount_cents, int) or amount_cents < 0):
+        raise ValueError('amount_cents должен быть целым числом копеек (необязательное поле)')
+
     normalized = {
         'ignored': False,
+        'amount_cents': amount_cents,
         'status': _normalize_status(result.get('status')),
         'order_id': _optional_result_text(result, 'order_id', aliases=('invoice_id',)),
         'provider_payment_id': _optional_result_text(result, 'provider_payment_id', aliases=('external_id',)),

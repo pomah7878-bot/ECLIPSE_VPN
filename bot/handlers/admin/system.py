@@ -19,7 +19,6 @@ from config import GITHUB_REPO_URL
 from bot.utils.admin import is_admin
 from bot.utils.ru_format import format_rub
 from bot.utils.git_utils import (
-    check_git_available,
     get_current_branch,
     get_remote_url,
     set_remote_url,
@@ -28,7 +27,6 @@ from bot.utils.git_utils import (
     pull_to_commit,
     force_pull_updates,
     get_last_commit_info,
-    get_previous_commits_info,
     install_requirements,
     restart_bot,
 )
