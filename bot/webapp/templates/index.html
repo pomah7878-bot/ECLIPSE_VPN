@@ -7,7 +7,12 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Скрипт Telegram нужен только внутри Telegram; в обычном браузере на мобильной сети он мог зависать и давал белую страницу
+        if (/tgWebApp/.test(location.hash + location.search) || window.TelegramWebviewProxy || /Telegram/i.test(navigator.userAgent)) {
+            document.write('<script src="https://telegram.org/js/telegram-web-app.js"><\/script>');
+        }
+    </script>
     <script src="/static/vendor/tailwind-browser.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
