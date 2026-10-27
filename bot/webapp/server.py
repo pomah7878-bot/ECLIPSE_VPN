@@ -2923,6 +2923,9 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
 
     if provider not in OAUTH_PROVIDERS:
         return web.Response(text="Неизвестный провайдер входа.", status=404)
+    from bot.services.oauth import is_provider_configured
+    if not is_provider_configured(provider):
+        return web.Response(text="Вход через этот сервис отключён.", status=403)
 
     code = request.query.get("code")
     state = request.query.get("state")

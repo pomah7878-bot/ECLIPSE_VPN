@@ -1141,11 +1141,10 @@
             try {
                 const res = await fetchAPI('oauth/providers');
                 const configured = res.providers || [];
-                if (configured.length === 0) return;
                 document.querySelectorAll('#oauthButtons [data-provider]').forEach(btn => {
                     if (!configured.includes(btn.dataset.provider)) btn.remove();
                 });
-                document.getElementById('oauthButtons').classList.remove('hidden');
+                if (configured.length > 0) document.getElementById('oauthButtons').classList.remove('hidden');
             } catch(e) { /* тихо — просто не показываем OAuth-кнопки */ }
         }
 
