@@ -90,6 +90,8 @@ async def on_startup(bot: Bot):
     run_migrations()
 
     _seed_brand_assets_if_missing()
+    from bot.utils.web_logo import build_web_logo
+    build_web_logo(os.path.join(os.path.dirname(__file__), "bot", "webapp", "static"))
 
     from bot.utils.telegram_links import load_telegram_link_domain
 

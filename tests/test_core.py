@@ -141,3 +141,22 @@ class CoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WebLogoTest(unittest.TestCase):
+    def test_web_logo_is_small_and_rebuilt_only_when_source_newer(self):
+        import tempfile
+        from PIL import Image
+        from bot.utils.web_logo import build_web_logo
+
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(build_web_logo(d))  # логотипа нет — ничего не создаём
+            Image.effect_noise((512, 512), 80).convert("RGBA").save(os.path.join(d, "logo.png"))
+            self.assertTrue(build_web_logo(d))
+            out = os.path.join(d, "logo-web.png")
+            with Image.open(out) as im:
+                self.assertLessEqual(max(im.size), 256)
+            self.assertLess(os.path.getsize(out), os.path.getsize(os.path.join(d, "logo.png")))
+            m = os.path.getmtime(out)
+            self.assertTrue(build_web_logo(d))
+            self.assertEqual(os.path.getmtime(out), m)  # свежая копия не пересоздаётся

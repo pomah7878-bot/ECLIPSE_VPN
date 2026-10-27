@@ -829,6 +829,8 @@ async def edit_logo_save(message: Message, state: FSMContext):
         logo_bytes = file_io.read()
         with open(logo_path, "wb") as f:
             f.write(logo_bytes)
+        from bot.utils.web_logo import build_web_logo
+        build_web_logo(static_dir)
     except Exception as e:
         logger.error(f"Не удалось сохранить загруженный логотип: {e}")
         await safe_edit_or_send(message, "❌ Не удалось сохранить файл логотипа на сервере. Попробуй ещё раз.")

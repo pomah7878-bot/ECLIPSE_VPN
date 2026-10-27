@@ -68,7 +68,7 @@
 <body>
 <div class="wrap">
     <div class="hero">
-        <img src="/static/logo.png" alt="" class="logo" onerror="this.style.display='none'">
+        <img src="/static/logo-web.png" alt="" class="logo" onerror="if(!this.dataset.f){this.dataset.f=1;this.src='/static/logo.png'}else{this.style.display='none'}">
         <h1 class="brand" id="brandName">Загрузка…</h1>
         <p class="tagline">Быстрый, безопасный и анонимный доступ к интернету.<br>Без логов, без ограничений.</p>
         <a class="cta" id="ctaTop" href="#">Открыть в Telegram</a>

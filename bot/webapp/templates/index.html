@@ -13,7 +13,7 @@
             document.write('<script src="https://telegram.org/js/telegram-web-app.js"><\/script>');
         }
     </script>
-    <script src="/static/vendor/tailwind-browser.js"></script>
+    <link rel="stylesheet" href="/static/vendor/tailwind.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
@@ -502,7 +502,7 @@
 
     <header class="flex items-center justify-between mb-5 fade-in">
         <div class="flex items-center gap-3">
-            <img src="/static/logo.png" alt="logo" width="38" height="38" class="flex-shrink-0 rounded-full" style="object-fit:cover;">
+            <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="logo" width="38" height="38" class="flex-shrink-0 rounded-full" style="object-fit:cover;">
             <div>
                 <h1 id="brandHeader" class="font-display text-base font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
                 <p id="user-greeting" class="text-xs text-mist mt-0.5">Привет, Пользователь!</p>
