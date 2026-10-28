@@ -403,3 +403,53 @@ class FailoverTests(unittest.TestCase):
             self.assertIsNone(failover.active_backup_for(1))       # резерв тоже недоступен
             failover.set_down(1, False)
             self.assertFalse(failover.is_down(1))
+
+
+class NodeFailoverTests(unittest.IsolatedAsyncioTestCase):
+    def _client(self, store, corrupt=False):
+        class C:
+            async def _request(self, method, path, data=None, **kw):
+                if method == "GET":
+                    return {"obj": [dict(i) for i in store]}
+                ib = next(i for i in store if i["id"] == int(path.rsplit("/", 1)[1]))
+                ib.update(data)
+                if corrupt:
+                    ib["port"] = 1
+                return {}
+        return C()
+
+    async def _run(self, exclude, store, corrupt=False, saved=None):
+        from unittest import mock
+        from bot.services import node_failover as nf
+        mem = {} if saved is None else saved
+        client = self._client(store, corrupt)
+
+        async def get_client(_):
+            return client
+        with mock.patch.object(nf, "get_setting", lambda k, d=None: mem.get(k, d)), \
+             mock.patch.object(nf, "set_setting", lambda k, v: mem.__setitem__(k, v)), \
+             mock.patch("bot.services.vpn_api.get_client", get_client):
+            return await nf.set_node_excluded(1, 4, exclude), mem
+
+    def _store(self):
+        base = {"port": 10, "protocol": "vless", "remark": "x", "settings": "{}", "streamSettings": "{}",
+                "sniffing": "{}", "listen": "", "tag": "t", "total": 0, "expiryTime": 0, "up": 5, "down": 6}
+        return [dict(base, id=1, nodeId=4, enable=True, excludeFromSub=False),
+                dict(base, id=2, nodeId=4, enable=False, excludeFromSub=False),   # выключен вручную
+                dict(base, id=3, nodeId=7, enable=True, excludeFromSub=False)]    # другая нода
+
+    async def test_only_enabled_inbounds_of_node_and_restore(self):
+        store = self._store()
+        (n, err), mem = await self._run(True, store)
+        self.assertEqual((n, err), (1, ""))
+        self.assertEqual([i["excludeFromSub"] for i in store], [True, False, False])
+        self.assertEqual(store[0]["up"], 5)  # счётчики трафика не сброшены
+        (n, err), mem = await self._run(False, store, saved=mem)
+        self.assertEqual((n, err), (1, ""))
+        self.assertEqual([i["excludeFromSub"] for i in store], [False, False, False])
+
+    async def test_rollback_when_panel_changes_other_fields(self):
+        store = self._store()
+        (n, err), _ = await self._run(True, store, corrupt=True)
+        self.assertEqual(n, 0)
+        self.assertIn("изменились поля", err)

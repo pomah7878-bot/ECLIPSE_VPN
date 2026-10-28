@@ -1118,6 +1118,57 @@ async def server_failover_toggle(callback: CallbackQuery, state: FSMContext):
     await _render_failover(callback.message, sid)
 
 
+async def _render_nodes(message: Message, server_id: int) -> None:
+    from bot.keyboards.admin_servers import server_nodes_kb
+    from bot.services import node_failover
+    nodes = []
+    try:
+        from bot.services.vpn_api import get_client as _get_client
+        nodes = await (await _get_client(server_id)).get_nodes()
+    except Exception as e:
+        logger.warning(f"Ноды сервера {server_id}: {e}")
+    excluded = {n['id']: len(node_failover.excluded_ids(server_id, n['id'])) for n in nodes}
+    lines = ["🧩 <b>Ноды мастер-панели</b>\n"]
+    for n in nodes:
+        state = "🚧 убрана из подписки" if excluded.get(n['id']) else ("🟢 онлайн" if n.get('status') == 'online' else "🔴 офлайн")
+        lines.append(f"• {escape_html(str(n.get('name')))} — {state}")
+    if not nodes:
+        lines.append("Нод нет или панель не отдала список.")
+    lines.append(
+        "\n<b>Как это работает</b>\n"
+        "• Кнопка ноды убирает её включённые inbound'ы из подписки клиентов\n"
+        "• Сами inbound'ы остаются включёнными, выключенные вручную не трогаются\n"
+        "• Повторное нажатие возвращает ровно те, что убрал бот\n"
+        "• Клиентам нужно обновить подписку в приложении"
+    )
+    await safe_edit_or_send(message, "\n".join(lines), reply_markup=server_nodes_kb(server_id, nodes, excluded))
+
+
+@router.callback_query(F.data.startswith("admin_server_nodes:"))
+async def server_nodes_screen(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await _render_nodes(callback.message, int(callback.data.split(":")[1]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_node_toggle:"))
+async def server_node_toggle(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import node_failover
+    _, sid, nid = callback.data.split(":")
+    sid, nid = int(sid), int(nid)
+    await callback.answer("Применяю…")
+    exclude = not node_failover.excluded_ids(sid, nid)
+    count, err = await node_failover.set_node_excluded(sid, nid, exclude)
+    note = f"{'Убрано' if exclude else 'Возвращено'} inbound'ов: {count}" + (f"\n⚠️ {err}" if err else "")
+    await callback.message.answer(note)
+    await _render_nodes(callback.message, sid)
+
+
 @router.callback_query(F.data.startswith("admin_server_inbound_group:"))
 async def edit_server_inbound_group_start(callback: CallbackQuery, state: FSMContext):
     """Запрашивает номер группы inbound'ов — для разделения одной

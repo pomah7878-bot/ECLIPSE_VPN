@@ -70,6 +70,7 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
         ip_label = '🌐 Публичный IP (для виджета «Защищено»)'
     builder.row(InlineKeyboardButton(text=ip_label, callback_data=f'admin_server_public_ip:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛟 Резервный узел / блокировка', callback_data=f'admin_server_failover:{server_id}'))
+    builder.row(InlineKeyboardButton(text='🧩 Ноды мастер-панели', callback_data=f'admin_server_nodes:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛠 Диагностика', callback_data=f'admin_server_tools:{server_id}'))
     builder.row(InlineKeyboardButton(text='🔗 Импорт ручных клиентов', callback_data=f'admin_import_orphans:{server_id}'))
     builder.row(InlineKeyboardButton(text='🗑️ Удалить сервер', callback_data=f'admin_server_delete:{server_id}'))
@@ -176,5 +177,17 @@ def server_failover_kb(server_id: int, down: bool, backup_id: int, others: List[
         builder.row(InlineKeyboardButton(text=f"{mark}🛟 {s['name']}", callback_data=f"admin_failover_backup:{server_id}:{s['id']}"))
     if backup_id:
         builder.row(InlineKeyboardButton(text='➖ Убрать резервный узел', callback_data=f'admin_failover_backup:{server_id}:0'))
+    builder.row(back_button(f'admin_server_view:{server_id}'), home_button())
+    return builder.as_markup()
+
+
+def server_nodes_kb(server_id: int, nodes: List[Dict[str, Any]], excluded: Dict[int, int]) -> InlineKeyboardMarkup:
+    """Ноды мастер-панели: нажатие убирает inbound'ы ноды из подписки или возвращает их."""
+    builder = InlineKeyboardBuilder()
+    for n in nodes:
+        off = excluded.get(n['id'], 0) > 0
+        mark = '🚧' if off else ('🟢' if n.get('status') == 'online' else '🔴')
+        action = 'Вернуть' if off else 'Убрать из подписки'
+        builder.row(InlineKeyboardButton(text=f"{mark} {n.get('name')} · {action}", callback_data=f"admin_node_toggle:{server_id}:{n['id']}"))
     builder.row(back_button(f'admin_server_view:{server_id}'), home_button())
     return builder.as_markup()
