@@ -16,6 +16,11 @@ def servers_list_kb(servers: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🔄 Обновить', callback_data='admin_servers_refresh'))
     builder.row(InlineKeyboardButton(text='➕ Добавить сервер', callback_data='admin_server_add'))
+    from bot.services.block_check import auto_enabled
+    builder.row(InlineKeyboardButton(text='🛰 Проверить все на блокировку', callback_data='admin_blockcheck_all'))
+    builder.row(InlineKeyboardButton(
+        text='🛰 Авто-проверка блокировок: ' + ('✅ вкл' if auto_enabled() else '⛔ выкл'),
+        callback_data='admin_blockcheck_auto'))
     groups_count = get_groups_count()
     if groups_count > 1:
         all_groups_list = get_all_groups()
@@ -198,4 +203,11 @@ def block_check_kb(server_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='🔄 Проверить ещё раз', callback_data=f'admin_server_blockcheck:{server_id}'))
     builder.row(back_button(f'admin_server_view:{server_id}'), home_button())
+    return builder.as_markup()
+
+
+def block_check_all_kb() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text='🔄 Проверить ещё раз', callback_data='admin_blockcheck_all'))
+    builder.row(back_button('admin_servers'), home_button())
     return builder.as_markup()

@@ -1169,6 +1169,38 @@ async def server_node_toggle(callback: CallbackQuery, state: FSMContext):
     await _render_nodes(callback.message, sid)
 
 
+@router.callback_query(F.data == "admin_blockcheck_all")
+async def block_check_all(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_servers import block_check_all_kb
+    from bot.services import block_check
+    await callback.answer("Проверяю…")
+    await safe_edit_or_send(callback.message, "⏳ <b>Проверка блокировок</b>\n\nОпрашиваю сканеры в российских сетях по всем серверам, это займёт 1–2 минуты.")
+    lines = ["🛰 <b>Блокировки IP</b>\n"]
+    for srv in [x for x in get_all_servers() if x.get('is_active')]:
+        for icon, title, text in await block_check.check_server(srv):
+            lines.append(f"{icon} {escape_html(title)}\n   {escape_html(text)}")
+    if len(lines) == 1:
+        lines.append("Нет адресов для проверки.")
+    lines.append("\n<i>🔴 заблокирован в 30% сканеров и больше, 🟡 единичные блокировки, 🟢 чисто, ⚪ нет данных. Данные cheburcheck.ru.</i>")
+    await safe_edit_or_send(callback.message, "\n".join(lines), reply_markup=block_check_all_kb())
+
+
+@router.callback_query(F.data == "admin_blockcheck_auto")
+async def block_check_auto_toggle(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import block_check
+    from database.requests import set_setting
+    on = not block_check.auto_enabled()
+    set_setting("block_check_auto", "1" if on else "0")
+    await callback.answer("Авто-проверка включена" if on else "Авто-проверка выключена")
+    await safe_edit_or_send(callback.message, await get_servers_list_text(), reply_markup=servers_list_kb(get_all_servers()))
+
+
 @router.callback_query(F.data.startswith("admin_server_blockcheck:"))
 async def server_block_check(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
