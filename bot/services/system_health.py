@@ -193,6 +193,9 @@ async def check_panels() -> List[Check]:
 
     async def one(srv) -> List[Check]:
         name = str(srv.get("name") or f"#{srv.get('id')}")[:48]
+        from bot.services.failover import is_down
+        if is_down(srv.get("id")):  # отключён нами (в ремонте): не проверяем и не шлём тревоги
+            return [("🚧", f"Панель {name}", "в ремонте, подписки идут с резерва")]
         started = time.monotonic()
         try:
             client = await get_client(srv["id"])
@@ -208,6 +211,9 @@ async def check_panels() -> List[Check]:
         if get_nodes is not None:
             try:
                 raw_nodes = await asyncio.wait_for(get_nodes(), PANEL_TIMEOUT)
+                from bot.services import node_failover  # ноды «в ремонте» не проверяем
+                raw_nodes = [n for n in raw_nodes if not (isinstance(n, dict) and n.get("id") is not None
+                             and node_failover.excluded_ids(srv["id"], int(n["id"])))]
                 result += node_checks(name, raw_nodes)
             except Exception as e:
                 logger.debug("Ноды панели %s не получены: %s", name, e)

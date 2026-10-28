@@ -571,7 +571,10 @@ async def update_all_server_latencies() -> None:
 
     loop = asyncio.get_event_loop()
     updated = 0
+    from bot.services.failover import is_down
     for server in servers:
+        if is_down(server["id"]):  # сервер в ремонте: пинг не нужен
+            continue
         try:
             latency = await loop.run_in_executor(
                 None, _tcp_ping, server["host"], server["port"]

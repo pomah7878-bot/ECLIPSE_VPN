@@ -48,7 +48,7 @@ def evaluate(checks: List[Check], state: Dict[str, Dict[str, Any]], now: float) 
     """
     events: List[Event] = []
     for icon, title, detail in checks:
-        if icon == "⚪":
+        if icon in ("⚪", "🚧"):  # 🚧 — в ремонте: не проверяем и не шлём тревоги
             continue
         item = state.setdefault(title, {"fails": 0, "alerted": False, "last": 0.0})
         if icon == "🔴":

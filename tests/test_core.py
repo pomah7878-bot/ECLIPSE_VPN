@@ -464,3 +464,13 @@ class ParkedNodeMonitoringTests(unittest.TestCase):
         self.assertIsNone(am._node_problem_line({"name": "S"}, node))
         self.assertEqual(am._node_icon(node), "🚧")
         self.assertIn("в ремонте", am._format_node_line(node, "└"))
+
+
+class RepairSkipTests(unittest.TestCase):
+    def test_repair_icon_gives_no_alerts(self):
+        from bot.services import health_alerts as ha
+        state = {}
+        for _ in range(ha.FAIL_THRESHOLD + 2):
+            ev = ha.evaluate([("🚧", "Панель X", "в ремонте")], state, 1000.0)
+            self.assertEqual(ev, [])
+        self.assertNotIn("Панель X", state)
