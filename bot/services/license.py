@@ -57,6 +57,7 @@ GATED_FEATURES = {
     "site_ai": "🌐 AI-помощник на сайте (продажи и поддержка)",
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
     "routing": "🗺 Маршрутизация Happ/INCY (профили, выбор клиентом)",
+    "block_check": "🛰 Проверка блокировок IP серверов и нод (ТСПУ)",
 }
 
 HIDE_POWERED_BY_FEATURE = "hide_powered_by"

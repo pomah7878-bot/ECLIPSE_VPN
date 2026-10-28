@@ -1174,8 +1174,11 @@ async def block_check_all(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    from bot.keyboards.admin_servers import block_check_all_kb
     from bot.services import block_check
+    if not block_check.licensed():
+        await callback.answer("🔒 Эта функция доступна по лицензии", show_alert=True)
+        return
+    from bot.keyboards.admin_servers import block_check_all_kb
     await callback.answer("Проверяю…")
     await safe_edit_or_send(callback.message, "⏳ <b>Проверка блокировок</b>\n\nОпрашиваю сканеры в российских сетях по всем серверам, это займёт 1–2 минуты.")
     lines = ["🛰 <b>Блокировки IP</b>\n"]
@@ -1194,6 +1197,9 @@ async def block_check_auto_toggle(callback: CallbackQuery, state: FSMContext):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
     from bot.services import block_check
+    if not block_check.licensed():
+        await callback.answer("🔒 Эта функция доступна по лицензии", show_alert=True)
+        return
     from database.requests import set_setting
     on = not block_check.auto_enabled()
     set_setting("block_check_auto", "1" if on else "0")
@@ -1206,8 +1212,11 @@ async def server_block_check(callback: CallbackQuery, state: FSMContext):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
-    from bot.keyboards.admin_servers import block_check_kb
     from bot.services import block_check
+    if not block_check.licensed():
+        await callback.answer("🔒 Эта функция доступна по лицензии", show_alert=True)
+        return
+    from bot.keyboards.admin_servers import block_check_kb
     sid = int(callback.data.split(":")[1])
     server = get_server_by_id(sid)
     if not server:

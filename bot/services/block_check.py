@@ -171,9 +171,15 @@ async def check_server(server: Dict[str, Any]) -> List[Tuple[str, str, str]]:
     return rows
 
 
+def licensed() -> bool:
+    """Функция входит в лицензию (на главной установке доступна всегда)."""
+    from bot.services.license import is_feature_available
+    return is_feature_available("block_check")
+
+
 def auto_enabled() -> bool:
     from database.requests import get_setting
-    return (get_setting("block_check_auto", "1") or "1") == "1"
+    return licensed() and (get_setting("block_check_auto", "1") or "1") == "1"
 
 
 async def scheduled_checks() -> List[Tuple[str, str, str]]:
