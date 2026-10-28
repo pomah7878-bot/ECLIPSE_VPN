@@ -24,6 +24,16 @@ class CoreTests(unittest.TestCase):
     def test_migrations_reach_latest(self):
         self.assertEqual(get_current_version(), LATEST_VERSION)
 
+    def test_set_setting_skips_unchanged(self):
+        for key in ("t_plain", "t_user:1"):
+            with self.assertLogs("database.db_settings", "INFO") as cm:
+                st.set_setting(key, "a")
+                st.set_setting(key, "a")
+            self.assertEqual(len(cm.output), 1)
+            with self.assertLogs("database.db_settings", "INFO"):
+                st.set_setting(key, "b")
+            self.assertEqual(st.get_setting(key), "b")
+
     def test_tariff_prices(self):
         a = {"id": 1, "price_rub": 1000, "duration_days": 30}
         b = {"id": 2, "price_rub": 2400, "duration_days": 90, "discount_percent": 10}

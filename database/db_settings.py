@@ -255,6 +255,9 @@ def set_setting(key: str, value: str) -> None:
         value: Setting value
     """
     with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        if row is not None and row[0] == value:
+            return  # значение то же: не пишем в БД и не засоряем журнал
         conn.execute("""
             INSERT INTO settings (key, value)
             VALUES (?, ?)
