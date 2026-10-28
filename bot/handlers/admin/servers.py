@@ -123,6 +123,9 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
         f"📊 <b>Статистика:</b>",
         f"   {status_emoji} Статус: {status_text}",
     ])
+    from bot.services.failover import is_down as _fo_down
+    if _fo_down(server_id):
+        lines.append("   🚧 Узел недоступен: подписки идут с резервного")
 
     if server['is_active']:
         try:
@@ -1045,6 +1048,74 @@ async def toggle_server(callback: CallbackQuery, state: FSMContext):
     # Refresh the viewing screen
     # Refresh the viewing screen
     await render_server_view(callback.message, server_id, state)
+
+
+async def _render_failover(message: Message, server_id: int) -> None:
+    from bot.services import failover
+    from bot.keyboards.admin_servers import server_failover_kb
+    server = get_server_by_id(server_id)
+    if not server:
+        return
+    cfg = failover.get_config(server_id)
+    others = [x for x in get_all_servers() if x['id'] != server_id and x.get('is_active')]
+    backup = next((x for x in others if x['id'] == cfg['backup']), None)
+    status = "🚧 <b>недоступен</b>: клиенты получают ссылки резервного узла" if cfg['down'] else "🟢 работает в штатном режиме"
+    text = (
+        f"🛟 <b>Резервный узел: {escape_html(server['name'])}</b>\n\n"
+        f"Состояние: {status}\n"
+        f"Резерв: <b>{escape_html(backup['name']) if backup else 'не выбран'}</b>\n\n"
+        "<b>Как это работает</b>\n"
+        "• Ссылка подписки у клиента не меняется\n"
+        "• При включении «Узел недоступен» подписка берётся с резервного сервера\n"
+        "• Клиент на резерве создаётся автоматически при первом обновлении подписки\n"
+        "• После возврата узла временные клиенты на резерве удаляются\n"
+        "• Новые ключи на недоступный узел не выдаются\n\n"
+        "Клиентам нужно обновить подписку в приложении."
+    )
+    await safe_edit_or_send(message, text, reply_markup=server_failover_kb(server_id, cfg['down'], cfg['backup'], others))
+
+
+@router.callback_query(F.data.startswith("admin_server_failover:"))
+async def server_failover_screen(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    await _render_failover(callback.message, int(callback.data.split(":")[1]))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_failover_backup:"))
+async def server_failover_backup(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import failover
+    _, sid, bid = callback.data.split(":")
+    failover.set_backup(int(sid), int(bid))
+    await callback.answer("Сохранено")
+    await _render_failover(callback.message, int(sid))
+
+
+@router.callback_query(F.data.startswith("admin_failover_toggle:"))
+async def server_failover_toggle(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services import failover
+    sid = int(callback.data.split(":")[1])
+    cfg = failover.get_config(sid)
+    if not cfg['down']:
+        if not cfg['backup']:
+            await callback.answer("Сначала выберите резервный узел", show_alert=True)
+            return
+        failover.set_down(sid, True)
+        await callback.answer("🚧 Узел помечен недоступным")
+    else:
+        failover.set_down(sid, False)
+        await callback.answer("Узел возвращён, удаляю временных клиентов…")
+        import asyncio
+        asyncio.create_task(failover.cleanup(sid))
+    await _render_failover(callback.message, sid)
 
 
 @router.callback_query(F.data.startswith("admin_server_inbound_group:"))

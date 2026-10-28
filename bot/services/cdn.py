@@ -708,6 +708,16 @@ def merge_subscription_bodies(main: bytes, extra: bytes) -> bytes:
 
 async def get_connection_links(client, key_id: int, sub_id: str) -> str:
     """Ссылки подключений ключа для списка «Все подключения»: основные + CDN, если пакет активен."""
+    try:  # узел заблокирован: ссылки берём с резервного сервера
+        from bot.services import failover
+        from database.requests import get_vpn_key_by_id
+        if failover.active_backup_for(getattr(client, "server_id", None)):
+            src = await failover.source_key(get_vpn_key_by_id(int(key_id)) or {})
+            if src.get("server_id") and src["server_id"] != getattr(client, "server_id", None):
+                from bot.services.vpn_api import get_client
+                client = await get_client(src["server_id"])
+    except Exception as e:  # noqa: BLE001
+        logger.debug("failover: ссылки подключений с основного сервера: %s", e)
     raw = await client.get_subscription_link(sub_id) or ""
     try:
         pack = db_cdn.get_pack(int(key_id))

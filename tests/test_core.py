@@ -381,3 +381,25 @@ proxies:
             self.assertEqual(calls, ["s1"])  # при наличии tuic:// панель не дёргаем
         finally:
             fb.fetch_tuic_links = saved
+
+
+class FailoverTests(unittest.TestCase):
+    def test_backup_used_only_when_down_and_backup_ok(self):
+        from unittest import mock
+        from bot.services import failover
+        store = {}
+        with mock.patch.object(failover, "get_setting", lambda k, d=None: store.get(k, d)), \
+             mock.patch.object(failover, "set_setting", lambda k, v: store.__setitem__(k, v)), \
+             mock.patch("database.db_servers.get_server_by_id", lambda i: {"id": i, "is_active": 1}):
+            self.assertIsNone(failover.active_backup_for(1))
+            failover.set_backup(1, 2)
+            self.assertIsNone(failover.active_backup_for(1))       # резерв есть, узел работает
+            failover.set_down(1, True)
+            self.assertEqual(failover.active_backup_for(1), 2)
+            failover.set_backup(1, 1)
+            self.assertIsNone(failover.active_backup_for(1))       # сам себе резерв нельзя
+            failover.set_backup(1, 2)
+            failover.set_down(2, True)
+            self.assertIsNone(failover.active_backup_for(1))       # резерв тоже недоступен
+            failover.set_down(1, False)
+            self.assertFalse(failover.is_down(1))

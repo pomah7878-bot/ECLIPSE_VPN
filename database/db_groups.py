@@ -276,7 +276,9 @@ def get_active_servers_by_group(group_id: int) -> List[Dict[str, Any]]:
             WHERE sg.group_id = ? AND s.is_active = 1
             ORDER BY s.id
         """, (group_id,))
-        return [dict(row) for row in cursor.fetchall()]
+        rows = [dict(row) for row in cursor.fetchall()]
+    from bot.services.failover import is_down  # узел заблокирован: новые ключи на него не выдаём
+    return [r for r in rows if not is_down(r["id"])]
 
 def get_server_group_ids(server_id: int) -> List[int]:
     """

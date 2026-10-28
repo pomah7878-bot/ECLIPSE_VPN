@@ -91,7 +91,9 @@ def get_active_servers() -> List[Dict[str, Any]]:
             WHERE is_active = 1
             ORDER BY id
         """)
-        return [dict(row) for row in cursor.fetchall()]
+        rows = [dict(row) for row in cursor.fetchall()]
+    from bot.services.failover import is_down  # узел заблокирован: новые ключи на него не выдаём
+    return [r for r in rows if not is_down(r["id"])]
 
 def add_server(
     name: str,

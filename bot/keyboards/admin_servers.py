@@ -69,6 +69,7 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
     else:
         ip_label = '🌐 Публичный IP (для виджета «Защищено»)'
     builder.row(InlineKeyboardButton(text=ip_label, callback_data=f'admin_server_public_ip:{server_id}'))
+    builder.row(InlineKeyboardButton(text='🛟 Резервный узел / блокировка', callback_data=f'admin_server_failover:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛠 Диагностика', callback_data=f'admin_server_tools:{server_id}'))
     builder.row(InlineKeyboardButton(text='🔗 Импорт ручных клиентов', callback_data=f'admin_import_orphans:{server_id}'))
     builder.row(InlineKeyboardButton(text='🗑️ Удалить сервер', callback_data=f'admin_server_delete:{server_id}'))
@@ -162,4 +163,18 @@ def confirm_delete_kb(server_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text='✅ Да, удалить', callback_data=f'admin_server_delete_confirm:{server_id}'))
     builder.row(InlineKeyboardButton(text='❌ Отмена', callback_data=f'admin_server_view:{server_id}'))
+    return builder.as_markup()
+
+
+def server_failover_kb(server_id: int, down: bool, backup_id: int, others: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Экран «Резервный узел»: переключатель недоступности и выбор резервного сервера."""
+    builder = InlineKeyboardBuilder()
+    toggle = '✅ Вернуть узел в работу' if down else '🚧 Узел недоступен (включить резерв)'
+    builder.row(InlineKeyboardButton(text=toggle, callback_data=f'admin_failover_toggle:{server_id}'))
+    for s in others:
+        mark = '✅ ' if s['id'] == backup_id else ''
+        builder.row(InlineKeyboardButton(text=f"{mark}🛟 {s['name']}", callback_data=f"admin_failover_backup:{server_id}:{s['id']}"))
+    if backup_id:
+        builder.row(InlineKeyboardButton(text='➖ Убрать резервный узел', callback_data=f'admin_failover_backup:{server_id}:0'))
+    builder.row(back_button(f'admin_server_view:{server_id}'), home_button())
     return builder.as_markup()
