@@ -29,7 +29,7 @@ PAUSE = 1.5
 HEADERS = {"User-Agent": "EclipseBot-block-check/1.0"}
 
 _cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
-_sched: Dict[str, Any] = {"at": 0.0, "checks": []}
+_sched: Dict[str, Any] = {"at": 0.0, "ts": 0.0, "checks": []}
 
 
 def parse_sse(text: str) -> List[Dict[str, Any]]:
@@ -195,5 +195,24 @@ async def scheduled_checks() -> List[Tuple[str, str, str]]:
             if icon != "⚪":  # ошибки сервиса проверки тревогой не считаем
                 checks.append((icon, f"Блокировка: {title}", text))
         await asyncio.sleep(PAUSE)
-    _sched.update(at=time.monotonic(), checks=checks)
+    _sched.update(at=time.monotonic(), ts=time.time(), checks=checks)
     return list(checks)
+
+
+def diagnostics_lines() -> List[str]:
+    """Блок для «Диагностики» из результата последней плановой проверки (без запросов к сервису)."""
+    from bot.utils.text import escape_html
+    if not licensed():
+        return []
+    lines = ["<b>━━ Блокировки IP ━━</b>"]
+    if not auto_enabled():
+        return lines + ["⏸ Авто-проверка выключена (кнопка на экране «Серверы»)"]
+    if not _sched["ts"]:
+        return lines + ["⏳ Ещё не выполнялась, первая проверка скоро"]
+    for icon, title, text in _sched["checks"][:8]:
+        lines.append(f"{icon} {escape_html(title.removeprefix('Блокировка: '))}: {escape_html(text)}")
+    if not _sched["checks"]:
+        lines.append("Нет адресов для проверки")
+    mins = int((time.time() - _sched["ts"]) // 60)
+    lines.append(f"Проверено {mins} мин назад")
+    return lines

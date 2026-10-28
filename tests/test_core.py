@@ -501,3 +501,17 @@ class BlockCheckTests(unittest.TestCase):
         self.assertEqual(bc.verdict_line(clean)[0], "🟢")
         self.assertEqual(bc.verdict_line(dict(clean, cdn=True))[0], "⚪")
         self.assertEqual(bc.verdict_line({"error": "x"})[0], "⚪")
+
+
+class BlockDiagnosticsTests(unittest.TestCase):
+    def test_lines_from_cache_without_network(self):
+        import time
+        from unittest import mock
+        from bot.services import block_check as bc
+        with mock.patch.object(bc, "licensed", lambda: True), mock.patch.object(bc, "auto_enabled", lambda: True), \
+             mock.patch.dict(bc._sched, {"ts": time.time() - 125, "checks": [("🔴", "Блокировка: Узел <A>", "заблокирован в 25 из 35 регионов")]}):
+            text = "\n".join(bc.diagnostics_lines())
+        self.assertIn("🔴 Узел &lt;A&gt;: заблокирован в 25 из 35", text)
+        self.assertIn("Проверено 2 мин назад", text)
+        with mock.patch.object(bc, "licensed", lambda: False):
+            self.assertEqual(bc.diagnostics_lines(), [])

@@ -480,6 +480,14 @@ def _format_extensions_diagnostics(diagnostics: dict, health_check: dict, ai_sta
         lines.extend(system_lines)
         lines.append("")
     lines.extend(health_lines)
+    try:
+        from bot.services import block_check
+        block_lines = block_check.diagnostics_lines()
+        if block_lines:
+            lines.append("")
+            lines.extend(block_lines)
+    except Exception:  # noqa: BLE001 — диагностика не должна падать из-за этого блока
+        pass
     lines.extend(ai_lines)
     lines.append("")
     lines.append("<b>━━ Кастомные расширения ━━</b>")
