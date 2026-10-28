@@ -453,3 +453,14 @@ class NodeFailoverTests(unittest.IsolatedAsyncioTestCase):
         (n, err), _ = await self._run(True, store, corrupt=True)
         self.assertEqual(n, 0)
         self.assertIn("изменились поля", err)
+
+
+class ParkedNodeMonitoringTests(unittest.TestCase):
+    def test_parked_node_is_not_a_problem(self):
+        from bot.services import admin_monitoring as am
+        node = am._normalize_node({"id": 4, "name": "N", "status": "offline", "enable": True})
+        self.assertTrue(node["problem"])
+        node.update(parked=True, problem=False, severity=0)
+        self.assertIsNone(am._node_problem_line({"name": "S"}, node))
+        self.assertEqual(am._node_icon(node), "🚧")
+        self.assertIn("в ремонте", am._format_node_line(node, "└"))

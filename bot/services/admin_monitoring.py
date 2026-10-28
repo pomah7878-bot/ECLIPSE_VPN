@@ -191,6 +191,9 @@ def _panel_problem_line(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("panel_online"):
         return None
+    from bot.services.failover import is_down
+    if is_down(server.get("id")):  # отключён нами, подписки идут с резервного
+        return None
     name = escape_html(str(server.get("name") or "Панель"))
     error = escape_html(str(entry.get("error") or "нет подключения"))
     return {"severity": 120, "text": f"🔴 {name} — панель недоступна: {error}"}
@@ -270,6 +273,10 @@ async def _collect_server_entry_inner(server: Dict[str, Any]) -> Dict[str, Any]:
             entry["nodes"] = []
         else:
             entry["nodes"] = _flatten_nodes(raw_nodes)
+            from bot.services import node_failover  # ноды, убранные нами из подписки, не считаются аварией
+            for n in entry["nodes"]:
+                if n.get("id") is not None and node_failover.excluded_ids(server.get("id") or 0, int(n["id"])):
+                    n.update(parked=True, problem=False, severity=0)
     except Exception as e:
         logger.warning(f"Ошибка получения мониторинга панели {server.get('name')}: {e}")
         entry["error"] = "ошибка подключения"
@@ -333,7 +340,7 @@ def _snapshot_counts(snapshot: Dict[str, Any]) -> Dict[str, int]:
     inactive_panels = [entry for entry in entries if not entry.get("is_active")]
 
     nodes = [node for entry in entries for node in entry.get("nodes", [])]
-    enabled_nodes = [node for node in nodes if node.get("enable", True)]
+    enabled_nodes = [node for node in nodes if node.get("enable", True) and not node.get("parked")]
     online_nodes = [node for node in enabled_nodes if node.get("status") == "online"]
     disabled_nodes = [node for node in nodes if not node.get("enable", True)]
 
@@ -421,6 +428,10 @@ def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
             lines.append("⏸ Мониторинг выключен")
             continue
         if not entry.get("panel_online"):
+            from bot.services.failover import is_down
+            if is_down(server.get("id")):
+                lines.append("🚧 Панель — в ремонте, подписки идут с резерва")
+                continue
             error = escape_html(str(entry.get("error") or "нет подключения"))
             lines.append(f"🔴 Панель — {error}")
             continue
@@ -436,7 +447,9 @@ def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
         for node in selected:
             icon = _node_icon(node)
             node_name = escape_html(str(node.get("name") or "Нода"))
-            if not node.get("enable", True):
+            if node.get("parked"):
+                rows.append(f"{icon} {node_name} — в ремонте, убрана из подписки")
+            elif not node.get("enable", True):
                 rows.append(f"{icon} {node_name} — выключена")
             elif node.get("status") != "online":
                 detail = escape_html(str(node.get("lastError") or "нет связи"))
@@ -578,6 +591,8 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
 
 
 def _node_icon(node: Dict[str, Any]) -> str:
+    if node.get("parked"):
+        return "🚧"
     if not node.get("enable", True):
         return "⚪"
     if node.get("status") != "online":
@@ -592,6 +607,9 @@ def _node_icon(node: Dict[str, Any]) -> str:
 def _format_node_line(node: Dict[str, Any], prefix: str) -> str:
     icon = _node_icon(node)
     name = escape_html(str(node.get("name") or "Нода"))
+
+    if node.get("parked"):
+        return f"   {prefix} {icon} {name} | в ремонте, убрана из подписки"
 
     if not node.get("enable", True):
         return f"   {prefix} {icon} {name} | выключена"
