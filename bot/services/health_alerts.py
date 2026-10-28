@@ -106,7 +106,13 @@ async def collect_alert_checks() -> List[Check]:
         panels = await sh.check_panels()
     except Exception as e:
         panels = [("🔴", "Панели", sh._short_error(e))]
-    return list(sync) + list(panels)
+    try:  # блокировки IP по данным cheburcheck.ru (раз в 2 часа)
+        from bot.services import block_check
+        blocks = await block_check.scheduled_checks()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Проверка блокировок не выполнена: %s", e)
+        blocks = []
+    return list(sync) + list(panels) + list(blocks)
 
 
 async def collect_probe_checks() -> List[Check]:

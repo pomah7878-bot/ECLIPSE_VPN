@@ -70,6 +70,7 @@ def server_view_kb(server_id: int, is_active: bool, show_group_button: bool=Fals
         ip_label = '🌐 Публичный IP (для виджета «Защищено»)'
     builder.row(InlineKeyboardButton(text=ip_label, callback_data=f'admin_server_public_ip:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛟 Резервный узел / блокировка', callback_data=f'admin_server_failover:{server_id}'))
+    builder.row(InlineKeyboardButton(text='🛰 Проверить на блокировку', callback_data=f'admin_server_blockcheck:{server_id}'))
     builder.row(InlineKeyboardButton(text='🧩 Ноды мастер-панели', callback_data=f'admin_server_nodes:{server_id}'))
     builder.row(InlineKeyboardButton(text='🛠 Диагностика', callback_data=f'admin_server_tools:{server_id}'))
     builder.row(InlineKeyboardButton(text='🔗 Импорт ручных клиентов', callback_data=f'admin_import_orphans:{server_id}'))
@@ -189,5 +190,12 @@ def server_nodes_kb(server_id: int, nodes: List[Dict[str, Any]], excluded: Dict[
         mark = '🚧' if off else ('🟢' if n.get('status') == 'online' else '🔴')
         action = 'Вернуть' if off else 'Убрать из подписки'
         builder.row(InlineKeyboardButton(text=f"{mark} {n.get('name')} · {action}", callback_data=f"admin_node_toggle:{server_id}:{n['id']}"))
+    builder.row(back_button(f'admin_server_view:{server_id}'), home_button())
+    return builder.as_markup()
+
+
+def block_check_kb(server_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text='🔄 Проверить ещё раз', callback_data=f'admin_server_blockcheck:{server_id}'))
     builder.row(back_button(f'admin_server_view:{server_id}'), home_button())
     return builder.as_markup()

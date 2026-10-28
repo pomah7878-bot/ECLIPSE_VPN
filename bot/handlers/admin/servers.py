@@ -1169,6 +1169,33 @@ async def server_node_toggle(callback: CallbackQuery, state: FSMContext):
     await _render_nodes(callback.message, sid)
 
 
+@router.callback_query(F.data.startswith("admin_server_blockcheck:"))
+async def server_block_check(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.keyboards.admin_servers import block_check_kb
+    from bot.services import block_check
+    sid = int(callback.data.split(":")[1])
+    server = get_server_by_id(sid)
+    if not server:
+        await callback.answer("❌ Сервер не найден", show_alert=True)
+        return
+    await callback.answer("Проверяю…")
+    await safe_edit_or_send(callback.message, "⏳ <b>Проверка блокировок</b>\n\nОпрашиваю сканеры в российских сетях, это займёт до минуты.")
+    rows = await block_check.check_server(server)
+    lines = [f"🛰 <b>Блокировки: {escape_html(str(server['name']))}</b>\n"]
+    for icon, title, text in rows:
+        lines.append(f"{icon} {escape_html(title)}\n   {escape_html(text)}")
+    if not rows:
+        lines.append("Нет адресов для проверки (узел в ремонте или адрес не определился).")
+    lines.append(
+        "\n<i>🔴 заблокирован в 30% сканеров и больше, 🟡 единичные блокировки, 🟢 чисто, ⚪ нет данных.\n"
+        "Данные cheburcheck.ru, проверка идёт из российских сетей. Плановая проверка раз в 2 часа присылает тревогу.</i>"
+    )
+    await safe_edit_or_send(callback.message, "\n".join(lines), reply_markup=block_check_kb(sid))
+
+
 @router.callback_query(F.data.startswith("admin_server_inbound_group:"))
 async def edit_server_inbound_group_start(callback: CallbackQuery, state: FSMContext):
     """Запрашивает номер группы inbound'ов — для разделения одной

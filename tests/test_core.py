@@ -474,3 +474,30 @@ class RepairSkipTests(unittest.TestCase):
             ev = ha.evaluate([("🚧", "Панель X", "в ремонте")], state, 1000.0)
             self.assertEqual(ev, [])
         self.assertNotIn("Панель X", state)
+
+
+class BlockCheckTests(unittest.TestCase):
+    SSE = (
+        'event:started\ndata:{"online_probes":3,"target":"192.0.2.1"}\n\n:\n'
+        'event:result\ndata:{"region":"Москва","verdicts":["tspu_block"]}\n\n'
+        'event:result\ndata:{"region":"Москва","verdicts":["tspu_block"]}\n\n'
+        'event:result\ndata:{"region":"Пермский край","verdicts":["uncertain"]}\n\n'
+        'event:result\ndata:{"region":"Тюмень","verdicts":["ok"]}\n\n'
+        'event:done\ndata:{"status":"done"}\n\n'
+    )
+
+    def test_parse_and_summary(self):
+        from bot.services import block_check as bc
+        res = bc.summarize(bc.parse_sse(self.SSE))
+        self.assertEqual((res["total"], res["blocked"], res["uncertain"], res["ok"]), (4, 2, 1, 1))
+        self.assertEqual(res["regions"], ["Москва"])
+        icon, text = bc.verdict_line(res)
+        self.assertEqual(icon, "🔴")
+        self.assertIn("2 из 4", text)
+
+    def test_clean_cdn_and_error(self):
+        from bot.services import block_check as bc
+        clean = bc.summarize(bc.parse_sse('event:result\ndata:{"verdicts":["ok"]}\n\n'))
+        self.assertEqual(bc.verdict_line(clean)[0], "🟢")
+        self.assertEqual(bc.verdict_line(dict(clean, cdn=True))[0], "⚪")
+        self.assertEqual(bc.verdict_line({"error": "x"})[0], "⚪")
