@@ -24,6 +24,7 @@ class AdminStates(StatesGroup):
     edit_happ_provider_id = State()      # Ввод Happ Provider ID
     edit_happ_proxy_provider_code = State()  # Ввод provider_code для API happ-proxy.com
     edit_happ_proxy_auth_key = State()       # Ввод auth_key для API happ-proxy.com
+    edit_banner_value = State()              # Ввод поля своего баннера (поле в данных состояния)
     edit_happ_install_limit = State()        # Ввод лимита устройств для новых лимитированных ссылок
     happ_proxy_hwid_lookup = State()         # Ввод ID ключа для просмотра HWID по лимитированной ссылке
     happ_proxy_push_all_text = State()       # Ввод текста push-уведомления для рассылки всем

@@ -770,3 +770,29 @@ class HappInstallToggleTest(unittest.TestCase):
                 self.assertIsNone(asyncio.run(hp.get_or_create_install_code_for_sub("sub123")))
         finally:
             st.set_happ_install_enabled(True)
+
+
+class CustomBannerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_headers_line_and_expiry(self):
+        import base64
+        from bot.services import custom_banner as cb
+        cb.save("text", "Скидка 30%"); cb.save("url", "https://example.com/x"); cb.save("enabled", "1"); cb.save("line", "1"); cb.set_days(0)
+        try:
+            h = {}
+            self.assertTrue(cb.apply_headers(h, "happ", False))
+            self.assertEqual(h["sub-info-text"], "Скидка 30%")
+            h = {}
+            cb.apply_headers(h, "happ", True)  # автобаннер важнее
+            self.assertNotIn("sub-info-text", h)
+            plain = cb.inject_line(b"vless://a@b:1#x")
+            self.assertTrue(plain.startswith(b"vless://0000"))
+            b64 = base64.b64encode(b"vless://a@b:1#x")
+            self.assertIn(b"vless://a@b:1#x", base64.b64decode(cb.inject_line(b64)))
+            cb.save("until", "1")  # срок вышел
+            self.assertIsNone(cb.active())
+        finally:
+            cb.save("enabled", "0")

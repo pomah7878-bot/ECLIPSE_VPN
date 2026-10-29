@@ -242,6 +242,7 @@ def integrations_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text='📱 Happ', callback_data='admin_integrations_happ'),
         InlineKeyboardButton(text='⚡ INCY', callback_data='admin_integrations_incy'),
     )
+    builder.row(InlineKeyboardButton(text='📢 Свой баннер', callback_data='admin_banner'))
     builder.row(InlineKeyboardButton(text='🤖 AI-суппорт: ключи и настройки', callback_data='admin_integrations_apikeys'))
     builder.row(back_button('admin_bot_settings'), home_button())
     return builder.as_markup()
