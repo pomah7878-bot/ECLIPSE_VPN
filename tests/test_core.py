@@ -840,6 +840,16 @@ class AuditFixesTest(unittest.TestCase):
             st.set_setting("panel_tls_pin", "0")
 
 
+class ShopThemesTest(unittest.TestCase):
+    def test_every_shop_theme_has_css_in_shop_html(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "bot", "webapp", "templates", "shop.html"), encoding="utf-8") as f:
+            html = f.read()
+        for tid in st.SHOP_THEMES:
+            if tid != "classic":  # classic — исходный вид, переопределений нет
+                self.assertIn(f'body[data-theme="{tid}"]', html, tid)
+
+
 class ProbeNameTailsTest(unittest.TestCase):
     def test_strip_name_tails(self):
         from bot.services.connection_probe import strip_name_tails

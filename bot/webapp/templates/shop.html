@@ -150,6 +150,71 @@
         }
         /* Расположение: более просторная, "бутиковая" центральная колонка */
         body[data-theme="rose"] .max-w-md { max-width: 30rem; }
+
+        /* ---------- Тема "aurora" → AURORA BENTO (северное сияние, крупные скруглённые карточки) ---------- */
+        body[data-theme="aurora"] {
+            --void: #070B12;
+            --panel: #0F1622;
+            --panel-2: #162033;
+            --hairline: rgba(148,180,255,0.12);
+            --gold: #34D399;
+            --gold-bright: #5EEAD4;
+            --teal: #22D3EE;
+            --alert: #FB7185;
+            --amber: #FBBF24;
+            --ink: #EEF4FF;
+            --mist: #8FA3BF;
+            --mist-dim: #566580;
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(70% 40% at 15% -5%, rgba(52,211,153,0.22), transparent 70%),
+                        radial-gradient(60% 40% at 90% 5%, rgba(34,211,238,0.16), transparent 70%),
+                        radial-gradient(50% 35% at 50% 100%, rgba(99,102,241,0.12), transparent 70%),
+                        var(--void);
+            background-attachment: fixed;
+        }
+        body[data-theme="aurora"] .corona-glow { display: none; }
+        body[data-theme="aurora"] .card, body[data-theme="aurora"] .feature-chip {
+            background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01)), var(--panel);
+            border: 1px solid var(--hairline);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 12px 32px -16px rgba(0,0,0,0.6);
+        }
+        body[data-theme="aurora"] .btn-primary {
+            background: linear-gradient(135deg, #34D399, #22D3EE);
+            color: #04130E;
+            font-weight: 700;
+            border-radius: 999px;
+            box-shadow: 0 10px 28px -10px rgba(34,211,238,0.6);
+        }
+        body[data-theme="aurora"] .btn-primary:hover { box-shadow: 0 12px 32px -10px rgba(52,211,153,0.75); }
+        body[data-theme="aurora"] .btn-secondary {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+        }
+        body[data-theme="aurora"] .btn-secondary:hover { background: rgba(255,255,255,0.08); border-color: rgba(52,211,153,0.45); }
+        body[data-theme="aurora"] .tariff-card { border-radius: 24px !important; }
+        body[data-theme="aurora"] .tariff-card:hover {
+            border-color: rgba(52,211,153,0.55);
+            transform: translateY(-2px);
+            box-shadow: 0 14px 34px -14px rgba(52,211,153,0.35);
+        }
+        body[data-theme="aurora"] .rounded-xl { border-radius: 18px; }
+        body[data-theme="aurora"] .rounded-2xl { border-radius: 24px; }
+        body[data-theme="aurora"] .rounded-3xl, body[data-theme="aurora"] .rounded-t-3xl { border-radius: 32px; }
+        body[data-theme="aurora"] #brandHeader { font-weight: 800; letter-spacing: -0.01em; }
+        body[data-theme="aurora"] .traffic-fill { background: linear-gradient(90deg, #34D399, #22D3EE); }
+        body[data-theme="aurora"] .sub-url-box:hover { border-color: rgba(52,211,153,0.5); background: var(--panel-2); }
+        body[data-theme="aurora"] #toast { background: rgba(15,22,34,0.96); border-radius: 18px; }
+        body[data-theme="aurora"] .max-w-md { max-width: 32rem; }
+        /* Расположение: bento-сетка тарифов — две колонки, нечётный последний тариф на всю ширину */
+        @media (min-width: 480px) {
+            body[data-theme="aurora"] #tariffList {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+            }
+            body[data-theme="aurora"] #tariffList > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+        }
         * { box-sizing: border-box; }
         body {
             background-color: var(--void);
