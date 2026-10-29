@@ -5211,9 +5211,18 @@ async def license_gate_middleware(request: web.Request, handler):
     return await handler(request)
 
 
+async def _static_js_css_revalidate(request: web.Request, response: web.StreamResponse):
+    """JS и CSS сайта меняются при обновлении бота, а без Cache-Control мобильные браузеры
+    держат их в кэше по своему усмотрению (после правки клиент видит старый вид).
+    «no-cache» = каждый раз сверять по ETag: файл не изменился — ответ 304 без загрузки."""
+    if request.path.startswith("/static/") and request.path.endswith((".js", ".css")):
+        response.headers.setdefault("Cache-Control", "no-cache")
+
+
 def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
     app = web.Application(middlewares=[cors_middleware, license_gate_middleware, bad_input_middleware], client_max_size=12 * 1024 * 1024)
+    app.on_response_prepare.append(_static_js_css_revalidate)
     app.on_cleanup.append(_close_upstream_session)
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
