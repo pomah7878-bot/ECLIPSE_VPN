@@ -1098,6 +1098,10 @@ async def run_daily_tasks(bot: Bot) -> None:
             # Автопродление ключей с личного баланса
             await _run_daily_step("автопродление", process_auto_renewals(bot), "autorenew")
 
+            # Купон для клиентов, ушедших неделю назад (выключено по умолчанию, повторов нет)
+            from bot.services.lapsed_coupons import process_lapsed_coupons
+            await _run_daily_step("купоны вернувшимся", process_lapsed_coupons(bot))
+
             # Снапшот трафика для графика статистики
             await _run_daily_step("снапшот трафика", snapshot_daily_traffic(), "snapshot")
             

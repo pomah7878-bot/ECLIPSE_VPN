@@ -45,6 +45,10 @@ def coupons_menu_kb(enabled: bool, discount_percent: int, lifetime_days: int) ->
     builder = InlineKeyboardBuilder()
     toggle_text = "🟢 Авто выдача при покупке" if enabled else "⚪ Авто выдача при покупке"
     builder.row(InlineKeyboardButton(text=toggle_text, callback_data="admin_coupons_toggle_auto"))
+    from bot.services.lapsed_coupons import is_enabled as lapsed_on
+    builder.row(InlineKeyboardButton(
+        text=("🟢 Купон ушедшим клиентам" if lapsed_on() else "⚪ Купон ушедшим клиентам"),
+        callback_data="admin_coupons_toggle_lapsed"))
     builder.row(InlineKeyboardButton(text=f"📊 Размер скидки: {discount_percent}%", callback_data="admin_coupons_edit_discount"))
     builder.row(InlineKeyboardButton(text=f"⏳ Время жизни: {lifetime_days} дн.", callback_data="admin_coupons_edit_lifetime"))
     builder.row(InlineKeyboardButton(text="🎲 Сгенерировать", callback_data="admin_coupons_generate"))

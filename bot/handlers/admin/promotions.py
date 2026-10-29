@@ -345,6 +345,8 @@ async def admin_coupons(callback: CallbackQuery, state: FSMContext):
         "• разыграть в канале\n"
         "• передать другому человеку\n\n"
         "🔁 <b>Авто выдача при покупке</b> помогает удерживать клиента: после каждой платной покупки бот выдаёт купон на следующую.\n\n"
+        "👋 <b>Купон ушедшим клиентам</b> — через 7 дней после окончания подписки бот один раз присылает личный купон "
+        "(скидка и срок — как в авто выдаче, не больше 50 сообщений в сутки).\n\n"
         "ℹ️ Скидка и срок жизни фиксируются в момент создания купона, поэтому старые купоны не меняются при новых настройках."
     )
     await safe_edit_or_send(
@@ -362,6 +364,13 @@ async def admin_coupons(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "admin_coupons_toggle_auto")
 async def admin_coupons_toggle_auto(callback: CallbackQuery, state: FSMContext):
     set_coupon_auto_enabled(not get_coupon_auto_enabled())
+    await admin_coupons(callback, state)
+
+
+@router.callback_query(F.data == "admin_coupons_toggle_lapsed")
+async def admin_coupons_toggle_lapsed(callback: CallbackQuery, state: FSMContext):
+    from bot.services import lapsed_coupons
+    lapsed_coupons.set_enabled(not lapsed_coupons.is_enabled())
     await admin_coupons(callback, state)
 
 

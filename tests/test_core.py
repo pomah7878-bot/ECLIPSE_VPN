@@ -621,3 +621,31 @@ class RollbackTest(unittest.TestCase):
                 self.assertEqual(rb.rollback_code("not-in-list")[0], False)
             finally:
                 rb.BACKUP_DIR, rb.POINTS_FILE = old
+
+
+class LapsedCouponsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_candidates_and_no_repeat(self):
+        from bot.services import lapsed_coupons as lc
+        with get_db() as c:
+            ids = {}
+            for tg, days in ((9801, 10), (9802, 2), (9803, 200)):
+                c.execute("INSERT INTO users (telegram_id, username) VALUES (?, ?)", (tg, f"lp{tg}"))
+                uid = c.execute("SELECT id FROM users WHERE telegram_id = ?", (tg,)).fetchone()["id"]
+                ids[tg] = uid
+                c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', ?))",
+                          (uid, f"-{days} days"))
+        got = {x["telegram_id"] for x in lc.find_candidates()}
+        self.assertIn(9801, got)          # ушёл 10 дней назад
+        self.assertNotIn(9802, got)       # ушёл 2 дня назад — рано
+        self.assertNotIn(9803, got)       # ушёл давно
+        cand = next(x for x in lc.find_candidates() if x["telegram_id"] == 9801)
+        lc.set_enabled(True)
+        self.assertTrue(lc.is_enabled())
+        lc.set_enabled(False)
+        self.assertFalse(lc.is_enabled())
+        self.assertIsNotNone(lc.issue_coupon(cand["user_id"], cand["source"]))
+        self.assertNotIn(9801, {x["telegram_id"] for x in lc.find_candidates()})  # повторов нет
