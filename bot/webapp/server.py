@@ -1828,9 +1828,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     except Exception as _tuic_err:
         logger.debug(f"handle_happ_subscription: TUIC не добавлены ({sub_id[:8]}...): {_tuic_err}")
 
+    _strip_emails = []
     try:
         _pes = {(key or {}).get("panel_email"), (src_key or {}).get("panel_email")} - {None, ""}
-        body = _strip_email_suffix(body, [e for p in _pes for e in (p, f"cdn_{p}")])
+        _strip_emails = [e for p in _pes for e in (p, f"cdn_{p}")]
+        body = _strip_email_suffix(body, _strip_emails)
     except Exception as _se:
         logger.debug(f"handle_happ_subscription: суффикс email не убран: {_se}")
 
@@ -1987,6 +1989,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             body = _strip_routing_lines(body)
         if detected_app == "incy":
             body = _name_awg_lines(body)
+            body = _strip_email_suffix(body, _strip_emails)
         _incy_auto = False
         if detected_app == "incy" and routing_mode in ("add", "onadd"):
             from database.requests import is_client_toggle_enabled as _tg_on
@@ -2217,8 +2220,6 @@ def _strip_email_suffix(body: bytes, emails) -> bytes:
     настройки панели это не всегда отключают. Убираем ровно хвост «-<email>» из названий."""
     import urllib.parse as _up
     emails = [e for e in emails if e]
-    if not emails:
-        return body
 
     def _fix(text: str):
         changed, out = False, []
@@ -2226,8 +2227,10 @@ def _strip_email_suffix(body: bytes, emails) -> bytes:
             if "://" in ln and "#" in ln:
                 head, frag = ln.rsplit("#", 1)
                 name = _up.unquote(frag)
-                for e in emails:
-                    if name.endswith("-" + e):
+                # внешние CDN дописывают к названию адрес своего хоста («…🇫🇮-host.example»)
+                _m = re.search(r"://(?:[^@/?#]*@)?([^:/?#]+)", head)
+                for e in emails + ([_m.group(1)] if _m else []):
+                    if name.lower().endswith("-" + e.lower()):
                         ln = head + "#" + _up.quote(name[: -len(e) - 1].rstrip(), safe="")
                         changed = True
                         break

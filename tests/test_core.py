@@ -818,3 +818,5 @@ class StripEmailSuffixTest(unittest.TestCase):
         b64 = base64.b64encode(body)
         self.assertNotIn(b"user_x1", base64.b64decode(_strip_email_suffix(b64, ["user_x1"])))
         self.assertEqual(_strip_email_suffix(body, [None]), body)
+        cdn = b"vless://u@de-cdn.example.org:443?type=xhttp#Name%20%F0%9F%87%A9%F0%9F%87%AA-de-cdn.example.org"
+        self.assertEqual(_strip_email_suffix(cdn, []).decode().split("#")[1], "Name%20%F0%9F%87%A9%F0%9F%87%AA")
