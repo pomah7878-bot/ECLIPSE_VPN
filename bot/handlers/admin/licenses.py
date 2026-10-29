@@ -129,14 +129,49 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
 
 
 @router.callback_query(F.data.startswith("license_extend:"))
+async def extend_license_confirm(callback: CallbackQuery):
+    """Предохранитель: продление сразу не выполняется, сначала показываем, кому и до какой даты."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    _, license_key, days_str = callback.data.split(":")
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from bot.keyboards.admin_misc import back_button, home_button
+    from database.db_licenses import extended_expiry, get_partner_license
+
+    lic = get_partner_license(license_key)
+    if not lic:
+        await callback.answer("❌ Лицензия не найдена", show_alert=True)
+        return
+    current = f"{lic['expires_at']} (UTC)" if lic["expires_at"] else "бессрочно"
+    await safe_edit_or_send(
+        callback.message,
+        f"⚠️ <b>Продлить лицензию на {int(days_str)} дн.?</b>\n\n"
+        f"Лицензия: <b>{lic['partner_name']}</b>\n"
+        f"Ключ: <code>{lic['license_key']}</code>\n"
+        f"Сейчас действует до: {current}\n"
+        f"Будет действовать до: <b>{extended_expiry(lic, int(days_str))} (UTC)</b>\n\n"
+        "Отменить продление кнопкой нельзя.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"✅ Да, продлить на {int(days_str)} дн.",
+                                  callback_data=f"license_extend_do:{license_key}:{int(days_str)}")],
+            [back_button(f"license_view:{license_key}"), home_button()],
+        ]),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("license_extend_do:"))
 async def extend_license_action(callback: CallbackQuery):
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
         return
 
     _, license_key, days_str = callback.data.split(":")
-    from database.db_licenses import extend_partner_license
+    from database.db_licenses import extend_partner_license, log_license_event
     extend_partner_license(license_key, int(days_str))
+    log_license_event(license_key, "extended", f"admin={callback.from_user.id} days={int(days_str)}")
     await callback.answer(f"✅ Продлено на {days_str} дней")
     # Обновляем экран деталей, чтобы сразу видеть новую дату
     await show_license_detail(callback, None, license_key)

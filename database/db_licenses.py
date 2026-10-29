@@ -85,11 +85,8 @@ def set_partner_license_features(license_key: str, features) -> bool:
         return cursor.rowcount > 0
 
 
-def extend_partner_license(license_key: str, extra_days: int) -> bool:
-    license_row = get_partner_license(license_key)
-    if not license_row:
-        return False
-
+def extended_expiry(license_row: Dict[str, Any], extra_days: int) -> str:
+    """Новая дата окончания при продлении: от текущей даты окончания, а если лицензия уже истекла — от сегодня."""
     current_expires = license_row.get("expires_at")
     base = datetime.utcnow()
     if current_expires:
@@ -99,8 +96,15 @@ def extend_partner_license(license_key: str, extra_days: int) -> bool:
                 base = parsed
         except ValueError:
             pass
+    return (base + timedelta(days=extra_days)).strftime("%Y-%m-%d %H:%M:%S")
 
-    new_expires = (base + timedelta(days=extra_days)).strftime("%Y-%m-%d %H:%M:%S")
+
+def extend_partner_license(license_key: str, extra_days: int) -> bool:
+    license_row = get_partner_license(license_key)
+    if not license_row:
+        return False
+
+    new_expires = extended_expiry(license_row, extra_days)
     with get_db() as conn:
         cursor = conn.execute(
             "UPDATE partner_licenses SET expires_at = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?",

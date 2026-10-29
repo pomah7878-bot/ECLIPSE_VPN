@@ -685,3 +685,19 @@ class UpdateNoticeTest(unittest.TestCase):
         self.assertLess(len(f"📦 <b>Доступно обновление!</b>\n\n{text}"), 4096)
         self.assertTrue(text.endswith("</pre>"))
         self.assertNotIn("&am</pre>", text)
+
+
+class LicenseExtendTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_extended_expiry_matches_extend(self):
+        from database.db_licenses import (create_partner_license, get_partner_license,
+                                          extended_expiry, extend_partner_license)
+        key = create_partner_license("Тест продления", {"ai_assistant"}, 10)
+        lic = get_partner_license(key)
+        preview = extended_expiry(lic, 90)
+        self.assertTrue(extend_partner_license(key, 90))
+        self.assertEqual(get_partner_license(key)["expires_at"], preview)
+        self.assertGreater(preview, lic["expires_at"])
