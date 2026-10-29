@@ -1897,6 +1897,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 headers[_hdr] = "1"
             else:
                 headers[_hdr] = _off
+        if is_client_toggle_enabled("happ", "tcp_ping"):
+            headers["ping-type"] = "tcp"
         if is_client_toggle_enabled("happ", "sort_ping"):
             headers["subscriptions-sort-type"] = "ping"
             if "subscription-ping-onopen-enabled" not in headers:

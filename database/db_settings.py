@@ -1226,6 +1226,7 @@ CLIENT_APPS = {'happ': 'Happ', 'incy': 'INCY'}
 HAPP_TOGGLE_LABELS = {
     'autoconnect': 'Автовыбор быстрого сервера',
     'sort_ping': 'Автосортировка по пингу',
+    'tcp_ping': 'TCP-пинг (честный при VPN)',
     'notify_expire': 'Родные уведомления об истечении',
     'auto_update': 'Глобальное автообновление подписок',
     'hide_settings': 'Скрыть настройки серверов',

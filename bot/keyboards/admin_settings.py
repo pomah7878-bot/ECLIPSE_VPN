@@ -456,7 +456,7 @@ def integrations_client_app_menu_kb(app: str) -> InlineKeyboardMarkup:
             callback_data='admin_happ_devices',
         ))
 
-    _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒', 'hide_url': '🔗', 'announce': '📢', 'hide_check': '🙈', 'fragmentation': '🧩', 'autorouting': '🗺'}
+    _icons = {'autoconnect': '⚡', 'sort_ping': '📊', 'notify_expire': '🔔', 'auto_update': '🔄', 'hide_settings': '🔒', 'hide_url': '🔗', 'announce': '📢', 'hide_check': '🙈', 'fragmentation': '🧩', 'autorouting': '🗺', 'tcp_ping': '📡'}
     for toggle, label in CLIENT_TOGGLE_LABELS_BY_APP[app].items():
         builder.row(
             InlineKeyboardButton(text=f"{_icons[toggle]} {label}", callback_data=f'admin_happ_info:{app}:{toggle}'),
