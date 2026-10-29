@@ -32,6 +32,16 @@ _KEYCAP = "⃣"
 STATUS_EMOJI = frozenset("🟢🔴⚪🟡🔵🟠🟣⚫✅❌⛔⚠🚧🔘🔕🔔")
 
 
+# Эмодзи, с которых начинаются кнопки меню: по ним считается, насколько набор подходит
+MENU_EMOJI = "⬅ 🈴 🏠 ↩ ➡ 🔑 🔄 🎁 💳 💰 📅 ⌛ ⚡ 🔗 👤 👥 🔐 🆔 📋 📊 📂 📦 📝 📱 💬 📢 🌐 ⚙ 🔍 🧾 ⭐ ➕ ➖ ✏ 🗑 📥 🧹 🚫 📡 🛰 🖥 🧩 🗺 🩺 🧪".split()
+
+
+def coverage(mapping: Dict[str, str]) -> Tuple[int, list]:
+    """(сколько эмодзи меню есть в наборе, чего не хватает)"""
+    missing = [e for e in MENU_EMOJI if e not in mapping]
+    return len(MENU_EMOJI) - len(missing), missing
+
+
 def _is_emoji_start(ch: str) -> bool:
     cp = ord(ch)
     return (

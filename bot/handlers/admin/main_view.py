@@ -224,8 +224,12 @@ async def msg_icons_pack(message: Message, state: FSMContext):
         await message.answer(f'❌ Не удалось взять набор: {e}')
         return
     await state.clear()
+    have, missing = bi.coverage(mapping)
+    cover = f"Покрывает меню: <b>{have} из {have + len(missing)}</b> эмодзи."
+    if missing:
+        cover += "\nНе хватает (останутся обычными): " + " ".join(missing)
     await message.answer(
-        f"✅ Набор <code>{name}</code> сохранён: {len(mapping)} иконок.\n"
+        f"✅ Набор <code>{name}</code> сохранён: {len(mapping)} иконок.\n{cover}\n\n"
         "Теперь включите «Иконки на кнопках» в «Вид главной страницы».",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[back_button('admin_main_view'), home_button()]]),
     )

@@ -585,3 +585,10 @@ class ButtonIconsTest(unittest.TestCase):
         self.assertEqual(r[1][0].icon_custom_emoji_id, '222')
         self.assertIs(bi.style_markup(m, {}), m)
         self.assertEqual(bi.parse_pack_name('https://t.me/addemoji/Ab_1'), 'Ab_1')
+
+    def test_coverage(self):
+        from bot.services import button_icons as bi
+        self.assertTrue(all("\ufe0f" not in e for e in bi.MENU_EMOJI))
+        have, missing = bi.coverage({"🔑": "1", "⬅": "2"})
+        self.assertEqual(have, 2)
+        self.assertNotIn("🔑", missing)
