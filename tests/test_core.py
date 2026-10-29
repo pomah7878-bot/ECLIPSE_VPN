@@ -915,6 +915,36 @@ class ClientToggleMenuTest(unittest.TestCase):
                 self.assertIn(toggle, hints.get(app, {}), f"нет подсказки: {app}/{toggle}")
 
 
+class StaticVersionTest(unittest.TestCase):
+    def test_adds_mtime_version_to_js_and_css_only(self):
+        from bot.utils.static_version import version_static_urls
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "vendor"))
+            for rel, t in (("site-ai.js", 1700000000), ("vendor/tailwind.css", 1700000500), ("logo.png", 1700000900)):
+                p = os.path.join(d, *rel.split("/"))
+                open(p, "wb").write(b"x")
+                os.utime(p, (t, t))
+            html = ('<script src="/static/site-ai.js" defer></script>'
+                    '<link href="/static/vendor/tailwind.css">'
+                    '<img src="/static/logo.png"><script src="/static/missing.js">')
+            out = version_static_urls(html, d)
+        self.assertIn('/static/site-ai.js?v=1700000000"', out)
+        self.assertIn('/static/vendor/tailwind.css?v=1700000500"', out)
+        self.assertIn('src="/static/logo.png"', out)            # картинки не трогаем
+        self.assertIn('src="/static/missing.js"', out)          # нет файла — как было
+
+    def test_version_changes_when_file_changes(self):
+        from bot.utils.static_version import version_static_urls
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, "a.js")
+            open(p, "wb").write(b"x")
+            os.utime(p, (1700000000, 1700000000))
+            before = version_static_urls('<script src="/static/a.js">', d)
+            os.utime(p, (1700000100, 1700000100))
+            after = version_static_urls('<script src="/static/a.js">', d)
+        self.assertNotEqual(before, after)
+
+
 class ProbeNameTailsTest(unittest.TestCase):
     def test_strip_name_tails(self):
         from bot.services.connection_probe import strip_name_tails

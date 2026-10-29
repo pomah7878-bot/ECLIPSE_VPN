@@ -1278,6 +1278,8 @@ async def handle_shop_page(request: web.Request) -> web.Response:
         patched_body = patched_body.replace("{{POWERED_BY}}", powered_by_html())
     except Exception:
         patched_body = patched_body.replace("{{POWERED_BY}}", "")
+    from bot.utils.static_version import version_static_urls
+    patched_body = version_static_urls(patched_body, _STATIC_DIR)
     new_resp = web.Response(text=patched_body, content_type="text/html")
     for hk, hv in resp.headers.items():
         if hk.lower() not in ("content-type", "content-length"):
