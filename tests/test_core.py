@@ -732,3 +732,22 @@ class PingVpnFlagTest(unittest.TestCase):
     def test_vpn_flag(self):
         self.assertTrue(self._call("203.0.113.7")["vpn_active"])
         self.assertFalse(self._call("198.51.100.9")["vpn_active"])
+
+
+class DirectServersProfileTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_adds_without_duplicates(self):
+        from unittest import mock
+        srvs = [{"is_active": 1, "host": "Vpn.Example.com", "public_ip": "1.2.3.4, 5.6.7.8"},
+                {"is_active": 1, "host": "9.9.9.9", "public_ip": ""},
+                {"is_active": 0, "host": "off.example.com", "public_ip": "2.2.2.2"}]
+        with mock.patch("database.db_servers.get_all_servers", return_value=srvs):
+            out = st.add_direct_servers({"DirectIp": ["1.2.3.4"], "DirectSites": []})
+        self.assertEqual(out["DirectIp"], ["1.2.3.4", "5.6.7.8", "9.9.9.9"])
+        self.assertEqual(out["DirectSites"], ["domain:vpn.example.com"])
+
+    def test_off_by_default(self):
+        self.assertFalse(st.get_routing_direct_servers())

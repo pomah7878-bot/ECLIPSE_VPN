@@ -589,6 +589,12 @@ def happ_routing_menu_kb() -> InlineKeyboardMarkup:
             callback_data='admin_toggle_routing_user_choice',
         ))
 
+    from database.requests import get_routing_direct_servers
+    builder.row(InlineKeyboardButton(
+        text=f"📡 Серверы напрямую (честный пинг): {'✅ вкл' if get_routing_direct_servers() else '⚪ выкл'}",
+        callback_data='admin_toggle_routing_direct_servers',
+    ))
+
     mode_labels = {
         'disabled': '⚪ Выключено (заголовок не отправляется)',
         'add': '➕ Добавить профиль (add)',

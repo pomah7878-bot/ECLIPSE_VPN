@@ -31,6 +31,9 @@ __all__ = [
     'get_happ_routing_mode',
     'get_happ_routing_variant',
     'set_happ_routing_variant',
+    'get_routing_direct_servers',
+    'set_routing_direct_servers',
+    'add_direct_servers',
     'get_routing_user_choice_enabled',
     'set_routing_user_choice_enabled',
     'get_user_routing_variant',
@@ -908,6 +911,44 @@ def _force_token() -> str:
     return str(_time.time_ns())
 
 
+def get_routing_direct_servers() -> bool:
+    """Добавлять ли адреса наших серверов в профиль как «напрямую» (мимо VPN),
+    чтобы пинг в приложении был честным при включённом VPN. По умолчанию выкл."""
+    return get_setting('routing_direct_servers', '0') == '1'
+
+
+def set_routing_direct_servers(value: bool) -> None:
+    set_setting('routing_direct_servers', '1' if value else '0')
+
+
+def add_direct_servers(profile: dict) -> dict:
+    """Дописывает в DirectIp/DirectSites адреса и домены активных серверов
+    (без дублей). Остальной профиль не трогает."""
+    import ipaddress, re as _re
+    from database.db_servers import get_all_servers
+    ips, domains = [], []
+    for srv in get_all_servers():
+        if not srv.get('is_active'):
+            continue
+        parts = [p for p in _re.split(r'[,\s]+', (srv.get('public_ip') or '').strip()) if p]
+        host = (srv.get('host') or '').strip()
+        if host:
+            parts.append(host)
+        for part in parts:
+            try:
+                ipaddress.ip_address(part)
+                ips.append(part)
+            except ValueError:
+                if '.' in part and _re.fullmatch(r'[A-Za-z0-9.-]+', part):
+                    domains.append('domain:' + part.lower())
+    out = dict(profile)
+    for key, extra in (('DirectIp', ips), ('DirectSites', domains)):
+        cur = out.get(key)
+        cur = list(cur) if isinstance(cur, list) else []
+        out[key] = cur + [x for x in dict.fromkeys(extra) if x not in cur]
+    return out
+
+
 def get_routing_user_choice_enabled() -> bool:
     """Может ли клиент сам выбрать вариант маршрутизации (кнопки на карточке ключа)."""
     return get_setting('routing_user_choice', '1') != '0'
@@ -1132,6 +1173,11 @@ def prepare_routing_profile(profile_json: str, app: str, variant=None, min_ts: i
         return profile_json
     if not isinstance(profile, dict):
         return profile_json
+    if get_routing_direct_servers():
+        try:
+            profile = add_direct_servers(profile)
+        except Exception:
+            pass
     if not profile.get('LastUpdated'):
         body = {k: v for k, v in profile.items() if k != 'LastUpdated'}
         fingerprint = _json.dumps(body, sort_keys=True, ensure_ascii=False) + "|" + get_setting('live_geo_version', '')

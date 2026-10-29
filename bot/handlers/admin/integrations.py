@@ -2786,6 +2786,9 @@ def _happ_routing_menu_text() -> str:
         f"• Новая версия опубликована: {_when(_pub)}\n"
         f"• Клиент получил профиль последний раз: {_when(get_setting('routing_last_served', ''))}\n"
         f"• Устройств получили эту версию: {_got}\n\n"
+        "📡 <b>Серверы напрямую</b> — в профиль добавляются адреса и домены активных серверов "
+        "как «напрямую», чтобы пинг в приложении был честным при включённом VPN. "
+        "Минус: все клиенты получат в профиле адреса серверов. Включайте и проверьте на телефоне.\n\n"
     )
     try:
         from bot.services.license import is_feature_available
@@ -2842,6 +2845,19 @@ async def toggle_routing_user_choice(callback: CallbackQuery, state: FSMContext)
         return
     from database.requests import get_routing_user_choice_enabled, set_routing_user_choice_enabled
     set_routing_user_choice_enabled(not get_routing_user_choice_enabled())
+    from bot.keyboards.admin_settings import happ_routing_menu_kb
+    await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
+    await callback.answer("✅ Готово")
+
+
+@router.callback_query(F.data == "admin_toggle_routing_direct_servers")
+async def toggle_routing_direct_servers(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import get_routing_direct_servers, set_routing_direct_servers, request_routing_publish
+    set_routing_direct_servers(not get_routing_direct_servers())
+    request_routing_publish()
     from bot.keyboards.admin_settings import happ_routing_menu_kb
     await safe_edit_or_send(callback.message, _happ_routing_menu_text(), reply_markup=happ_routing_menu_kb())
     await callback.answer("✅ Готово")
