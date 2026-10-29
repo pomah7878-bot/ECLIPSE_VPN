@@ -2231,11 +2231,18 @@ def _strip_email_suffix(body: bytes, emails) -> bytes:
                 name = _up.unquote(frag)
                 # внешние CDN дописывают к названию адрес своего хоста («…🇫🇮-host.example»)
                 _m = re.search(r"://(?:[^@/?#]*@)?([^:/?#]+)", head)
-                for e in emails + ([_m.group(1)] if _m else []):
-                    if name.lower().endswith("-" + e.lower()):
-                        ln = head + "#" + _up.quote(name[: -len(e) - 1].rstrip(), safe="")
-                        changed = True
+                orig = name
+                # хвостов может быть несколько подряд («…-хост-email»): снимаем, пока что-то подходит
+                for _ in range(3):
+                    for e in emails + ([_m.group(1)] if _m else []):
+                        if name.lower().endswith("-" + e.lower()):
+                            name = name[: -len(e) - 1].rstrip()
+                            break
+                    else:
                         break
+                if name != orig:
+                    ln = head + "#" + _up.quote(name, safe="")
+                    changed = True
             out.append(ln)
         return "\n".join(out) if changed else None
 

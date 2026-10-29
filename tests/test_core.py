@@ -820,3 +820,5 @@ class StripEmailSuffixTest(unittest.TestCase):
         self.assertEqual(_strip_email_suffix(body, [None]), body)
         cdn = b"vless://u@de-cdn.example.org:443?type=xhttp#Name%20%F0%9F%87%A9%F0%9F%87%AA-de-cdn.example.org"
         self.assertEqual(_strip_email_suffix(cdn, []).decode().split("#")[1], "Name%20%F0%9F%87%A9%F0%9F%87%AA")
+        two = b"vless://u@de-cdn.example.org:443?type=xhttp#Name-de-cdn.example.org-user_x1"
+        self.assertEqual(_strip_email_suffix(two, ["user_x1"]).decode().split("#")[1], "Name")
