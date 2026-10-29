@@ -838,3 +838,13 @@ class AuditFixesTest(unittest.TestCase):
             self.assertIs(asyncio.run(panel_tls.panel_ssl(9, "h", 1, "http")), False)
         finally:
             st.set_setting("panel_tls_pin", "0")
+
+
+class ProbeNameTailsTest(unittest.TestCase):
+    def test_strip_name_tails(self):
+        from bot.services.connection_probe import strip_name_tails
+        t = ["user_x1", "cdn_user_x1", "cdn.example.org"]
+        self.assertEqual(strip_name_tails("VLESS REALITY 🇫🇮-user_x1", t), "VLESS REALITY 🇫🇮")
+        self.assertEqual(strip_name_tails("Белые списки 🇫🇮-cdn.example.org-cdn_user_x1", t), "Белые списки 🇫🇮")
+        self.assertEqual(strip_name_tails("Gaming", t), "Gaming")
+        self.assertIsNone(strip_name_tails(None, t))

@@ -111,11 +111,27 @@ async def load_links(key: Dict[str, Any]) -> List[Dict[str, Any]]:
     from bot.utils.inbound_links import build_connection_groups
     client = await get_client(key["server_id"])
     raw = await get_connection_links(client, key["id"], key["sub_id"])
+    emails = [e for p in {key.get("panel_email")} - {None, ""} for e in (p, f"cdn_{p}")]
     items: List[Dict[str, Any]] = []
     for group in build_connection_groups(raw):
         for ib in group["inbounds"]:
-            items.append({**ib, "host": group["host"]})
+            items.append({**ib, "host": group["host"], "name": strip_name_tails(ib.get("name"), emails + [group["host"]])})
     return items
+
+
+def strip_name_tails(name: Any, tails: List[str]) -> Any:
+    """Панель дописывает к названию «-email клиента» и «-хост» внешнего CDN; убираем такие хвосты (как в подписке)."""
+    if not name:
+        return name
+    name = str(name)
+    for _ in range(3):
+        for t in tails:
+            if t and name.lower().endswith("-" + str(t).lower()):
+                name = name[: -len(str(t)) - 1].rstrip()
+                break
+        else:
+            break
+    return name
 
 
 def _query(link: str) -> Dict[str, str]:
