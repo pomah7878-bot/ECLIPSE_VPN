@@ -701,3 +701,34 @@ class LicenseExtendTest(unittest.TestCase):
         self.assertTrue(extend_partner_license(key, 90))
         self.assertEqual(get_partner_license(key)["expires_at"], preview)
         self.assertGreater(preview, lic["expires_at"])
+
+
+class PingVpnFlagTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def _call(self, client_ip):
+        import asyncio
+        from aiohttp.test_utils import make_mocked_request
+        from bot.webapp import server as w
+        saved = (w._get_telegram_id, w._measure_ping, w._get_known_vpn_server_ips)
+
+        async def fake_ping(host, port, timeout=5.0):
+            return 10
+
+        async def fake_ips():
+            return {"203.0.113.7"}
+        w._get_telegram_id = lambda request: 9555
+        w._measure_ping = fake_ping
+        w._get_known_vpn_server_ips = fake_ips
+        try:
+            req = make_mocked_request("GET", "/api/ping", headers={"X-Forwarded-For": client_ip})
+            resp = asyncio.run(w.handle_ping(req))
+            return json.loads(resp.body)
+        finally:
+            w._get_telegram_id, w._measure_ping, w._get_known_vpn_server_ips = saved
+
+    def test_vpn_flag(self):
+        self.assertTrue(self._call("203.0.113.7")["vpn_active"])
+        self.assertFalse(self._call("198.51.100.9")["vpn_active"])

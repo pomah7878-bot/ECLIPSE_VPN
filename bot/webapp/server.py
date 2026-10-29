@@ -355,7 +355,10 @@ async def handle_ping(request: web.Request) -> web.Response:
         finally:
             conn.close()
 
-        return web.json_response({"pings": pings, "targets": targets})
+        # Если запрос пришёл с адреса нашего VPN-сервера, у пользователя включён VPN:
+        # замер с устройства пошёл бы через туннель и показал бы не его реальную задержку.
+        vpn_active = _get_client_ip(request) in await _get_known_vpn_server_ips()
+        return web.json_response({"pings": pings, "targets": targets, "vpn_active": vpn_active})
 
     except Exception as e:
         logger.error(f"WebApp /api/ping error: {e}", exc_info=True)
@@ -389,7 +392,8 @@ async def handle_key_inbounds(request: web.Request) -> web.Response:
         raw = await get_connection_links(client, key_id, key["sub_id"])
         groups = build_connection_groups(raw)  # v1.197: + AmneziaWG/WireGuard/TUIC (по лицензии)
         groups = await add_ping_to_groups(groups)
-        return web.json_response({"groups": groups})
+        vpn_active = _get_client_ip(request) in await _get_known_vpn_server_ips()
+        return web.json_response({"groups": groups, "vpn_active": vpn_active})
     except Exception as e:
         logger.warning(f"handle_key_inbounds: ошибка для ключа {key_id}: {e}")
         return web.json_response({"error": "internal_error"}, status=500)
@@ -3849,7 +3853,8 @@ async def handle_public_key_inbounds(request: web.Request) -> web.Response:
         raw = await get_connection_links(client, key_id, key["sub_id"])
         groups = build_connection_groups(raw)  # v1.197: + AmneziaWG/WireGuard/TUIC (по лицензии)
         groups = await add_ping_to_groups(groups)
-        return web.json_response({"groups": groups})
+        vpn_active = _get_client_ip(request) in await _get_known_vpn_server_ips()
+        return web.json_response({"groups": groups, "vpn_active": vpn_active})
     except Exception as e:
         logger.warning(f"handle_public_key_inbounds: ошибка для ключа {key_id}: {e}")
         return web.json_response({"error": "internal_error"}, status=500)

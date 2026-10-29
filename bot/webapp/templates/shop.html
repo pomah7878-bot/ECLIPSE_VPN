@@ -1657,7 +1657,7 @@
                 const groups = res.groups || [];
                 _inboundsCache[keyId] = groups;
                 box.innerHTML = renderInboundGroups(keyId, groups);
-                measureClientPings(keyId, groups);
+                measureClientPings(keyId, groups, !!res.vpn_active);
             } catch (e) {
                 box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить подключения</p>';
             }
@@ -1857,7 +1857,19 @@
             return r.length ? Math.max(1, Math.round(Math.min(...r) / 2)) : null;
         }
 
-        async function measureClientPings(keyId, groups) {
+        async function measureClientPings(keyId, groups, vpnActive) {
+            if (vpnActive) {
+                // С включённым VPN замер идёт через туннель и не показывает реальную задержку
+                groups.forEach((g, gi) => g.inbounds.forEach((ib, ii) => {
+                    const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
+                    if (el) el.textContent = '—';
+                }));
+                groups.forEach((g, gi) => {
+                    const hostEl = document.getElementById(`ping-host-${keyId}-${gi}`);
+                    if (hostEl) hostEl.textContent = '· VPN включён: задержку можно измерить только без него';
+                });
+                return;
+            }
             for (let gi = 0; gi < groups.length; gi++) {
                 const group = groups[gi];
                 const tcpPings = [];
