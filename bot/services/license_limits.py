@@ -90,8 +90,8 @@ async def process_license_notices(bot) -> None:
             try:
                 from bot.utils.notify_kb import with_home
                 await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=with_home())
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Не доставлено админу уведомление о лицензии %s: %s", admin_id, e)
 
     try:
         if not is_licensed() and limits_mode() != "off" and is_over_limits():

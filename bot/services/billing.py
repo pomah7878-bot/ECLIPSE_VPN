@@ -1549,8 +1549,8 @@ async def _handle_late_payment(order: Dict[str, Any]) -> str:
                         parse_mode='HTML',
                         reply_markup=_notify_home(),
                     )
-                except Exception:
-                    pass
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Не доставлено админу уведомление о поздней оплате %s: %s", admin_id, e)
     except Exception as e:
         logger.warning(f"Не удалось уведомить админов о поздней оплате {order_id}: {e}")
     if cents:
@@ -1715,8 +1715,8 @@ async def _notify_admins_unfulfilled(bot: Any, order_id: str, error: Exception) 
         for admin_id in list(ADMIN_IDS)[:5]:
             try:
                 await bot.send_message(admin_id, text, parse_mode='HTML', reply_markup=_notify_home())
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Не доставлено админу уведомление о неоформленном заказе %s: %s", admin_id, e)
     except Exception as notify_err:
         logger.warning("Не удалось уведомить админов о неоформленном заказе %s: %s", order_id, notify_err)
 

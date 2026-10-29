@@ -668,3 +668,20 @@ class UsersListFiltersTest(unittest.TestCase):
         self.assertNotIn(9902, trial)
         self.assertIn(9902, banned)
         self.assertNotIn(9902, allu)
+
+
+class UpdateNoticeTest(unittest.TestCase):
+    def test_update_log_fits_telegram_limit(self):
+        from bot.utils import git_utils as g
+        orig = (g.get_pending_commits_list, g.run_git_command)
+        g.get_pending_commits_list = lambda: (True, [{"hash": "a", "message": "m"}] * 10)
+        g.run_git_command = lambda args, timeout=30: (True, "abc " + "я<&" * 3000)
+        try:
+            ok, behind, text, *_ = g.check_for_updates()
+        finally:
+            g.get_pending_commits_list, g.run_git_command = orig
+        self.assertTrue(ok)
+        self.assertEqual(behind, 10)
+        self.assertLess(len(f"📦 <b>Доступно обновление!</b>\n\n{text}"), 4096)
+        self.assertTrue(text.endswith("</pre>"))
+        self.assertNotIn("&am</pre>", text)

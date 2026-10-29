@@ -240,6 +240,9 @@ def pull_to_commit(commit_hash: str) -> Tuple[bool, str]:
         return False, f"❌ Критическая ошибка: {e}"
 
 
+UPDATE_LOG_MAX = 3300  # знаков экранированного журнала; с запасом под заголовок и кнопки
+
+
 def check_for_updates() -> Tuple[bool, int, str, bool, Optional[Dict[str, str]], bool]:
     """
     Checks for updates on the server.
@@ -283,7 +286,16 @@ def check_for_updates() -> Tuple[bool, int, str, bool, Optional[Dict[str, str]],
     
     log_text = f"📦 Доступно обновлений: {commits_behind}\n\n"
     if success_log and log_output:
-        log_text += "Последние изменения:\n<pre>" + escape_html(log_output) + "</pre>"
+        # Telegram не принимает сообщения длиннее 4096 знаков: без обрезки уведомление
+        # об обновлении не доходит, когда накопилось много коммитов с длинными описаниями
+        escaped = escape_html(log_output)
+        if len(escaped) > UPDATE_LOG_MAX:
+            escaped = escaped[:UPDATE_LOG_MAX]
+            cut = escaped.rfind("&")
+            if cut > len(escaped) - 6:  # не оставляем половину сущности вроде «&am»
+                escaped = escaped[:cut]
+            escaped = escaped.rstrip() + "\n…"
+        log_text += "Последние изменения:\n<pre>" + escaped + "</pre>"
     
     return True, commits_behind, log_text, has_blocking, blocking_commit, is_beta_only
 

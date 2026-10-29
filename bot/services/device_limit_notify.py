@@ -235,8 +235,8 @@ async def _notify(bot, key: Dict[str, Any], reason: str, counts: Optional[Tuple[
         for admin_id in ADMIN_IDS:
             try:
                 await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=_admin_markup())
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Не доставлено админу уведомление о лимите устройств %s: %s", admin_id, e)
 
 
 # ------------------------------------------------------------------ режим IP
