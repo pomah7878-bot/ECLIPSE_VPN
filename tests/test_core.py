@@ -649,3 +649,22 @@ class LapsedCouponsTest(unittest.TestCase):
         self.assertFalse(lc.is_enabled())
         self.assertIsNotNone(lc.issue_coupon(cand["user_id"], cand["source"]))
         self.assertNotIn(9801, {x["telegram_id"] for x in lc.find_candidates()})  # повторов нет
+
+
+class UsersListFiltersTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_trial_and_banned_filters(self):
+        from database.db_users import get_all_users_paginated
+        with get_db() as c:
+            c.execute("INSERT INTO users (telegram_id, username, used_trial, is_banned) VALUES (9901, 'tr', 1, 0)")
+            c.execute("INSERT INTO users (telegram_id, username, used_trial, is_banned) VALUES (9902, 'bn', 0, 1)")
+        trial = {u["telegram_id"] for u in get_all_users_paginated(0, 50, "used_trial")[0]}
+        banned = {u["telegram_id"] for u in get_all_users_paginated(0, 50, "banned")[0]}
+        allu = {u["telegram_id"] for u in get_all_users_paginated(0, 50, "all")[0]}
+        self.assertIn(9901, trial)
+        self.assertNotIn(9902, trial)
+        self.assertIn(9902, banned)
+        self.assertNotIn(9902, allu)

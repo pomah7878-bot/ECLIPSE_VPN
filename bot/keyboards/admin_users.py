@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 
 from .admin_misc import back_button, home_button, cancel_button
 
-USERS_FILTERS = {'all': '👤 Все', 'active': '✅ Активные', 'inactive': '❌ Неактивные', 'never_paid': '🆕 Новые', 'expired': '🚫 Истёкшие', 'bot_blocked': '📵 Бот заблокирован'}
+USERS_FILTERS = {'all': '👤 Все', 'active': '✅ Активные', 'inactive': '❌ Неактивные', 'never_paid': '🆕 Новые', 'expired': '🚫 Истёкшие', 'bot_blocked': '📵 Бот заблокирован', 'used_trial': '🎁 Пробный период', 'banned': '⛔ Забаненные'}
 
 def users_menu_kb(stats: Dict[str, int]) -> InlineKeyboardMarkup:
     """
@@ -52,8 +52,8 @@ def users_list_kb(users: List[Dict[str, Any]], page: int, total_pages: int, curr
     for (filter_key, filter_name) in USERS_FILTERS.items():
         text = f'🔹{filter_name}' if filter_key == current_filter else filter_name
         filter_buttons.append(InlineKeyboardButton(text=text, callback_data=f'admin_users_filter:{filter_key}'))
-    builder.row(*filter_buttons[:3])
-    builder.row(*filter_buttons[3:])
+    for i in range(0, len(filter_buttons), 3):
+        builder.row(*filter_buttons[i:i + 3])
     for user in users:
         username = user.get('username')
         telegram_id = user.get('telegram_id')

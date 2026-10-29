@@ -377,6 +377,12 @@ def get_all_users_paginated(offset: int = 0, limit: int = 20,
                 SELECT COUNT(*) as cnt FROM users
                 WHERE is_banned = 0 AND is_bot_blocked = 1
             """
+        elif filter_type == 'used_trial':
+            base_query = "SELECT * FROM users WHERE is_banned = 0 AND used_trial = 1"
+            count_query = "SELECT COUNT(*) as cnt FROM users WHERE is_banned = 0 AND used_trial = 1"
+        elif filter_type == 'banned':
+            base_query = "SELECT * FROM users WHERE is_banned = 1"
+            count_query = "SELECT COUNT(*) as cnt FROM users WHERE is_banned = 1"
         else:
             return [], 0
         
