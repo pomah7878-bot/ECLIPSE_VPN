@@ -782,15 +782,18 @@ class CustomBannerTest(unittest.TestCase):
         from bot.services import custom_banner as cb
         cb.save("text", "Скидка 30%"); cb.save("url", "https://example.com/x"); cb.save("enabled", "1"); cb.save("line", "1"); cb.set_days(0)
         try:
-            h = {}
+            h = {"providerid": "x"}
             self.assertTrue(cb.apply_headers(h, "happ", False))
             self.assertEqual(h["sub-info-text"], "Скидка 30%")
             cb.save("url", "{renew}")
-            h = {}
+            h = {"providerid": "x"}
             cb.apply_headers(h, "happ", False, "https://example.com/r1")
             self.assertEqual(h["sub-info-button-link"], "https://example.com/r1")
             cb.save("url", "https://example.com/x")
             h = {}
+            cb.apply_headers(h, "happ", True)  # без Provider ID автобаннер не виден: свой через announce
+            self.assertIn("announce", h)
+            h = {"providerid": "x"}
             cb.apply_headers(h, "happ", True)  # автобаннер важнее
             self.assertNotIn("sub-info-text", h)
             plain = cb.inject_line(b"vless://a@b:1#x")

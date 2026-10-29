@@ -52,10 +52,14 @@ def apply_headers(headers, app: Optional[str], has_auto: bool, renew: Optional[s
         return False
     if "profile-update-interval" not in headers and app != "incy":
         headers["profile-update-interval"] = str(UPDATE_HOURS)
-    if has_auto:
+    # sub-info-* у Happ работают только с Provider ID; без него автобаннер не виден — показываем свой через announce
+    happ_pid = app == "happ" and bool(headers.get("providerid"))
+    if has_auto and (app != "happ" or happ_pid):
         return True
     url = b["url"].replace("{renew}", renew or "")  # {renew} — личная ссылка клиента на продление
-    if app == "happ":
+    if app == "happ" and not happ_pid:
+        headers["announce"] = "base64:" + base64.b64encode(b["text"][:200].encode("utf-8")).decode("ascii")
+    elif app == "happ":
         headers["sub-info-text"] = b["text"]
         headers["sub-info-button-text"] = b["button"]
         if url:
