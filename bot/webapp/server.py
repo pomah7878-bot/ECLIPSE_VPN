@@ -2217,30 +2217,6 @@ def _strip_routing_lines(body: bytes) -> bytes:
     return base64.b64encode(out.encode("utf-8"))
 
 
-def _strip_awg_comment(link: str, emails) -> str:
-    """AmneziaWG (vpn://): название лежит комментарием «# имя» внутри конфига, и панель дописывает
-    к нему «-email». Убираем хвост и кодируем обратно так же (urlsafe base64 без «=»)."""
-    try:
-        from bot.utils.inbound_links import _b64_to_bytes
-        text = _b64_to_bytes(link[len("vpn://"):]).decode("utf-8")
-    except Exception:
-        return link
-    if "[Interface]" not in text:
-        return link
-    out, changed = [], False
-    for ln in text.split("\n"):
-        name = ln.strip().lstrip("#").strip() if ln.strip().startswith("#") else None
-        if name is not None:
-            for e in emails:
-                if name.endswith("-" + e):
-                    ln, changed = "# " + name[: -len(e) - 1].rstrip(), True
-                    break
-        out.append(ln)
-    if not changed:
-        return link
-    return "vpn://" + base64.urlsafe_b64encode("\n".join(out).encode("utf-8")).decode("ascii").rstrip("=")
-
-
 def _strip_email_suffix(body: bytes, emails) -> bytes:
     """Панель 3x-ui дописывает к названию сервера email клиента («…🇫🇮-user_abc»), и
     настройки панели это не всегда отключают. Убираем ровно хвост «-<email>» из названий."""
@@ -2250,10 +2226,6 @@ def _strip_email_suffix(body: bytes, emails) -> bytes:
     def _fix(text: str):
         changed, out = False, []
         for ln in text.splitlines():
-            if ln.startswith("vpn://") and emails:
-                new = _strip_awg_comment(ln, emails)
-                if new != ln:
-                    ln, changed = new, True
             if "://" in ln and "#" in ln:
                 head, frag = ln.rsplit("#", 1)
                 name = _up.unquote(frag)

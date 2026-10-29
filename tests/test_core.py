@@ -829,13 +829,5 @@ class StripEmailSuffixTest(unittest.TestCase):
             res = res if res.startswith(b"vpn") else base64.b64decode(res)
             names = [l.rsplit(b"#", 1)[1] for l in res.splitlines() if b"#" in l]
             self.assertEqual(names, [b"VLESS%20TCP", b"WL", b"Gaming"])
-        import base64 as _b
-        conf = "[Interface]\nPrivateKey = k\nAddress = 10.0.0.2/32\n\n# AWG-user_x1\n[Peer]\nPublicKey = p\nEndpoint = h.example.org:1\n"
-        link = "vpn://" + _b.urlsafe_b64encode(conf.encode()).decode().rstrip("=")
-        from bot.utils.inbound_links import decode_vpn_link
-        fixed = _strip_email_suffix(link.encode(), ["user_x1"]).decode()
-        self.assertIn("# AWG\n", decode_vpn_link(fixed))
-        self.assertIn("PrivateKey = k", decode_vpn_link(fixed))
-        self.assertEqual(_strip_email_suffix(link.encode(), ["other"]).decode(), link)
         two = b"vless://u@de-cdn.example.org:443?type=xhttp#Name-de-cdn.example.org-user_x1"
         self.assertEqual(_strip_email_suffix(two, ["user_x1"]).decode().split("#")[1], "Name")
