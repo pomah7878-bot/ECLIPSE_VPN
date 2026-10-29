@@ -1834,7 +1834,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         _strip_emails = [e for p in _pes for e in (p, f"cdn_{p}")]
         _before = body
         body = _strip_email_suffix(body, _strip_emails)
-        logger.info(f"names: type={type(_before).__name__} emails={len(_strip_emails)} changed={body != _before}")
+        logger.debug(f"names: type={type(_before).__name__} emails={len(_strip_emails)} changed={body != _before}")
     except Exception as _se:
         logger.warning(f"handle_happ_subscription: суффикс email не убран: {_se!r}")
 
@@ -2147,7 +2147,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             if detected_app not in ("happ", "incy"):
                 body = _cb.inject_line(body)
             _shown = {k: headers.get(k) for k in ("announce", "sub-info-text", "providerid", "sub-expire", "profile-update-interval") if headers.get(k)}
-            logger.info(f"banner: ua={client_ua[:60]!r} app={detected_app} headers={sorted(_shown)}")
+            logger.debug(f"banner: ua={client_ua[:60]!r} app={detected_app} headers={sorted(_shown)}")
     except Exception as _cb_err:
         logger.warning(f"handle_happ_subscription: свой баннер не добавлен: {_cb_err}")
 
