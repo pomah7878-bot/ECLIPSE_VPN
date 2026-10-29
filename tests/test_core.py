@@ -592,3 +592,32 @@ class ButtonIconsTest(unittest.TestCase):
         have, missing = bi.coverage({"🔑": "1", "⬅": "2"})
         self.assertEqual(have, 2)
         self.assertNotIn("🔑", missing)
+
+
+class RollbackTest(unittest.TestCase):
+    def test_points_and_db_backups(self):
+        import os, sqlite3, tempfile
+        from bot.services import rollback as rb
+        old = (rb.BACKUP_DIR, rb.POINTS_FILE)
+        with tempfile.TemporaryDirectory() as d:
+            rb.BACKUP_DIR, rb.POINTS_FILE = d, os.path.join(d, "p.json")
+            try:
+                for c in ("a1", "b2", "c3", "d4", "a1"):
+                    rb.remember(c)
+                rb.remember(None)
+                self.assertEqual([p["commit"] for p in rb._read_points()], ["a1", "d4", "c3"])
+                day = os.path.join(d, "2026-01-01"); os.makedirs(day)
+                good = os.path.join(day, "vpn_bot.db")
+                con = sqlite3.connect(good); con.execute("create table users(id int)"); con.commit(); con.close()
+                bad = os.path.join(d, "x__database__vpn_bot.db")
+                con = sqlite3.connect(bad); con.execute("create table t(id int)"); con.commit(); con.close()
+                self.assertTrue(rb.check_db_file(good)[0])
+                self.assertFalse(rb.check_db_file(bad)[0])
+                with open(os.path.join(d, "junk__database__vpn_bot.db"), "wb") as f:
+                    f.write(b"not a db")
+                self.assertFalse(rb.check_db_file(os.path.join(d, "junk__database__vpn_bot.db"))[0])
+                self.assertEqual(len(rb.list_db_backups()), 3)
+                self.assertEqual(rb.restore_db("nope")[0], False)
+                self.assertEqual(rb.rollback_code("not-in-list")[0], False)
+            finally:
+                rb.BACKUP_DIR, rb.POINTS_FILE = old

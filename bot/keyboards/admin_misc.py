@@ -160,6 +160,7 @@ def update_confirm_kb(has_updates: bool=True, has_blocking: bool=False, is_beta_
             builder.row(InlineKeyboardButton(text=button_text, callback_data=callback))
     
     builder.row(InlineKeyboardButton(text='⚠️ Принудительно перезаписать', callback_data='admin_force_overwrite_confirm'))
+    builder.row(InlineKeyboardButton(text='🛟 Откат и восстановление', callback_data='admin_rb'))
     
     if has_updates:
         builder.row(InlineKeyboardButton(text='❌ Отмена', callback_data='admin_bot_settings'))

@@ -19,6 +19,15 @@ def _repository_update_blocked_message() -> Optional[str]:
     return None
 
 
+def _remember_point(commit: Optional[str]) -> None:
+    """Запоминает прежний коммит для кнопки отката; ошибки здесь не должны мешать обновлению."""
+    try:
+        from bot.services.rollback import remember
+        remember(commit)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Не удалось запомнить точку отката: {e}")
+
+
 def get_project_root() -> str:
     """
     Gets the root directory of the project.
@@ -216,11 +225,13 @@ def pull_to_commit(commit_hash: str) -> Tuple[bool, str]:
         return False, blocked_message
 
     try:
+        pre_commit = get_current_commit()
         success, output = run_git_command(['reset', '--hard', commit_hash], timeout=120)
         if not success:
             logger.error(f"Ошибка pull_to_commit({commit_hash}): {output}")
             return False, f"❌ Ошибка обновления до коммита {commit_hash[:8]}:\n{output}"
         
+        _remember_point(pre_commit)
         commit_info = get_last_commit_info('HEAD')
         logger.info(f"✅ Успешно обновлено до блокирующего коммита {commit_hash[:8]}")
         return True, f"✅ Обновление успешно!\n\n🔹 Текущая версия:\n<pre>{commit_info}</pre>"
@@ -354,6 +365,7 @@ def pull_updates() -> Tuple[bool, str]:
             f"(откат на предыдущий коммит):\n<pre>{escape_html(validation_error)}</pre>"
         )
 
+    _remember_point(pre_pull_commit)
     commit_info = get_last_commit_info('HEAD')
     return True, f"✅ Обновление успешно!\n\n🔹 Последний коммит:\n<pre>{escape_html(commit_info)}</pre>"
 
@@ -446,6 +458,7 @@ def force_pull_updates() -> Tuple[bool, str]:
     if blocked_message:
         return False, blocked_message
 
+    pre_commit = get_current_commit()
     # Download all changes
     success, output = run_git_command(['fetch', 'origin'], timeout=120)
     if not success:
@@ -460,6 +473,7 @@ def force_pull_updates() -> Tuple[bool, str]:
     if not success:
         return False, f"❌ Ошибка принудительного обновления:\n{output}"
         
+    _remember_point(pre_commit)
     commit_info = get_last_commit_info('HEAD')
     return True, f"✅ Принудительное обновление успешно завершено!\nВсе файлы перезаписаны из репозитория.\n\n🔹 Актуальный коммит:\n<pre>{commit_info}</pre>"
 
