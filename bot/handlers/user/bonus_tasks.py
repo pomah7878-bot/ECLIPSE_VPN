@@ -551,6 +551,7 @@ def _admin_kb() -> InlineKeyboardMarkup:
     b.row(InlineKeyboardButton(text="🔗 Ссылка для отзыва", callback_data="adm_bt_url"))
     n = pending_count()
     b.row(InlineKeyboardButton(text=f"📥 Заявки на проверке: {n}" + (" 🔔" if n else ""), callback_data="adm_bt_pending"))
+    b.row(InlineKeyboardButton(text="🧾 Последние, кто делился", callback_data="adm_bt_log"))
     b.row(InlineKeyboardButton(text="👁 Как видит клиент", callback_data="bonus_tasks"))
     b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_marketing"),
           InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
@@ -686,3 +687,32 @@ async def cb_admin_bonus_pending(callback: CallbackQuery):
     for claim in pending:
         await _send_claim_to_admins(callback.bot, claim["id"], only_admin=callback.from_user.id)
     await callback.answer(f"Отправлено заявок: {len(pending)}")
+
+
+_CLAIM_MARK = {"approved": "✅", "pending": "⏳", "rejected": "❌"}
+
+
+def _claim_line(c: dict) -> str:
+    who = f"@{c['username']}" if c.get("username") else (c.get("first_name") or "")
+    who = html.escape(who) + " · " if who else ""
+    meta = TASKS.get(c["task"], {"icon": "🎁", "title": c["task"]})
+    date = str(c["created_at"] or "")[:16]
+    result = {"approved": f"+{c['days']} {_plural_days(c['days'] or 0)}",
+              "pending": "на проверке", "rejected": "отклонено"}.get(c["status"], c["status"])
+    return f"{_CLAIM_MARK.get(c['status'], '▫️')} {date} · {who}<code>{c['telegram_id']}</code>\n     {meta['icon']} {meta['title']}: {result}"
+
+
+@router.callback_query(F.data == "adm_bt_log")
+async def cb_admin_bonus_log(callback: CallbackQuery):
+    """v1.424: кто делился (сторис, отзыв), когда и сколько дней получил."""
+    if not await _guard(callback):
+        return
+    from database.db_bonus_tasks import list_recent
+    from bot.utils.text import safe_edit_or_send
+    rows = list_recent(15)
+    body = "\n".join(_claim_line(c) for c in rows) if rows else "Пока никто не присылал заданий."
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_bonus_tasks"),
+          InlineKeyboardButton(text="🈴 На главную", callback_data="start"))
+    await safe_edit_or_send(callback.message, "🧾 <b>Последние, кто делился</b>\n\n" + body, reply_markup=b.as_markup())
+    await callback.answer()

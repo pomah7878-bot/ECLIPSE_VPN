@@ -78,6 +78,18 @@ def list_pending(limit: int = 10) -> List[Dict[str, Any]]:
     return [_row(r) for r in rows]
 
 
+def list_recent(limit: int = 15) -> List[Dict[str, Any]]:
+    """v1.424: последние заявки любого статуса с именем клиента — для списка «кто делился» в админке."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.telegram_id, c.task, c.status, c.days, c.created_at, c.decided_at, "
+            "u.username, u.first_name FROM bonus_task_claims c LEFT JOIN users u ON u.id = c.user_id "
+            "ORDER BY c.id DESC LIMIT ?",
+            (max(1, min(int(limit), 50)),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def stats() -> Dict[str, int]:
     out = {"pending": 0, "approved": 0, "rejected": 0, "days": 0}
     with get_db() as conn:

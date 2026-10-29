@@ -53,6 +53,22 @@ class CoreTests(unittest.TestCase):
         self.assertIn("+2 дня", _spin_line(rows[1]))
         self.assertIn("не начислен", _spin_line(rows[0]))
 
+    def test_bonus_claims_recent(self):
+        from database.db_bonus_tasks import list_recent
+        from bot.handlers.user.bonus_tasks import _claim_line
+        with get_db() as c:
+            c.execute("INSERT INTO users (telegram_id, username) VALUES (9778, 'sharer')")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 9778").fetchone()["id"]
+            c.execute("INSERT INTO bonus_task_claims (user_id, telegram_id, task, status, file_id, days) "
+                      "VALUES (?, 9778, 'story', 'approved', 'f', 7)", (uid,))
+            c.execute("INSERT INTO bonus_task_claims (user_id, telegram_id, task, status, file_id, days) "
+                      "VALUES (?, 9778, 'review', 'pending', 'f', 7)", (uid,))
+        rows = list_recent(10)
+        self.assertEqual(rows[0]["task"], "review")
+        self.assertEqual(rows[0]["username"], "sharer")
+        self.assertIn("на проверке", _claim_line(rows[0]))
+        self.assertIn("+7 дней", _claim_line(rows[1]))
+
     def test_tariff_prices(self):
         a = {"id": 1, "price_rub": 1000, "duration_days": 30}
         b = {"id": 2, "price_rub": 2400, "duration_days": 90, "discount_percent": 10}
