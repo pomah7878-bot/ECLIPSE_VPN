@@ -72,8 +72,8 @@ def is_enabled() -> bool:
 
 
 def can_spin(telegram_id: int) -> bool:
-    """Показывать ли кнопку на главной: рулетка включена и у клиента нет паузы."""
-    if not is_enabled():
+    """Показывать ли кнопку на главной: рулетка включена и у клиента нет паузы (админам — нет)."""
+    if not is_enabled() or _is_admin(telegram_id):
         return False
     try:
         from database.requests import get_user_internal_id, get_roulette_wait_seconds

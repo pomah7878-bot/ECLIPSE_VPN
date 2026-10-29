@@ -69,6 +69,16 @@ class CoreTests(unittest.TestCase):
         self.assertIn("на проверке", _claim_line(rows[0]))
         self.assertIn("+7 дней", _claim_line(rows[1]))
 
+    def test_roulette_button_hidden_for_admin(self):
+        import bot.handlers.user.roulette as rl
+        orig_enabled, orig_admin = rl.is_enabled, rl._is_admin
+        try:
+            rl.is_enabled = lambda: True
+            rl._is_admin = lambda uid: uid == 1
+            self.assertFalse(rl.can_spin(1))
+        finally:
+            rl.is_enabled, rl._is_admin = orig_enabled, orig_admin
+
     def test_tariff_prices(self):
         a = {"id": 1, "price_rub": 1000, "duration_days": 30}
         b = {"id": 2, "price_rub": 2400, "duration_days": 90, "discount_percent": 10}
