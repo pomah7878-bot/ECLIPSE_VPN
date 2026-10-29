@@ -1,6 +1,6 @@
 #!/bin/bash
 # Автообновление ECLIPSE Unlimited VPN с GitHub.
-# Проверяет новые коммиты в pomah7878-bot/ECLIPSE_VPN (remote "eclipse-vpn"),
+# Проверяет новые коммиты в pomah7878-bot/ECLIPSE_VPN (remote "origin"),
 # и если они есть — подтягивает и перезапускает сервисы.
 # Ничего не делает, если новых коммитов нет (быстрая, лёгкая проверка).
 # Не трогает репозиторий, если на сервере есть несохранённые локальные правки —
@@ -15,7 +15,7 @@
 set -e
 
 REPO_DIR="${REPO_DIR:-/root/EclipseVPN}"
-REMOTE="${REMOTE:-eclipse-vpn}"
+REMOTE="${REMOTE:-origin}"
 BRANCH="main"
 LOG_FILE="${LOG_FILE:-/root/backups/auto_deploy.log}"
 BAD_FILE="${BAD_FILE:-/root/backups/auto_deploy.bad}"
