@@ -189,7 +189,10 @@ class XUIClient(BaseVPNClient):
         """Creates a session if there is none."""
         if self.session is None or self.session.closed:
             # Unsafe=True is important for IP addresses and self-signed certificates
-            connector = aiohttp.TCPConnector(ssl=False)
+            # v1.450: при panel_tls_pin=1 принимаем только запомненный сертификат панели
+            from bot.services.panel_tls import panel_ssl
+            self._ssl_param = await panel_ssl(self.server_id, self.host, self.port, self.protocol)
+            connector = aiohttp.TCPConnector(ssl=self._ssl_param)
             jar = aiohttp.CookieJar(unsafe=True)
             try:
                 timeout_seconds = float(RETRY_CONFIG.get("timeout_seconds", DEFAULT_PANEL_TIMEOUT_SECONDS))
@@ -3356,7 +3359,7 @@ class XUIClient(BaseVPNClient):
         for url in candidates:
             try:
                 # Important: We do not use _request, since this is a public endpoint
-                async with session.get(url, ssl=False) as response:
+                async with session.get(url, ssl=getattr(self, '_ssl_param', False)) as response:
                     logger.info(f"Sub URL probe: {url} -> {response.status}")
 
                     if response.status == 200:

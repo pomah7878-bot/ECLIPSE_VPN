@@ -1639,6 +1639,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     if not key:
         return web.Response(status=404, text="Not Found")
 
+    # v1.450: зациклившийся клиент не должен каждый раз ходить в панель (обычный клиент — единицы запросов в час)
+    if not _rl_allowed(f"sub:{sub_id}", 120, 60):
+        return web.Response(status=429, text="Too many requests", headers={"Retry-After": "60"})
+    _rl_record(f"sub:{sub_id}")
+
     # v1.277: учёт устройств Happ (предупреждение о лимите тарифа happ-proxy.com)
     try:
         if (request.headers.get("User-Agent", "") or "").startswith("Happ"):
@@ -2981,7 +2986,7 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
     code = request.query.get("code")
     state = request.query.get("state")
     cookie_state = request.cookies.get("oauth_state")
-    if not code or not state or not cookie_state or state != cookie_state:
+    if not code or not state or not cookie_state or not hmac.compare_digest(state.encode(), cookie_state.encode()):
         return web.Response(text="Не удалось подтвердить запрос авторизации. Попробуйте войти заново.", status=400)
 
     redirect_uri = f"{_get_site_base_url(request)}/auth/{provider}/callback"
@@ -4492,10 +4497,18 @@ async def handle_public_account_lookup(request: web.Request) -> web.Response:
             status=429,
         )
 
+    # v1.450: подбор с множества IP — общий потолок неудачных попыток за час (обычных ошибок ввода единицы)
+    if not _rl_allowed("lookup-fail-all", 300, 3600):
+        return web.json_response(
+            {"ok": False, "message": "Слишком много неудачных попыток. Попробуйте позже."},
+            status=429,
+        )
+
     from bot.services.anonymous_purchase import get_account_info_by_claim_code
     result = await get_account_info_by_claim_code(code)
     if not (isinstance(result, dict) and result.get("ok")):
         _rl_record(f"lookup-fail:{_lk_ip}")
+        _rl_record("lookup-fail-all")
     return web.json_response(result)
 
 

@@ -831,3 +831,44 @@ class StripEmailSuffixTest(unittest.TestCase):
             self.assertEqual(names, [b"VLESS%20TCP", b"WL", b"Gaming"])
         two = b"vless://u@de-cdn.example.org:443?type=xhttp#Name-de-cdn.example.org-user_x1"
         self.assertEqual(_strip_email_suffix(two, ["user_x1"]).decode().split("#")[1], "Name")
+
+
+class AuditFixesTest(unittest.TestCase):
+    """1.450: двойная оплата, лимитер и закрепление сертификата панели."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_complete_order_pays_only_once(self):
+        from database.db_payments import complete_order, is_order_already_paid, reopen_paid_order
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO users (telegram_id) VALUES (777001)")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 777001").fetchone()["id"]
+            c.execute("INSERT INTO payments (user_id, order_id, status) VALUES (?, 'audit-ord-1', 'pending')", (uid,))
+        self.assertTrue(complete_order("audit-ord-1"))
+        self.assertFalse(complete_order("audit-ord-1"))  # второй опрос/вебхук ничего не делает
+        self.assertTrue(is_order_already_paid("audit-ord-1"))
+        self.assertTrue(reopen_paid_order("audit-ord-1"))
+        self.assertTrue(complete_order("audit-ord-1"))  # после неудачной выдачи можно оформить снова
+
+    def test_rate_limiter_blocks_after_limit(self):
+        from bot.webapp.ratelimit import rl_allowed, rl_record
+        for _ in range(3):
+            self.assertTrue(rl_allowed("audit-rl", 3, 60))
+            rl_record("audit-rl")
+        self.assertFalse(rl_allowed("audit-rl", 3, 60))
+
+    def test_panel_ssl_off_by_default_and_pins_when_enabled(self):
+        import asyncio
+        import aiohttp
+        from bot.services import panel_tls
+        self.assertIs(asyncio.run(panel_tls.panel_ssl(1, "h", 1)), False)
+        st.set_setting("panel_tls_pin", "1")
+        st.set_setting("panel_tls_pin_9", "ab" * 32)
+        try:
+            res = asyncio.run(panel_tls.panel_ssl(9, "h", 1))
+            self.assertIsInstance(res, aiohttp.Fingerprint)
+            self.assertIs(asyncio.run(panel_tls.panel_ssl(9, "h", 1, "http")), False)
+        finally:
+            st.set_setting("panel_tls_pin", "0")
