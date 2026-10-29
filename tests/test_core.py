@@ -885,6 +885,30 @@ class SubInfoLineTest(unittest.TestCase):
             self.assertFalse(st.is_client_toggle_enabled(app, "info_line"))
 
 
+class ClientToggleMenuTest(unittest.TestCase):
+    """Каждый переключатель Happ/INCY обязан быть во всех справочниках меню админки:
+    иначе меню падает с KeyError (так сломалась «строка-подсказка» в 1.457)."""
+
+    @staticmethod
+    def _dict_assigned_to(path, name):
+        import ast
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, *path), encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == name for t in node.targets):
+                return ast.literal_eval(node.value)
+        raise AssertionError(f"{name} не найден в {'/'.join(path)}")
+
+    def test_every_toggle_has_icon_and_hint(self):
+        icons = self._dict_assigned_to(("bot", "keyboards", "admin_settings.py"), "_icons")
+        hints = self._dict_assigned_to(("bot", "handlers", "admin", "integrations.py"), "_CLIENT_SETTING_INFO")
+        for app, toggles in st.CLIENT_TOGGLE_LABELS_BY_APP.items():
+            for toggle in toggles:
+                self.assertIn(toggle, icons, f"нет иконки: {app}/{toggle}")
+                self.assertIn(toggle, hints.get(app, {}), f"нет подсказки: {app}/{toggle}")
+
+
 class ProbeNameTailsTest(unittest.TestCase):
     def test_strip_name_tails(self):
         from bot.services.connection_probe import strip_name_tails
