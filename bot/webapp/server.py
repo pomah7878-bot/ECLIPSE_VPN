@@ -1832,9 +1832,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     try:
         _pes = {(key or {}).get("panel_email"), (src_key or {}).get("panel_email")} - {None, ""}
         _strip_emails = [e for p in _pes for e in (p, f"cdn_{p}")]
+        _before = body
         body = _strip_email_suffix(body, _strip_emails)
+        logger.info(f"names: type={type(_before).__name__} emails={len(_strip_emails)} changed={body != _before}")
     except Exception as _se:
-        logger.debug(f"handle_happ_subscription: суффикс email не убран: {_se}")
+        logger.warning(f"handle_happ_subscription: суффикс email не убран: {_se!r}")
 
     from database.requests import get_effective_brand_name, get_effective_webapp_url
     if "Content-Type" not in headers:
