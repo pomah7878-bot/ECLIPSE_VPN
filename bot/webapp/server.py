@@ -2151,6 +2151,13 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             for _h in _INCY_STRIP_HEADERS:
                 headers.popall(_h, None)
 
+    if detected_app in ("happ", "incy"):
+        from database.requests import is_client_toggle_enabled as _il_on
+        if _il_on(detected_app, "info_line"):
+            from bot.utils.sub_info_line import add_info_line
+            _who = f"@{bot_username}" if bot_username else "в Telegram-боте"
+            body = add_info_line(body, f"ℹ️ Оплата и поддержка: {_who} (не сервер)")
+
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp

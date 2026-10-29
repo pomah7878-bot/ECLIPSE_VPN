@@ -850,6 +850,41 @@ class ShopThemesTest(unittest.TestCase):
                 self.assertIn(f'body[data-theme="{tid}"]', html, tid)
 
 
+class SubInfoLineTest(unittest.TestCase):
+    NAME = "ℹ️ Оплата и поддержка: @bot (не сервер)"
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_plain_body_line_goes_before_first_server_after_comments(self):
+        from urllib.parse import quote
+        from bot.utils.sub_info_line import add_info_line
+        body = b"#profile-title: X\nvless://a@h:1#one\nvless://b@h:2#two"
+        out = add_info_line(body, self.NAME).decode("utf-8").split("\n")
+        self.assertEqual(out[0], "#profile-title: X")
+        self.assertTrue(out[1].startswith("vless://0000") and out[1].endswith("#" + quote(self.NAME, safe="")))
+        self.assertEqual(out[2:], ["vless://a@h:1#one", "vless://b@h:2#two"])
+
+    def test_base64_body_and_idempotent(self):
+        import base64
+        from bot.utils.sub_info_line import add_info_line
+        body = base64.b64encode(b"vless://a@h:1#one")
+        once = add_info_line(body, self.NAME)
+        self.assertEqual(add_info_line(once, self.NAME), once)
+        self.assertEqual(base64.b64decode(once).decode("utf-8").count("vless://"), 2)
+
+    def test_empty_or_unreadable_body_untouched(self):
+        from bot.utils.sub_info_line import add_info_line
+        for body in (b"", b"   \n", b"\xff\xfe", b"not base64 or links!"):
+            self.assertEqual(add_info_line(body, self.NAME), body)
+
+    def test_info_line_toggle_exists_and_is_off_by_default(self):
+        for app in ("happ", "incy"):
+            self.assertIn("info_line", st.CLIENT_TOGGLE_LABELS_BY_APP[app])
+            self.assertFalse(st.is_client_toggle_enabled(app, "info_line"))
+
+
 class ProbeNameTailsTest(unittest.TestCase):
     def test_strip_name_tails(self):
         from bot.services.connection_probe import strip_name_tails
