@@ -910,7 +910,7 @@ async def edit_happ_provider_id_start(callback: CallbackQuery, state: FSMContext
         "Без Provider ID эти уведомления официально не гарантированы на всех платформах.\n\n"
         "Получить: зарегистрируйся на <b>happ-proxy.com</b> — ID будет виден в "
         "правом верхнем углу/профиле.\n\n"
-        "Отправь свой Provider ID:",
+        "Отправь свой Provider ID или «-», чтобы убрать его:",
         reply_markup=integrations_edit_cancel_kb('admin_integrations_happ'),
     )
     await callback.answer()
@@ -932,10 +932,11 @@ async def edit_happ_provider_id_save(message: Message, state: FSMContext):
         pass
 
     from database.requests import set_happ_provider_id
-    set_happ_provider_id(value)
+    clear = value == "-"
+    set_happ_provider_id("" if clear else value)
     await state.set_state(AdminStates.integrations_menu)
 
-    await message.answer(f"✅ Happ Provider ID сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
+    await message.answer("✅ Happ Provider ID убран" if clear else f"✅ Happ Provider ID сохранён: <code>{_mask_secret(value)}</code>", parse_mode="HTML")
     await message.answer(_integrations_menu_text(), parse_mode="HTML", reply_markup=integrations_menu_kb())
 
 
