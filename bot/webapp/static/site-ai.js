@@ -132,7 +132,7 @@
       '.sai-fab.sai-hidden{display:none}' +
       '.sai-box{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:99991;width:min(380px,calc(100vw - 32px));' +
       'height:min(560px,calc(100vh - 32px));display:none;flex-direction:column;overflow:hidden;border-radius:18px;' +
-      'background:var(--panel,#14151D);color:var(--ink,#F4F1E9);border:1px solid var(--hairline,rgba(255,255,255,.1));box-shadow:0 18px 50px rgba(0,0,0,.5);font-family:inherit}' +
+      'background:linear-gradient(var(--panel,#14151D),var(--panel,#14151D)),var(--void,#0A0A10);color:var(--ink,#F4F1E9);border:1px solid var(--hairline,rgba(255,255,255,.1));box-shadow:0 18px 50px rgba(0,0,0,.5);font-family:inherit}' +
       '.sai-box.sai-open{display:flex}' +
       '.sai-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--hairline,rgba(255,255,255,.08))}' +
       '.sai-title{font-weight:700;font-size:15px}.sai-sub{font-size:12px;color:var(--mist,#8B90A0);margin-top:2px}' +
