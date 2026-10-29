@@ -16,7 +16,7 @@ router = Router()
 
 _FIELDS = {
     "text": ("Текст баннера", "Одна короткая строка (до 100 знаков; в INCY до 200). Например: «Скидка 30% до воскресенья»."),
-    "url": ("Ссылка", "Адрес, который откроется по нажатию. Отправьте «-», чтобы убрать ссылку."),
+    "url": ("Ссылка", "Адрес, который откроется по нажатию. Напишите {renew} — каждому клиенту подставится его личная ссылка на продление. Отправьте «-», чтобы убрать ссылку."),
     "button": ("Текст кнопки", "Подпись на кнопке в Happ (по умолчанию «Подробнее»)."),
     "days": ("Срок показа, дней", "Сколько дней показывать баннер. 0 — без срока."),
 }
@@ -112,7 +112,7 @@ async def banner_edit_save(message: Message, state: FSMContext):
         cb.set_days(int(value))
     elif field == "url":
         value = "" if value == "-" else value
-        if value and not value.startswith(("https://", "http://", "tg://")):
+        if value and value != "{renew}" and not value.startswith(("https://", "http://", "tg://")):
             await message.answer("❌ Ссылка должна начинаться с https://. Попробуйте ещё раз.")
             return
         cb.save("url", value)

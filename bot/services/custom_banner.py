@@ -45,7 +45,7 @@ def line_enabled() -> bool:
     return _s("line") == "1"
 
 
-def apply_headers(headers, app: Optional[str], has_auto: bool) -> bool:
+def apply_headers(headers, app: Optional[str], has_auto: bool, renew: Optional[str] = None) -> bool:
     """Дописывает заголовки баннера. Возвращает True, если баннер действует."""
     b = active()
     if not b:
@@ -54,15 +54,16 @@ def apply_headers(headers, app: Optional[str], has_auto: bool) -> bool:
         headers["profile-update-interval"] = str(UPDATE_HOURS)
     if has_auto:
         return True
+    url = b["url"].replace("{renew}", renew or "")  # {renew} — личная ссылка клиента на продление
     if app == "happ":
         headers["sub-info-text"] = b["text"]
         headers["sub-info-button-text"] = b["button"]
-        if b["url"]:
-            headers["sub-info-button-link"] = b["url"]
+        if url:
+            headers["sub-info-button-link"] = url
     elif app == "incy":
         headers["announce"] = "base64:" + base64.b64encode(b["text"][:200].encode("utf-8")).decode("ascii")
-        if b["url"]:
-            headers["announce-url"] = b["url"]
+        if url:
+            headers["announce-url"] = url
     return True
 
 

@@ -785,6 +785,11 @@ class CustomBannerTest(unittest.TestCase):
             h = {}
             self.assertTrue(cb.apply_headers(h, "happ", False))
             self.assertEqual(h["sub-info-text"], "Скидка 30%")
+            cb.save("url", "{renew}")
+            h = {}
+            cb.apply_headers(h, "happ", False, "https://example.com/r1")
+            self.assertEqual(h["sub-info-button-link"], "https://example.com/r1")
+            cb.save("url", "https://example.com/x")
             h = {}
             cb.apply_headers(h, "happ", True)  # автобаннер важнее
             self.assertNotIn("sub-info-text", h)

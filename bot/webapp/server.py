@@ -2131,7 +2131,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
 
     try:
         from bot.services import custom_banner as _cb
-        if _cb.apply_headers(headers, detected_app, bool(_incy_announce(is_expired, days_left, key, webapp_url, bot_username))):
+        if _cb.apply_headers(headers, detected_app, bool(_incy_announce(is_expired, days_left, key, webapp_url, bot_username)),
+                                _build_renew_link(key, webapp_url, bot_username)):
             if detected_app not in ("happ", "incy"):
                 body = _cb.inject_line(body)
     except Exception as _cb_err:
