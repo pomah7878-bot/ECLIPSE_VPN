@@ -193,7 +193,8 @@ async def get_or_create_install_code_for_sub(sub_id: str) -> Optional[str]:
     результат. Возвращает None, если API не настроено или запрос не
     удался — вызывающий код в этом случае просто не добавляет InstallID
     к ссылке (поведение как раньше, без лимита установок)."""
-    if not is_configured():
+    from database.requests import is_happ_install_enabled
+    if not is_configured() or not is_happ_install_enabled():
         return None
 
     from database.requests import (

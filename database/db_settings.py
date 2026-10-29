@@ -24,6 +24,8 @@ __all__ = [
     'get_happ_proxy_auth_key',
     'set_happ_proxy_auth_key',
     'get_happ_install_limit',
+    'is_happ_install_enabled',
+    'set_happ_install_enabled',
     'set_happ_install_limit',
     'get_happ_proxy_registered_domain_hash',
     'set_happ_proxy_registered_domain_hash',
@@ -754,6 +756,16 @@ def get_happ_proxy_auth_key() -> Optional[str]:
 
 def set_happ_proxy_auth_key(auth_key: str) -> None:
     set_setting('happ_proxy_auth_key', auth_key.strip())
+
+
+def is_happ_install_enabled() -> bool:
+    """Создавать ли лимитированные ссылки Happ (лимит устройств на стороне Happ).
+    Выкл — лимит держит только панель (HWID/IP). По умолчанию вкл, как раньше."""
+    return get_setting('happ_install_enabled', '1') != '0'
+
+
+def set_happ_install_enabled(value: bool) -> None:
+    set_setting('happ_install_enabled', '1' if value else '0')
 
 
 def get_happ_install_limit() -> int:

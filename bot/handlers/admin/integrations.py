@@ -2126,8 +2126,25 @@ def _happ_proxy_menu_text() -> str:
         "После задания provider_code/auth_key при первом импорте в Happ у клиента бот сам "
         "зарегистрирует домен сайта и создаст лимитированную ссылку (install_code) для его "
         "подписки — с лимитом устройств из настройки ниже. Push и «обновить подписку» требуют "
-        "платного тарифа happ-proxy.com (Enterprise для push, Pro/Enterprise для remote-команд)."
+        "платного тарифа happ-proxy.com (Enterprise для push, Pro/Enterprise для remote-команд).\n\n"
+        "🔗 <b>Лимит устройств Happ</b>\n"
+        "• Вкл — лимит считает и держит Happ (лимитированная ссылка)\n"
+        "• Выкл — новые ссылки не создаются, подписка отдаётся обычной, лимит держит панель по HWID/IP\n"
+        "• Уже выданные ссылки продолжают работать\n"
+        "• Минус выкл: Happ сам не покажет «лимит превышен», а клиент без HWID считается менее точно"
     )
+
+
+@router.callback_query(F.data == "admin_toggle_happ_install")
+async def toggle_happ_install(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from database.requests import is_happ_install_enabled, set_happ_install_enabled
+    set_happ_install_enabled(not is_happ_install_enabled())
+    from bot.keyboards.admin_settings import happ_proxy_menu_kb
+    await safe_edit_or_send(callback.message, _happ_proxy_menu_text(), reply_markup=happ_proxy_menu_kb())
+    await callback.answer("✅ Готово")
 
 
 @router.callback_query(F.data == "admin_happ_proxy_menu")

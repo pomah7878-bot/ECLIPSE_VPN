@@ -515,6 +515,11 @@ def happ_proxy_menu_kb() -> InlineKeyboardMarkup:
         text=f"🔑 auth_key: {'✅ задан' if auth_key else 'не задан'}",
         callback_data='admin_edit_happ_proxy_auth_key',
     ))
+    from database.requests import is_happ_install_enabled
+    builder.row(InlineKeyboardButton(
+        text=f"🔗 Лимит устройств Happ: {'✅ вкл' if is_happ_install_enabled() else '⚪ выкл (держит панель)'}",
+        callback_data='admin_toggle_happ_install',
+    ))
     builder.row(InlineKeyboardButton(
         text=f"🔢 Лимит устройств по умолчанию: {get_happ_install_limit()}",
         callback_data='admin_edit_happ_install_limit',

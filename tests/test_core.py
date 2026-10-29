@@ -751,3 +751,22 @@ class DirectServersProfileTest(unittest.TestCase):
 
     def test_off_by_default(self):
         self.assertFalse(st.get_routing_direct_servers())
+
+
+class HappInstallToggleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_disabled_gives_no_install_code(self):
+        import asyncio
+        from unittest import mock
+        from bot.services import happ_proxy as hp
+        self.assertTrue(st.is_happ_install_enabled())
+        st.set_happ_install_enabled(False)
+        try:
+            with mock.patch.object(hp, "is_configured", return_value=True), \
+                 mock.patch.object(hp, "add_install", side_effect=AssertionError("не должен вызываться")):
+                self.assertIsNone(asyncio.run(hp.get_or_create_install_code_for_sub("sub123")))
+        finally:
+            st.set_happ_install_enabled(True)
