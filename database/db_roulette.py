@@ -95,6 +95,20 @@ def get_roulette_stats() -> dict[str, Any]:
             "users": int(users), "week": int(week)}
 
 
+def get_recent_spins(limit: int = 15, only_problem: bool = False) -> list:
+    """v1.423: последние прокрутки с именем клиента. only_problem — только не доведённые до конца
+    (failed/pending/granting): там приз мог не начислиться, их проверяет админ."""
+    where = "WHERE s.status IN ('failed','pending','granting')" if only_problem else ""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT s.id, s.telegram_id, s.tier, s.prize_type, s.prize_amount, s.status, s.created_at, "
+            "u.username, u.first_name FROM roulette_spins s LEFT JOIN users u ON u.id = s.user_id "
+            f"{where} ORDER BY s.id DESC LIMIT ?",
+            (max(1, min(int(limit), 50)),),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_user_active_tariff_ids(user_id: int) -> list:
     """v1.222: tariff_id всех неистёкших ключей клиента (None для ключей без тарифа)."""
     with get_db() as conn:

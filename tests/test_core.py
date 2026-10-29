@@ -34,6 +34,25 @@ class CoreTests(unittest.TestCase):
                 st.set_setting(key, "b")
             self.assertEqual(st.get_setting(key), "b")
 
+    def test_roulette_recent_spins(self):
+        from database.db_roulette import get_recent_spins
+        from bot.handlers.user.roulette import _spin_line
+        with get_db() as c:
+            c.execute("INSERT INTO users (telegram_id, username) VALUES (9777, 'win_user')")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 9777").fetchone()["id"]
+            c.execute("INSERT INTO roulette_spins (user_id, telegram_id, tier, prize_type, prize_amount, status) "
+                      "VALUES (?, 9777, 'pair', 'days', 2, 'done')", (uid,))
+            c.execute("INSERT INTO roulette_spins (user_id, telegram_id, tier, prize_type, prize_amount, status) "
+                      "VALUES (?, 9777, 'jackpot', 'days', 7, 'failed')", (uid,))
+        rows = get_recent_spins(10)
+        self.assertEqual(rows[0]["status"], "failed")
+        self.assertEqual(rows[0]["username"], "win_user")
+        bad = get_recent_spins(10, only_problem=True)
+        self.assertTrue(bad and all(r["status"] != "done" for r in bad))
+        self.assertIn("@win_user", _spin_line(rows[1]))
+        self.assertIn("+2 дня", _spin_line(rows[1]))
+        self.assertIn("не начислен", _spin_line(rows[0]))
+
     def test_tariff_prices(self):
         a = {"id": 1, "price_rub": 1000, "duration_days": 30}
         b = {"id": 2, "price_rub": 2400, "duration_days": 90, "discount_percent": 10}

@@ -643,9 +643,54 @@ async def cb_rl_stats(callback: CallbackQuery):
         "<b>По комбинациям</b>\n"
         + "\n".join(f"• {TIER_NAME[t]}: {tiers.get(t, 0)}" for t in TIERS)
     )
+    from aiogram.types import InlineKeyboardButton
     b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="🧾 Кто и что выиграл", callback_data="adm_rl_log"))
     b.row(back_button("admin_roulette"), home_button())
     await safe_edit_or_send(callback.message, text, reply_markup=b.as_markup())
+    await callback.answer()
+
+
+def _spin_line(r: dict) -> str:
+    import html
+    who = f"@{r['username']}" if r.get("username") else (r.get("first_name") or "")
+    who = html.escape(who) + " · " if who else ""
+    if r["status"] == "done":
+        prize = prize_text({"type": r["prize_type"] or "none", "amount": r["prize_amount"] or 0})
+        mark = "🎁" if (r["prize_type"] or "none") != "none" else "▫️"
+    elif r["status"] == "failed":
+        prize, mark = "приз не начислен", "⚠️"
+    else:
+        prize, mark = "не завершена", "⏳"
+    tier = TIER_NAME.get(r["tier"] or "", "—")
+    date = str(r["created_at"] or "")[:16]
+    return f"{mark} {date} · {who}<code>{r['telegram_id']}</code>\n     {tier}: {prize}"
+
+
+@router.callback_query(F.data.in_({"adm_rl_log", "adm_rl_log_bad"}))
+async def cb_rl_log(callback: CallbackQuery):
+    """v1.423: кто, когда и что выиграл: последние прокрутки; «только проблемные» — приз не начислен."""
+    if not await _guard(callback):
+        return
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from bot.keyboards.admin_misc import back_button, home_button
+    from bot.utils.text import safe_edit_or_send
+    from database.requests import get_recent_spins
+    bad = callback.data == "adm_rl_log_bad"
+    rows = get_recent_spins(15, only_problem=bad)
+    title = "⚠️ <b>Прокрутки с ошибками</b>" if bad else "🧾 <b>Последние прокрутки</b>"
+    if rows:
+        body = "\n".join(_spin_line(r) for r in rows)
+    else:
+        body = "Нет таких прокруток." if bad else "Пока никто не крутил."
+    hint = ("\n\nПриз не начислен автоматически: начислите вручную и напишите клиенту." if bad and rows else "")
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(
+        text="🧾 Все прокрутки" if bad else "⚠️ Только с ошибками",
+        callback_data="adm_rl_log" if bad else "adm_rl_log_bad"))
+    b.row(back_button("adm_rl_stats"), home_button())
+    await safe_edit_or_send(callback.message, f"{title}\n\n{body}{hint}", reply_markup=b.as_markup())
     await callback.answer()
 
 
