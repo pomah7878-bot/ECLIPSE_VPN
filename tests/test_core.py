@@ -570,3 +570,18 @@ class BlockDiagnosticsTests(unittest.TestCase):
         self.assertIn("Проверено 2 мин назад", text)
         with mock.patch.object(bc, "licensed", lambda: False):
             self.assertEqual(bc.diagnostics_lines(), [])
+
+
+class ButtonIconsTest(unittest.TestCase):
+    def test_style_markup(self):
+        from aiogram.types import InlineKeyboardButton as B, InlineKeyboardMarkup as M
+        from bot.services import button_icons as bi
+        m = M(inline_keyboard=[[B(text='🔑 Мои ключи', callback_data='a'), B(text='🟢 Вкл', callback_data='b')],
+                               [B(text='🌐 Кабинет', url='https://example.com'), B(text='Без', callback_data='c')]])
+        out = bi.style_markup(m, {'🔑': '111', '🌐': '222'})
+        r = out.inline_keyboard
+        self.assertEqual((r[0][0].text, r[0][0].icon_custom_emoji_id), ('Мои ключи', '111'))
+        self.assertEqual(r[0][1].text, '🟢 Вкл')
+        self.assertEqual(r[1][0].icon_custom_emoji_id, '222')
+        self.assertIs(bi.style_markup(m, {}), m)
+        self.assertEqual(bi.parse_pack_name('https://t.me/addemoji/Ab_1'), 'Ab_1')

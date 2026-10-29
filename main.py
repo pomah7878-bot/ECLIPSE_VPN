@@ -263,6 +263,10 @@ async def main():
     from bot.middlewares.menu_width import MenuWidthMiddleware
     bot.session.middleware(MenuWidthMiddleware())
 
+    # Иконки на кнопках (выключено по умолчанию; включается в «Вид главной страницы»)
+    from bot.middlewares.button_icons import ButtonIconsMiddleware
+    bot.session.middleware(ButtonIconsMiddleware())
+
     # Порядок в чате: запоминаем служебные сообщения клиента (см. bot/middlewares/chat_trail.py)
     from bot.middlewares.chat_trail import TrackSentMessagesMiddleware, UserContextMiddleware
     bot.session.middleware(TrackSentMessagesMiddleware())
