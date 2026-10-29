@@ -2145,17 +2145,6 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                 if _ann[1]:
                     headers["announce-url"] = _ann[1]
 
-    try:
-        from bot.services import custom_banner as _cb
-        if _cb.apply_headers(headers, detected_app, bool(_incy_announce(is_expired, days_left, key, webapp_url, bot_username)),
-                                _build_renew_link(key, webapp_url, bot_username)):
-            if detected_app not in ("happ", "incy"):
-                body = _cb.inject_line(body)
-            _shown = {k: headers.get(k) for k in ("announce", "sub-info-text", "providerid", "sub-expire", "profile-update-interval") if headers.get(k)}
-            logger.debug(f"banner: ua={client_ua[:60]!r} app={detected_app} headers={sorted(_shown)}")
-    except Exception as _cb_err:
-        logger.warning(f"handle_happ_subscription: свой баннер не добавлен: {_cb_err}")
-
     if detected_app == "incy":
         from database.requests import get_setting as _get_setting_incy
         if (_get_setting_incy("incy_headers_mode", "strict") or "strict") == "strict":
