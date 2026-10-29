@@ -12,7 +12,8 @@ _PLACEHOLDER = "vless://00000000-0000-0000-0000-000000000000@127.0.0.1:1?type=tc
 
 
 def add_info_line(body: bytes, name: str) -> bytes:
-    """Ставит запись с названием name первой среди серверов (после строк-комментариев «#…»).
+    """Ставит запись с названием name сразу ПОСЛЕ первого настоящего сервера: приложения
+    по умолчанию выбирают первый сервер списка, и им должен оказаться рабочий.
     Идемпотентна; на пустое или неразборчивое тело возвращает его без изменений."""
     line = f"{_PLACEHOLDER}#{urllib.parse.quote(name, safe='')}"
 
@@ -23,7 +24,7 @@ def add_info_line(body: bytes, name: str) -> bytes:
         at = next((i for i, r in enumerate(rows) if "://" in r), None)
         if at is None:
             return None
-        rows.insert(at, line)
+        rows.insert(at + 1, line)
         return "\n".join(rows)
 
     try:

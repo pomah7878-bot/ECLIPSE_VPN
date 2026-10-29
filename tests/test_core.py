@@ -851,20 +851,26 @@ class ShopThemesTest(unittest.TestCase):
 
 
 class SubInfoLineTest(unittest.TestCase):
-    NAME = "ℹ️ Оплата и поддержка: @bot (не сервер)"
+    NAME = "ℹ️ Оплата: @bot"
 
     @classmethod
     def setUpClass(cls):
         run_migrations()
 
-    def test_plain_body_line_goes_before_first_server_after_comments(self):
+    def test_plain_body_line_goes_right_after_first_real_server(self):
         from urllib.parse import quote
         from bot.utils.sub_info_line import add_info_line
         body = b"#profile-title: X\nvless://a@h:1#one\nvless://b@h:2#two"
         out = add_info_line(body, self.NAME).decode("utf-8").split("\n")
-        self.assertEqual(out[0], "#profile-title: X")
-        self.assertTrue(out[1].startswith("vless://0000") and out[1].endswith("#" + quote(self.NAME, safe="")))
-        self.assertEqual(out[2:], ["vless://a@h:1#one", "vless://b@h:2#two"])
+        self.assertEqual(out[:2], ["#profile-title: X", "vless://a@h:1#one"])  # первым остаётся настоящий сервер
+        self.assertTrue(out[2].startswith("vless://0000") and out[2].endswith("#" + quote(self.NAME, safe="")))
+        self.assertEqual(out[3:], ["vless://b@h:2#two"])
+
+    def test_single_server_line_goes_after_it(self):
+        from bot.utils.sub_info_line import add_info_line
+        out = add_info_line(b"vless://a@h:1#one", self.NAME).decode("utf-8").split("\n")
+        self.assertEqual(out[0], "vless://a@h:1#one")
+        self.assertEqual(len(out), 2)
 
     def test_base64_body_and_idempotent(self):
         import base64

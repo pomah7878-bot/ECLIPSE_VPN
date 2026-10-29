@@ -2155,8 +2155,9 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         from database.requests import is_client_toggle_enabled as _il_on
         if _il_on(detected_app, "info_line"):
             from bot.utils.sub_info_line import add_info_line
-            _who = f"@{bot_username}" if bot_username else "в Telegram-боте"
-            body = add_info_line(body, f"ℹ️ Оплата и поддержка: {_who} (не сервер)")
+            # короткое название: в списке серверов длинное обрезается
+            _who = f"@{bot_username}" if bot_username else "Telegram-бот"
+            body = add_info_line(body, f"ℹ️ Оплата: {_who}")
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
