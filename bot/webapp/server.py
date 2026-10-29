@@ -2135,6 +2135,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
                                 _build_renew_link(key, webapp_url, bot_username)):
             if detected_app not in ("happ", "incy"):
                 body = _cb.inject_line(body)
+            _shown = {k: headers.get(k) for k in ("announce", "sub-info-text", "providerid", "sub-expire", "profile-update-interval") if headers.get(k)}
+            logger.info(f"banner: ua={client_ua[:60]!r} app={detected_app} headers={sorted(_shown)}")
     except Exception as _cb_err:
         logger.warning(f"handle_happ_subscription: свой баннер не добавлен: {_cb_err}")
 
