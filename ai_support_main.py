@@ -93,6 +93,7 @@ def _build_app_recommendation() -> str:
 _TELEGRAM_START_PARAM_RE = re.compile(r"^[A-Za-z0-9_-]{1,60}$")  # 60, не 64 — с запасом на префикс "pr_"
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)  # httpx на INFO пишет URL запросов, в Telegram-запросах там токен бота
 logger = logging.getLogger("vpn-ai-support")
 
 _FAKE_FUNCTION_CALL_RE = re.compile(r"<function=.*?</function>", re.DOTALL)
