@@ -1828,6 +1828,12 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     except Exception as _tuic_err:
         logger.debug(f"handle_happ_subscription: TUIC не добавлены ({sub_id[:8]}...): {_tuic_err}")
 
+    try:
+        _pes = {(key or {}).get("panel_email"), (src_key or {}).get("panel_email")} - {None, ""}
+        body = _strip_email_suffix(body, [e for p in _pes for e in (p, f"cdn_{p}")])
+    except Exception as _se:
+        logger.debug(f"handle_happ_subscription: суффикс email не убран: {_se}")
+
     from database.requests import get_effective_brand_name, get_effective_webapp_url
     if "Content-Type" not in headers:
         headers["Content-Type"] = "text/plain; charset=utf-8"
@@ -2204,6 +2210,45 @@ def _strip_routing_lines(body: bytes) -> bytes:
     if out is None:
         return body
     return base64.b64encode(out.encode("utf-8"))
+
+
+def _strip_email_suffix(body: bytes, emails) -> bytes:
+    """Панель 3x-ui дописывает к названию сервера email клиента («…🇫🇮-user_abc»), и
+    настройки панели это не всегда отключают. Убираем ровно хвост «-<email>» из названий."""
+    import urllib.parse as _up
+    emails = [e for e in emails if e]
+    if not emails:
+        return body
+
+    def _fix(text: str):
+        changed, out = False, []
+        for ln in text.splitlines():
+            if "://" in ln and "#" in ln:
+                head, frag = ln.rsplit("#", 1)
+                name = _up.unquote(frag)
+                for e in emails:
+                    if name.endswith("-" + e):
+                        ln = head + "#" + _up.quote(name[: -len(e) - 1].rstrip(), safe="")
+                        changed = True
+                        break
+            out.append(ln)
+        return "\n".join(out) if changed else None
+
+    try:
+        text = body.decode("utf-8")
+    except Exception:
+        return body
+    if "://" in text:
+        out = _fix(text)
+        return body if out is None else out.encode("utf-8")
+    try:
+        raw = text.strip().replace("-", "+").replace("_", "/")
+        raw += "=" * (-len(raw) % 4)
+        decoded = base64.b64decode(raw, validate=True).decode("utf-8")
+    except Exception:
+        return body
+    out = _fix(decoded)
+    return body if out is None else base64.b64encode(out.encode("utf-8"))
 
 
 def _name_awg_lines(body: bytes) -> bytes:

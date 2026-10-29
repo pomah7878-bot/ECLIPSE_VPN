@@ -804,3 +804,17 @@ class CustomBannerTest(unittest.TestCase):
             self.assertIsNone(cb.active())
         finally:
             cb.save("enabled", "0")
+
+
+class StripEmailSuffixTest(unittest.TestCase):
+    def test_strip_plain_and_base64(self):
+        import base64
+        from bot.webapp.server import _strip_email_suffix
+        body = b"vless://a@h:1#%F0%9F%87%AB-user_x1\nvless://b@h:2#Name"
+        out = _strip_email_suffix(body, ["user_x1"]).decode()
+        self.assertIn("#%F0%9F%87%AB", out)
+        self.assertNotIn("user_x1", out)
+        self.assertTrue(out.endswith("#Name"))
+        b64 = base64.b64encode(body)
+        self.assertNotIn(b"user_x1", base64.b64decode(_strip_email_suffix(b64, ["user_x1"])))
+        self.assertEqual(_strip_email_suffix(body, [None]), body)
