@@ -108,7 +108,12 @@ def _format_release_screen(revision: str = "HEAD", max_search: int | None = None
     if extra_commits:
         lines.append("")
         n = len(extra_commits)
-        suffix = "е" if n == 1 else ("я" if n < 5 else "й")
+        if n % 10 == 1 and n % 100 != 11:
+            suffix = "е"
+        elif 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+            suffix = "я"
+        else:
+            suffix = "й"
         lines.append(f"<b>После этой версии — ещё {n} изменени{suffix}.</b>")
 
     return "\n".join(lines)

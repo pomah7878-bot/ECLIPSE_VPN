@@ -11,16 +11,38 @@ from bot.utils.git_utils import run_git_command
 logger = logging.getLogger(__name__)
 
 UNKNOWN_BOT_VERSION = "unknown"
-_RELEASE_PREFIX_RE = re.compile(
-    r"^[!?]?\s*(?:версия\s+|v(?=[0-9]+\.[0-9]))([0-9]+(?:\.[0-9]+)*)\b",
-    flags=re.IGNORECASE,
+
+# Форматы подписи коммита-версии; группы: маркер [!?], номер, заголовок
+_RELEASE_HEADER_RES = (
+    # «Версия 1.462: заголовок», «v1.2 заголовок»
+    re.compile(
+        r"^([!?]?)\s*(?:версия\s+|v(?=[0-9]+\.[0-9]))([0-9]+(?:\.[0-9]+)*)\s*:?\s*(.*)$",
+        flags=re.IGNORECASE,
+    ),
+    # «1.467: заголовок»
+    re.compile(r"^([!?]?)\s*([0-9]+\.[0-9]+(?:\.[0-9]+)*)\s*:\s*(.*)$"),
 )
+# «Заголовок (1.476)» — номер в скобках в конце
+_RELEASE_SUFFIX_RE = re.compile(r"^([!?]?)\s*(.*?)\s*\(([0-9]+\.[0-9]+(?:\.[0-9]+)*)\)\s*$")
+
+
+def _match_release_header(subject: str) -> tuple[str, str, str] | None:
+    """(marker, version, title), если подпись коммита размечена номером версии."""
+    text = (subject or "").strip()
+    for pattern in _RELEASE_HEADER_RES:
+        match = pattern.match(text)
+        if match:
+            return match.group(1), match.group(2), match.group(3)
+    match = _RELEASE_SUFFIX_RE.match(text)
+    if match:
+        return match.group(1), match.group(3), match.group(2)
+    return None
 
 
 def parse_bot_release(commit_subject: str) -> str | None:
-    """Extract a release number from the version prefix of a commit subject."""
-    match = _RELEASE_PREFIX_RE.match((commit_subject or "").strip())
-    return match.group(1) if match else None
+    """Extract a release number from a commit subject."""
+    header = _match_release_header(commit_subject)
+    return header[1] if header else None
 
 
 def resolve_bot_version() -> tuple[str, str]:
@@ -59,12 +81,8 @@ BOT_RELEASE, BOT_COMMIT = resolve_bot_version()
 # версию на HEAD, а если её там нет — идёт назад по истории до последнего
 # коммита с маркером "Версия N.N". Использует существующий формат проекта:
 # "[!?]Версия N.N: заголовок" + тело построчно "+ добавлено" / "- исправлено".
+# Коммиты слияния PR пропускаются: номер берётся из коммита под ними.
 # ============================================================================
-
-_RELEASE_HEADER_RE = re.compile(
-    r"^([!?]?)\s*(?:версия\s+|v(?=[0-9]+\.[0-9]))([0-9]+(?:\.[0-9]+)*)\s*:?\s*(.*)$",
-    flags=re.IGNORECASE,
-)
 
 _RELEASE_SEARCH_DEPTH = 300  # разумный предел обхода истории назад
 
@@ -78,10 +96,10 @@ def parse_release_body(body: str) -> dict | None:
     lines = [line.rstrip() for line in (body or "").strip("\n").split("\n")]
     if not lines:
         return None
-    header_match = _RELEASE_HEADER_RE.match(lines[0].strip())
-    if not header_match:
+    header = _match_release_header(lines[0])
+    if not header:
         return None
-    marker, version, title = header_match.groups()
+    marker, version, title = header
     title = title.strip()
     bullets: list[tuple[str, str]] = []
     for line in lines[1:]:
@@ -111,19 +129,19 @@ def resolve_release_info(revision: str = "HEAD", max_search: int = _RELEASE_SEAR
 
     Возвращает (None, []) если версия не найдена вовсе или git недоступен.
     """
-    ok, head_line = run_git_command(["log", "-1", "--format=%h%x09%s", revision])
+    ok, head_line = run_git_command(["log", "-1", "--no-merges", "--format=%h%x09%s", revision])
     if not ok or "\t" not in head_line:
         return None, []
     head_short, head_subject = head_line.split("\t", 1)
 
-    if _RELEASE_HEADER_RE.match(head_subject.strip()):
+    if _match_release_header(head_subject):
         ok_body, body = run_git_command(["log", "-1", "--format=%B", head_short])
         if ok_body:
             return parse_release_body(body), []
         return None, []
 
     ok_bulk, bulk = run_git_command(
-        ["log", "--format=%h%x09%s", "-n", str(max_search), revision]
+        ["log", "--no-merges", "--format=%h%x09%s", "-n", str(max_search), revision]
     )
     if not ok_bulk or not bulk:
         return None, []
@@ -133,7 +151,7 @@ def resolve_release_info(revision: str = "HEAD", max_search: int = _RELEASE_SEAR
         if "\t" not in line:
             continue
         short_hash, subject = line.split("\t", 1)
-        if _RELEASE_HEADER_RE.match(subject.strip()):
+        if _match_release_header(subject):
             ok_body, body = run_git_command(["log", "-1", "--format=%B", short_hash])
             info = parse_release_body(body) if ok_body else None
             return info, extra_commits
