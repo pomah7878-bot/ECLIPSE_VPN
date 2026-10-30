@@ -1136,3 +1136,16 @@ class ClientCabinetTest(unittest.TestCase):
     def test_disabled_by_default(self):
         from bot.services import client_cabinet as cab
         self.assertFalse(cab.enabled())
+
+
+class BotVersionTest(unittest.TestCase):
+    def test_release_number_in_every_commit_format(self):
+        from bot.version import parse_bot_release, parse_release_body
+        self.assertEqual(parse_bot_release("Версия 1.462: версия файлов"), "1.462")
+        self.assertEqual(parse_bot_release("!Версия 1.300: важное"), "1.300")
+        self.assertEqual(parse_bot_release("1.467: кабинет клиента в виде таблицы"), "1.467")
+        self.assertEqual(parse_bot_release("Новый вид меню: защита от падения (1.476)"), "1.476")
+        self.assertIsNone(parse_bot_release("Merge pull request #3 from x/y"))
+        self.assertIsNone(parse_bot_release("Правка README"))
+        info = parse_release_body("Новый вид меню: защита от падения (1.476)\n")
+        self.assertEqual((info["version"], info["title"]), ("1.476", "Новый вид меню: защита от падения"))
