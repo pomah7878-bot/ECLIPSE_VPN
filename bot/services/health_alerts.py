@@ -137,6 +137,8 @@ async def run_check_once(bot, state: Dict[str, Dict[str, Any]], with_probe: bool
     events = evaluate(checks, state, time.time())
     if not events:
         return 0
+    from bot.services.admin_insights import record_events
+    record_events(events)
     text = format_message(events)
     from config import ADMIN_IDS
     for admin_id in ADMIN_IDS:

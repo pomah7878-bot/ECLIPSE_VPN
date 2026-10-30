@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 166
+LATEST_VERSION = 167
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3794,6 +3794,31 @@ def migration_166(conn: sqlite3.Connection) -> None:
     logger.info("Migration v166 applied: функция block_check для full-лицензий")
 
 
+def migration_167(conn: sqlite3.Connection) -> None:
+    """Версия 1.465: «Аналитика для админа» — журнал инцидентов и платная функция admin_insights
+    (лицензиям и тарифам tier='full' добавляется автоматически, custom — вручную)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS admin_incidents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            kind TEXT NOT NULL,
+            title TEXT NOT NULL,
+            detail TEXT
+        )
+    """)
+    for table in ("partner_licenses", "license_tariffs"):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not {"tier", "features"} <= columns:
+            continue
+        for row in conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall():
+            current = {f for f in (row[1] or "").split(",") if f}
+            current.add("admin_insights")
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), row[0]))
+    logger.info("Migration v167 applied: журнал инцидентов и функция admin_insights")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3887,6 +3912,7 @@ MIGRATIONS = {
     164: migration_164,
     165: migration_165,
     166: migration_166,
+    167: migration_167,
 }
 
 

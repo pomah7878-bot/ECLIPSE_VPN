@@ -58,6 +58,7 @@ GATED_FEATURES = {
     "hide_powered_by": "🏷 Отключение метки Powered by ECLIPSE",
     "routing": "🗺 Маршрутизация Happ/INCY (профили, выбор клиентом)",
     "block_check": "🛰 Проверка блокировок IP серверов и нод (ТСПУ)",
+    "admin_insights": "📊 Аналитика для админа (оплаты, корзины, пробники, истекающие, инциденты)",
 }
 
 HIDE_POWERED_BY_FEATURE = "hide_powered_by"

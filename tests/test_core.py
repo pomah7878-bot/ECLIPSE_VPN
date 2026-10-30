@@ -981,3 +981,27 @@ class LastPaymentTest(unittest.TestCase):
         text = _last_payment_text()
         self.assertIn("Иван Петров", text)
         self.assertIn("250 ₽", text)
+
+
+class AdminInsightsTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_build_text_and_blocks(self):
+        from bot.services import admin_insights as ai
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO tariffs (id, name, duration_days, price_cents, price_stars, price_rub) VALUES (9002, 'T2', 30, 100, 100, 100)")
+            c.execute("INSERT OR IGNORE INTO users (telegram_id, first_name) VALUES (777003, 'Анна')")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 777003").fetchone()["id"]
+            c.execute("INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) VALUES (?, 'ai-trial', 'paid', 'trial', 0, datetime('now', '-2 days'))", (uid,))
+            c.execute("INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) VALUES (?, 'ai-real', 'paid', 'cards', 12500, datetime('now', '-1 days'))", (uid,))
+            c.execute("INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) VALUES (?, 'ai-pend', 'pending', 'cards', 9900, datetime('now', '-1 hours'))", (uid,))
+        self.assertGreaterEqual(ai.trial_funnel(7)["bought"], 1)
+        self.assertEqual(ai.recent_payments(1)[0]["who"].split()[0] in ("Анна", "гость"), True)
+        text = ai.build_text()
+        self.assertIn("Аналитика", text)
+        self.assertLess(len(text), 3500)
+        ai.record_events([("down", "Сервер А", "нет ответа")])
+        self.assertEqual(ai.recent_incidents(1)[0]["title"], "Сервер А")
+        self.assertIn("Анна", ai.payments_list_text())
