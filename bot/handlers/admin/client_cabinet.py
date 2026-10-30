@@ -1,4 +1,4 @@
-"""Админка: «👤 Кабинет клиента» — включатель лицензионной функции client_cabinet."""
+"""Админка: «🎨 Новый вид меню» — включатель лицензионной функции client_cabinet."""
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
@@ -19,7 +19,7 @@ async def _show(callback: CallbackQuery) -> None:
         await callback.answer(_LOCK, show_alert=True)
         return
     on = cab.enabled()
-    text = ("👤 <b>Кабинет клиента</b>\n\n"
+    text = ("🎨 <b>Новый вид меню</b>\n\n"
             "Новый вид личного кабинета: таблица с балансом, ключами, трафиком, оплатами и рефералами, "
             "полоса прогресса и цветные кнопки. Клиенты открывают его командой /cabinet и кнопкой «👤 Кабинет» "
             "на главной (если она не скрыта в редакторе страниц).\n\n"

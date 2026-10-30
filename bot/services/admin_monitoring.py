@@ -509,6 +509,57 @@ def _server_lines(entries: List[Dict[str, Any]]) -> List[str]:
     return lines
 
 
+def _plain(text: Any) -> str:
+    """HTML-текст -> обычный (без тегов и сущностей) для ячеек таблицы."""
+    import html as _html
+    import re as _re
+    return _html.unescape(_re.sub(r"<[^>]+>", "", str(text)))
+
+
+def build_admin_summary_html(snapshot: Dict[str, Any]) -> Optional[str]:
+    """Главный экран админ-панели таблицей (для «нового вида меню»); None — серверов нет, остаётся обычный текст."""
+    from bot.utils.rich_view import table
+    if not snapshot.get("servers"):
+        return None
+    counts = _snapshot_counts(snapshot)
+    problems = snapshot.get("problems", [])
+    collected_at = snapshot.get("collected_at")
+    updated = collected_at.strftime("%H:%M") if isinstance(collected_at, datetime) else "—"
+    if counts["active_panels"] == 0:
+        health = "⚠️ Мониторинг выключен"
+    elif counts["online_panels"] == 0:
+        health = "🔴 Все панели недоступны"
+    elif problems:
+        health = "⚠️ Есть проблемы"
+    else:
+        health = "🟢 Всё работает"
+    payments = snapshot.get("payments", {}) or {}
+    payments_7d = snapshot.get("payments_7d", {}) or {}
+    users = snapshot.get("users", {}) or {}
+    keys = snapshot.get("keys", {}) or {}
+    new_users = _safe_int(snapshot.get("new_users"))
+    servers_total = counts["active_panels"] + counts["nodes_total"]
+    servers_online = counts["online_panels"] + counts["online_nodes"]
+    day_count, week_count = _safe_int(payments.get("paid_count")), _safe_int(payments_7d.get("paid_count"))
+    clients = f"{_safe_int(users.get('total'))} · активных {_safe_int(users.get('active'))}" + (f" · +{new_users} за сутки" if new_users else "")
+    rows = [
+        ("Состояние", f"{health} · {updated}"),
+        ("💰 Деньги", f"{_money_text(payments)} сегодня · {_money_text(payments_7d)} за 7 дн."),
+        ("👥 Клиенты", clients),
+        ("📶 Онлайн", f"{counts['panel_online_clients']} · серверы {servers_online}/{servers_total}"),
+        ("💳 Оплаты", f"сегодня {day_count} · за 7 дн. {week_count}"
+                      f" · бот {_safe_int(payments_7d.get('bot_count'))} / сайт {_safe_int(payments_7d.get('site_count'))}"),
+        ("🔑 Ключи", f"активных {_safe_int(keys.get('active'))} · создано за сутки {_safe_int(keys.get('created_today'))}"),
+        ("⏳ Истекают", f"за сутки {_safe_int(snapshot.get('expiring_24h'))} · за 3 дня {_safe_int(snapshot.get('expiring_3d'))}"),
+    ]
+    for problem in problems[:MAX_SUMMARY_PROBLEMS]:
+        rows.append(("⚠️ Внимание", _plain(problem.get("text", ""))))
+    last = snapshot.get("last_payment")
+    if last:
+        rows.append(("🧾 Последняя оплата", _plain(last)))
+    return table("⚙️ Админ-панель", rows)
+
+
 def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
     """Главный экран админ-панели: сводка сверху, подробности в раскрываемых блоках."""
     entries = snapshot.get("servers", [])

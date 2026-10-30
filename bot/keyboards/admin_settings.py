@@ -45,7 +45,7 @@ def bot_settings_kb(current_mode: str = 'subscription') -> InlineKeyboardMarkup:
         InlineKeyboardButton(text=f'🔒 Канал: {_gate}', callback_data='admin_channel_gate'),
         InlineKeyboardButton(text=f"📏 Меню: {_w if _w else 'выкл'}", callback_data='admin_menu_width'),
     )
-    builder.row(InlineKeyboardButton(text='👤 Кабинет клиента', callback_data='admin_client_cabinet'))
+    builder.row(InlineKeyboardButton(text='🎨 Новый вид меню', callback_data='admin_client_cabinet'))
     builder.row(
         InlineKeyboardButton(text='📥 Логи', callback_data='admin_logs_menu'),
         InlineKeyboardButton(text='🛑 Остановить', callback_data='admin_stop_bot'),

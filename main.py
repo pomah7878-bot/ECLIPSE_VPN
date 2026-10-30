@@ -267,6 +267,10 @@ async def main():
     from bot.middlewares.button_icons import ButtonIconsMiddleware
     bot.session.middleware(ButtonIconsMiddleware())
 
+    # Цвета кнопок «нового вида меню» (лицензия client_cabinet, включается в «Настройки бота → Новый вид меню»)
+    from bot.middlewares.button_colors import ButtonColorsMiddleware
+    bot.session.middleware(ButtonColorsMiddleware())
+
     # Порядок в чате: запоминаем служебные сообщения клиента (см. bot/middlewares/chat_trail.py)
     from bot.middlewares.chat_trail import TrackSentMessagesMiddleware, UserContextMiddleware
     bot.session.middleware(TrackSentMessagesMiddleware())

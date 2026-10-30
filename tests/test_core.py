@@ -194,6 +194,23 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(st.get_setting("routing_published", ""), "")
 
 
+
+class NewMenuLookTest(unittest.TestCase):
+    def test_auto_style(self):
+        from aiogram.types import InlineKeyboardButton as B
+        from bot.services.menu_style import auto_style
+        self.assertEqual(auto_style(B(text="💳 Оплатить", callback_data="x")), "success")
+        self.assertEqual(auto_style(B(text="🗑 Удалить ключ", callback_data="x")), "danger")
+        self.assertEqual(auto_style(B(text="🔑 Мои ключи", callback_data="my_keys")), "primary")
+        self.assertIsNone(auto_style(B(text="⬅️ Назад", callback_data="start")))
+        self.assertIsNone(auto_style(B(text="Оплатить", callback_data="x", style="danger")))
+
+    def test_table(self):
+        from bot.utils.rich_view import table
+        h = table("Т", [("a", "b")], header=("x", "y"))
+        self.assertIn("<caption>Т</caption>", h)
+        self.assertIn("<td>a</td><td>b</td>", h)
+
 if __name__ == "__main__":
     unittest.main()
 

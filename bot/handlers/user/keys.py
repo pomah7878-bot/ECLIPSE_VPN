@@ -64,6 +64,14 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
         my_keys_append_buttons.append([InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')])
     my_keys_append_buttons.append([InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
 
+    rich_html = None
+    try:
+        from bot.services import client_cabinet as _cab
+        if _cab.enabled():
+            from bot.services.rich_screens import my_keys_html
+            rich_html = my_keys_html(keys)
+    except Exception as e:  # noqa: BLE001
+        logger.debug('Новый вид «Мои ключи»: %s', e)
     await render_page(
         target,
         page_key='my_keys',
@@ -76,6 +84,7 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
         prepend_buttons=key_buttons,
         append_buttons=my_keys_append_buttons,
         force_new=force_new,
+        rich_html=rich_html,
     )
 
 
@@ -290,9 +299,18 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         nav_visibility = {'btn_my_keys': False, 'btn_back_main': False}
         # «Назад» тут тоже вёл бы на главную — две одинаковые кнопки не нужны (v1.347)
         nav_append = [[InlineKeyboardButton(text='🈴 На главную', callback_data='start')]]
+    rich_html = None
+    try:
+        from bot.services import client_cabinet as _cab
+        if _cab.enabled() and not prepend_text:
+            from bot.services.rich_screens import key_details_html
+            rich_html = key_details_html(key, status, traffic_info, inbound_name, protocol, payments)
+    except Exception as e:  # noqa: BLE001
+        logger.debug('Новый вид карточки ключа: %s', e)
     await render_page(
         message,
         page_key='key_details',
+        rich_html=rich_html,
         visibility=nav_visibility,
         append_buttons=nav_append,
         context={
