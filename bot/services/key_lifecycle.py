@@ -53,16 +53,20 @@ async def renew_key_access(
 
     result['db_updated'] = True
 
-    if tariff_id:
-        from database.requests import update_vpn_key_tariff_and_traffic_limit
+    # Срок уже сохранён: ошибка дальше не должна всплывать, иначе заказ откроется заново и ключ продлится второй раз
+    try:
+        if tariff_id:
+            from database.requests import update_vpn_key_tariff_and_traffic_limit
 
-        result['traffic_restored'] = update_vpn_key_tariff_and_traffic_limit(
-            key_id,
-            tariff_id,
-            paid_traffic_limit or 0,
-        )
-    else:
-        result['traffic_restored'] = restore_traffic_limit_in_db(key_id)
+            result['traffic_restored'] = update_vpn_key_tariff_and_traffic_limit(
+                key_id,
+                tariff_id,
+                paid_traffic_limit or 0,
+            )
+        else:
+            result['traffic_restored'] = restore_traffic_limit_in_db(key_id)
+    except Exception as e:
+        logger.error(f"renew_key_access: срок ключа {key_id} продлён, но тариф/трафик не обновлены: {e}")
 
     panel_reset_traffic = reset_traffic and not tariff_id
     try:

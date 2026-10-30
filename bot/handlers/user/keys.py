@@ -928,7 +928,7 @@ async def _key_replace_execute_locked(callback, state, key_id, new_server_id, ne
             remaining_bytes = 0
             limit_gb = 0
         expires_at = datetime.fromisoformat(current_key['expires_at'])
-        now = datetime.now()
+        now = datetime.utcnow()  # expires_at хранится в UTC
         delta = expires_at - now
         days_left = delta.days
         if delta.seconds > 0:
