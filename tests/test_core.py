@@ -267,6 +267,30 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertEqual(list(inspect.signature(sv.render_servers_screen).parameters), ["message", "servers"])
         self.assertEqual(list(inspect.signature(sv.show_servers_list).parameters), ["callback", "state"])
 
+    def test_server_card_table(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from aiogram.types import Message
+        import bot.handlers.admin.servers as sv
+        server = {"id": 1, "name": "S", "is_active": False, "protocol": "https", "host": "h", "port": 1, "web_base_path": "/p/",
+                  "login": "a", "password": "secret", "panel_version": "3.11.0", "inbound_group": None, "public_ip": ""}
+        msg = MagicMock(spec=Message)
+        msg.photo = msg.video = msg.document = msg.animation = None
+        msg.chat = MagicMock(id=1)
+        msg.message_id = 2
+        msg.bot = MagicMock()
+        msg.bot.edit_message_text = AsyncMock(return_value=msg)
+        state = MagicMock()
+        state.set_state = AsyncMock()
+        state.update_data = AsyncMock()
+        with patch.object(sv, "get_server_by_id", return_value=server), patch.object(sv, "get_groups_count", return_value=1), \
+                patch.object(sv, "server_view_kb", return_value=None), patch("bot.services.client_cabinet.enabled", return_value=True):
+            asyncio.run(sv.render_server_view(msg, 1, state))
+        html = msg.bot.edit_message_text.await_args.kwargs["rich_message"].html
+        self.assertEqual(html.count("<table"), 3)
+        self.assertIn("<td>🔗 URL панели</td><td>https://h:1/p/</td>", html)
+        self.assertNotIn("secret", html)
+
 if __name__ == "__main__":
     unittest.main()
 

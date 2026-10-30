@@ -143,8 +143,10 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
         f"   {status_emoji} Статус: {status_text}",
     ])
     from bot.services.failover import is_down as _fo_down
+    stat_rows = [(f"{status_emoji} Статус", status_text)]
     if _fo_down(server_id):
         lines.append("   🚧 Узел недоступен: подписки идут с резервного")
+        stat_rows.append(("🚧 Узел", "недоступен: подписки идут с резервного"))
 
     if server['is_active']:
         try:
@@ -155,14 +157,19 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
                 traffic = format_traffic(stats.get('total_traffic_bytes', 0))
                 lines.append(f"   🔑 Онлайн: {stats.get('online_clients', 0)}")
                 lines.append(f"   📈 Трафик: {traffic}")
+                stat_rows.append(("🔑 Онлайн", str(stats.get('online_clients', 0))))
+                stat_rows.append(("📈 Трафик", str(traffic)))
 
                 if stats.get('cpu_percent') is not None:
                     lines.append(f"   💻 CPU: {stats['cpu_percent']}%")
+                    stat_rows.append(("💻 CPU", f"{stats['cpu_percent']}%"))
             else:
                 lines.append(f"   ⚠️ Сервер недоступен")
+                stat_rows.append(("⚠️", "сервер недоступен"))
         except Exception as e:
             logger.warning(f"Ошибка статистики {server['name']}: {e}")
             lines.append(f"   ⚠️ Ошибка подключения")
+            stat_rows.append(("⚠️", "ошибка подключения"))
 
     # Groups—show if there is more than one group
     groups_count = get_groups_count()
@@ -175,11 +182,36 @@ async def render_server_view(message: Message, server_id: int, state: FSMContext
                 group_names.append(g['name'])
         groups_str = ", ".join(group_names) if group_names else "Основная"
         lines.append(f"\n📂 Группы: <code>{groups_str}</code>")
+        stat_rows.append(("📂 Группы", groups_str))
 
-    await safe_edit_or_send(message, 
-        "\n".join(lines),
-        reply_markup=server_view_kb(server_id, server['is_active'], groups_count > 1, server.get('public_ip') or '')
-    )
+    kb = server_view_kb(server_id, server['is_active'], groups_count > 1, server.get('public_ip') or '')
+    try:
+        from bot.services import client_cabinet
+        if client_cabinet.enabled():
+            import re as _re
+            from bot.utils.rich_view import table, send as rich_send
+            url = (f"{server.get('protocol', 'https')}://{server['host']}:{server['port']}"
+                   f"{server['web_base_path']}")
+            conn = [("🔗 URL панели", url),
+                    ("🔐 Подключение", 'API-ключ' if auth_method == AUTH_API_TOKEN else 'Логин и пароль')]
+            if auth_method == AUTH_API_TOKEN:
+                conn.append(("🔑 API-ключ", "сохранён"))
+            else:
+                conn += [("👤 Логин", server.get('login') or ''), ("🔐 Пароль", password_masked)]
+            outdated = _re.sub(r"<[^>]+>", "", _panel_outdated_note(server.get('panel_version')) or "").strip()
+            api = [("Версия", f"{server.get('panel_version') or 'не определена'} {outdated}".strip()),
+                   ("Профиль", server.get('panel_api_profile') or 'не определён'),
+                   ("Проверка", server.get('panel_checked_at') or 'ещё не выполнялась'),
+                   ("Группа inbound'ов", str(server.get('inbound_group') or 'все (не задана)'))]
+            rich_html = (table(f"🖥️ {server['name']}", conn)
+                         + table("🧩 3x-ui API", api)
+                         + table("📊 Статистика", stat_rows))
+            await rich_send(message, rich_html, "\n".join(lines), kb)
+            return
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Новый вид карточки сервера: %s", e)
+
+    await safe_edit_or_send(message, "\n".join(lines), reply_markup=kb)
 
 
 # ============================================================================
