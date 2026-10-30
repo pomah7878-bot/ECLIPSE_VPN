@@ -953,3 +953,15 @@ class ProbeNameTailsTest(unittest.TestCase):
         self.assertEqual(strip_name_tails("Белые списки 🇫🇮-cdn.example.org-cdn_user_x1", t), "Белые списки 🇫🇮")
         self.assertEqual(strip_name_tails("Gaming", t), "Gaming")
         self.assertIsNone(strip_name_tails(None, t))
+
+
+class TrialNotCountedAsPaymentTest(unittest.TestCase):
+    def test_site_trial_not_in_payment_stats(self):
+        run_migrations()
+        from database.db_payments import get_payments_stats
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO tariffs (id, name, duration_days, price_cents, price_stars, price_rub) VALUES (9001, 'T', 5, 100, 100, 100)")
+            before = get_payments_stats(1)["site_count"]
+            c.execute("INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, yookassa_payment_id) VALUES ('pubTR1', 9001, 'TRIA-0001', 'paid', 'trial')")
+            c.execute("INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, yookassa_payment_id) VALUES ('pubPD1', 9001, 'TRIA-0002', 'paid', 'yk-123')")
+        self.assertEqual(get_payments_stats(1)["site_count"], before + 1)

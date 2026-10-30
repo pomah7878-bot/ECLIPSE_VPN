@@ -434,6 +434,7 @@ def get_payments_stats(days: int = 1) -> Dict[str, Any]:
             FROM anonymous_purchases ap
             LEFT JOIN tariffs t ON ap.tariff_id = t.id
             WHERE ap.status = 'paid'
+            AND COALESCE(ap.yookassa_payment_id, '') != 'trial'
             AND ap.created_at >= datetime('now', ?)
         """, period)
         site_row = cursor.fetchone()
