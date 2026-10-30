@@ -180,16 +180,26 @@ def gateway_activity() -> List[Dict[str, Any]]:
 
 
 def last_backup() -> Optional[Dict[str, Any]]:
+    """Самая свежая копия базы бота (backup/ГГГГ-ММ-ДД/vpn_bot.db и ручные *vpn_bot.db) по всем подпапкам."""
     from database.db_backup import BACKUP_DIR
+    best = None
     try:
-        files = [os.path.join(BACKUP_DIR, f) for f in os.listdir(BACKUP_DIR)]
-        files = [f for f in files if os.path.isfile(f)]
-        if not files:
-            return None
-        newest = max(files, key=os.path.getmtime)
-        return {"age_h": (time.time() - os.path.getmtime(newest)) / 3600, "mb": os.path.getsize(newest) / 1048576}
+        for root, _dirs, files in os.walk(BACKUP_DIR):
+            for name in files:
+                if name.endswith("vpn_bot.db"):
+                    path = os.path.join(root, name)
+                    mtime = os.path.getmtime(path)
+                    if best is None or mtime > best[0]:
+                        best = (mtime, os.path.getsize(path))
     except OSError:
         return None
+    if best is None:
+        return None
+    return {"age_h": (time.time() - best[0]) / 3600, "bytes": best[1]}
+
+
+def _size(n: int) -> str:
+    return f"{n / 1048576:.1f} МБ" if n >= 1048576 else f"{max(1, n // 1024)} КБ"
 
 
 def record_events(events: List[Any]) -> None:
@@ -245,7 +255,7 @@ def build_text() -> str:
     if not bk:
         bk_txt = "⚠️ файлов нет"
     else:
-        bk_txt = f"{'⚠️ ' if bk['age_h'] > 36 else ''}{int(bk['age_h'])} ч назад · {bk['mb']:.1f} МБ"
+        bk_txt = f"{'⚠️ ' if bk['age_h'] > 36 else ''}{int(bk['age_h'])} ч назад · {_size(bk['bytes'])}"
     inc = recent_incidents(3)
     inc_txt = "\n".join(
         f"{'🟢' if i['kind'] == 'recovered' else '🔴'} {_fmt_ts(i['at'])} {escape_html(i['title'])}" for i in inc) or "нет"

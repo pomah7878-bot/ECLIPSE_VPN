@@ -1005,3 +1005,30 @@ class AdminInsightsTest(unittest.TestCase):
         ai.record_events([("down", "Сервер А", "нет ответа")])
         self.assertEqual(ai.recent_incidents(1)[0]["title"], "Сервер А")
         self.assertIn("Анна", ai.payments_list_text())
+
+
+class LastBackupTest(unittest.TestCase):
+    def test_finds_bot_db_in_dated_subfolder_not_other_files(self):
+        import shutil
+        from database.db_backup import BACKUP_DIR
+        from bot.services.admin_insights import last_backup, _size
+        existed = os.path.isdir(BACKUP_DIR)
+        day = os.path.join(BACKUP_DIR, "2099-01-01")
+        try:
+            os.makedirs(day, exist_ok=True)
+            with open(os.path.join(day, "vpn_bot.db"), "wb") as f:
+                f.write(b"x" * 300000)
+            with open(os.path.join(BACKUP_DIR, "note.txt"), "wb") as f:
+                f.write(b"y")
+            res = last_backup()
+            self.assertEqual(res["bytes"], 300000)
+        finally:
+            shutil.rmtree(day, ignore_errors=True)
+            try:
+                os.remove(os.path.join(BACKUP_DIR, "note.txt"))
+            except OSError:
+                pass
+            if not existed:
+                shutil.rmtree(BACKUP_DIR, ignore_errors=True)
+        self.assertEqual(_size(300000), "292 КБ")
+        self.assertEqual(_size(5 * 1048576), "5.0 МБ")
