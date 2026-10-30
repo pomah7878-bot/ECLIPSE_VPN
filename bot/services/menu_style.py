@@ -15,7 +15,8 @@ _DANGER_CB = re.compile(r"(^|[_:])(delete|remove|revoke|deactivate|block|ban|res
 _DANGER_TX = re.compile(r"^\W*(удалить|удаление|сбросить|остановить|заблокировать|отозвать|деактивировать|отключить|очистить|забанить|отменить заказ)", re.I)
 _SUCCESS_CB = re.compile(r"(^|[_:])(pay|topup|renew|confirm|activate|apply|add|create|save|enable)([_:]|$)|pay_with|balance_topup|trial_activate|key_renew")
 _SUCCESS_TX = re.compile(r"^\W*(оплатить|оплата|пополнить|продлить|подтвердить|активировать|купить|применить|добавить|создать|сохранить|включить|выдать|запустить|отправить|начислить)", re.I)
-_NAV_TX = re.compile(r"^\W*(назад|на главную|отмена|закрыть|⬅)", re.I)
+_NAV_TX = re.compile(r"^\W*(назад|на главную|отмена|отменить|закрыть|нет\b|⬅)", re.I)
+_DANGER_ANY = re.compile(r"удал|сброс|деактив|отключ|выключить|заблок|останов|отозв|очист", re.I)
 
 
 def auto_style(button: InlineKeyboardButton) -> Optional[str]:
@@ -31,7 +32,7 @@ def auto_style(button: InlineKeyboardButton) -> Optional[str]:
         return "danger"
     if text.startswith("🟢") or re.search(r"(вкл|✅|🟢)\s*$|:\s*(вкл|да)\b", text, re.I) or text.startswith("✅"):
         return "success"
-    if _DANGER_TX.match(text) or _DANGER_CB.search(cb):
+    if _DANGER_TX.match(text) or _DANGER_ANY.search(text) or _DANGER_CB.search(cb):
         return "danger"
     if _SUCCESS_TX.match(text) or _SUCCESS_CB.search(cb):
         return "success"
