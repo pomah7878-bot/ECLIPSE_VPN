@@ -219,6 +219,15 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIsNone(auto_table("Длинный обычный текст.\nБез пар вида ключ значение."))
         self.assertIsNone(auto_table('A: 1\nB: 2\nC: <a href="x">3</a>'))
 
+    def test_main_subscription_table(self):
+        from bot.services import main_screen as m
+        st = {'audience': m.AUDIENCE_CLIENT, 'keys': [], 'balance_cents': 50000,
+              'active': [{'expires_at': '2054-11-24 00:00:00', 'tariff_id': None}]}
+        h = m.build_subscription_html(st, "Ира")
+        self.assertIn("<caption>Ира, всё работает 👋</caption>", h)
+        self.assertIn("Баланс", h)
+        self.assertIsNone(m.build_subscription_html({'audience': m.AUDIENCE_NEW}, "x"))
+
 if __name__ == "__main__":
     unittest.main()
 
