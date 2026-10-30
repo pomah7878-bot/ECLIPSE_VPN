@@ -254,6 +254,44 @@ def build_subscription_card(state: Dict[str, Any]) -> str:
     return '<blockquote>' + '\n'.join(lines) + '</blockquote>'
 
 
+def build_subscription_html(state: Dict[str, Any], first_name: str) -> Optional[str]:
+    """«Новый вид меню»: приветствие и карточка подписки таблицей (для клиентов и тех, у кого подписка закончилась)."""
+    from bot.utils.rich_view import table
+    audience = state.get('audience')
+    balance = int(state.get('balance_cents') or 0)
+    rows: List[tuple] = []
+    if audience == AUDIENCE_CLIENT:
+        active = state.get('active') or []
+        nearest = active[0]
+        until = format_day_month(nearest.get('expires_at'))
+        days = _days_left(nearest.get('expires_at'))
+        if len(active) == 1:
+            plan = _plan_name(nearest.get('tariff_id'))
+            rows.append(('🟢 Подписка', f"{plan} · до {until}" if plan else f"активна · до {until}"))
+        else:
+            rows.append(('🟢 Активных ключей', str(len(active))))
+            rows.append(('⏳ Ближайший до', until))
+        if days is not None and days >= 0:
+            rows.append(('⏳ Осталось', f"{days} {_plural(days, 'день', 'дня', 'дней')}"))
+        devices = _max_devices(nearest.get('tariff_id')) if len(active) == 1 else 0
+        if devices > 0:
+            rows.append(('📱 Устройства', f"до {devices}"))
+        limit = int(nearest.get('traffic_limit') or 0)
+        if len(active) == 1 and limit > 0:
+            from bot.services.vpn_api import format_traffic
+            rows.append(('📊 Трафик', f"{format_traffic(int(nearest.get('traffic_used') or 0))} из {format_traffic(limit)}"))
+    elif audience == AUDIENCE_EXPIRED:
+        last = max(state.get('keys') or [{}], key=lambda k: str(k.get('expires_at') or ''))
+        rows.append(('🔴 Подписка', f"закончилась {format_day_month(last.get('expires_at'))}".rstrip()))
+        rows.append(('➡️ Что делать', 'продлите — ключи заработают сразу'))
+    else:
+        return None
+    if balance >= 100:
+        rows.append(('💰 Баланс', _rub(balance)))
+    name = (first_name or '').strip()
+    return table(f"{name + ', в' if name else 'В'}сё работает 👋", rows)
+
+
 def min_month_price_text() -> str:
     """«от 84 ₽/мес» — самая низкая цена в пересчёте на месяц (только платные тарифы в рублях)."""
     try:

@@ -187,7 +187,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
 
     try:
         from bot.services import client_cabinet as _cab
-        show_cabinet = _cab.enabled()
+        show_cabinet = False  # кнопка «Кабинет» на главной не нужна: данные видны в самом меню
     except Exception:
         show_cabinet = False
 
@@ -212,6 +212,12 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
 
     # v1.340: главная «как приложение» — включается, если на странице есть «⚡ Подключиться»
     app_screen_audience = None
+    main_rich_html = None
+
+    def _first_raw(t):
+        u = getattr(t, 'from_user', None)
+        return ((getattr(u, 'first_name', '') or '').strip()[:32]) if u is not None else ''
+
     try:
         from bot.services import main_screen as _ms
         _main_page_row = get_page('main')
@@ -229,6 +235,15 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
             _user = getattr(target, 'from_user', None)
             if _user is not None:
                 _first = escape_html((getattr(_user, 'first_name', '') or '').strip()[:32])
+            try:
+                from bot.services import client_cabinet as _cab2
+                _raw = (_main_page_row.get('text_custom') or _main_page_row.get('text_default') or '')
+                _same = (_ms.apply_audience_sections(_raw, app_screen_audience).strip()
+                         == _ms.apply_audience_sections(_ms._APP_TAIL, app_screen_audience).strip())
+                if _cab2.enabled() and _same:
+                    main_rich_html = _ms.build_subscription_html(_state, _first_raw(target))
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Главная: таблица подписки не собрана: {e}")
             text_replacements.update({
                 '%подписка%': _ms.build_subscription_card(_state),
                 '%имя%': _first or 'Привет',
@@ -374,6 +389,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         prepend_buttons=prepend_buttons,
         append_buttons=append_buttons,
         force_new=force_new,
+        rich_html=main_rich_html,
     )
     try:
         from bot.services.main_menu_tracker import remember_main_menu
