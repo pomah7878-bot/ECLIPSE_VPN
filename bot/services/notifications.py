@@ -361,12 +361,14 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
         user_id_internal = order.get('user_id')
         telegram_id = None
         username = None
+        full_name = ''
 
         if user_id_internal:
             user = get_user_by_id(user_id_internal)
             if user:
                 telegram_id = user.get('telegram_id')
                 username = user.get('username')
+                full_name = ' '.join(x for x in (user.get('first_name'), user.get('last_name')) if x).strip()
 
         # Tariff data
         tariff_name = order.get('tariff_name', '—')
@@ -414,9 +416,11 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
 
         # User - link tg://user
         if telegram_id:
-            user_link = f'<a href="tg://user?id={telegram_id}">{telegram_id}</a>'
+            user_link = f'<a href="tg://user?id={telegram_id}">{escape_html(full_name) if full_name else telegram_id}</a>'
             if username:
                 user_link += f' (@{escape_html(username)})'
+            if full_name:
+                user_link += f' · {telegram_id}'
             lines.append(f'👤 Пользователь: {user_link}')
         elif order.get('_site_buyer_label'):
             lines.append(f'👤 Покупатель: {escape_html(str(order.get("_site_buyer_label")))}')

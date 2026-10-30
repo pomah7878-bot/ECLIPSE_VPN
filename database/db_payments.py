@@ -1281,3 +1281,17 @@ def mark_anonymous_purchase_claimed(claim_code: str, telegram_id: int, vpn_key_i
         )
         return cursor.rowcount > 0
 
+
+
+def get_last_real_payment() -> Optional[Dict[str, Any]]:
+    """Последняя настоящая оплата (не пробный период и не бесплатный промокод) с данными плательщика."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT p.*, u.first_name, u.last_name, u.username, u.telegram_id
+            FROM payments p LEFT JOIN users u ON u.id = p.user_id
+            WHERE p.status = 'paid'
+              AND COALESCE(p.payment_type, '') NOT IN ('trial', 'promo_free')
+              AND (COALESCE(p.final_amount_cents, 0) > 0 OR COALESCE(p.final_amount_stars, 0) > 0)
+            ORDER BY p.paid_at DESC, p.id DESC LIMIT 1
+        """).fetchone()
+        return dict(row) if row else None

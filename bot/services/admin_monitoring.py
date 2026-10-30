@@ -284,6 +284,30 @@ async def _collect_server_entry_inner(server: Dict[str, Any]) -> Dict[str, Any]:
     return entry
 
 
+def _last_payment_text() -> str:
+    """«Имя · сумма · дата» последней настоящей оплаты (пусто, если оплат нет или не удалось получить)."""
+    try:
+        from database.db_payments import get_last_real_payment
+        from bot.services.notifications import _format_payment_amount
+        from bot.utils.text import escape_html
+        p = get_last_real_payment()
+        if not p:
+            return ""
+        name = " ".join(x for x in (p.get("first_name"), p.get("last_name")) if x).strip()
+        who = escape_html(name or (f"@{p['username']}" if p.get("username") else f"ID {p.get('telegram_id') or p.get('user_id')}"))
+        when = ""
+        try:
+            from datetime import timezone
+            dt = datetime.strptime(str(p.get("paid_at"))[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+            when = dt.astimezone(get_display_tzinfo()).strftime("%d.%m %H:%M")
+        except Exception:  # noqa: BLE001
+            pass
+        return f"{who} · {_format_payment_amount(p)}" + (f" · {when}" if when else "")
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"last_payment: {e}")
+        return ""
+
+
 async def collect_admin_monitoring_snapshot(max_age: float = 0.0) -> Dict[str, Any]:
     """Collects a common snapshot for the main admin panel and the servers section.
 
@@ -326,6 +350,7 @@ async def _collect_admin_monitoring_snapshot() -> Dict[str, Any]:
         "keys": keys,
         "payments": payments,
         "payments_7d": payments_7d,
+        "last_payment": _last_payment_text(),
         "new_users": new_users,
         "expiring_24h": expiring_24h,
         "expiring_3d": expiring_3d,
@@ -573,6 +598,9 @@ def build_admin_summary_text(snapshot: Dict[str, Any]) -> str:
             f"Бот: {_safe_int(payments_7d.get('bot_count'))}"
             f" · Сайт: {_safe_int(payments_7d.get('site_count'))}"
         )
+        last = snapshot.get("last_payment")
+        if last:
+            pay_lines.append(f"Последняя: {last}")
     lines.append("<blockquote expandable>" + "\n".join(pay_lines) + "</blockquote>")
 
     # Ключи

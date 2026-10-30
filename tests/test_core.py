@@ -965,3 +965,19 @@ class TrialNotCountedAsPaymentTest(unittest.TestCase):
             c.execute("INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, yookassa_payment_id) VALUES ('pubTR1', 9001, 'TRIA-0001', 'paid', 'trial')")
             c.execute("INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, yookassa_payment_id) VALUES ('pubPD1', 9001, 'TRIA-0002', 'paid', 'yk-123')")
         self.assertEqual(get_payments_stats(1)["site_count"], before + 1)
+
+
+class LastPaymentTest(unittest.TestCase):
+    def test_last_real_payment_skips_trial_and_shows_name(self):
+        run_migrations()
+        from database.db_payments import get_last_real_payment
+        from bot.services.admin_monitoring import _last_payment_text
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO users (telegram_id, first_name, last_name, username) VALUES (777002, 'Иван', 'Петров', 'ivan')")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 777002").fetchone()["id"]
+            c.execute("INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) VALUES (?, 'lp-real', 'paid', 'cards', 25000, '2099-01-01 10:00:00')", (uid,))
+            c.execute("INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) VALUES (?, 'lp-trial', 'paid', 'trial', 0, '2099-01-02 10:00:00')", (uid,))
+        self.assertEqual(get_last_real_payment()["order_id"], "lp-real")
+        text = _last_payment_text()
+        self.assertIn("Иван Петров", text)
+        self.assertIn("250 ₽", text)
