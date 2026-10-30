@@ -438,10 +438,10 @@ async def safe_edit_or_send(
             logger.debug('Сообщение не изменено, пропускаем')
             return message
             
-        if 'there is no text in the message' in error_msg or \
-           'message can\'t be edited' in error_msg or \
-           'message to edit not found' in error_msg or \
-           'there is no media in the message' in error_msg:
+        # Любая другая невозможность править это сообщение (в том числе rich-сообщение «нового вида
+        # меню», которое нельзя отредактировать обычным текстом) — удаляем и шлём заново.
+        # Ошибки разбора HTML сюда не относятся: повтор с тем же текстом упал бы так же.
+        if 'can\'t parse entities' not in error_msg and 'entities' not in error_msg:
             # Fallback: delete and send again
             try:
                 await message.delete()

@@ -244,6 +244,23 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIsNone(b({"servers": []}))
         self.assertIsNone(auto_table("A: 1\nB: 2\nC: 3\n├ x | y | z"))
 
+    def test_safe_edit_falls_back_when_edit_refused(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from aiogram.exceptions import TelegramBadRequest
+        from aiogram.methods import EditMessageText
+        from aiogram.types import Message
+        from bot.utils.text import safe_edit_or_send
+        msg = MagicMock(spec=Message)
+        msg.photo = msg.video = msg.document = msg.animation = None
+        msg.edit_text = AsyncMock(side_effect=TelegramBadRequest(
+            method=EditMessageText(text="x"), message="Bad Request: rich message can't be edited as text"))
+        msg.delete = AsyncMock()
+        msg.answer = AsyncMock(return_value="sent")
+        r = asyncio.run(safe_edit_or_send(msg, "текст"))
+        self.assertEqual(r, "sent")
+        msg.delete.assert_awaited()
+
 if __name__ == "__main__":
     unittest.main()
 
