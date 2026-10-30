@@ -55,36 +55,40 @@ _KV = None
 
 
 def auto_table(text: str) -> Optional[str]:
-    """Обычный HTML-текст экрана -> таблица, если он целиком из строк «Название: значение».
+    """Обычный HTML-текст экрана -> таблица, если в нём есть хотя бы 3 строки «Название: значение».
 
-    Консервативно: заголовок первой строкой (идёт в подпись таблицы), короткие строки без двоеточия —
-    названия разделов, любой длинный абзац, ссылка или <pre>/<code> — и экран остаётся как есть (None).
+    Первая короткая строка — подпись таблицы; прочие строки без пары — отдельные строки таблицы;
+    строки-разделители отбрасываются. Экран остаётся как есть (None), если в нём ссылка, <pre>,
+    длинный <code> (ключ, адрес — их копируют) или он слишком длинный.
     """
     import re
     global _KV
     if _KV is None:
         _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
-    if not text or len(text) > 3500 or re.search(r"<(a|pre|code|blockquote|tg-spoiler)\b", text):
+    if not text or len(text) > 3500 or re.search(r"<(a|pre|tg-spoiler)\b", text):
+        return None
+    if any(len(c) > 40 or "://" in c for c in re.findall(r"<code>(.*?)</code>", text, re.S)):
         return None
 
     def plain(s: str) -> str:
         return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
-    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     caption, rows, pairs = "", [], 0
-    for i, ln in enumerate(lines):
+    for i, ln in enumerate(l.strip() for l in text.split("\n") if l.strip()):
+        pl = plain(ln)
+        if not re.search(r"\w", pl):  # ━━━ и прочие разделители
+            continue
         m = _KV.match(ln)
-        if m and len(plain(m.group(2))) <= 120:
+        if m and len(plain(m.group(2))) <= 160:
             label = plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
             rows.append((label, plain(m.group(2))))
             pairs += 1
-        elif len(plain(ln)) <= 60 and ":" not in ln:
-            if i == 0:
-                caption = plain(ln)
-            else:
-                rows.append((plain(ln), ""))
+        elif not rows and not caption and len(pl) <= 60:
+            caption = pl
+        elif len(pl) <= 300:
+            rows.append((pl, ""))
         else:
             return None
-    if pairs < 3 or pairs < len(rows) / 2:
+    if pairs < 3 or pairs < len(rows) * 0.3:
         return None
     return table(caption, rows)
