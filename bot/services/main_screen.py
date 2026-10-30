@@ -254,7 +254,7 @@ def build_subscription_card(state: Dict[str, Any]) -> str:
     return '<blockquote>' + '\n'.join(lines) + '</blockquote>'
 
 
-def build_subscription_html(state: Dict[str, Any], first_name: str) -> Optional[str]:
+def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optional[List[str]] = None) -> Optional[str]:
     """«Новый вид меню»: приветствие и карточка подписки таблицей (для клиентов и тех, у кого подписка закончилась)."""
     from bot.utils.rich_view import table
     audience = state.get('audience')
@@ -288,6 +288,7 @@ def build_subscription_html(state: Dict[str, Any], first_name: str) -> Optional[
         return None
     if balance >= 100:
         rows.append(('💰 Баланс', _rub(balance)))
+    rows.extend(('📝', t) for t in (extra or []))
     name = (first_name or '').strip()
     return table(f"{name + ', в' if name else 'В'}сё работает 👋", rows)
 
