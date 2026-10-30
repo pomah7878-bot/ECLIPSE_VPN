@@ -1443,7 +1443,15 @@ async def show_cabinet_theme_menu(callback: CallbackQuery, state: FSMContext):
     for tid, info in CABINET_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_cabinet_theme:{tid}"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_site"))
+    from bot.services import client_cabinet
+    if client_cabinet.licensed():
+        on = client_cabinet.enabled()
+        lines.append("🎨 <b>Новый вид меню</b>\nТаблицы и цветные кнопки на экранах бота (клиентских и админских). "
+                     "Если Telegram не примет такое сообщение, экран покажется обычным текстом.")
+        builder.row(InlineKeyboardButton(text=f"🎨 Новый вид меню: {'✅ вкл' if on else '❌ выкл'}",
+                                         callback_data="admin_cabinet_toggle"))
+    from bot.keyboards.admin_misc import back_button, home_button
+    builder.row(back_button("admin_integrations_site"), home_button())
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
