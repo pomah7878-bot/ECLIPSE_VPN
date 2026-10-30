@@ -237,11 +237,16 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
                 _first = escape_html((getattr(_user, 'first_name', '') or '').strip()[:32])
             try:
                 from bot.services import client_cabinet as _cab2
-                _raw = (_main_page_row.get('text_custom') or _main_page_row.get('text_default') or '')
-                _same = (_ms.apply_audience_sections(_raw, app_screen_audience).strip()
-                         == _ms.apply_audience_sections(_ms._APP_TAIL, app_screen_audience).strip())
-                if _cab2.enabled() and _same:
-                    main_rich_html = _ms.build_subscription_html(_state, _first_raw(target))
+                if _cab2.enabled():
+                    import re as _re
+                    _raw = (_main_page_row.get('text_custom') or _main_page_row.get('text_default') or '')
+                    _extra = [
+                        _re.sub(r"<[^>]+>", "", _l).strip()
+                        for _l in _ms.apply_audience_sections(_raw, app_screen_audience).split("\n")
+                        if _l.strip() and "%" not in _l
+                    ]
+                    main_rich_html = _ms.build_subscription_html(_state, _first_raw(target), extra=_extra[:3])
+                    logger.info("Главная: новый вид %s", "включён" if main_rich_html else "не применён (новичок)")
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Главная: таблица подписки не собрана: {e}")
             text_replacements.update({
