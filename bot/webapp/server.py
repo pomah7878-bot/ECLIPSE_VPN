@@ -17,7 +17,7 @@ import base64
 import hmac
 import hashlib
 import secrets as _secrets_mod
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 from typing import Optional, Dict, Any
 
@@ -2072,8 +2072,9 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             expires_at = key.get("expires_at")
             if expires_at:
                 expires_dt = datetime.fromisoformat(expires_at)
-                if expires_dt <= datetime.now() + _timedelta(days=90000):
-                    expire_epoch = int(expires_dt.timestamp())
+                # expires_at в БД хранится в UTC (SQLite datetime('now'))
+                if expires_dt <= datetime.utcnow() + _timedelta(days=90000):
+                    expire_epoch = int(expires_dt.replace(tzinfo=timezone.utc).timestamp())
         except Exception:
             expire_epoch = 0
         traffic_used = key.get("traffic_used") or 0
@@ -2088,7 +2089,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         expires_at = key.get("expires_at")
         if expires_at:
             expires_dt = datetime.fromisoformat(expires_at)
-            now = datetime.now()
+            now = datetime.utcnow()
             is_expired = expires_dt < now
             if not is_expired:
                 delta = expires_dt - now

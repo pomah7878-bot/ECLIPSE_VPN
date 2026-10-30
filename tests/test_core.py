@@ -854,6 +854,34 @@ class AuditFixesTest(unittest.TestCase):
         self.assertTrue(reopen_paid_order("audit-ord-1"))
         self.assertTrue(complete_order("audit-ord-1"))  # после неудачной выдачи можно оформить снова
 
+    def test_renewal_db_error_after_extend_does_not_reopen_order(self):
+        """Сбой после записи срока не должен открывать заказ заново (иначе ключ продлится дважды)."""
+        import asyncio
+        from unittest import mock
+        from bot.services.billing import process_payment_order
+        from database.db_payments import is_order_already_paid
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO users (telegram_id) VALUES (779402)")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 779402").fetchone()["id"]
+            tid = c.execute("INSERT INTO tariffs (name, duration_days, price_cents, price_stars, price_rub) "
+                            "VALUES ('audit-t', 30, 0, 0, 0)").lastrowid
+            kid = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, ?, datetime('now', '+5 days'))",
+                            (uid, tid)).lastrowid
+            c.execute("INSERT INTO payments (user_id, order_id, status, vpn_key_id) "
+                      "VALUES (?, 'audit-ord-2', 'pending', ?)", (uid, kid))
+
+        async def _no_panel(*a, **k):
+            return {}
+        with mock.patch("bot.services.vpn_api.restore_traffic_limit_in_db", side_effect=RuntimeError("database is locked")), \
+                mock.patch("bot.services.vpn_api.sync_key_to_panel_state", _no_panel):
+            ok, _, _ = asyncio.run(process_payment_order("audit-ord-2"))
+        self.assertTrue(ok)
+        self.assertTrue(is_order_already_paid("audit-ord-2"))
+        with get_db() as c:
+            days = c.execute("SELECT julianday(expires_at) - julianday('now') AS d FROM vpn_keys WHERE id = ?",
+                             (kid,)).fetchone()["d"]
+        self.assertAlmostEqual(days, 35, delta=0.1)
+
     def test_rate_limiter_blocks_after_limit(self):
         from bot.webapp.ratelimit import rl_allowed, rl_record
         for _ in range(3):
