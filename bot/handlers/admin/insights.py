@@ -37,7 +37,18 @@ async def _show(callback: CallbackQuery) -> None:
                 "неоплаченные заказы, пробники, истекающие ключи, шлюзы, бэкап и инциденты на одном экране.")
         await safe_edit_or_send(callback.message, text, reply_markup=_kb(False))
     else:
-        await safe_edit_or_send(callback.message, ai.build_text(), reply_markup=_kb(True))
+        rich_html = None
+        try:
+            from bot.services import client_cabinet
+            if client_cabinet.enabled():
+                rich_html = ai.build_html()
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Новый вид аналитики: %s", e)
+        if rich_html:
+            from bot.utils.rich_view import send as rich_send
+            await rich_send(callback.message, rich_html, ai.build_text(), _kb(True))
+        else:
+            await safe_edit_or_send(callback.message, ai.build_text(), reply_markup=_kb(True))
     await callback.answer()
 
 

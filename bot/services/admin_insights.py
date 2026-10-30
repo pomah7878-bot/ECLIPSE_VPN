@@ -278,3 +278,39 @@ def expiring_list_text(limit: int = 20) -> str:
         return "⏳ <b>Истекают за 3 дня</b>\n\nНикто."
     rows = [f"{_who(e)} · {e['hours_left'] // 24} дн {e['hours_left'] % 24} ч\n    {escape_html(e.get('tariff') or '—')}" for e in exp]
     return f"⏳ <b>Истекают за 3 дня: {len(exp)}</b>\n<blockquote expandable>" + "\n".join(rows) + "</blockquote>"
+
+
+def build_html() -> str:
+    """«Аналитика» таблицами (для «нового вида меню»)."""
+    from bot.utils.rich_view import table
+    import html as _html
+    import re as _re
+
+    def plain(t: str) -> str:
+        return _html.unescape(_re.sub(r"<[^>]+>", "", t))
+
+    pays = [(_fmt_ts(p["at"]), plain(p["who"]), p["amount"]) for p in recent_payments(5)]
+    out = table("💳 Последние оплаты", pays or [("—", "оплат пока не было", "")], header=("Время", "Кто", "Сумма"))
+
+    cart, tr = abandoned_carts(24), trial_funnel(7)
+    people, n_site = cart["people"], cart["site_n"]
+    cart_txt = "нет" if not (people or n_site) else (
+        f"{people + n_site} · ≈{cart['rub'] + cart['site_rub']:g} ₽".replace(".", ",") + (f" (сайт: {n_site})" if n_site else ""))
+    trial_txt = f"взяли {tr['taken']}" + (f" (+{tr['site']} с сайта)" if tr["site"] else "")
+    if tr["taken"]:
+        trial_txt += f" · купили {tr['bought']} ({round(100 * tr['bought'] / tr['taken'])}%)"
+    exp = expiring_keys(3)
+    exp_txt = "никто" if not exp else f"{len(exp)}: " + ", ".join(plain(_who(e)) for e in exp[:3]) + (f" … ещё {len(exp) - 3}" if len(exp) > 3 else "")
+    gates = " · ".join(f"{g['label']} {_ago(g['last'])}" for g in gates_top()) or "нет данных"
+    bk = last_backup()
+    bk_txt = "⚠️ файлов нет" if not bk else f"{'⚠️ ' if bk['age_h'] > 36 else ''}{int(bk['age_h'])} ч назад · {_size(bk['bytes'])}"
+    inc = recent_incidents(3)
+    inc_txt = "; ".join(f"{'🟢' if i['kind'] == 'recovered' else '🔴'} {_fmt_ts(i['at'])} {i['title']}" for i in inc) or "нет"
+    out += table("📊 Показатели", [
+        ("🛒 Не оплатили за 24 ч", cart_txt), ("🎁 Пробники за 7 дн", trial_txt), ("⏳ Истекают за 3 дня", exp_txt),
+        ("🚦 Шлюзы (последняя оплата)", gates), ("🗄 Бэкап базы", bk_txt), ("🧯 Инциденты", inc_txt)])
+    return out
+
+
+def gates_top() -> List[Dict[str, Any]]:
+    return gateway_activity()[:4]

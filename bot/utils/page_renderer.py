@@ -965,9 +965,13 @@ async def render_page(
     runtime_media_type: Optional[str] = None,
     bottom_button_ids: Optional[set] = None,
     text_prefix: Optional[str] = None,
+    rich_html: Optional[str] = None,
 ) -> Optional[Message]:
     """
     Retrieves a page from the database and sends/edits a message.
+
+    rich_html: готовая таблица для «нового вида меню» (bot/utils/rich_view.py). Используется, только если
+    новый вид включён и у страницы нет медиа; иначе страница показывается как обычно.
 
     Args:
         target: Message or CallbackQuery (defines send vs edit)
@@ -1046,14 +1050,25 @@ async def render_page(
 
     # 5. Submit/edit
     msg = target.message if isinstance(target, CallbackQuery) else target
-    rendered_message = await sender(
-        msg,
-        text,
-        reply_markup=kb,
-        media=media,
-        media_type=media_type,
-        force_new=force_new,
-    )
+    rendered_message = None
+    if rich_html and not media and send_func is None:
+        try:
+            from bot.services.client_cabinet import enabled as _new_view
+            if _new_view():
+                from bot.utils.rich_view import send as _rich_send
+                rendered_message = await _rich_send(msg, rich_html, text, kb, force_new=force_new)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Новый вид меню: страница '%s' показана обычным способом: %s", page_key, e)
+            rendered_message = None
+    if rendered_message is None:
+        rendered_message = await sender(
+            msg,
+            text,
+            reply_markup=kb,
+            media=media,
+            media_type=media_type,
+            force_new=force_new,
+        )
 
     # 6. Remember the editable user page for /yaa.
     try:

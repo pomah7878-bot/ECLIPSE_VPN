@@ -76,10 +76,22 @@ async def show_admin_panel(callback: CallbackQuery, state: FSMContext):
     text = await get_admin_stats_text()
     
     try:
-        await safe_edit_or_send(callback.message, 
-            text,
-            reply_markup=admin_main_menu_kb()
-        )
+        rich_html = None
+        try:
+            from bot.services import client_cabinet
+            if client_cabinet.enabled():
+                from bot.services.admin_monitoring import build_admin_summary_html
+                rich_html = build_admin_summary_html(await collect_admin_monitoring_snapshot(max_age=30))
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Новый вид админ-панели: {e}")
+        if rich_html:
+            from bot.utils.rich_view import send as rich_send
+            await rich_send(callback.message, rich_html, text, admin_main_menu_kb())
+        else:
+            await safe_edit_or_send(callback.message, 
+                text,
+                reply_markup=admin_main_menu_kb()
+            )
     except TelegramBadRequest as e:
         if "is not modified" not in str(e):
             logger.error(f"Ошибка при обновлении меню: {e}")
