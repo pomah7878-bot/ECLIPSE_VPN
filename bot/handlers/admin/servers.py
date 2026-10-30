@@ -79,7 +79,7 @@ router.message.filter(lambda m: m.from_user is not None and _is_admin_guard(m.fr
 
 
 
-async def show_servers_list(message, servers=None) -> None:
+async def render_servers_screen(message, servers=None) -> None:
     """Экран «Сервера»: таблицей при включённом «Новом виде меню», иначе обычным текстом."""
     snapshot = await collect_admin_monitoring_snapshot()
     text = build_servers_monitoring_text(snapshot)
@@ -196,7 +196,7 @@ async def show_servers_list(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.servers_list)
     await state.update_data(server_data={})  # Clearing temporary data
     
-    await show_servers_list(callback.message)
+    await render_servers_screen(callback.message)
     await callback.answer()
 
 
@@ -210,7 +210,7 @@ async def refresh_servers_list(callback: CallbackQuery, state: FSMContext):
     await callback.answer("🔄 Обновляю статистику...")
     
     try:
-        await show_servers_list(callback.message)
+        await render_servers_screen(callback.message)
     except Exception:
         # Ignore the error "message is not modified"
         pass
@@ -1211,7 +1211,7 @@ async def block_check_auto_toggle(callback: CallbackQuery, state: FSMContext):
     on = not block_check.auto_enabled()
     set_setting("block_check_auto", "1" if on else "0")
     await callback.answer("Авто-проверка включена" if on else "Авто-проверка выключена")
-    await show_servers_list(callback.message)
+    await render_servers_screen(callback.message)
 
 
 @router.callback_query(F.data.startswith("admin_server_blockcheck:"))

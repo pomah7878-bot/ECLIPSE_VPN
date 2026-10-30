@@ -261,6 +261,12 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertEqual(r, "sent")
         msg.delete.assert_awaited()
 
+    def test_servers_screen_helper_not_shadowed(self):
+        import inspect
+        import bot.handlers.admin.servers as sv
+        self.assertEqual(list(inspect.signature(sv.render_servers_screen).parameters), ["message", "servers"])
+        self.assertEqual(list(inspect.signature(sv.show_servers_list).parameters), ["callback", "state"])
+
 if __name__ == "__main__":
     unittest.main()
 
