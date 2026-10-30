@@ -81,14 +81,14 @@ def auto_table(text: str) -> Optional[str]:
         m = _KV.match(ln)
         if m and len(plain(m.group(2))) <= 160:
             label = plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
-            rows.append((label, plain(m.group(2))))
+            rows.append((label[:28], plain(m.group(2))[:90]))
             pairs += 1
         elif not rows and not caption and len(pl) <= 60:
             caption = pl
         elif len(pl) <= 300:
-            rows.append((pl, ""))
+            rows.append((pl[:120], ""))
         else:
             return None
-    if pairs < 3 or pairs < len(rows) * 0.3:
+    if pairs < 3 or pairs < len(rows) * 0.3 or len(rows) > 30:
         return None
     return table(caption, rows)

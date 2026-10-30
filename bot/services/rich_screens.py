@@ -18,8 +18,9 @@ def my_keys_html(keys: List[Mapping[str, Any]]) -> str:
         ok = k.get("is_active") and not is_traffic_exhausted(k)
         limit = k.get("traffic_limit") or 0
         traffic = f"{format_traffic(k.get('traffic_used') or 0)} / {format_traffic(limit) if limit > 0 else '∞'}"
-        rows.append((k.get("display_name") or f"Ключ {k.get('id')}", "🟢" if ok else "🔴", _date(k.get("expires_at")), traffic))
-    return table("🔑 Мои ключи", rows, header=("Ключ", "", "До", "Трафик"))
+        name = str(k.get("display_name") or f"Ключ {k.get('id')}")[:22]
+        rows.append((f"{'🟢' if ok else '🔴'} {name}", f"до {_date(k.get('expires_at'))}\n{traffic}"))
+    return table("🔑 Мои ключи", rows, header=("Ключ", "Срок и трафик"))
 
 
 def key_details_html(key: Mapping[str, Any], status: str, traffic_info: str, inbound_name: str, protocol: str,
