@@ -114,7 +114,7 @@ async def _create_standby(key: Dict[str, Any], backup_id: int) -> bool:
     if not inbounds:
         return False
     expires_at = datetime.fromisoformat(str(key["expires_at"]))
-    delta = expires_at - datetime.now()
+    delta = expires_at - datetime.utcnow()  # expires_at хранится в UTC
     days_left = delta.days + (1 if delta.seconds > 0 else 0)
     if days_left < 1:
         return False

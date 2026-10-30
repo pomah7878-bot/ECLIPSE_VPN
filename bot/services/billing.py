@@ -1674,7 +1674,11 @@ async def _process_payment_order_inner(
             tariff = get_tariff_by_id(tariff_id) if tariff_id else None
             traffic_limit = int((tariff.get('traffic_limit_gb', 0) or 0) * 1024 ** 3) if tariff else 0
             new_key_id = create_initial_vpn_key(order['user_id'], tariff_id, days, traffic_limit)
-            update_payment_key_id(order_id, new_key_id)
+            # Ключ уже создан: ошибка привязки не должна открывать заказ заново, иначе при повторе появится второй ключ
+            try:
+                update_payment_key_id(order_id, new_key_id)
+            except Exception as e:
+                logger.error(f"Ключ {new_key_id} создан, но не привязан к заказу {order_id}: {e}")
             order['vpn_key_id'] = new_key_id
         order["_payment_action"] = "new_key"
         text = "✅ Оплата прошла успешно! Подписка настраивается автоматически."
