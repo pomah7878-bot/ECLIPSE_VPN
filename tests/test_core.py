@@ -202,6 +202,8 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertEqual(auto_style(B(text="💳 Оплатить", callback_data="x")), "success")
         self.assertEqual(auto_style(B(text="🗑 Удалить ключ", callback_data="x")), "danger")
         self.assertEqual(auto_style(B(text="🔑 Мои ключи", callback_data="my_keys")), "primary")
+        self.assertEqual(auto_style(B(text="✅ Да, удалить", callback_data="confirm_delete_key:1")), "danger")
+        self.assertIsNone(auto_style(B(text="❌ Нет", callback_data="cancel")))
         self.assertIsNone(auto_style(B(text="⬅️ Назад", callback_data="start")))
         self.assertIsNone(auto_style(B(text="Оплатить", callback_data="x", style="danger")))
 
