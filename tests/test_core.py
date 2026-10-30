@@ -230,6 +230,20 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIn("Баланс", h)
         self.assertIsNone(m.build_subscription_html({'audience': m.AUDIENCE_NEW}, "x"))
 
+    def test_servers_table_and_tree_skip(self):
+        from datetime import datetime
+        from bot.services.admin_monitoring import build_servers_monitoring_html as b
+        from bot.utils.rich_view import auto_table
+        snap = {"collected_at": datetime(2026, 10, 30, 17, 31), "servers": [{
+            "server": {"name": "S"}, "is_active": True, "panel_online": True,
+            "stats": {"online_clients": 3, "cpu_percent": 4, "total_traffic_bytes": 1000},
+            "nodes": [{"name": "N", "status": "online", "enable": True, "onlineCount": 2, "cpuPct": 5, "memPct": 30}]}]}
+        h = b(snap)
+        self.assertIn("<caption>🟢 S · 17:31</caption>", h)
+        self.assertIn("<td>🟢 N</td><td>2</td><td>5% / 30%</td>", h)
+        self.assertIsNone(b({"servers": []}))
+        self.assertIsNone(auto_table("A: 1\nB: 2\nC: 3\n├ x | y | z"))
+
 if __name__ == "__main__":
     unittest.main()
 

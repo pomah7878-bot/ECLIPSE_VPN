@@ -724,6 +724,47 @@ def _select_nodes_for_display(nodes: List[Dict[str, Any]], limit: int = NODE_DIS
     return ordered[:limit]
 
 
+def build_servers_monitoring_html(snapshot: Dict[str, Any]) -> Optional[str]:
+    """«Новый вид меню»: экран «Сервера» — по таблице на каждую панель: панель и её ноды в строках."""
+    from bot.utils.rich_view import table
+    entries = snapshot.get("servers", [])
+    if not entries:
+        return None
+    collected_at = snapshot.get("collected_at")
+    updated = collected_at.strftime("%H:%M") if isinstance(collected_at, datetime) else "—"
+    head = ("Узел", "🔑", "CPU / RAM", "Сеть")
+    out = ""
+    for n, entry in enumerate(entries):
+        server = entry["server"]
+        name = str(server.get("name") or "Сервер")
+        suffix = f" · {updated}" if n == 0 else ""
+        if not entry.get("is_active"):
+            out += table(f"🔴 {name}{suffix}", [("⏸️ Деактивирован", "", "", "")], header=head)
+            continue
+        if not entry.get("panel_online"):
+            out += table(f"🔴 {name}{suffix}", [("⚠️ Панель недоступна", "", str(entry.get("error") or "нет подключения")[:60], "")], header=head)
+            continue
+        stats = entry.get("stats") or {}
+        cpu = _format_percent(stats.get("cpu_percent")) if stats.get("cpu_percent") is not None else "—"
+        rows = [("🖥️ Панель", str(stats.get("online_clients", 0)), cpu, f"📊 {format_traffic(_safe_int(stats.get('total_traffic_bytes')))}")]
+        for node in _select_nodes_for_display(entry.get("nodes", [])):
+            label = f"{_node_icon(node)} {node.get('name') or 'Нода'}"
+            if node.get("parked"):
+                rows.append((label, "", "в ремонте", ""))
+            elif not node.get("enable", True):
+                rows.append((label, "", "выключена", ""))
+            elif node.get("status") != "online":
+                rows.append((label, "", str(node.get("lastError") or "нет связи")[:40], ""))
+            else:
+                rate = _format_rate_pair(node.get("netUp"), node.get("netDown")).replace("↑ ", "↑").replace("↓ ", "↓").replace("/s", "")
+                text = f"{_format_percent(node.get('cpuPct'))} / {_format_percent(node.get('memPct'))}"
+                if node.get("xray_problem"):
+                    text += f" · Xray {node.get('xrayState') or ''}".rstrip()
+                rows.append((label, str(node.get("onlineCount", 0)), text, rate or "—"))
+        out += table(f"🟢 {name}{suffix}", rows, header=head)
+    return out or None
+
+
 def build_servers_monitoring_text(snapshot: Dict[str, Any]) -> str:
     """Generates detailed monitoring for the “Servers” section."""
     entries = snapshot.get("servers", [])

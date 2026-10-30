@@ -68,6 +68,8 @@ def auto_table(text: str) -> Optional[str]:
         _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
     if not text or len(text) > 3500 or re.search(r"<(a|pre|tg-spoiler)\b", text):
         return None
+    if "├" in text or "└" in text or re.search(r"\|.*\|", text):
+        return None  # деревья и строки «a | b | c» таблицей не получаются
     if any(len(c) > 40 or "://" in c for c in re.findall(r"<code>(.*?)</code>", text, re.S)):
         return None
 

@@ -79,6 +79,25 @@ router.message.filter(lambda m: m.from_user is not None and _is_admin_guard(m.fr
 
 
 
+async def show_servers_list(message, servers=None) -> None:
+    """Экран «Сервера»: таблицей при включённом «Новом виде меню», иначе обычным текстом."""
+    snapshot = await collect_admin_monitoring_snapshot()
+    text = build_servers_monitoring_text(snapshot)
+    kb = servers_list_kb(servers if servers is not None else get_all_servers())
+    try:
+        from bot.services import client_cabinet
+        if client_cabinet.enabled():
+            from bot.services.admin_monitoring import build_servers_monitoring_html
+            rich_html = build_servers_monitoring_html(snapshot)
+            if rich_html:
+                from bot.utils.rich_view import send as rich_send
+                await rich_send(message, rich_html, text, kb)
+                return
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Новый вид экрана «Сервера»: %s", e)
+    await safe_edit_or_send(message, text, reply_markup=kb)
+
+
 async def get_servers_list_text() -> str:
     """Generates detailed monitoring of panels and nodes."""
     snapshot = await collect_admin_monitoring_snapshot()
@@ -177,13 +196,7 @@ async def show_servers_list(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminStates.servers_list)
     await state.update_data(server_data={})  # Clearing temporary data
     
-    text = await get_servers_list_text()
-    servers = get_all_servers()
-    
-    await safe_edit_or_send(callback.message, 
-        text,
-        reply_markup=servers_list_kb(servers)
-    )
+    await show_servers_list(callback.message)
     await callback.answer()
 
 
@@ -196,14 +209,8 @@ async def refresh_servers_list(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer("🔄 Обновляю статистику...")
     
-    text = await get_servers_list_text()
-    servers = get_all_servers()
-    
     try:
-        await safe_edit_or_send(callback.message, 
-            text,
-            reply_markup=servers_list_kb(servers)
-        )
+        await show_servers_list(callback.message)
     except Exception:
         # Ignore the error "message is not modified"
         pass
@@ -1204,7 +1211,7 @@ async def block_check_auto_toggle(callback: CallbackQuery, state: FSMContext):
     on = not block_check.auto_enabled()
     set_setting("block_check_auto", "1" if on else "0")
     await callback.answer("Авто-проверка включена" if on else "Авто-проверка выключена")
-    await safe_edit_or_send(callback.message, await get_servers_list_text(), reply_markup=servers_list_kb(get_all_servers()))
+    await show_servers_list(callback.message)
 
 
 @router.callback_query(F.data.startswith("admin_server_blockcheck:"))
