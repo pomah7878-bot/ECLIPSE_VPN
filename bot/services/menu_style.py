@@ -30,10 +30,10 @@ def auto_style(button: InlineKeyboardButton) -> Optional[str]:
         return None
     if re.search(r"(выкл|❌|🔴)\s*$|:\s*(выкл|нет)", text, re.I):
         return "danger"
-    if text.startswith("🟢") or re.search(r"(вкл|✅|🟢)\s*$|:\s*(вкл|да)\b", text, re.I) or text.startswith("✅"):
-        return "success"
     if _DANGER_TX.match(text) or _DANGER_ANY.search(text) or _DANGER_CB.search(cb):
         return "danger"
+    if text.startswith("🟢") or re.search(r"(вкл|✅|🟢)\s*$|:\s*(вкл|да)\b", text, re.I) or text.startswith("✅"):
+        return "success"
     if _SUCCESS_TX.match(text) or _SUCCESS_CB.search(cb):
         return "success"
     return "primary"
