@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 167
+LATEST_VERSION = 168
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3819,6 +3819,44 @@ def migration_167(conn: sqlite3.Connection) -> None:
     logger.info("Migration v167 applied: журнал инцидентов и функция admin_insights")
 
 
+def migration_168(conn: sqlite3.Connection) -> None:
+    """Версия 1.467: лицензионная функция «client_cabinet» (личный кабинет клиента в виде таблицы)
+    и скрытая кнопка «👤 Кабинет» на главной (показывается кодом, только когда кабинет включён)."""
+    import json
+    for table in ("partner_licenses", "license_tariffs"):
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+            continue
+        columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if not {"tier", "features"} <= columns:
+            continue
+        for row in conn.execute(f"SELECT rowid, features FROM {table} WHERE tier = 'full'").fetchall():
+            current = {f for f in (row[1] or "").split(",") if f}
+            current.add("client_cabinet")
+            conn.execute(f"UPDATE {table} SET features = ? WHERE rowid = ?", (",".join(sorted(current)), row[0]))
+    try:
+        for col in ("buttons_default", "buttons_custom"):
+            page = conn.execute(f"SELECT {col} FROM pages WHERE page_key = 'main'").fetchone()
+            if not page or not page[0]:
+                continue
+            try:
+                buttons = json.loads(page[0])
+            except (TypeError, ValueError):
+                continue
+            if any(b.get("id") == "btn_cabinet" for b in buttons):
+                continue
+            last_row = max((b.get("row", 0) for b in buttons), default=-1)
+            buttons.append({
+                "id": "btn_cabinet", "label": "👤 Кабинет", "color": "secondary",
+                "row": last_row + 1, "col": 0, "is_hidden": True,
+                "action_type": "internal", "action_value": "cmd_cabinet",
+            })
+            conn.execute(f"UPDATE pages SET {col} = ? WHERE page_key = 'main'",
+                         (json.dumps(buttons, ensure_ascii=False),))
+    except sqlite3.Error as e:
+        logger.warning("Migration v168: не удалось добавить кнопку кабинета на главную: %s", e)
+    logger.info("Migration v168 applied: функция client_cabinet и кнопка кабинета")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3913,6 +3951,7 @@ MIGRATIONS = {
     165: migration_165,
     166: migration_166,
     167: migration_167,
+    168: migration_168,
 }
 
 

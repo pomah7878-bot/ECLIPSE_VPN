@@ -12,6 +12,7 @@ from .support import router as support_router
 from .ai_handler import router as ai_handler_router
 from .promo import router as promo_router
 from .roulette import router as roulette_router
+from .cabinet import router as cabinet_router
 from .cdn import router as cdn_router
 from .key_routing import router as key_routing_router
 from .bonus_tasks import router as bonus_tasks_router
@@ -38,6 +39,7 @@ router.include_router(support_router)
 router.include_router(ai_handler_router)
 router.include_router(promo_router)
 router.include_router(roulette_router)
+router.include_router(cabinet_router)
 router.include_router(cdn_router)
 router.include_router(key_routing_router)
 router.include_router(extension_callbacks_router)

@@ -185,7 +185,14 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     except Exception:
         show_bonus = False
 
+    try:
+        from bot.services import client_cabinet as _cab
+        show_cabinet = _cab.enabled()
+    except Exception:
+        show_cabinet = False
+
     visibility = {
+        'btn_cabinet': show_cabinet,
         'btn_trial': show_trial,
         'btn_roulette': show_roulette,
         'btn_bonus_tasks': show_bonus,

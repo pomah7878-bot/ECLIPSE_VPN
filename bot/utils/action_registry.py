@@ -36,6 +36,7 @@ ACTION_REGISTRY: Dict[str, str] = {
     "cmd_show_id":        "show_id",
     "cmd_ai_support":     "ai_support_open",
     "cmd_roulette":       "roulette_spin",
+    "cmd_cabinet":        "cabinet",
     "cmd_server_status":  "server_status",
     "cmd_bonus_tasks":    "bonus_tasks",
     "cmd_import_happ":    "import_happ",

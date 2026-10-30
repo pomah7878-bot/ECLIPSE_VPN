@@ -1032,3 +1032,43 @@ class LastBackupTest(unittest.TestCase):
                 shutil.rmtree(BACKUP_DIR, ignore_errors=True)
         self.assertEqual(_size(300000), "292 КБ")
         self.assertEqual(_size(5 * 1048576), "5.0 МБ")
+
+
+class ClientCabinetTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_bar(self):
+        from bot.services.client_cabinet import bar
+        self.assertEqual(bar(30, 100), "▓▓▓░░░░░░░ 30%")
+        self.assertEqual(bar(5, 0), "")
+        self.assertEqual(bar(500, 100), "▓▓▓▓▓▓▓▓▓▓ 100%")
+
+    def test_collect_and_render(self):
+        from aiogram.types import InputRichMessage
+        from bot.services import client_cabinet as cab
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO tariffs (id, name, duration_days, price_cents, price_stars, price_rub) VALUES (9003, 'T3', 30, 100, 100, 100)")
+            c.execute("INSERT OR IGNORE INTO users (telegram_id, first_name, personal_balance) VALUES (777004, 'Клиент', 12500)")
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = 777004").fetchone()["id"]
+            c.execute("INSERT OR IGNORE INTO users (telegram_id, referred_by) VALUES (777005, ?)", (uid,))
+            c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at, traffic_used, traffic_limit, client_uuid, panel_email) "
+                      "VALUES (?, 9003, datetime('now', '+10 days'), 30000000000, 100000000000, 'cab-uuid', 'cab@x')", (uid,))
+            c.execute("INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) VALUES (?, 'cab-pay', 'paid', 'cards', 25000, datetime('now', '-2 days'))", (uid,))
+        d = cab.collect(777004)
+        self.assertEqual((d["keys_active"], d["refs"], d["paid30"]), (1, 1, "250 ₽"))
+        self.assertIn("125", d["balance"])
+        self.assertTrue(d["days_left"] in (10, 11))
+        html_text = cab.build_html(d)
+        self.assertTrue(html_text.startswith("<table bordered striped>"))
+        InputRichMessage(html=html_text)
+        self.assertIn("Личный кабинет", cab.build_fallback(d))
+        styles = [b.style for row in cab.keyboard().inline_keyboard for b in row]
+        self.assertEqual(styles[:2], ["primary", "success"])
+        last_row = cab.keyboard().inline_keyboard[-1]
+        self.assertEqual(len(last_row), 2)  # «Назад» и «На главную» в одной строке
+
+    def test_disabled_by_default(self):
+        from bot.services import client_cabinet as cab
+        self.assertFalse(cab.enabled())
