@@ -3,7 +3,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InputRichMessage, Message
+from aiogram.types import CallbackQuery, Message
 
 from bot.services import client_cabinet as cab
 
@@ -18,6 +18,7 @@ async def _open(target: Message, telegram_id: int) -> None:
     data = cab.collect(telegram_id)
     kb = cab.keyboard()
     try:
+        from aiogram.types import InputRichMessage  # есть не во всех версиях aiogram
         await target.answer_rich(InputRichMessage(html=cab.build_html(data)), reply_markup=kb)
     except Exception as e:  # noqa: BLE001 — старый клиент/ошибка Telegram: показываем обычным текстом
         logger.warning("Кабинет: rich-сообщение не отправлено, обычный текст: %s", e)

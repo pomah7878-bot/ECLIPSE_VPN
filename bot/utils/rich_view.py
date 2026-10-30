@@ -7,7 +7,7 @@ import html
 import logging
 from typing import Iterable, Optional, Sequence, Tuple
 
-from aiogram.types import InlineKeyboardMarkup, InputRichMessage, Message
+from aiogram.types import InlineKeyboardMarkup, Message
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ async def send(msg: Message, rich_html: str, fallback_text: str, reply_markup: O
                force_new: bool = False) -> Optional[Message]:
     """Показывает экран rich-сообщением. Редактирует текущее сообщение; если нельзя — шлёт новое и
     удаляет старое; если Telegram отказал совсем — обычный текст."""
+    from aiogram.types import InputRichMessage  # есть не во всех версиях aiogram
     rich = InputRichMessage(html=rich_html)
     if not force_new:
         try:
