@@ -211,6 +211,14 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIn("<caption>Т</caption>", h)
         self.assertIn("<td>a</td><td>b</td>", h)
 
+    def test_auto_table(self):
+        from bot.utils.rich_view import auto_table
+        h = auto_table("💰 <b>Баланс</b>\n<b>Остаток:</b> 120 ₽\n🔑 Ключей: <b>3</b>\n• Реферал: 5")
+        self.assertIn("<caption>💰 Баланс</caption>", h)
+        self.assertIn("<td>Реферал</td><td>5</td>", h)
+        self.assertIsNone(auto_table("Длинный обычный текст.\nБез пар вида ключ значение."))
+        self.assertIsNone(auto_table('A: 1\nB: 2\nC: <a href="x">3</a>'))
+
 if __name__ == "__main__":
     unittest.main()
 

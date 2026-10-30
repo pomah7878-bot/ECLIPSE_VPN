@@ -48,4 +48,43 @@ async def send(msg: Message, rich_html: str, fallback_text: str, reply_markup: O
     except Exception as e:  # noqa: BLE001
         logger.warning("rich_view: rich-сообщение не отправлено, обычный текст: %s", e)
     from bot.utils.text import safe_edit_or_send
-    return await safe_edit_or_send(msg, fallback_text, reply_markup=reply_markup, force_new=force_new)
+    return await safe_edit_or_send(msg, fallback_text, reply_markup=reply_markup, force_new=force_new, _no_rich=True)
+
+
+_KV = None
+
+
+def auto_table(text: str) -> Optional[str]:
+    """Обычный HTML-текст экрана -> таблица, если он целиком из строк «Название: значение».
+
+    Консервативно: заголовок первой строкой (идёт в подпись таблицы), короткие строки без двоеточия —
+    названия разделов, любой длинный абзац, ссылка или <pre>/<code> — и экран остаётся как есть (None).
+    """
+    import re
+    global _KV
+    if _KV is None:
+        _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
+    if not text or len(text) > 3500 or re.search(r"<(a|pre|code|blockquote|tg-spoiler)\b", text):
+        return None
+
+    def plain(s: str) -> str:
+        return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
+
+    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+    caption, rows, pairs = "", [], 0
+    for i, ln in enumerate(lines):
+        m = _KV.match(ln)
+        if m and len(plain(m.group(2))) <= 120:
+            label = plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
+            rows.append((label, plain(m.group(2))))
+            pairs += 1
+        elif len(plain(ln)) <= 60 and ":" not in ln:
+            if i == 0:
+                caption = plain(ln)
+            else:
+                rows.append((plain(ln), ""))
+        else:
+            return None
+    if pairs < 3 or pairs < len(rows) / 2:
+        return None
+    return table(caption, rows)
