@@ -670,6 +670,20 @@ def _normalize_snapshot_page_data(page_data: Optional[Mapping[str, Any]]) -> Dic
     return dict(page_data)
 
 
+def _auto_rich(text: str, prefix: Optional[str]) -> Optional[str]:
+    """Новый вид страницы: текст -> rich, prefix — под первым заголовком (иначе сверху)."""
+    from bot.utils.rich_view import page_html
+    body = '' if (text or '').strip() in ('', '(пусто)') else page_html(text)
+    if body is None:
+        return None
+    head, sep, _ = (text or '').partition('\n\n')
+    title_first = sep and '\n' not in head and len(re.sub(r'<[^>]+>', '', head)) <= 60  # как _insert_after_title
+    if prefix and title_first and body.startswith('<h4>'):
+        end = body.index('</h4>') + len('</h4>')
+        return body[:end] + prefix + body[end:]
+    return (prefix or '') + body or None
+
+
 def _insert_after_title(text: str, block: str) -> str:
     """Вставляет блок сразу под заголовком страницы (первая короткая строка), иначе — сверху."""
     if not text or text == '(пусто)':
@@ -966,12 +980,16 @@ async def render_page(
     bottom_button_ids: Optional[set] = None,
     text_prefix: Optional[str] = None,
     rich_html: Optional[str] = None,
+    rich_auto: bool = False,
+    rich_prefix: Optional[str] = None,
 ) -> Optional[Message]:
     """
     Retrieves a page from the database and sends/edits a message.
 
     rich_html: готовая таблица для «нового вида меню» (bot/utils/rich_view.py). Используется, только если
     новый вид включён и у страницы нет медиа; иначе страница показывается как обычно.
+    rich_auto: если rich_html не задан — текст страницы переводится в новый вид (заголовки, списки,
+    абзацы), а rich_prefix (новый вид text_prefix) ставится под заголовком, как text_prefix.
 
     Args:
         target: Message or CallbackQuery (defines send vs edit)
@@ -1025,6 +1043,8 @@ async def render_page(
 
     # 2. Text processing
     text = _apply_text_replacements(page_data["text"], text_replacements, render_context)
+    if rich_html is None and rich_auto:
+        rich_html = _auto_rich(text, rich_prefix)
     if text_prefix:
         # v1.343: служебный блок над текстом страницы (например, тарифы на экране покупки)
         text = _insert_after_title(text, text_prefix)

@@ -1524,3 +1524,43 @@ class RichSectionsTest(unittest.TestCase):
         self.assertIn("<td>🔴 Не работает</td><td>1</td>", h)
         self.assertIn("<details open>", format_report_html({"results": report["results"][:1]}))
         self.assertIsNone(format_report_html({"error": "x"}))
+
+
+class RichPageTest(unittest.TestCase):
+    TERMS = ("━━━━━━━━\n⚠️ УСЛОВИЯ\n━━━━━━━━\n◆ Возврат не предусмотрен.\n◆ Возможны <b>перебои</b>.\n\n"
+             "Оплачивая подписку, вы соглашаетесь с условиями.")
+
+    def test_page_html(self):
+        from bot.utils.rich_view import page_html
+        h = page_html(self.TERMS)
+        self.assertEqual(h, "<h4>⚠️ УСЛОВИЯ</h4><ul><li>Возврат не предусмотрен.</li><li>Возможны <b>перебои</b>.</li></ul>"
+                            "<p>Оплачивая подписку, вы соглашаетесь с условиями.</p>")
+        self.assertTrue(page_html("💳 <b>Купить ключ</b>\n\nТекст").startswith("<h4>💳 Купить ключ</h4>"))
+        self.assertIsNone(page_html("<blockquote>a</blockquote>"))
+
+    def test_auto_rich_prefix_after_title(self):
+        from bot.utils.page_renderer import _auto_rich
+        self.assertTrue(_auto_rich("💳 <b>Купить</b>\n\nТекст", "<h4>Т</h4>").startswith("<h4>💳 Купить</h4><h4>Т</h4>"))
+        self.assertTrue(_auto_rich(self.TERMS, "<h4>Т</h4>").startswith("<h4>Т</h4><h4>⚠️ УСЛОВИЯ</h4>"))
+        self.assertEqual(_auto_rich("(пусто)", "<h4>Т</h4>"), "<h4>Т</h4>")
+
+    def test_tariffs_rich(self):
+        from unittest import mock
+        import database.requests as dr
+        from bot.utils.page_dynamic_data import build_tariff_text
+        groups = [{"id": 1, "name": "Premium 👑"}, {"id": 2, "name": "Базовый 🍪"}]
+        tariffs = {1: [{"id": 1, "name": "1 месяц — ♾️", "price_rub": 359, "traffic_limit_gb": 0}],
+                   2: [{"id": 2, "name": "1 месяц", "price_rub": 125, "traffic_limit_gb": 100}]}
+        patches = dict(get_groups_count=lambda: 2, get_all_groups=lambda: groups,
+                       get_tariffs_by_group=lambda gid: tariffs[gid], is_cards_enabled=lambda: True,
+                       is_stars_enabled=lambda: True, is_crypto_configured=lambda: False)
+        for name in ("is_cardlink_configured", "is_demo_payment_enabled", "is_platega_configured",
+                     "is_wata_configured", "is_yookassa_qr_configured"):
+            patches.setdefault(name, lambda: False)
+        with mock.patch.multiple(dr, **patches), \
+                mock.patch("bot.services.cdn.effective_tariff_cdn_gb", lambda tid: 0):
+            h = build_tariff_text(rich=True)
+        self.assertIn("<h3>📋 Тарифы</h3><h4>👑 Premium · ♾ безлимит</h4>", h)
+        self.assertIn("<tr><th>Срок</th><th>Цена</th></tr><tr><td>1 месяц</td><td>359 ₽</td></tr>", h)
+        self.assertIn("<h4>🍪 Базовый · 100 ГБ</h4>", h)
+        self.assertIn("<p>⭐ Также можно оплатить звёздами</p>", h)

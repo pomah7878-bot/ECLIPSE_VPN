@@ -25,8 +25,8 @@ def table(caption: str, rows: Iterable[Sequence[str]], header: Optional[Sequence
     return cap + "<table bordered striped compact>" + (f"<tr>{head}</tr>" if head else "") + f"{body}</table>"
 
 
-def heading(text: str) -> str:
-    return f"<h4>{html.escape(text)}</h4>" if text else ""
+def heading(text: str, level: int = 4) -> str:
+    return f"<h{level}>{html.escape(text)}</h{level}>" if text else ""
 
 
 def paragraph(text: str, bold: bool = False, italic: bool = False) -> str:
@@ -143,6 +143,48 @@ def _render(items: list, header: Optional[Sequence[str]] = None) -> str:
     if rows:
         out.append(table("", rows, header=header))
     return "".join(out)
+
+
+_BULLETS = "◆◇•▪▫●○-–*✓✔➤►▶"
+
+
+def page_html(text: str) -> Optional[str]:
+    """Текст страницы из админки (HTML Telegram) -> rich: заголовки, списки, абзацы.
+
+    Заголовок — короткая строка между разделителями «━━━» или целиком жирная («💳 <b>Купить</b>»);
+    строки с маркером (◆, •, -) — список; остальное — абзацы, внутреннее оформление (<b>, <i>, ссылки)
+    сохраняется. None — если в тексте <pre> или <blockquote>: такой текст показываем как раньше."""
+    import re
+    if not text or re.search(r"<(pre|blockquote)\b", text):
+        return None
+    lines = [ln.strip() for ln in text.split("\n")]
+    out, items = [], []
+
+    def is_sep(ln: str) -> bool:
+        return bool(ln) and not re.search(r"\w", _plain(ln))
+
+    def flush() -> None:
+        if items:
+            out.append("<ul>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>")
+            items.clear()
+
+    for i, ln in enumerate(lines):
+        if not ln or is_sep(ln):
+            flush()
+            continue
+        pl = _plain(ln)
+        framed = i > 0 and is_sep(lines[i - 1]) and i + 1 < len(lines) and is_sep(lines[i + 1])
+        bold = re.fullmatch(r"[^\w<]{0,6}<b>[^<]*</b>:?", ln)
+        if len(pl) <= 60 and (framed or bold):
+            flush()
+            out.append(heading(pl.rstrip(":").strip()))
+        elif ln[0] in _BULLETS:
+            items.append(ln[1:].strip())
+        else:
+            flush()
+            out.append(f"<p>{ln}</p>")
+    flush()
+    return "".join(out) or None
 
 
 def sections_table(text: str) -> Optional[str]:

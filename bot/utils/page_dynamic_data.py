@@ -33,8 +33,12 @@ def format_price_compact(cents: int) -> str:
     return f"{cents / 100:.2f} ₽".replace(".", ",")
 
 
-def build_tariff_text(*, group_id: int | None = None, include_title: bool = True) -> str:
-    """Generates an HTML block for the tariff list placeholder."""
+def build_tariff_text(*, group_id: int | None = None, include_title: bool = True, rich: bool = False) -> str:
+    """Generates an HTML block for the tariff list placeholder.
+
+    rich=True — тот же список для «нового вида меню»: заголовок группы и компактная таблица «Срок | Цена»."""
+    import html as _html
+    from bot.utils.rich_view import heading, paragraph, table, _plain
     from database.requests import (
         get_all_tariffs,
         get_tariffs_by_group,
@@ -70,9 +74,12 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
 
     def _finish(lines: list) -> str:
         """Склеивает блок; если в списке есть тарифы с CDN — добавляет одну строку-пояснение."""
+        note = ('CDN (обход белых списков) — дополнительное подключение в подписке '
+                'для сетей, где работают только «белые» адреса. Его цена уже включена в тариф.')
+        if rich:
+            return ''.join(list(lines) + ([paragraph('🌐 ' + note, italic=True)] if cdn_seen[0] else []))
         if cdn_seen[0]:
-            lines = list(lines) + ['', '🌐 <i>CDN (обход белых списков) — дополнительное подключение в подписке '
-                                    'для сетей, где работают только «белые» адреса. Его цена уже включена в тариф.</i>']
+            lines = list(lines) + ['', f'🌐 <i>{note}</i>']
         return '\n'.join(lines)
 
     rub_enabled = bool(
@@ -102,6 +109,17 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
 
     def _quote(tariffs: list, clean: bool = False) -> str:
         # Хвост-лимит в названии срезаем только когда лимит показан в заголовке
+        if rich:
+            rows = []
+            for t in tariffs:
+                name = _clean_tariff_name(t['name']) if clean else str(t['name'])
+                price = _html.unescape(_price(t))
+                gb = _cdn_gb(t)
+                if gb > 0 and t.get('price_rub', 0) > 1:
+                    cdn_seen[0] = True
+                    price += f" · + CDN {gb} ГБ"
+                rows.append((name, price))
+            return table('', rows, header=('Срок', 'Цена'))
         return '<blockquote>' + '\n'.join(_format_tariff_line(t, clean) for t in tariffs) + '</blockquote>'
 
     def _footer(lines: list) -> list:
@@ -111,8 +129,12 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
         if rub_enabled and crypto_enabled:
             extra.append('криптой')
         if extra:
-            lines = list(lines) + [f"⭐ Также можно оплатить {' и '.join(extra)}"]
+            tail = f"⭐ Также можно оплатить {' и '.join(extra)}"
+            lines = list(lines) + [paragraph(tail) if rich else tail]
         return lines
+
+    def _h(lines: list, level: int = 4) -> list:
+        return [heading(_plain(x), level) for x in lines] if rich else list(lines)
 
     title = ['📋 <b>Тарифы</b>'] if include_title else []
 
@@ -124,12 +146,12 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
         tariffs = get_tariffs_by_group(group_id)
         if not tariffs:
             return ''
-        return _finish(title + [_quote(tariffs)])
+        return _finish(_h(title, 3) + [_quote(tariffs)])
 
     # Группировка: если групп больше одной — тарифы под заголовками групп
     if get_groups_count() > 1:
         groups = get_all_groups()
-        lines = list(title)
+        lines = _h(title, 3)
         any_group_shown = False
         for group in groups:
             group_tariffs = get_tariffs_by_group(group['id'])
@@ -137,7 +159,7 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
                 continue
             header = _group_header(group['name'])
             limit = _limit_label(group_tariffs, group)
-            lines.append(f"{header} · {limit}" if limit else header)
+            lines.extend(_h([f"{header} · {limit}" if limit else header]))
             lines.append(_quote(group_tariffs, clean=bool(limit)))
             any_group_shown = True
         if not any_group_shown:
@@ -154,7 +176,7 @@ def build_tariff_text(*, group_id: int | None = None, include_title: bool = True
             head[-1] = f"{head[-1]} · {limit}"
         else:
             head = [limit]
-    return _finish(_footer(head + [_quote(tariffs, clean=bool(limit))]))
+    return _finish(_footer(_h(head, 3) + [_quote(tariffs, clean=bool(limit))]))
 
 
 _LIMIT_TAIL_RE = re.compile(

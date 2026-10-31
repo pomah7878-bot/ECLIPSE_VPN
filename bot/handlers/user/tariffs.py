@@ -76,13 +76,23 @@ async def _render_buy_page(target):
     except Exception:
         renew_rows = []
 
+    prefix = _buy_page_tariffs_prefix()
+    rich_prefix = None
+    if prefix:
+        try:
+            from bot.utils.page_dynamic_data import build_tariff_text
+            rich_prefix = build_tariff_text(rich=True) or None
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Тарифы в новом виде не собраны: {e}")
     await render_page(
         target,
         page_key='prepayment',
         context=context,
         prepend_buttons=renew_rows or None,
         force_new=isinstance(target, Message),
-        text_prefix=_buy_page_tariffs_prefix(),
+        text_prefix=prefix,
+        rich_auto=bool(rich_prefix) or not prefix,
+        rich_prefix=rich_prefix,
     )
 
 
