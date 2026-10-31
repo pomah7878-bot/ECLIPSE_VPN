@@ -516,7 +516,8 @@ async def admin_cdn_volume_save(message: Message, state: FSMContext):
 PROVIDER_FIELDS = {
     'key': ('yc_api_key', '🔑 Ключ API',
             'API-ключ сервисного аккаунта Yandex Cloud с ролью <code>monitoring.viewer</code> '
-            '(только чтение статистики). Сообщение с ключом бот сразу удалит.'),
+            '(только чтение статистики). Нужен секретный ключ (обычно начинается с <code>AQVN</code>), '
+            'а не ID ключа <code>aje…</code>. Сообщение с ключом бот сразу удалит.'),
     'folder': ('yc_folder_id', '📁 ID каталога',
                'ID каталога Yandex Cloud, где работает CDN (в консоли виден в шапке под названием каталога).'),
     'price': ('yc_price_per_gb', '💵 Цена за ГБ сверх лимита, ₽',
@@ -666,6 +667,9 @@ async def cdn_provider_save(message: Message, state: FSMContext):
         value = raw
         if len(value) < 8:
             await show(head + '❌ Значение слишком короткое, проверьте и отправьте ещё раз', cancel_kb)
+            return
+        if field == 'key' and yc_cdn.is_key_id(value):
+            await show(head + f'❌ Похоже, {yc_cdn.KEY_ID_HINT}', cancel_kb)
             return
     yc_cdn.set_setting_value(setting, value)
     await state.clear()

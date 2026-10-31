@@ -1488,3 +1488,11 @@ class WireGuardProbeTest(unittest.TestCase):
         self.assertEqual((ob["uuid"], ob["password"], ob["server_port"]), ("u-1", "p@ss", 443))
         self.assertTrue(ob["tls"]["insecure"])
         self.assertEqual(ob["tls"]["server_name"], "a.example.com")
+
+
+class YcKeyIdTest(unittest.TestCase):
+    def test_key_id_detected(self):
+        from bot.services.yc_cdn import is_key_id
+        self.assertTrue(is_key_id("ajet" + "a1b2c3d4e5f6g7h8"[:16]))
+        self.assertFalse(is_key_id("AQVN" + "x" * 36))
+        self.assertFalse(is_key_id(""))

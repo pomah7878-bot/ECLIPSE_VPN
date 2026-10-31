@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -36,6 +37,15 @@ def set_setting_value(key: str, value: str) -> None:
 
 def get_api_key() -> str:
     return _setting("yc_api_key").strip()
+
+
+KEY_ID_HINT = ('вставлен ID ключа (aje…), а нужен секретный ключ: он показывается '
+               'один раз при создании API-ключа, обычно начинается с AQVN')
+
+
+def is_key_id(value: str) -> bool:
+    """ID API-ключа Yandex (aje + 17 символов) вместо его секретной части — частая ошибка."""
+    return bool(re.fullmatch(r'aje[a-z0-9]{17}', value or ''))
 
 
 def get_folder_id() -> str:
@@ -217,6 +227,8 @@ async def _sum_metric(metric: str, start: datetime, end: datetime, grid_ms: int,
         body["downsampling"] = {"gridInterval": grid_ms}
         status, data = await _post_retry(url, headers, body)
     if status == 401:
+        if is_key_id(get_api_key()):
+            raise ProviderError(KEY_ID_HINT)
         raise ProviderError("ключ API не принят (проверьте ключ)")
     if status == 403:
         raise ProviderError("у ключа нет прав на чтение мониторинга (нужна роль monitoring.viewer)")
