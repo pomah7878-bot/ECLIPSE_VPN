@@ -1414,7 +1414,7 @@ class WireGuardProbeTest(unittest.TestCase):
         typ, idx, ctr = struct.unpack("<IIQ", data[:16])
         assert 500 <= typ <= 600 and idx == 7
         ip = ChaCha20Poly1305(recv_key).decrypt(w._nonce(ctr), data[16:], None)
-        assert w._checksum(ip[:20]) == 0 and ip[16:20] == bytes([1, 1, 1, 1]) and ip[12:16] == bytes([10, 8, 0, 2])
+        assert w._checksum(ip[:20]) == 0 and ip[16:20] == bytes([8, 8, 8, 8]) and ip[12:16] == bytes([10, 8, 0, 2])
         qid = ip[28:30]
         reply = bytearray(ip[:20]) + struct.pack(">HHHH", 53, 1, 10, 0) + qid
         reply[12:16], reply[16:20] = ip[16:20], ip[12:16]
@@ -1429,7 +1429,7 @@ class WireGuardProbeTest(unittest.TestCase):
         from bot.services import wg_probe as w
         srv = X25519PrivateKey.generate().private_bytes_raw()
         cli = X25519PrivateKey.generate().private_bytes_raw()
-        awg = {"S1": 15, "S2": 20, "S4": 8}
+        awg = {"S1": 15, "S2": 20, "S4": 0}
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(("127.0.0.1", 0))
         sock.settimeout(5)
@@ -1443,8 +1443,9 @@ class WireGuardProbeTest(unittest.TestCase):
         t = threading.Thread(target=run)
         t.start()
         b64 = lambda k: base64.b64encode(k).decode()  # noqa: E731
-        conf = (f"[Interface]\nPrivateKey = {b64(cli)}\nAddress = 10.8.0.2/32\nJc = 4\nJmin = 10\nJmax = 50\n"
-                f"S1 = 15\nS2 = 20\nS4 = 8\nH1 = 100-200\nH2 = 300\nH3 = 400\nH4 = 500-600\n\n"
+        conf = (f"[Interface]\nPrivateKey = {b64(cli)}\nAddress = 10.8.0.2/32\nDNS = 8.8.8.8, 8.8.4.4\n"
+                f"Jc = 4\nJmin = 10\nJmax = 50\nS1 = 15\nS2 = 20\nS3 = 0\nS4 = 0\n"
+                f"H1 = 100-200\nH2 = 300\nH3 = 400\nH4 = 500-600\n\n"
                 f"[Peer]\nPublicKey = {b64(w._pub(srv))}\nAllowedIPs = 0.0.0.0/0\n"
                 f"Endpoint = 127.0.0.1:{sock.getsockname()[1]}\n")
         res = w.probe_sync(conf)
@@ -1467,6 +1468,19 @@ class WireGuardProbeTest(unittest.TestCase):
             with mock.patch.object(w, "HANDSHAKE_WAIT", 0.2):
                 res = w.probe_sync(f"[Interface]\nPrivateKey = {key}\n[Peer]\nPublicKey = {key}\nEndpoint = 127.0.0.1:{port}\n")
         self.assertEqual(res, {"status": "bad", "detail": "сервер не ответил на рукопожатие"})
+
+    def test_extended_awg_is_skipped(self):
+        import base64
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from bot.services import wg_probe as w
+        key = base64.b64encode(X25519PrivateKey.generate().private_bytes_raw()).decode()
+        base = f"[Interface]\nPrivateKey = {key}\nAddress = 10.8.0.2/32\nJc = 5\nS1 = 25\nS2 = 46\nH1 = 1\n"
+        peer = f"[Peer]\nPublicKey = {key}\nEndpoint = 203.0.113.5:51820\n"
+        for extra in ("S3 = 16\n", "S4 = 12\n", "I1 = <r 218>\n", "HeaderProtectionKey = abc\n"):
+            res = w.probe_sync(base + extra + peer)
+            self.assertEqual(res["status"], "skip", extra)
+            self.assertIn("расширенный", res["detail"])
+        self.assertFalse(w.parse_config(base + "S3 = 0\nS4 = 0\n" + peer)["extended"])
 
     def test_tuic_outbound(self):
         from bot.services.connection_probe import tuic_outbound

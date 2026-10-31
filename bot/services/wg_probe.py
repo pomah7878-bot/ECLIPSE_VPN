@@ -4,9 +4,14 @@
 а затем отправляет через туннель DNS-запрос к 1.1.1.1. Ответ на него значит,
 что сервер принял ключ и трафик выходит в интернет.
 
-Для AmneziaWG учитываются заголовки H1–H4 (число или диапазон «a-b») и
-случайные префиксы S1, S2, S4. Мусорные пакеты Jc и I1–I5 не отправляются:
-сервер их не требует, они нужны только против DPI в сети клиента.
+Для AmneziaWG учитываются заголовки H1–H4 и случайные префиксы S1, S2.
+Мусорные пакеты Jc не отправляются: сервер их не требует, они нужны только
+против DPI в сети клиента. Расширенный AmneziaWG (S3/S4, I1–I5, защита
+заголовков и прочие поля сверх классических) не проверяется: его протокол
+не описан, и тест давал бы ложное «не работает».
+
+DNS-запрос идёт на сервер из строки DNS конфига (как у настоящего клиента),
+если её нет — на 1.1.1.1.
 
 Ограничение: на время проверки сервер считает адресом этого пира сервер бота;
 устройство клиента с тем же конфигом переключится обратно со следующим пакетом.
@@ -26,6 +31,9 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
+WG_KEYS = {"privatekey", "address", "dns", "mtu", "listenport", "table", "fwmark", "saveconfig",
+           "preup", "postup", "predown", "postdown"}
+AWG_CLASSIC_KEYS = {"jc", "jmin", "jmax", "s1", "s2", "h1", "h2", "h3", "h4"}
 CONSTRUCTION = b"Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s"
 IDENTIFIER = b"WireGuard v1 zx2c4 Jason@zx2c4.com"
 LABEL_MAC1 = b"mac1----"
@@ -104,14 +112,21 @@ def parse_config(text: str) -> Optional[Dict[str, Any]]:
         return None
     if not m:
         return None
-    ipv4 = next((a.split("/")[0].strip() for a in iface.get("address", "").split(",")
-                 if re.match(r"^\s*\d+\.\d+\.\d+\.\d+", a)), "")
+    ipv4 = _first_ipv4(iface.get("address", ""))
+    # Как панель отличает «для роутеров»: расширенным считается любое поле сверх классических (или S3/S4 ≠ 0).
+    extended = any(k not in WG_KEYS | AWG_CLASSIC_KEYS and str(v).strip() not in ("", "0")
+                   for k, v in iface.items())
     return {
         "host": m.group(1), "port": int(m.group(2)), "priv": priv, "server_pub": server_pub, "psk": psk,
-        "ipv4": ipv4,
+        "ipv4": ipv4, "dns": _first_ipv4(iface.get("dns", "")) or TEST_DNS_IP, "extended": extended,
         "h": [_range(iface.get(f"h{i}"), i) for i in range(1, 5)],
-        "s1": _int(iface.get("s1")), "s2": _int(iface.get("s2")), "s4": _int(iface.get("s4")),
+        "s1": _int(iface.get("s1")), "s2": _int(iface.get("s2")),
     }
+
+
+def _first_ipv4(value: str) -> str:
+    return next((a.split("/")[0].strip() for a in value.split(",")
+                 if re.match(r"^\s*\d+\.\d+\.\d+\.\d+\s*(/\d+)?\s*$", a)), "")
 
 
 def _b64key(value: str) -> bytes:
@@ -180,11 +195,10 @@ def read_response(cfg: Dict[str, Any], st: Dict[str, Any], data: bytes) -> Optio
 def build_data(cfg: Dict[str, Any], keys: Dict[str, Any], counter: int, payload: bytes) -> bytes:
     padded = payload + b"\0" * (-len(payload) % 16)
     head = struct.pack("<IIQ", random.randint(*cfg["h"][3]), keys["peer"], counter)
-    return os.urandom(cfg["s4"]) + head + ChaCha20Poly1305(keys["send"]).encrypt(_nonce(counter), padded, None)
+    return head + ChaCha20Poly1305(keys["send"]).encrypt(_nonce(counter), padded, None)
 
 
 def read_data(cfg: Dict[str, Any], keys: Dict[str, Any], sender: int, data: bytes) -> Optional[bytes]:
-    data = data[cfg["s4"]:]
     if len(data) < 32:
         return None
     typ, receiver, counter = struct.unpack("<IIQ", data[:16])
@@ -206,11 +220,11 @@ def _checksum(data: bytes) -> int:
     return ~s & 0xFFFF
 
 
-def dns_query_packet(src_ip: str, qid: int) -> bytes:
-    """IPv4/UDP-пакет с DNS-запросом A-записи TEST_NAME к TEST_DNS_IP."""
+def dns_query_packet(src_ip: str, dns_ip: str, qid: int) -> bytes:
+    """IPv4/UDP-пакет с DNS-запросом A-записи TEST_NAME к dns_ip."""
     qname = b"".join(bytes([len(p)]) + p.encode() for p in TEST_NAME.split(".")) + b"\0"
     dns = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0) + qname + struct.pack(">HH", 1, 1)
-    src, dst = socket.inet_aton(src_ip), socket.inet_aton(TEST_DNS_IP)
+    src, dst = socket.inet_aton(src_ip), socket.inet_aton(dns_ip)
     sport = random.randint(20000, 60000)
     udp_len = 8 + len(dns)
     pseudo = src + dst + struct.pack(">BBH", 0, 17, udp_len)
@@ -221,10 +235,10 @@ def dns_query_packet(src_ip: str, qid: int) -> bytes:
     return ip + udp
 
 
-def is_dns_reply(packet: bytes, qid: int) -> bool:
+def is_dns_reply(packet: bytes, dns_ip: str, qid: int) -> bool:
     if len(packet) < 28 or packet[0] >> 4 != 4 or packet[9] != 17:
         return False
-    if packet[12:16] != socket.inet_aton(TEST_DNS_IP):
+    if packet[12:16] != socket.inet_aton(dns_ip):
         return False
     udp = packet[(packet[0] & 0x0F) * 4:]
     return len(udp) >= 10 and struct.unpack(">H", udp[:2])[0] == 53 and struct.unpack(">H", udp[8:10])[0] == qid
@@ -254,6 +268,8 @@ def probe_sync(config_text: str) -> Dict[str, Any]:
     cfg = parse_config(config_text)
     if not cfg:
         return {"status": "skip", "detail": "конфиг WireGuard не разобран"}
+    if cfg["extended"]:
+        return {"status": "skip", "detail": "расширенный AmneziaWG (защита заголовков): тест не поддерживает"}
     try:
         family, _, _, _, addr = socket.getaddrinfo(cfg["host"], cfg["port"], type=socket.SOCK_DGRAM)[0]
     except OSError:
@@ -284,11 +300,11 @@ def probe_sync(config_text: str) -> Dict[str, Any]:
         for counter in range(2):
             qid = random.randint(1, 0xFFFF)
             try:
-                sock.send(build_data(cfg, keys, counter, dns_query_packet(cfg["ipv4"], qid)))
+                sock.send(build_data(cfg, keys, counter, dns_query_packet(cfg["ipv4"], cfg["dns"], qid)))
             except OSError:
                 break
             got = _recv_until(sock, time.monotonic() + DATA_WAIT,
-                              lambda d: True if (p := read_data(cfg, keys, st["sender"], d)) and is_dns_reply(p, qid)
+                              lambda d: True if (p := read_data(cfg, keys, st["sender"], d)) and is_dns_reply(p, cfg["dns"], qid)
                               else None)
             if got:
                 ms = int((time.monotonic() - started) * 1000)
