@@ -291,6 +291,13 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIn("<td>🔗 URL панели</td><td>https://h:1/p/</td>", html)
         self.assertNotIn("secret", html)
 
+    def test_clean_connection_name(self):
+        from bot.handlers.user.keys import _clean_connection_name
+        key = {"panel_email": "user_ivrom78_fa3d9c"}
+        self.assertEqual(_clean_connection_name({"name": "🇷🇺 AmneziaWG🇨🇿-user_ivrom78_fa3d9c"}, key, "h.example.com"), "🇷🇺 AmneziaWG🇨🇿")
+        self.assertEqual(_clean_connection_name({"name": "AmneziaWG-user_other_1a2b"}, {}, ""), "AmneziaWG")
+        self.assertEqual(_clean_connection_name({"name": "Хельсинки"}, key, ""), "Хельсинки")
+
 if __name__ == "__main__":
     unittest.main()
 

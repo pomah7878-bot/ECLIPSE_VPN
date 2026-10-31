@@ -1333,6 +1333,16 @@ def _connection_tag(item: dict) -> str:
     return hashlib.md5((item.get('link') or '').encode('utf-8')).hexdigest()[:8]
 
 
+def _clean_connection_name(ib: dict, key: dict, host: str = '') -> str:
+    """Название подключения без «-email клиента» и «-хост», которые панель дописывает к имени."""
+    from bot.services.connection_probe import strip_name_tails
+    panel_email = key.get('panel_email') or ''
+    tails = [t for e in ([panel_email] if panel_email else []) for t in (e, f'cdn_{e}')] + ([host] if host else [])
+    import re as _re
+    name = str(strip_name_tails(ib.get('name'), tails) or '')
+    return _re.sub(r'-user_[\w.]+$', '', name).strip()  # запасной вариант, если email ключа не известен
+
+
 def _connections_nav(key_id: int, back_callback: Optional[str] = None, back_text: str = '⬅️ Назад') -> list:
     """Нижняя строка навигации экранов «Подключения»: назад и на главную."""
     return [
@@ -1381,7 +1391,8 @@ async def key_protocols_handler(callback: CallbackQuery):
         for ib in group['inbounds']:
             if ib.get('protocol_label') != 'AmneziaWG':
                 continue  # v1.201: в этом разделе только AmneziaWG
-            label = f"📄 {ib['name']} — {ib['protocol_label']}"
+            name = _clean_connection_name(ib, key, group.get('host') or '')
+            label = f"📄 {name}" if ib['protocol_label'].lower() in name.lower() else f"📄 {name} — {ib['protocol_label']}"
             rows.append([InlineKeyboardButton(text=label[:60], callback_data=f"key_proto:{key_id}:{_connection_tag(ib)}")])
     if not rows:
         await safe_edit_or_send(
@@ -1455,6 +1466,7 @@ async def key_proto_handler(callback: CallbackQuery):
     if not item:
         await callback.answer('Список изменился — откройте «AmneziaWG» заново', show_alert=True)
         return
+    item = {**item, 'name': _clean_connection_name(item, key, next((g.get('host') or '' for g in groups if item in g['inbounds']), ''))}
     await callback.answer()
     chat_id = callback.message.chat.id
     bot = callback.message.bot
