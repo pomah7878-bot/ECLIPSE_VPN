@@ -210,13 +210,13 @@ class NewMenuLookTest(unittest.TestCase):
     def test_table(self):
         from bot.utils.rich_view import table
         h = table("Т", [("a", "b")], header=("x", "y"))
-        self.assertIn("<caption>Т</caption>", h)
+        self.assertIn("<h4>Т</h4>", h)
         self.assertIn("<td>a</td><td>b</td>", h)
 
     def test_auto_table(self):
         from bot.utils.rich_view import auto_table
         h = auto_table("💰 <b>Баланс</b>\n<b>Остаток:</b> 120 ₽\n🔑 Ключей: <b>3</b>\n• Реферал: 5")
-        self.assertIn("<caption>💰 Баланс</caption>", h)
+        self.assertIn("<h4>💰 Баланс</h4>", h)
         self.assertIn("<td>Реферал</td><td>5</td>", h)
         self.assertIsNone(auto_table("Длинный обычный текст.\nБез пар вида ключ значение."))
         self.assertIsNone(auto_table('A: 1\nB: 2\nC: <a href="x">3</a>'))
@@ -226,7 +226,7 @@ class NewMenuLookTest(unittest.TestCase):
         st = {'audience': m.AUDIENCE_CLIENT, 'keys': [], 'balance_cents': 50000,
               'active': [{'expires_at': '2054-11-24 00:00:00', 'tariff_id': None}]}
         h = m.build_subscription_html(st, "Ира")
-        self.assertIn("<caption>Ира, всё работает 👋</caption>", h)
+        self.assertIn("<h4>Ира, всё работает 👋</h4>", h)
         self.assertIn("Баланс", h)
         self.assertIsNone(m.build_subscription_html({'audience': m.AUDIENCE_NEW}, "x"))
 
@@ -239,7 +239,7 @@ class NewMenuLookTest(unittest.TestCase):
             "stats": {"online_clients": 3, "cpu_percent": 4, "total_traffic_bytes": 1000},
             "nodes": [{"name": "N", "status": "online", "enable": True, "onlineCount": 2, "cpuPct": 5, "memPct": 30}]}]}
         h = b(snap)
-        self.assertIn("<caption>🟢 S · 17:31</caption>", h)
+        self.assertIn("<h4>🟢 S · 17:31</h4>", h)
         self.assertIn("<td>🟢 N</td><td>2</td><td>5% / 30%</td>", h)
         self.assertIsNone(b({"servers": []}))
         self.assertIsNone(auto_table("A: 1\nB: 2\nC: 3\n├ x | y | z"))
@@ -1216,7 +1216,7 @@ class ClientCabinetTest(unittest.TestCase):
         self.assertIn("125", d["balance"])
         self.assertTrue(d["days_left"] in (10, 11))
         html_text = cab.build_html(d)
-        self.assertTrue(html_text.startswith("<table bordered striped>"))
+        self.assertTrue(html_text.startswith("<h4>👤 Личный кабинет</h4><table bordered striped compact>"))
         InputRichMessage(html=html_text)
         self.assertIn("Личный кабинет", cab.build_fallback(d))
         styles = [b.style for row in cab.keyboard().inline_keyboard for b in row]
@@ -1505,10 +1505,10 @@ class RichSectionsTest(unittest.TestCase):
                 "<b>━━ Система ━━</b>\n✅ Всё в порядке\n✅ <b>Версия:</b> бот 1.491\n✅ <b>Диск:</b> 44 ГБ\n\n"
                 "<b>━━ AI-консультант ━━</b>\n🟢 Сервис доступен\nЗа 24 часа: 0 польз.")
         h = sections_table(text)
-        self.assertIn("<caption>🧩 Диагностика</caption>", h)
-        self.assertIn("<caption>Система</caption>", h)
+        self.assertIn("<h4>🧩 Диагностика</h4>", h)
+        self.assertIn("<h4>Система</h4>", h)
         self.assertIn("<td>бот 1.491</td>", h)
-        self.assertIn("<caption>AI-консультант</caption>", h)
+        self.assertIn("<h4>AI-консультант</h4>", h)
         self.assertIsNone(sections_table("A: 1\nB: 2"))  # без разделов — не таблицы
         self.assertIsNone(sections_table('<b>━━ X ━━</b>\nA: <a href="x">1</a>'))
 
@@ -1519,7 +1519,8 @@ class RichSectionsTest(unittest.TestCase):
             {"status": "bad", "title": "AWG <роутер>", "detail": "трафик не идёт"},
             {"status": "skip", "title": "AWG", "proto": "AmneziaWG", "detail": "тест не поддерживает"}]}
         h = format_report_html(report)
-        self.assertLess(h.index("AWG &lt;роутер&gt;"), h.index("VLESS TLS"))  # нерабочие сверху, HTML экранирован
-        self.assertIn("⚪ AmneziaWG ×1", h)
-        self.assertIn("<td>Не работает</td><td>1</td>", h)
+        self.assertLess(h.index("AWG &lt;роутер&gt;"), h.index("<details>"))  # нерабочие открыто, рабочие свёрнуты
+        self.assertIn("<td>AmneziaWG ×1</td>", h)
+        self.assertIn("<td>🔴 Не работает</td><td>1</td>", h)
+        self.assertIn("<details open>", format_report_html({"results": report["results"][:1]}))
         self.assertIsNone(format_report_html({"error": "x"}))

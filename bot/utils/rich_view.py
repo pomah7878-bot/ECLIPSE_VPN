@@ -13,12 +13,29 @@ logger = logging.getLogger(__name__)
 
 
 def table(caption: str, rows: Iterable[Sequence[str]], header: Optional[Sequence[str]] = ("Параметр", "Значение")) -> str:
-    """HTML таблицы rich-сообщения; значения экранируются."""
+    """HTML таблицы rich-сообщения; значения экранируются. Подпись — заголовком над таблицей,
+    сама таблица компактная (меньше отступы), как в аккуратных ботах."""
     esc = html.escape
+    rows = list(rows)
     head = "".join(f"<th>{esc(str(c))}</th>" for c in header) if header else ""
     body = "".join("<tr>" + "".join(f"<td>{esc(str(c))}</td>" for c in r) + "</tr>" for r in rows)
-    cap = f"<caption>{esc(caption)}</caption>" if caption else ""
-    return f"<table bordered striped>{cap}" + (f"<tr>{head}</tr>" if head else "") + f"{body}</table>"
+    cap = heading(caption)
+    if not rows and not head:
+        return cap
+    return cap + "<table bordered striped compact>" + (f"<tr>{head}</tr>" if head else "") + f"{body}</table>"
+
+
+def heading(text: str) -> str:
+    return f"<h4>{html.escape(text)}</h4>" if text else ""
+
+
+def paragraph(text: str, bold: bool = False, italic: bool = False) -> str:
+    t = html.escape(text)
+    if bold:
+        t = f"<b>{t}</b>"
+    if italic:
+        t = f"<i>{t}</i>"
+    return f"<p>{t}</p>"
 
 
 async def send(msg: Message, rich_html: str, fallback_text: str, reply_markup: Optional[InlineKeyboardMarkup],
@@ -56,11 +73,13 @@ _KV = None
 
 
 def auto_table(text: str) -> Optional[str]:
-    """Обычный HTML-текст экрана -> таблица, если в нём есть хотя бы 3 строки «Название: значение».
+    """Обычный HTML-текст экрана -> заголовок, компактная таблица и абзацы, если в нём есть хотя бы
+    3 строки «Название: значение».
 
-    Первая короткая строка — подпись таблицы; прочие строки без пары — отдельные строки таблицы;
-    строки-разделители отбрасываются. Экран остаётся как есть (None), если в нём ссылка, <pre>,
-    длинный <code> (ключ, адрес — их копируют) или он слишком длинный.
+    Первая короткая строка — заголовок; подряд идущие пары — таблица; прочие строки — абзацы
+    (короткая строка перед таблицей — жирный подзаголовок); строки-разделители отбрасываются.
+    Экран остаётся как есть (None), если в нём ссылка, <pre>, длинный <code> (ключ, адрес — их
+    копируют) или он слишком длинный.
     """
     import re
     if not text or len(text) > 3500 or re.search(r"<(a|pre|tg-spoiler)\b", text):
@@ -69,13 +88,14 @@ def auto_table(text: str) -> Optional[str]:
         return None  # деревья и строки «a | b | c» таблицей не получаются
     if any(len(c) > 40 or "://" in c for c in re.findall(r"<code>(.*?)</code>", text, re.S)):
         return None
-    parsed = _parse_rows(text, take_caption=True)
+    parsed = _parse_items(text, take_caption=True)
     if not parsed:
         return None
-    caption, rows, pairs = parsed
-    if pairs < 3 or pairs < len(rows) * 0.3 or len(rows) > 30:
+    caption, items = parsed
+    pairs = sum(1 for it in items if it[0] == "row")
+    if pairs < 3 or pairs < len(items) * 0.3 or len(items) > 30:
         return None
-    return table(caption, rows)
+    return heading(caption) + _render(items, header=("Параметр", "Значение"))
 
 
 def _plain(s: str) -> str:
@@ -83,13 +103,14 @@ def _plain(s: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
 
-def _parse_rows(text: str, take_caption: bool) -> Optional[Tuple[str, list, int]]:
-    """Строки экрана -> (подпись, строки таблицы, число пар «название: значение»); None — слишком длинная строка."""
+def _parse_items(text: str, take_caption: bool) -> Optional[Tuple[str, list]]:
+    """Строки экрана -> (заголовок, элементы): ("row", название, значение) или ("text", строка, курсив).
+    None — слишком длинная строка."""
     import re
     global _KV
     if _KV is None:
         _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
-    caption, rows, pairs = "", [], 0
+    caption, items = "", []
     for ln in (l.strip() for l in text.split("\n") if l.strip()):
         pl = _plain(ln)
         if not re.search(r"\w", pl):  # ━━━ и прочие разделители
@@ -97,20 +118,36 @@ def _parse_rows(text: str, take_caption: bool) -> Optional[Tuple[str, list, int]
         m = _KV.match(ln)
         if m and len(_plain(m.group(2))) <= 160:
             label = _plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
-            rows.append((label[:28], _plain(m.group(2))[:160]))
-            pairs += 1
-        elif take_caption and not rows and not caption and len(pl) <= 60:
+            items.append(("row", label[:28], _plain(m.group(2))))
+        elif take_caption and not items and not caption and len(pl) <= 60:
             caption = pl
-        elif len(pl) <= 300:
-            rows.append((pl, ""))  # не режем: ячейка переносит текст, длина уже ≤ 300
+        elif len(pl) <= 400:
+            items.append(("text", pl, ln.startswith("<i>")))
         else:
             return None
-    return caption, rows, pairs
+    return caption, items
+
+
+def _render(items: list, header: Optional[Sequence[str]] = None) -> str:
+    """Подряд идущие пары — одна компактная таблица; строки текста — абзацы между таблицами."""
+    out, rows = [], []
+    for i, it in enumerate(items):
+        if it[0] == "row":
+            rows.append(it[1:])
+            continue
+        if rows:
+            out.append(table("", rows, header=header))
+            rows = []
+        before_table = i + 1 < len(items) and items[i + 1][0] == "row"
+        out.append(paragraph(it[1], bold=before_table and len(it[1]) <= 60, italic=it[2]))
+    if rows:
+        out.append(table("", rows, header=header))
+    return "".join(out)
 
 
 def sections_table(text: str) -> Optional[str]:
-    """Длинный экран с разделами «━━ Название ━━» (например, «Диагностика») -> по таблице на раздел.
-    None — если экран таблицами не показать (ссылки, <pre>, слишком длинные строки, нет разделов)."""
+    """Длинный экран с разделами «━━ Название ━━» (например, «Диагностика») -> заголовок раздела и
+    компактная таблица под ним. None — если экран так не показать (ссылки, <pre>, длинные строки, нет разделов)."""
     import re
     if not text or re.search(r"<(a|pre|tg-spoiler)\b", text):
         return None
@@ -128,10 +165,10 @@ def sections_table(text: str) -> Optional[str]:
         return None
     out = []
     for i, (title, buf) in enumerate(chunks):
-        parsed = _parse_rows("\n".join(buf), take_caption=(i == 0))
+        parsed = _parse_items("\n".join(buf), take_caption=(i == 0))
         if parsed is None:
             return None
-        caption, rows, _ = parsed
-        if rows or caption:
-            out.append(table(title or caption, rows) if rows else table(caption, [], header=None))
+        caption, items = parsed
+        if items or caption:
+            out.append(heading(title or caption) + _render(items))
     return "".join(out) or None

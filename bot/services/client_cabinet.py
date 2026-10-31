@@ -101,9 +101,8 @@ def _rows(d: Dict[str, Any]) -> list:
 
 
 def build_html(d: Dict[str, Any]) -> str:
-    body = "".join(f"<tr><td>{html.escape(k)}</td><td>{html.escape(v)}</td></tr>" for k, v in _rows(d))
-    return (f"<table bordered striped><caption>👤 Личный кабинет</caption>"
-            f"<tr><th>Параметр</th><th>Значение</th></tr>{body}</table>")
+    from bot.utils.rich_view import table
+    return table("👤 Личный кабинет", _rows(d))
 
 
 def build_fallback(d: Dict[str, Any]) -> str:

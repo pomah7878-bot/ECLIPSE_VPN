@@ -637,31 +637,42 @@ def check_connections_summary() -> Check:
 
 
 def format_report_html(report: Dict[str, Any]) -> Optional[str]:
-    """«Новый вид меню»: подключения и итог таблицами. None — показать обычным текстом."""
-    from bot.utils.rich_view import table
+    """«Новый вид меню»: итог, проблемные подключения открыто, рабочие — свёрнутым списком.
+    None — показать обычным текстом."""
+    import html as _html
+    from bot.utils.rich_view import heading, paragraph, table
     results = report.get("results", [])
     if report.get("error") or not results:
         return None
-    order = {"bad": 0, "warn": 1, "ok": 2}
-    shown = sorted((r for r in results if r["status"] != "skip"), key=lambda x: order.get(x["status"], 9))
+    problems = [r for r in results if r["status"] in ("bad", "warn")]
+    problems.sort(key=lambda r: 0 if r["status"] == "bad" else 1)
+    working = [r for r in results if r["status"] == "ok"]
     skipped = [r for r in results if r["status"] == "skip"]
-    rows = [(f"{_ICON[r['status']]} {r['title']}", r["detail"]) for r in shown]
-    groups: Dict[Tuple[str, str], int] = {}
-    for r in skipped:
-        key = (r.get("proto") or "прочие", r.get("detail") or "проверка недоступна")
-        groups[key] = groups.get(key, 0) + 1
-    rows += [(f"⚪ {proto} ×{n}", f"не проверяется: {reason}") for (proto, reason), n in groups.items()]
-    ok = sum(1 for r in results if r["status"] == "ok")
     bad = sum(1 for r in results if r["status"] == "bad")
-    summary = [
-        ("Всего", str(len(results))), ("Работает", str(ok)), ("Не работает", str(bad)),
-        ("Не проверялись", str(len(skipped))),
-        ("Режим", "реальный тест через Xray + проверка порта" if report.get("xray")
-         else "только порт и TLS: Xray не найден на сервере бота"),
-        ("Важно", "проверка идёт с сервера бота, а не из сети клиента: блокировку у оператора она не покажет"),
-    ]
-    return (table("🧪 Проверка подключений", rows, header=("Подключение", "Результат"))
-            + table("Итог", summary))
+    head = ("Подключение", "Результат")
+
+    out = heading("🧪 Проверка подключений")
+    out += table("", [("✅ Работает", str(len(working))), ("🔴 Не работает", str(bad)),
+                      ("⚪ Не проверялись", str(len(skipped))), ("Всего", str(len(results)))], header=None)
+    if problems:
+        out += table("Требуют внимания", [(f"{_ICON[r['status']]} {r['title']}", r["detail"]) for r in problems],
+                     header=head)
+    if working:
+        rows = table("", [(r["title"], r["detail"]) for r in working], header=head)
+        summary = _html.escape(f"✅ Работают: {len(working)}")
+        out += f"<details{'' if problems else ' open'}><summary>{summary}</summary>{rows}</details>"
+    if skipped:
+        groups: Dict[Tuple[str, str], int] = {}
+        for r in skipped:
+            key = (r.get("proto") or "прочие", r.get("detail") or "проверка недоступна")
+            groups[key] = groups.get(key, 0) + 1
+        out += table("⚪ Не проверяются", [(f"{proto} ×{n}", reason) for (proto, reason), n in groups.items()],
+                     header=None)
+    mode = ("реальный тест через Xray и проверка порта" if report.get("xray")
+            else "только порт и TLS: Xray не найден на сервере бота")
+    out += paragraph(f"Режим: {mode}. Проверка идёт с сервера бота, а не из сети клиента, "
+                     "поэтому блокировку у конкретного оператора она не покажет.", italic=True)
+    return out
 
 
 def format_report(report: Dict[str, Any]) -> str:
