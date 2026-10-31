@@ -356,7 +356,7 @@ def format_summary(summary: Dict[str, Any], packs: List[Dict[str, Any]], client_
     ]
     if br["included_bytes"]:
         if br["over_bytes"] <= 0:
-            lines.append(f"В предоплату входит {_gb(br['included_bytes'])}, осталось {_gb(br['left_bytes'])}")
+            lines.append(f"Осталось в предоплате: {_gb(br['left_bytes'])} из {_gb(br['included_bytes'])}")
         else:
             lines.append(f"⚠️ Сверх предоплаты ({_gb(br['included_bytes'])}): <b>{_gb(br['over_bytes'])}</b>, "
                          f"≈ {_money(br['over_cost'])}")

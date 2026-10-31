@@ -89,7 +89,7 @@ def auto_table(text: str) -> Optional[str]:
         elif not rows and not caption and len(pl) <= 60:
             caption = pl
         elif len(pl) <= 300:
-            rows.append((pl[:120], ""))
+            rows.append((pl, ""))  # не режем: ячейка переносит текст, длина уже ≤ 300
         else:
             return None
     if pairs < 3 or pairs < len(rows) * 0.3 or len(rows) > 30:
