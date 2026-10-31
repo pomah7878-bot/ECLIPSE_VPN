@@ -1395,8 +1395,8 @@ async def edit_server_public_ip_start(callback: CallbackQuery, state: FSMContext
         kb_rows.append([InlineKeyboardButton(text="🗑 Удалить все", callback_data=f"admin_server_public_ip_delete:{server_id}")])
     kb_rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"admin_server_view:{server_id}")])
 
-    await safe_edit_or_send(
-        callback.message,
+    kb = InlineKeyboardMarkup(inline_keyboard=kb_rows)
+    text = (
         f"🌐 <b>Публичный IP сервера</b>\n\nТекущие адреса:\n{current_text}\n\n"
         "Используется только для виджета «Вы защищены» на витрине сайта — сверяет "
         "IP посетителя с этим списком, чтобы показать, реально ли он подключён к VPN.\n\n"
@@ -1408,10 +1408,42 @@ async def edit_server_public_ip_start(callback: CallbackQuery, state: FSMContext
         "Нажмите «🔍 Определить автоматически» — бот попробует сам, либо отправьте "
         "IP-адреса вручную сообщением: каждый на отдельной строке или через запятую, "
         "например:\n<code>203.0.113.10\n203.0.113.20\n198.51.100.5</code>\n\n"
-        "Так отправленный список полностью ЗАМЕНЯЕТ текущий (это не добавление к нему).",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows),
+        "Так отправленный список полностью ЗАМЕНЯЕТ текущий (это не добавление к нему)."
     )
+    try:
+        from bot.services import client_cabinet
+        if client_cabinet.enabled():
+            from bot.utils.rich_view import send as rich_send
+            await rich_send(callback.message, public_ip_html(ip_list), text, kb)
+            await callback.answer()
+            return
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Новый вид экрана «Публичный IP»: %s", e)
+    await safe_edit_or_send(callback.message, text, reply_markup=kb)
     await callback.answer()
+
+
+def public_ip_html(ip_list: list) -> str:
+    """«Новый вид меню» экрана «Публичный IP сервера»: адреса таблицей, пояснения коротко."""
+    from bot.utils.rich_view import heading, paragraph, table
+    addresses = (table("", [(str(i), ip) for i, ip in enumerate(ip_list, 1)], header=("№", "Адрес"))
+                 if ip_list else paragraph("Адреса не заданы."))
+    return (
+        heading("🌐 Публичный IP сервера", 3)
+        + heading(f"Текущие адреса: {len(ip_list)}") + addresses
+        + paragraph("Нужен только для виджета «Вы защищены» на витрине сайта: бот сверяет IP "
+                    "посетителя с этим списком и показывает, подключён ли он к VPN.")
+        + "<details><summary>Когда адрес отличается от адреса панели</summary>"
+        + "<ul><li>панель за Cloudflare: клиент подключается напрямую к серверу;</li>"
+          "<li>у сервера несколько внешних IP;</li>"
+          "<li>каскад из серверов с разными точками выхода.</li></ul>"
+        + paragraph("Адресов можно указать сколько угодно.") + "</details>"
+        + heading("Как изменить")
+        + "<ul><li>«🔍 Определить автоматически» — бот найдёт адрес сам и добавит к списку;</li>"
+          "<li>или отправьте адреса сообщением: каждый с новой строки или через запятую, "
+          "например <code>203.0.113.10, 198.51.100.5</code>.</li></ul>"
+        + paragraph("Отправленный список полностью заменяет текущий.", bold=True)
+    )
 
 
 @router.callback_query(F.data.startswith("admin_server_public_ip_auto:"))

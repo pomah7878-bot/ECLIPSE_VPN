@@ -1564,3 +1564,12 @@ class RichPageTest(unittest.TestCase):
         self.assertIn("<tr><th>Срок</th><th>Цена</th></tr><tr><td>1 месяц</td><td>359 ₽</td></tr>", h)
         self.assertIn("<h4>🍪 Базовый · 100 ГБ</h4>", h)
         self.assertIn("<p>⭐ Также можно оплатить звёздами</p>", h)
+
+
+class PublicIpViewTest(unittest.TestCase):
+    def test_public_ip_html(self):
+        from bot.handlers.admin.servers import public_ip_html
+        h = public_ip_html(["203.0.113.10", "198.51.100.5"])
+        self.assertIn("<h4>Текущие адреса: 2</h4>", h)
+        self.assertIn("<tr><td>2</td><td>198.51.100.5</td></tr>", h)
+        self.assertIn("<p>Адреса не заданы.</p>", public_ip_html([]))
