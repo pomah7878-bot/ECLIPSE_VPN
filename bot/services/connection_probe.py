@@ -16,8 +16,9 @@
 Ограничения (их нужно понимать):
   • проверка идёт с сервера бота, а не из сети клиента. Она показывает, что
     подключение живо, но не покажет, что его блокирует конкретный оператор;
-  • реальным тестом проверяются VLESS, Trojan, VMess, Shadowsocks и Hysteria2
-    (без обфускации); TUIC, WireGuard и AmneziaWG не проверяются;
+  • реальным тестом через Xray проверяются VLESS, Trojan, VMess, Shadowsocks
+    и Hysteria2 (без обфускации); TUIC — через sing-box, если он установлен;
+    WireGuard и AmneziaWG бот проверяет сам (bot/services/wg_probe.py);
   • тестовый ключ в панели видит IP сервера бота как «устройство»: берите ключ
     без жёсткого лимита устройств.
 """
@@ -52,6 +53,7 @@ XRAY_PATHS = (
     "/usr/bin/xray",
     "/usr/local/x-ui/bin/xray-linux-amd64",
 )
+SINGBOX_PATHS = ("/opt/eclipse-probe/sing-box", "/usr/local/bin/sing-box", "/usr/bin/sing-box")
 UDP_PROTOCOLS = {"hysteria2", "tuic", "amneziawg", "wireguard", "masque"}
 
 Check = Tuple[str, str, str]
@@ -93,13 +95,21 @@ def set_auto(enabled: bool) -> None:
     set_setting(AUTO_SETTING, "1" if enabled else "0")
 
 
-def find_xray() -> Optional[str]:
-    """Путь к Xray на сервере бота или None."""
-    candidates = [shutil.which("xray")] + list(XRAY_PATHS)
-    for path in candidates:
+def _find_binary(name: str, paths: Tuple[str, ...]) -> Optional[str]:
+    for path in [shutil.which(name)] + list(paths):
         if path and os.path.isfile(path) and os.access(path, os.X_OK):
             return path
     return None
+
+
+def find_xray() -> Optional[str]:
+    """Путь к Xray на сервере бота или None."""
+    return _find_binary("xray", XRAY_PATHS)
+
+
+def find_singbox() -> Optional[str]:
+    """Путь к sing-box на сервере бота (нужен для TUIC) или None."""
+    return _find_binary("sing-box", SINGBOX_PATHS)
 
 
 # ------------------------------------------------------------------ ссылки ключа
@@ -363,9 +373,9 @@ def skip_reason(item: Dict[str, Any]) -> str:
     proto = str(item.get("protocol") or "").lower()
     q = _query(item.get("link", ""))
     if proto == "tuic":
-        return "для TUIC нет клиента"
+        return "нужен sing-box на сервере бота"
     if proto in ("wireguard", "amneziawg") or item.get("kind") == "conf":
-        return "для WireGuard и AmneziaWG нет клиента"
+        return "конфиг WireGuard не разобран"
     if proto in ("hysteria2", "hy2"):
         if q.get("obfs") or q.get("obfs-password"):
             return "обфускация (obfs) не поддерживается тестом"
@@ -411,6 +421,50 @@ async def probe_xray(item: Dict[str, Any], xray: str) -> Dict[str, Any]:
     return result
 
 
+def tuic_outbound(link: str) -> Optional[Dict[str, Any]]:
+    """Ссылка tuic:// → исходящее подключение sing-box. None, если ссылка не разобрана."""
+    try:
+        parsed = urllib.parse.urlparse(link)
+        host, port = parsed.hostname, parsed.port
+    except ValueError:
+        return None
+    if not host or not port or not parsed.username:
+        return None
+    q = _query(link)
+    tls: Dict[str, Any] = {
+        "enabled": True, "server_name": q.get("sni") or host,
+        "alpn": [a for a in (q.get("alpn") or "h3").split(",") if a],
+        "insecure": _is_insecure(q) or (q.get("allow_insecure") or "") in ("1", "true"),
+    }
+    if q.get("disable_sni") in ("1", "true"):
+        tls["disable_sni"] = True
+    return {"type": "tuic", "tag": "probe", "server": host, "server_port": port,
+            "uuid": urllib.parse.unquote(parsed.username),
+            "password": urllib.parse.unquote(parsed.password or ""),
+            "congestion_control": q.get("congestion_control") or "bbr",
+            "udp_relay_mode": q.get("udp_relay_mode") or "native", "tls": tls}
+
+
+async def probe_singbox(item: Dict[str, Any], singbox: str) -> Dict[str, Any]:
+    """Реальный тест TUIC через sing-box."""
+    outbound = tuic_outbound(item.get("link", ""))
+    if outbound is None:
+        return {"status": "skip", "detail": "ссылка TUIC не разобрана"}
+    port = _free_port()
+    config = {"log": {"disabled": True},
+              "inbounds": [{"type": "mixed", "listen": "127.0.0.1", "listen_port": port}],
+              "outbounds": [outbound]}
+    result = await _run_proxy([singbox, "run", "-c"], config, port, "sing-box")
+    result.pop("start_failed", None)
+    return result
+
+
+async def probe_wireguard(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Реальный тест WireGuard/AmneziaWG: рукопожатие и DNS-запрос через туннель (без внешних программ)."""
+    from bot.services.wg_probe import probe_sync
+    return await asyncio.get_running_loop().run_in_executor(None, probe_sync, item.get("config_text", ""))
+
+
 async def _run_xray(xray: str, outbound: Dict[str, Any]) -> Dict[str, Any]:
     port = _free_port()
     config = {
@@ -418,6 +472,11 @@ async def _run_xray(xray: str, outbound: Dict[str, Any]) -> Dict[str, Any]:
         "inbounds": [{"listen": "127.0.0.1", "port": port, "protocol": "http", "settings": {}}],
         "outbounds": [{**outbound, "tag": "probe"}],
     }
+    return await _run_proxy([xray, "run", "-c"], config, port, "Xray")
+
+
+async def _run_proxy(cmd: List[str], config: Dict[str, Any], port: int, name: str) -> Dict[str, Any]:
+    """Запускает клиент (Xray или sing-box) с локальным прокси на port и делает запрос в интернет через него."""
     tmpdir = tempfile.mkdtemp(prefix="eclipse-probe-")
     proc = None
     try:
@@ -425,11 +484,11 @@ async def _run_xray(xray: str, outbound: Dict[str, Any]) -> Dict[str, Any]:
         cfg_path.write_text(json.dumps(config), encoding="utf-8")
         os.chmod(cfg_path, 0o600)
         proc = await asyncio.create_subprocess_exec(
-            xray, "run", "-c", str(cfg_path),
+            *cmd, str(cfg_path),
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
-        for _ in range(30):  # ждём, пока Xray откроет локальный порт (до 3 с)
+        for _ in range(30):  # ждём, пока клиент откроет локальный порт (до 3 с)
             if proc.returncode is not None:
-                return {"status": "skip", "detail": "Xray не запустился (проверьте его версию)", "start_failed": True}
+                return {"status": "skip", "detail": f"{name} не запустился (проверьте его версию)", "start_failed": True}
             try:
                 with socket.create_connection(("127.0.0.1", port), timeout=0.2):
                     break
@@ -452,7 +511,7 @@ async def _run_xray(xray: str, outbound: Dict[str, Any]) -> Dict[str, Any]:
                     last_error = "таймаут: трафик не идёт"
                 except Exception as e:  # noqa: BLE001
                     last_error = "трафик не идёт"
-                    logger.debug("Тест через Xray: %s", type(e).__name__)
+                    logger.debug("Тест через %s: %s", name, type(e).__name__)
         return {"status": "bad", "detail": last_error}
     finally:
         if proc is not None and proc.returncode is None:
@@ -493,6 +552,7 @@ def _label(item: Dict[str, Any]) -> str:
 async def probe_all(key: Dict[str, Any], use_xray: bool = True) -> Dict[str, Any]:
     """Проверяет все подключения ключа. Возвращает {results, xray, error}."""
     xray = find_xray() if use_xray else None
+    singbox = find_singbox() if use_xray else None
     try:
         items = await load_links(key)
     except Exception as e:  # noqa: BLE001
@@ -503,7 +563,16 @@ async def probe_all(key: Dict[str, Any], use_xray: bool = True) -> Dict[str, Any
     async def one(item: Dict[str, Any]) -> Dict[str, Any]:
         basic = await probe_basic(item)
         real = None
-        if xray and basic["status"] != "bad":
+        if basic["status"] == "bad":
+            pass
+        elif item.get("kind") == "conf":
+            if use_xray:
+                real = await probe_wireguard(item)
+        elif item.get("protocol") == "tuic":
+            if singbox:
+                async with sem:
+                    real = await probe_singbox(item, singbox)
+        elif xray:
             async with sem:
                 real = await probe_xray(item, xray)
         res = combine(basic, real)

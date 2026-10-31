@@ -1370,3 +1370,107 @@ class AwgTariffSyncTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await self._deleted({"awg_enabled": 1, "awg_router_enabled": 0}, mode), 1)
             self.assertEqual(await self._deleted({"awg_enabled": 1, "awg_router_enabled": 1}, mode), 0)
             self.assertEqual(await self._deleted(None, mode, tariff_id=None), 0)
+
+
+class WireGuardProbeTest(unittest.TestCase):
+    """wg_probe против локального сервера AmneziaWG, написанного по спецификации WireGuard."""
+
+    def _server(self, sock, srv_priv, client_pub, awg):
+        import struct
+        from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from bot.services import wg_probe as w
+        data, addr = sock.recvfrom(4096)
+        msg = data[awg["S1"]:]
+        assert len(msg) == 148 and 100 <= struct.unpack("<I", msg[:4])[0] <= 200
+        srv_pub = w._pub(srv_priv)
+        assert msg[116:132] == w._mac(w._hash(w.LABEL_MAC1, srv_pub), msg[:116])
+        sender_i, e_i = msg[4:8], msg[8:40]
+        c = w._hash(w.CONSTRUCTION)
+        h = w._hash(w._hash(c, w.IDENTIFIER), srv_pub)
+        c = w._kdf(c, e_i, 1)[0]
+        h = w._hash(h, e_i)
+        c, k = w._kdf(c, w._dh(srv_priv, e_i), 2)
+        static = ChaCha20Poly1305(k).decrypt(w._nonce(0), msg[40:88], h)
+        assert static == client_pub
+        h = w._hash(h, msg[40:88])
+        c, k = w._kdf(c, w._dh(srv_priv, static), 2)
+        ChaCha20Poly1305(k).decrypt(w._nonce(0), msg[88:116], h)
+        h = w._hash(h, msg[88:116])
+        e_r = X25519PrivateKey.generate().private_bytes_raw()
+        e_r_pub = w._pub(e_r)
+        c = w._kdf(c, e_r_pub, 1)[0]
+        h = w._hash(h, e_r_pub)
+        c = w._kdf(c, w._dh(e_r, e_i), 1)[0]
+        c = w._kdf(c, w._dh(e_r, static), 1)[0]
+        c, tau, k = w._kdf(c, b"\0" * 32, 3)
+        h = w._hash(h, tau)
+        empty = ChaCha20Poly1305(k).encrypt(w._nonce(0), b"", h)
+        resp = struct.pack("<I", 300) + b"\7\0\0\0" + sender_i + e_r_pub + empty + b"\0" * 32
+        sock.sendto(b"x" * awg["S2"] + resp, addr)
+        recv_key, send_key = w._kdf(c, b"", 2)
+        data, addr = sock.recvfrom(4096)
+        data = data[awg["S4"]:]
+        typ, idx, ctr = struct.unpack("<IIQ", data[:16])
+        assert 500 <= typ <= 600 and idx == 7
+        ip = ChaCha20Poly1305(recv_key).decrypt(w._nonce(ctr), data[16:], None)
+        assert w._checksum(ip[:20]) == 0 and ip[16:20] == bytes([1, 1, 1, 1]) and ip[12:16] == bytes([10, 8, 0, 2])
+        qid = ip[28:30]
+        reply = bytearray(ip[:20]) + struct.pack(">HHHH", 53, 1, 10, 0) + qid
+        reply[12:16], reply[16:20] = ip[16:20], ip[12:16]
+        enc = ChaCha20Poly1305(send_key).encrypt(w._nonce(0), bytes(reply) + b"\0" * (-len(reply) % 16), None)
+        sock.sendto(b"y" * awg["S4"] + struct.pack("<IIQ", 550, struct.unpack("<I", sender_i)[0], 0) + enc, addr)
+
+    def test_amneziawg_handshake_and_dns(self):
+        import base64
+        import socket
+        import threading
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from bot.services import wg_probe as w
+        srv = X25519PrivateKey.generate().private_bytes_raw()
+        cli = X25519PrivateKey.generate().private_bytes_raw()
+        awg = {"S1": 15, "S2": 20, "S4": 8}
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(("127.0.0.1", 0))
+        sock.settimeout(5)
+        errors = []
+
+        def run():
+            try:
+                self._server(sock, srv, w._pub(cli), awg)
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+        t = threading.Thread(target=run)
+        t.start()
+        b64 = lambda k: base64.b64encode(k).decode()  # noqa: E731
+        conf = (f"[Interface]\nPrivateKey = {b64(cli)}\nAddress = 10.8.0.2/32\nJc = 4\nJmin = 10\nJmax = 50\n"
+                f"S1 = 15\nS2 = 20\nS4 = 8\nH1 = 100-200\nH2 = 300\nH3 = 400\nH4 = 500-600\n\n"
+                f"[Peer]\nPublicKey = {b64(w._pub(srv))}\nAllowedIPs = 0.0.0.0/0\n"
+                f"Endpoint = 127.0.0.1:{sock.getsockname()[1]}\n")
+        res = w.probe_sync(conf)
+        t.join()
+        sock.close()
+        self.assertEqual(errors, [])
+        self.assertEqual(res["status"], "ok", res)
+        self.assertTrue(res["detail"].startswith("трафик идёт"))
+
+    def test_no_server_is_bad(self):
+        import base64
+        import socket
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        key = base64.b64encode(X25519PrivateKey.generate().private_bytes_raw()).decode()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+            from bot.services import wg_probe as w
+            from unittest import mock
+            with mock.patch.object(w, "HANDSHAKE_WAIT", 0.2):
+                res = w.probe_sync(f"[Interface]\nPrivateKey = {key}\n[Peer]\nPublicKey = {key}\nEndpoint = 127.0.0.1:{port}\n")
+        self.assertEqual(res, {"status": "bad", "detail": "сервер не ответил на рукопожатие"})
+
+    def test_tuic_outbound(self):
+        from bot.services.connection_probe import tuic_outbound
+        ob = tuic_outbound("tuic://u-1:p%40ss@example.com:443?sni=a.example.com&alpn=h3&allow_insecure=1#x")
+        self.assertEqual((ob["uuid"], ob["password"], ob["server_port"]), ("u-1", "p@ss", 443))
+        self.assertTrue(ob["tls"]["insecure"])
+        self.assertEqual(ob["tls"]["server_name"], "a.example.com")

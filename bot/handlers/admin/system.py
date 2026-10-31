@@ -311,6 +311,8 @@ async def _render_probe_menu(callback: CallbackQuery):
         "",
         f"<b>Ключ для проверки:</b> {('#' + str(key_id)) if key else 'не выбран'}",
         f"<b>Реальный тест:</b> {'доступен (Xray найден)' if xray else 'недоступен: Xray не найден на сервере бота'}",
+        f"<b>TUIC:</b> {'проверяется (sing-box найден)' if cp.find_singbox() else 'не проверяется: нужен sing-box'}",
+        "<b>WireGuard и AmneziaWG:</b> проверяет сам бот",
         f"<b>Автопроверка раз в 15 минут:</b> {'включена' if cp.auto_enabled() else 'выключена'}",
         "",
         "<i>Совет: возьмите свой ключ без жёсткого лимита устройств, бот проверяет с одного IP.</i>",
