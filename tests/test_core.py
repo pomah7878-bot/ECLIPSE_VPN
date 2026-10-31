@@ -1496,3 +1496,30 @@ class YcKeyIdTest(unittest.TestCase):
         self.assertTrue(is_key_id("ajet" + "a1b2c3d4e5f6g7h8"[:16]))
         self.assertFalse(is_key_id("AQVN" + "x" * 36))
         self.assertFalse(is_key_id(""))
+
+
+class RichSectionsTest(unittest.TestCase):
+    def test_sections_table(self):
+        from bot.utils.rich_view import sections_table
+        text = ("🧩 <b>Диагностика</b>\n\n🔍 <b>Что проверяется:</b> версия и база\n\n"
+                "<b>━━ Система ━━</b>\n✅ Всё в порядке\n✅ <b>Версия:</b> бот 1.491\n✅ <b>Диск:</b> 44 ГБ\n\n"
+                "<b>━━ AI-консультант ━━</b>\n🟢 Сервис доступен\nЗа 24 часа: 0 польз.")
+        h = sections_table(text)
+        self.assertIn("<caption>🧩 Диагностика</caption>", h)
+        self.assertIn("<caption>Система</caption>", h)
+        self.assertIn("<td>бот 1.491</td>", h)
+        self.assertIn("<caption>AI-консультант</caption>", h)
+        self.assertIsNone(sections_table("A: 1\nB: 2"))  # без разделов — не таблицы
+        self.assertIsNone(sections_table('<b>━━ X ━━</b>\nA: <a href="x">1</a>'))
+
+    def test_probe_report_html(self):
+        from bot.services.connection_probe import format_report_html
+        report = {"xray": True, "results": [
+            {"status": "ok", "title": "VLESS TLS", "detail": "трафик идёт, 559 мс"},
+            {"status": "bad", "title": "AWG <роутер>", "detail": "трафик не идёт"},
+            {"status": "skip", "title": "AWG", "proto": "AmneziaWG", "detail": "тест не поддерживает"}]}
+        h = format_report_html(report)
+        self.assertLess(h.index("AWG &lt;роутер&gt;"), h.index("VLESS TLS"))  # нерабочие сверху, HTML экранирован
+        self.assertIn("⚪ AmneziaWG ×1", h)
+        self.assertIn("<td>Не работает</td><td>1</td>", h)
+        self.assertIsNone(format_report_html({"error": "x"}))

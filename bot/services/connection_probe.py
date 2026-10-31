@@ -636,6 +636,34 @@ def check_connections_summary() -> Check:
     return ("✅", "Подключения", text)
 
 
+def format_report_html(report: Dict[str, Any]) -> Optional[str]:
+    """«Новый вид меню»: подключения и итог таблицами. None — показать обычным текстом."""
+    from bot.utils.rich_view import table
+    results = report.get("results", [])
+    if report.get("error") or not results:
+        return None
+    order = {"bad": 0, "warn": 1, "ok": 2}
+    shown = sorted((r for r in results if r["status"] != "skip"), key=lambda x: order.get(x["status"], 9))
+    skipped = [r for r in results if r["status"] == "skip"]
+    rows = [(f"{_ICON[r['status']]} {r['title']}", r["detail"]) for r in shown]
+    groups: Dict[Tuple[str, str], int] = {}
+    for r in skipped:
+        key = (r.get("proto") or "прочие", r.get("detail") or "проверка недоступна")
+        groups[key] = groups.get(key, 0) + 1
+    rows += [(f"⚪ {proto} ×{n}", f"не проверяется: {reason}") for (proto, reason), n in groups.items()]
+    ok = sum(1 for r in results if r["status"] == "ok")
+    bad = sum(1 for r in results if r["status"] == "bad")
+    summary = [
+        ("Всего", str(len(results))), ("Работает", str(ok)), ("Не работает", str(bad)),
+        ("Не проверялись", str(len(skipped))),
+        ("Режим", "реальный тест через Xray + проверка порта" if report.get("xray")
+         else "только порт и TLS: Xray не найден на сервере бота"),
+        ("Важно", "проверка идёт с сервера бота, а не из сети клиента: блокировку у оператора она не покажет"),
+    ]
+    return (table("🧪 Проверка подключений", rows, header=("Подключение", "Результат"))
+            + table("Итог", summary))
+
+
 def format_report(report: Dict[str, Any]) -> str:
     from bot.utils.text import escape_html
     lines = ["🧪 <b>Проверка подключений</b>", ""]

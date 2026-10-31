@@ -63,35 +63,75 @@ def auto_table(text: str) -> Optional[str]:
     длинный <code> (ключ, адрес — их копируют) или он слишком длинный.
     """
     import re
-    global _KV
-    if _KV is None:
-        _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
     if not text or len(text) > 3500 or re.search(r"<(a|pre|tg-spoiler)\b", text):
         return None
     if "├" in text or "└" in text or re.search(r"\|.*\|", text):
         return None  # деревья и строки «a | b | c» таблицей не получаются
     if any(len(c) > 40 or "://" in c for c in re.findall(r"<code>(.*?)</code>", text, re.S)):
         return None
+    parsed = _parse_rows(text, take_caption=True)
+    if not parsed:
+        return None
+    caption, rows, pairs = parsed
+    if pairs < 3 or pairs < len(rows) * 0.3 or len(rows) > 30:
+        return None
+    return table(caption, rows)
 
-    def plain(s: str) -> str:
-        return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
+def _plain(s: str) -> str:
+    import re
+    return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
+
+
+def _parse_rows(text: str, take_caption: bool) -> Optional[Tuple[str, list, int]]:
+    """Строки экрана -> (подпись, строки таблицы, число пар «название: значение»); None — слишком длинная строка."""
+    import re
+    global _KV
+    if _KV is None:
+        _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
     caption, rows, pairs = "", [], 0
-    for i, ln in enumerate(l.strip() for l in text.split("\n") if l.strip()):
-        pl = plain(ln)
+    for ln in (l.strip() for l in text.split("\n") if l.strip()):
+        pl = _plain(ln)
         if not re.search(r"\w", pl):  # ━━━ и прочие разделители
             continue
         m = _KV.match(ln)
-        if m and len(plain(m.group(2))) <= 160:
-            label = plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
-            rows.append((label[:28], plain(m.group(2))[:90]))
+        if m and len(_plain(m.group(2))) <= 160:
+            label = _plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
+            rows.append((label[:28], _plain(m.group(2))[:160]))
             pairs += 1
-        elif not rows and not caption and len(pl) <= 60:
+        elif take_caption and not rows and not caption and len(pl) <= 60:
             caption = pl
         elif len(pl) <= 300:
             rows.append((pl, ""))  # не режем: ячейка переносит текст, длина уже ≤ 300
         else:
             return None
-    if pairs < 3 or pairs < len(rows) * 0.3 or len(rows) > 30:
+    return caption, rows, pairs
+
+
+def sections_table(text: str) -> Optional[str]:
+    """Длинный экран с разделами «━━ Название ━━» (например, «Диагностика») -> по таблице на раздел.
+    None — если экран таблицами не показать (ссылки, <pre>, слишком длинные строки, нет разделов)."""
+    import re
+    if not text or re.search(r"<(a|pre|tg-spoiler)\b", text):
         return None
-    return table(caption, rows)
+    head = re.compile(r"^\s*(?:<b>)?\s*[━─—]{2,}\s*(.+?)\s*[━─—]{2,}\s*(?:</b>)?\s*$")
+    chunks, title, buf = [], "", []
+    for ln in text.split("\n"):
+        m = head.match(ln)
+        if m:
+            chunks.append((title, buf))
+            title, buf = _plain(m.group(1)), []
+        else:
+            buf.append(ln)
+    chunks.append((title, buf))
+    if len(chunks) < 2:
+        return None
+    out = []
+    for i, (title, buf) in enumerate(chunks):
+        parsed = _parse_rows("\n".join(buf), take_caption=(i == 0))
+        if parsed is None:
+            return None
+        caption, rows, _ = parsed
+        if rows or caption:
+            out.append(table(title or caption, rows) if rows else table(caption, [], header=None))
+    return "".join(out) or None

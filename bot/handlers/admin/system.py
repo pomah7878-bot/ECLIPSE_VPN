@@ -257,11 +257,25 @@ async def _render_diagnostics(callback: CallbackQuery):
     except Exception as e:
         system_lines = ["<b>━━ Система ━━</b>", f"⚪ Проверка не выполнена: {escape_html(type(e).__name__)}"]
 
-    await safe_edit_or_send(
-        callback.message,
-        _format_extensions_diagnostics(diagnostics, health_check, ai_stats, system_lines),
-        reply_markup=extensions_diagnostics_kb(_alerts_toggle_button() + _extension_settings_menu_buttons(diagnostics)),
+    from bot.utils.rich_view import sections_table
+    text = _format_extensions_diagnostics(diagnostics, health_check, ai_stats, system_lines)
+    await _send_view(
+        callback.message, text, sections_table(text),
+        extensions_diagnostics_kb(_alerts_toggle_button() + _extension_settings_menu_buttons(diagnostics)),
     )
+
+
+async def _send_view(message, text: str, rich_html: str | None, kb) -> None:
+    """«Новый вид меню» — таблицами, иначе (или если Telegram не принял) обычным текстом."""
+    try:
+        from bot.services import client_cabinet
+        if rich_html and client_cabinet.enabled():
+            from bot.utils.rich_view import send as rich_send
+            await rich_send(message, rich_html, text, kb)
+            return
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Новый вид экрана: %s", e)
+    await safe_edit_or_send(message, text, reply_markup=kb)
 
 
 def _alerts_toggle_button() -> list[dict[str, str]]:
@@ -405,10 +419,9 @@ async def probe_run(callback: CallbackQuery, state: FSMContext):
     if report is None:
         await _render_probe_menu(callback)
         return
-    await safe_edit_or_send(
-        callback.message,
-        cp.format_report(report),
-        reply_markup=_probe_kb([[("🔄 Повторить", "admin_probe_run")]], back="admin_probe"),
+    await _send_view(
+        callback.message, cp.format_report(report), cp.format_report_html(report),
+        _probe_kb([[("🔄 Повторить", "admin_probe_run")]], back="admin_probe"),
     )
 
 
