@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Callable, Dict
 
 from aiogram import BaseMiddleware
 from aiogram.client.session.middlewares.base import BaseRequestMiddleware
-from aiogram.methods import SendMessage
+from aiogram.methods import SendMessage, SendRichMessage
 from aiogram.types import TelegramObject
 
 from bot.services import main_menu_tracker as mt
@@ -36,7 +36,7 @@ class TrackSentMessagesMiddleware(BaseRequestMiddleware):
     async def __call__(self, make_request, bot, method):
         result = await make_request(bot, method)
         try:
-            if isinstance(method, SendMessage):
+            if isinstance(method, (SendMessage, SendRichMessage)):
                 uid = mt.current_user.get()
                 chat_id = method.chat_id
                 if uid and isinstance(chat_id, int) and chat_id == uid:

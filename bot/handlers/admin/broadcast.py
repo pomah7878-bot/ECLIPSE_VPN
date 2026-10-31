@@ -510,10 +510,12 @@ async def broadcast_preview(callback: CallbackQuery, bot: Bot):
             force_new=True
         )
     else:
-        await safe_edit_or_send(callback.message,
-            text=preview_text,
-            force_new=True
-        )
+        from bot.utils.rich_view import plain
+        with plain():  # превью — как увидят получатели рассылки
+            await safe_edit_or_send(callback.message,
+                text=preview_text,
+                force_new=True
+            )
 
 
 # ============================================================================
@@ -809,13 +811,15 @@ async def broadcast_confirm(callback: CallbackQuery, bot: Bot):
                         reply_markup=_broadcast_home(),
                     )
                 else:
+                    from bot.utils.rich_view import plain
                     rendered_text = render_broadcast_message_text(text, int(user_id))
-                    await bot.send_message(
-                        chat_id=user_id,
-                        text=rendered_text,
-                        parse_mode="HTML",
-                        reply_markup=_broadcast_home(),
-                    )
+                    with plain():  # текст рассылки уходит как его написал админ
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=rendered_text,
+                            parse_mode="HTML",
+                            reply_markup=_broadcast_home(),
+                        )
                 sent += 1
             except Exception as e:
                 if is_bot_blocked_error(e):

@@ -1,15 +1,35 @@
 """Rich-сообщения для «нового вида меню»: таблицы и отправка с безопасным запасным вариантом.
 
 Если Telegram не принял rich-сообщение (старый клиент, ошибка), экран показывается обычным
-текстом — так же, как до включения нового вида.
+текстом — так же, как до включения нового вида. Весь остальной текст бота переводится в новый вид
+функцией to_rich (через bot/middlewares/rich_view.py).
 """
+import contextlib
+import contextvars
 import html
 import logging
-from typing import Iterable, Optional, Sequence, Tuple
+import re
+from typing import Iterable, Optional, Sequence
 
 from aiogram.types import InlineKeyboardMarkup, Message
 
 logger = logging.getLogger(__name__)
+
+# Внутри plain() сообщения уходят как есть: рассылки, запасной обычный текст.
+_PLAIN = contextvars.ContextVar("rich_view_plain", default=False)
+
+
+@contextlib.contextmanager
+def plain():
+    token = _PLAIN.set(True)
+    try:
+        yield
+    finally:
+        _PLAIN.reset(token)
+
+
+def is_plain() -> bool:
+    return _PLAIN.get()
 
 
 def table(caption: str, rows: Iterable[Sequence[str]], header: Optional[Sequence[str]] = ("Параметр", "Значение")) -> str:
@@ -66,151 +86,150 @@ async def send(msg: Message, rich_html: str, fallback_text: str, reply_markup: O
     except Exception as e:  # noqa: BLE001
         logger.warning("rich_view: rich-сообщение не отправлено, обычный текст: %s", e)
     from bot.utils.text import safe_edit_or_send
-    return await safe_edit_or_send(msg, fallback_text, reply_markup=reply_markup, force_new=force_new, _no_rich=True)
+    with plain():
+        return await safe_edit_or_send(msg, fallback_text, reply_markup=reply_markup, force_new=force_new)
 
 
-_KV = None
+# ------------------------------------------------------------------ текст бота -> новый вид
 
-
-def auto_table(text: str) -> Optional[str]:
-    """Обычный HTML-текст экрана -> заголовок, компактная таблица и абзацы, если в нём есть хотя бы
-    3 строки «Название: значение».
-
-    Первая короткая строка — заголовок; подряд идущие пары — таблица; прочие строки — абзацы
-    (короткая строка перед таблицей — жирный подзаголовок); строки-разделители отбрасываются.
-    Экран остаётся как есть (None), если в нём ссылка, <pre>, длинный <code> (ключ, адрес — их
-    копируют) или он слишком длинный.
-    """
-    import re
-    if not text or len(text) > 3500 or re.search(r"<(a|pre|tg-spoiler)\b", text):
-        return None
-    if "├" in text or "└" in text or re.search(r"\|.*\|", text):
-        return None  # деревья и строки «a | b | c» таблицей не получаются
-    if any(len(c) > 40 or "://" in c for c in re.findall(r"<code>(.*?)</code>", text, re.S)):
-        return None
-    parsed = _parse_items(text, take_caption=True)
-    if not parsed:
-        return None
-    caption, items = parsed
-    pairs = sum(1 for it in items if it[0] == "row")
-    if pairs < 3 or pairs < len(items) * 0.3 or len(items) > 30:
-        return None
-    return heading(caption) + _render(items, header=("Параметр", "Значение"))
-
-
-def _plain(s: str) -> str:
-    import re
-    return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
-
-
-def _parse_items(text: str, take_caption: bool) -> Optional[Tuple[str, list]]:
-    """Строки экрана -> (заголовок, элементы): ("row", название, значение) или ("text", строка, курсив).
-    None — слишком длинная строка."""
-    import re
-    global _KV
-    if _KV is None:
-        _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
-    caption, items = "", []
-    for ln in (l.strip() for l in text.split("\n") if l.strip()):
-        pl = _plain(ln)
-        if not re.search(r"\w", pl):  # ━━━ и прочие разделители
-            continue
-        m = _KV.match(ln)
-        if m and len(_plain(m.group(2))) <= 160:
-            label = _plain(ln[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
-            items.append(("row", label[:28], _plain(m.group(2))))
-        elif take_caption and not items and not caption and len(pl) <= 60:
-            caption = pl
-        elif len(pl) <= 400:
-            items.append(("text", pl, ln.startswith("<i>")))
-        else:
-            return None
-    return caption, items
-
-
-def _render(items: list, header: Optional[Sequence[str]] = None) -> str:
-    """Подряд идущие пары — одна компактная таблица; строки текста — абзацы между таблицами."""
-    out, rows = [], []
-    for i, it in enumerate(items):
-        if it[0] == "row":
-            rows.append(it[1:])
-            continue
-        if rows:
-            out.append(table("", rows, header=header))
-            rows = []
-        before_table = i + 1 < len(items) and items[i + 1][0] == "row"
-        out.append(paragraph(it[1], bold=before_table and len(it[1]) <= 60, italic=it[2]))
-    if rows:
-        out.append(table("", rows, header=header))
-    return "".join(out)
-
-
+_TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)[^>]*?(/?)>")
+_VOID = {"br"}
+_KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
+_SECTION = re.compile(r"^\s*(?:<b>)?\s*[━─—=]{2,}\s*(.+?)\s*[━─—=]{2,}\s*(?:</b>)?\s*$")
+_WHOLE_BOLD = re.compile(r"^[^\w<]{0,6}\s*<b>[^<]*</b>\s*:?$")
+_BLOCK = re.compile(r"<(blockquote|pre)\b[^>]*>.*?</\1>", re.S)
 _BULLETS = "◆◇•▪▫●○-–*✓✔➤►▶"
 
 
-def page_html(text: str) -> Optional[str]:
-    """Текст страницы из админки (HTML Telegram) -> rich: заголовки, списки, абзацы.
+def _plain(s: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", s)).strip()
 
-    Заголовок — короткая строка между разделителями «━━━» или целиком жирная («💳 <b>Купить</b>»);
-    строки с маркером (◆, •, -) — список; остальное — абзацы, внутреннее оформление (<b>, <i>, ссылки)
-    сохраняется. None — если в тексте <pre> или <blockquote>: такой текст показываем как раньше."""
-    import re
-    if not text or re.search(r"<(pre|blockquote)\b", text):
+
+def _balanced(s: str) -> bool:
+    stack = []
+    for closing, name, selfclose in _TAG.findall(s):
+        name = name.lower()
+        if selfclose or name in _VOID:
+            continue
+        if not closing:
+            stack.append(name)
+        elif not stack or stack.pop() != name:
+            return False
+    return not stack
+
+
+def _is_sep(line: str) -> bool:
+    return bool(line) and not re.search(r"\w", _plain(line))
+
+
+def _pair(line: str):
+    """«Название: значение» -> (название, значение HTML) или None."""
+    m = _KV.match(line)
+    if not m:
         return None
-    lines = [ln.strip() for ln in text.split("\n")]
-    out, items = [], []
+    label = _plain(line[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()
+    value = m.group(2).strip()
+    if (not re.search(r"[^\W\d_]", label) or value.startswith("//") or len(_plain(value)) > 200
+            or not _plain(value)):
+        return None
+    if not _balanced(value):
+        value = html.escape(_plain(value))
+    return html.escape(label), value
 
-    def is_sep(ln: str) -> bool:
-        return bool(ln) and not re.search(r"\w", _plain(ln))
 
-    def flush() -> None:
+def to_rich(text: str) -> Optional[str]:
+    """Обычный экран бота (HTML Telegram) -> новый вид: заголовки, компактные таблицы, списки, абзацы.
+
+    - первая короткая строка — заголовок экрана; «━━ Раздел ━━», строка между «━━━» или
+      короткая целиком жирная строка — заголовок раздела;
+    - две и больше строк подряд «Название: значение» — компактная таблица;
+    - строки с маркером (◆ • - ✓) — список; цитаты и блоки кода переносятся как есть;
+    - остальное — абзацы; оформление внутри строк (жирный, ссылки, <code>) сохраняется.
+    None — если текст так не перевести (незакрытые теги): тогда он уходит как есть.
+    """
+    if not text or not text.strip():
+        return None
+    blocks: dict = {}
+
+    def keep(m):
+        key = f"\x00{len(blocks)}\x00"
+        body = m.group(0)
+        if m.group(1) == "blockquote":
+            body = body.strip().replace("\n", "<br>")
+        blocks[key] = body
+        return f"\n{key}\n"
+
+    src = _BLOCK.sub(keep, text)
+    lines = [ln.strip() for ln in src.split("\n")]
+    if not all(_balanced(ln) for ln in lines if ln and ln not in blocks):
+        return None
+
+    out, para, rows, items = [], [], [], []
+
+    def flush_para():
+        if para:
+            out.append("<p>" + "<br>".join(para) + "</p>")
+            para.clear()
+
+    def flush_rows():
+        if len(rows) >= 2:
+            flush_para()
+            out.append("<table bordered striped compact>"
+                       + "".join(f"<tr><td>{a}</td><td>{b}</td></tr>" for a, b, _ in rows) + "</table>")
+        elif rows:
+            para.append(rows[0][2])  # одна пара — обычной строкой того же абзаца
+        rows.clear()
+
+    def flush_items():
         if items:
             out.append("<ul>" + "".join(f"<li>{x}</li>" for x in items) + "</ul>")
             items.clear()
 
+    def flush():
+        flush_rows()
+        flush_items()
+        flush_para()
+
+    first = next((i for i, ln in enumerate(lines) if ln and not _is_sep(ln)), None)
     for i, ln in enumerate(lines):
-        if not ln or is_sep(ln):
+        if not ln or _is_sep(ln):
             flush()
             continue
+        if ln in blocks:
+            flush()
+            out.append(blocks[ln])
+            continue
         pl = _plain(ln)
-        framed = i > 0 and is_sep(lines[i - 1]) and i + 1 < len(lines) and is_sep(lines[i + 1])
-        bold = re.fullmatch(r"[^\w<]{0,6}<b>[^<]*</b>:?", ln)
-        if len(pl) <= 60 and (framed or bold):
+        nxt = lines[i + 1] if i + 1 < len(lines) else ""
+        prev = lines[i - 1] if i > 0 else ""
+        section = _SECTION.match(ln)
+        short = len(pl) <= 60 and not pl.endswith((".", "!", "?", "…", ","))
+        letters = re.sub(r"[^\w]|\d|_", "", pl)
+        caps = len(letters) >= 4 and letters.isupper() and len(pl) <= 60  # «🚀 БЫСТРОЕ ПОДКЛЮЧЕНИЕ»
+        if section:
+            flush()
+            out.append(heading(_plain(section.group(1))))
+            continue
+        if i == first and len(pl) <= 60 and not pl.endswith((".", ",", "…")) and (
+                not nxt or _is_sep(nxt) or _WHOLE_BOLD.match(ln)):
+            flush()
+            out.append(heading(pl.rstrip(":").strip(), 3))
+            continue
+        if (short and (_WHOLE_BOLD.match(ln) or (_is_sep(prev) and _is_sep(nxt)))) or caps:
             flush()
             out.append(heading(pl.rstrip(":").strip()))
-        elif ln[0] in _BULLETS:
+            continue
+        pair = _pair(ln)
+        if pair:
+            flush_items()
+            rows.append((pair[0], pair[1], ln))
+            continue
+        flush_rows()
+        if ln[0] in _BULLETS and len(ln) > 1 and ln[1] in "  ":
+            flush_para()
             items.append(ln[1:].strip())
-        else:
-            flush()
-            out.append(f"<p>{ln}</p>")
+            continue
+        flush_items()
+        para.append(ln)
     flush()
-    return "".join(out) or None
-
-
-def sections_table(text: str) -> Optional[str]:
-    """Длинный экран с разделами «━━ Название ━━» (например, «Диагностика») -> заголовок раздела и
-    компактная таблица под ним. None — если экран так не показать (ссылки, <pre>, длинные строки, нет разделов)."""
-    import re
-    if not text or re.search(r"<(a|pre|tg-spoiler)\b", text):
-        return None
-    head = re.compile(r"^\s*(?:<b>)?\s*[━─—]{2,}\s*(.+?)\s*[━─—]{2,}\s*(?:</b>)?\s*$")
-    chunks, title, buf = [], "", []
-    for ln in text.split("\n"):
-        m = head.match(ln)
-        if m:
-            chunks.append((title, buf))
-            title, buf = _plain(m.group(1)), []
-        else:
-            buf.append(ln)
-    chunks.append((title, buf))
-    if len(chunks) < 2:
-        return None
-    out = []
-    for i, (title, buf) in enumerate(chunks):
-        parsed = _parse_items("\n".join(buf), take_caption=(i == 0))
-        if parsed is None:
-            return None
-        caption, items = parsed
-        if items or caption:
-            out.append(heading(title or caption) + _render(items))
     return "".join(out) or None

@@ -259,6 +259,10 @@ async def main():
     session = SafeParseSession()
     bot = Bot(token=BOT_TOKEN, session=session)
 
+    # «Новый вид меню» для всего текста бота; первым, чтобы следующие видели уже rich-запрос
+    from bot.middlewares.rich_view import RichViewMiddleware
+    bot.session.middleware(RichViewMiddleware())
+
     # Единая ширина «пузыря» сообщений с кнопками (настройка menu_min_width)
     from bot.middlewares.menu_width import MenuWidthMiddleware
     bot.session.middleware(MenuWidthMiddleware())

@@ -324,7 +324,6 @@ async def safe_edit_or_send(
     media_type: Optional[str] = None,
     show_web_page_preview: bool = False,
     force_new: bool = False,
-    _no_rich: bool = False,
 ) -> Message:
     """Universal function for editing/sending messages.
     
@@ -358,17 +357,7 @@ async def safe_edit_or_send(
     want_media = media is not None
     text = prepare_telegram_text(text, has_media=want_media)
 
-    if not want_media and not _no_rich and isinstance(message, Message):
-        # «Новый вид меню»: экран из строк «Название: значение» показываем таблицей
-        try:
-            from bot.services.client_cabinet import enabled as _new_view
-            if _new_view():
-                from bot.utils.rich_view import auto_table, send as _rich_send
-                _html = auto_table(text)
-                if _html:
-                    return await _rich_send(message, _html, text, reply_markup, force_new=force_new)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("auto_table: %s", e)
+    # «Новый вид меню» для текста включается в bot/middlewares/rich_view.py
     link_preview = LinkPreviewOptions(is_disabled=not show_web_page_preview)
 
     if isinstance(message, InaccessibleMessage):

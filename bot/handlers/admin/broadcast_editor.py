@@ -81,7 +81,9 @@ async def _send_content_preview(bot: Bot, message: Message, content: dict[str, A
             reply_markup=_preview_home(),
         )
         return
-    await bot.send_message(chat_id=message.chat.id, text=rendered, parse_mode="HTML", reply_markup=_preview_home())
+    from bot.utils.rich_view import plain
+    with plain():  # превью рассылки — как увидят получатели
+        await bot.send_message(chat_id=message.chat.id, text=rendered, parse_mode="HTML", reply_markup=_preview_home())
 
 
 async def _finish_exit(callback: CallbackQuery, state: FSMContext) -> None:

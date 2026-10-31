@@ -257,10 +257,9 @@ async def _render_diagnostics(callback: CallbackQuery):
     except Exception as e:
         system_lines = ["<b>━━ Система ━━</b>", f"⚪ Проверка не выполнена: {escape_html(type(e).__name__)}"]
 
-    from bot.utils.rich_view import sections_table
     text = _format_extensions_diagnostics(diagnostics, health_check, ai_stats, system_lines)
     await _send_view(
-        callback.message, text, sections_table(text),
+        callback.message, text, None,
         extensions_diagnostics_kb(_alerts_toggle_button() + _extension_settings_menu_buttons(diagnostics)),
     )
 

@@ -213,13 +213,21 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIn("<h4>Т</h4>", h)
         self.assertIn("<td>a</td><td>b</td>", h)
 
-    def test_auto_table(self):
-        from bot.utils.rich_view import auto_table
-        h = auto_table("💰 <b>Баланс</b>\n<b>Остаток:</b> 120 ₽\n🔑 Ключей: <b>3</b>\n• Реферал: 5")
-        self.assertIn("<h4>💰 Баланс</h4>", h)
+    def test_to_rich(self):
+        from bot.utils.rich_view import to_rich
+        h = to_rich("💰 <b>Баланс</b>\n<b>Остаток:</b> 120 ₽\n🔑 Ключей: <b>3</b>\n• Реферал: 5")
+        self.assertTrue(h.startswith("<h3>💰 Баланс</h3><table bordered striped compact>"))
+        self.assertIn("<td>🔑 Ключей</td><td><b>3</b></td>", h)
         self.assertIn("<td>Реферал</td><td>5</td>", h)
-        self.assertIsNone(auto_table("Длинный обычный текст.\nБез пар вида ключ значение."))
-        self.assertIsNone(auto_table('A: 1\nB: 2\nC: <a href="x">3</a>'))
+        self.assertEqual(to_rich("Длинный обычный текст.\nВторая строка."),
+                         "<p>Длинный обычный текст.<br>Вторая строка.</p>")
+        self.assertIn('<a href="x">3</a>', to_rich('A: 1\nB: 2\nC: <a href="x">3</a>'))
+        self.assertEqual(to_rich("Ссылка https://t.me/x\n12:30 оплата"),
+                         "<p>Ссылка https://t.me/x<br>12:30 оплата</p>")  # не пары
+        self.assertIn("<blockquote>a<br>b</blockquote>", to_rich("Т:\n<blockquote>a\nb</blockquote>"))
+        self.assertIn("<pre>x\ny</pre>", to_rich("<pre>x\ny</pre>"))
+        self.assertIsNone(to_rich("<b>начало\nконец</b>"))  # тег через строки — как есть
+        self.assertIsNone(to_rich(""))
 
     def test_main_subscription_table(self):
         from bot.services import main_screen as m
@@ -233,7 +241,6 @@ class NewMenuLookTest(unittest.TestCase):
     def test_servers_table_and_tree_skip(self):
         from datetime import datetime
         from bot.services.admin_monitoring import build_servers_monitoring_html as b
-        from bot.utils.rich_view import auto_table
         snap = {"collected_at": datetime(2026, 10, 30, 17, 31), "servers": [{
             "server": {"name": "S"}, "is_active": True, "panel_online": True,
             "stats": {"online_clients": 3, "cpu_percent": 4, "total_traffic_bytes": 1000},
@@ -242,7 +249,6 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertIn("<h4>🟢 S · 17:31</h4>", h)
         self.assertIn("<td>🟢 N</td><td>2</td><td>5% / 30%</td>", h)
         self.assertIsNone(b({"servers": []}))
-        self.assertIsNone(auto_table("A: 1\nB: 2\nC: 3\n├ x | y | z"))
 
     def test_safe_edit_falls_back_when_edit_refused(self):
         import asyncio
@@ -1499,18 +1505,16 @@ class YcKeyIdTest(unittest.TestCase):
 
 
 class RichSectionsTest(unittest.TestCase):
-    def test_sections_table(self):
-        from bot.utils.rich_view import sections_table
+    def test_sections(self):
+        from bot.utils.rich_view import to_rich
         text = ("🧩 <b>Диагностика</b>\n\n🔍 <b>Что проверяется:</b> версия и база\n\n"
                 "<b>━━ Система ━━</b>\n✅ Всё в порядке\n✅ <b>Версия:</b> бот 1.491\n✅ <b>Диск:</b> 44 ГБ\n\n"
                 "<b>━━ AI-консультант ━━</b>\n🟢 Сервис доступен\nЗа 24 часа: 0 польз.")
-        h = sections_table(text)
-        self.assertIn("<h4>🧩 Диагностика</h4>", h)
-        self.assertIn("<h4>Система</h4>", h)
-        self.assertIn("<td>бот 1.491</td>", h)
+        h = to_rich(text)
+        self.assertTrue(h.startswith("<h3>🧩 Диагностика</h3><p>🔍 <b>Что проверяется:</b> версия и база</p>"))
+        self.assertIn("<h4>Система</h4><p>✅ Всё в порядке</p><table", h)
+        self.assertIn("<td>✅ Версия</td><td>бот 1.491</td>", h)
         self.assertIn("<h4>AI-консультант</h4>", h)
-        self.assertIsNone(sections_table("A: 1\nB: 2"))  # без разделов — не таблицы
-        self.assertIsNone(sections_table('<b>━━ X ━━</b>\nA: <a href="x">1</a>'))
 
     def test_probe_report_html(self):
         from bot.services.connection_probe import format_report_html
@@ -1530,18 +1534,17 @@ class RichPageTest(unittest.TestCase):
     TERMS = ("━━━━━━━━\n⚠️ УСЛОВИЯ\n━━━━━━━━\n◆ Возврат не предусмотрен.\n◆ Возможны <b>перебои</b>.\n\n"
              "Оплачивая подписку, вы соглашаетесь с условиями.")
 
-    def test_page_html(self):
-        from bot.utils.rich_view import page_html
-        h = page_html(self.TERMS)
-        self.assertEqual(h, "<h4>⚠️ УСЛОВИЯ</h4><ul><li>Возврат не предусмотрен.</li><li>Возможны <b>перебои</b>.</li></ul>"
+    def test_page_text(self):
+        from bot.utils.rich_view import to_rich
+        h = to_rich(self.TERMS)
+        self.assertEqual(h, "<h3>⚠️ УСЛОВИЯ</h3><ul><li>Возврат не предусмотрен.</li><li>Возможны <b>перебои</b>.</li></ul>"
                             "<p>Оплачивая подписку, вы соглашаетесь с условиями.</p>")
-        self.assertTrue(page_html("💳 <b>Купить ключ</b>\n\nТекст").startswith("<h4>💳 Купить ключ</h4>"))
-        self.assertIsNone(page_html("<blockquote>a</blockquote>"))
+        self.assertTrue(to_rich("💳 <b>Купить ключ</b>\n\nТекст").startswith("<h3>💳 Купить ключ</h3>"))
 
     def test_auto_rich_prefix_after_title(self):
         from bot.utils.page_renderer import _auto_rich
-        self.assertTrue(_auto_rich("💳 <b>Купить</b>\n\nТекст", "<h4>Т</h4>").startswith("<h4>💳 Купить</h4><h4>Т</h4>"))
-        self.assertTrue(_auto_rich(self.TERMS, "<h4>Т</h4>").startswith("<h4>Т</h4><h4>⚠️ УСЛОВИЯ</h4>"))
+        self.assertTrue(_auto_rich("💳 <b>Купить</b>\n\nТекст", "<h4>Т</h4>").startswith("<h3>💳 Купить</h3><h4>Т</h4>"))
+        self.assertTrue(_auto_rich(self.TERMS, "<h4>Т</h4>").startswith("<h4>Т</h4><h3>⚠️ УСЛОВИЯ</h3>"))
         self.assertEqual(_auto_rich("(пусто)", "<h4>Т</h4>"), "<h4>Т</h4>")
 
     def test_tariffs_rich(self):
@@ -1573,3 +1576,43 @@ class PublicIpViewTest(unittest.TestCase):
         self.assertIn("<h4>Текущие адреса: 2</h4>", h)
         self.assertIn("<tr><td>2</td><td>198.51.100.5</td></tr>", h)
         self.assertIn("<p>Адреса не заданы.</p>", public_ip_html([]))
+
+
+class RichMiddlewareTest(unittest.TestCase):
+    def test_convert(self):
+        from unittest import mock
+        from aiogram.methods import EditMessageText, SendMessage, SendRichMessage
+        from bot.middlewares import rich_view as rv
+        from bot.utils.rich_view import plain
+        text = "📋 <b>Экран</b>\nБаланс: 1\nКлючи: 2"
+        with mock.patch.object(rv, "_enabled", lambda: True):
+            m = rv.convert(SendMessage(chat_id=5, text=text, parse_mode="HTML"))
+            self.assertIsInstance(m, SendRichMessage)
+            self.assertIn("<table", m.rich_message.html)
+            e = rv.convert(EditMessageText(chat_id=5, message_id=7, text=text, parse_mode="HTML"))
+            self.assertEqual((e.message_id, e.text), (7, None))
+            self.assertIsNone(rv.convert(SendMessage(chat_id=-100, text=text, parse_mode="HTML")))  # группа
+            self.assertIsNone(rv.convert(SendMessage(chat_id=5, text=text, parse_mode="MarkdownV2")))
+            with plain():
+                self.assertIsNone(rv.convert(SendMessage(chat_id=5, text=text, parse_mode="HTML")))
+            self.assertIn("&lt;b&gt;", rv.convert(SendMessage(chat_id=5, text="<b>x</b>")).rich_message.html)
+        with mock.patch.object(rv, "_enabled", lambda: False):
+            self.assertIsNone(rv.convert(SendMessage(chat_id=5, text=text, parse_mode="HTML")))
+
+    def test_falls_back_to_original(self):
+        import asyncio
+        from unittest import mock
+        from aiogram.exceptions import TelegramBadRequest
+        from aiogram.methods import SendMessage, SendRichMessage
+        from bot.middlewares import rich_view as rv
+        calls = []
+
+        async def make_request(bot, method):
+            calls.append(type(method).__name__)
+            if isinstance(method, SendRichMessage):
+                raise TelegramBadRequest(method=method, message="Bad Request: can't parse rich message")
+            return "ok"
+
+        with mock.patch.object(rv, "_enabled", lambda: True):
+            res = asyncio.run(rv.RichViewMiddleware()(make_request, None, SendMessage(chat_id=5, text="a: 1\nb: 2", parse_mode="HTML")))
+        self.assertEqual((res, calls), ("ok", ["SendRichMessage", "SendMessage"]))

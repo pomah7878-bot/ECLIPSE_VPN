@@ -672,14 +672,15 @@ def _normalize_snapshot_page_data(page_data: Optional[Mapping[str, Any]]) -> Dic
 
 def _auto_rich(text: str, prefix: Optional[str]) -> Optional[str]:
     """Новый вид страницы: текст -> rich, prefix — под первым заголовком (иначе сверху)."""
-    from bot.utils.rich_view import page_html
-    body = '' if (text or '').strip() in ('', '(пусто)') else page_html(text)
+    from bot.utils.rich_view import to_rich
+    body = '' if (text or '').strip() in ('', '(пусто)') else to_rich(text)
     if body is None:
         return None
     head, sep, _ = (text or '').partition('\n\n')
     title_first = sep and '\n' not in head and len(re.sub(r'<[^>]+>', '', head)) <= 60  # как _insert_after_title
-    if prefix and title_first and body.startswith('<h4>'):
-        end = body.index('</h4>') + len('</h4>')
+    m = re.match(r'<h([34])>.*?</h\1>', body)
+    if prefix and title_first and m:
+        end = m.end()
         return body[:end] + prefix + body[end:]
     return (prefix or '') + body or None
 
