@@ -308,6 +308,19 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertLessEqual(len(router), 1024)
         self.assertLessEqual(len(phone), 1024)
 
+    def test_keenetic_routes_file(self):
+        import ipaddress, os, re
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "keenetic-vpn-routes.bat")
+        raw = open(path, encoding="ascii", newline="").read()
+        self.assertTrue(raw.endswith("\r\n"))  # переносы Windows (CRLF)
+        lines = raw.split("\r\n")
+        lines = [l for l in lines if l]
+        self.assertTrue(0 < len(lines) <= 1024)  # лимит Keenetic на один файл
+        for l in lines:
+            m = re.fullmatch(r"route ADD (\S+) MASK (\S+) 0\.0\.0\.0", l)
+            self.assertTrue(m, l)
+            ipaddress.ip_network(f"{m.group(1)}/{m.group(2)}")
+
 if __name__ == "__main__":
     unittest.main()
 

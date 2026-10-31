@@ -1354,8 +1354,10 @@ def _conf_caption(item: dict) -> str:
             'включите <b>WireGuard VPN</b> и обновите\n'
             '2. «Интернет» → «Другие подключения» → «Загрузить из файла» → выберите этот .conf\n'
             '3. Включите «Использовать для выхода в интернет» и включите подключение\n\n'
-            'Весь трафик роутера пойдёт через VPN. Один файл — одно устройство: '
-            'на два роутера один и тот же файл не ставьте. Никому его не пересылайте — в нём ваш личный ключ'
+            'Чтобы через VPN шли только нужные сервисы (Telegram, Google, Meta и др.), не включайте «выход в интернет» '
+            'и загрузите маршруты кнопкой ниже.\n\n'
+            'Один файл — одно устройство: на два роутера один и тот же файл не ставьте. '
+            'Никому его не пересылайте — в нём ваш личный ключ'
         )
     return (
         head
@@ -1463,6 +1465,42 @@ def _brand_conf_filename(key: dict, key_id: int, fallback: str) -> str:
         return fallback
 
 
+@router.callback_query(F.data.startswith('key_routes_bat:'))
+async def key_routes_bat_handler(callback: CallbackQuery):
+    """Присылает файл маршрутов для Keenetic (.bat): через VPN идут только перечисленные подсети."""
+    import os
+    from aiogram.types import BufferedInputFile
+    from bot.services.license import is_feature_available
+    from bot.utils.git_utils import get_project_root
+    if not is_feature_available('extra_protocols'):
+        await callback.answer('🔒 Недоступно на вашем тарифе', show_alert=True)
+        return
+    path = os.path.join(get_project_root(), 'assets', 'keenetic-vpn-routes.bat')
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except OSError as e:
+        logger.warning(f'Файл маршрутов Keenetic не прочитан: {e}')
+        await callback.answer('Файл временно недоступен', show_alert=True)
+        return
+    await callback.answer()
+    key_id = int(callback.data.split(':')[1])
+    await callback.message.bot.send_document(
+        callback.message.chat.id,
+        BufferedInputFile(data, filename='keenetic-vpn-routes.bat'),
+        caption=(
+            '📥 <b>Маршруты для Keenetic</b>\n\n'
+            'Через VPN пойдут только перечисленные подсети (Telegram, Google, Meta, Cloudflare и др.), '
+            'остальной трафик — напрямую.\n\n'
+            '1. Создайте подключение AmneziaWG из .conf и <b>не</b> включайте для него «выход в интернет»\n'
+            '2. «Сетевые правила» → «Маршрутизация» → добавьте маршруты из этого файла (.bat) '
+            'и выберите интерфейс подключения AmneziaWG'
+        ),
+        parse_mode='HTML',
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')]),
+    )
+
+
 @router.callback_query(F.data.startswith('key_proto:'))
 async def key_proto_handler(callback: CallbackQuery):
     """Отправляет выбранное подключение: .conf + QR для WG/AWG, ссылка для остальных.
@@ -1494,7 +1532,10 @@ async def key_proto_handler(callback: CallbackQuery):
     await callback.answer()
     chat_id = callback.message.chat.id
     bot = callback.message.bot
-    nav = InlineKeyboardMarkup(inline_keyboard=[_connections_nav(key_id, f'key_protocols:{key_id}')])
+    nav_rows = [_connections_nav(key_id, f'key_protocols:{key_id}')]
+    if 'для роутеров' in str(item.get('name') or '').lower():
+        nav_rows.insert(0, [InlineKeyboardButton(text='📥 Маршруты для Keenetic (.bat)', callback_data=f'key_routes_bat:{key_id}')])
+    nav = InlineKeyboardMarkup(inline_keyboard=nav_rows)
     if item.get('kind') == 'conf':
         item['filename'] = _brand_conf_filename(key, key_id, item.get('filename') or 'config.conf')
     qr = item.get('qr_png') or ''
