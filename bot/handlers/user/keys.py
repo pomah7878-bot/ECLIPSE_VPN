@@ -1494,7 +1494,8 @@ async def key_routes_bat_handler(callback: CallbackQuery):
         BufferedInputFile(data, filename='keenetic-vpn-routes.bat'),
         caption=(
             '📥 <b>Маршруты для Keenetic</b>\n\n'
-            'Через VPN пойдут только перечисленные подсети (Telegram, Google, Meta, Cloudflare и др.), '
+            'Через VPN пойдут только перечисленные подсети (Telegram, Google, Meta, Cloudflare, '
+            'ИИ-сервисы: ChatGPT, Claude, Gemini, Grok, Copilot и др.), '
             'остальной трафик — напрямую.\n\n'
             '1. Создайте подключение AmneziaWG из .conf и <b>не</b> включайте для него «выход в интернет»\n'
             '2. «Сетевые правила» → «Маршрутизация» → добавьте маршруты из этого файла (.bat) '
