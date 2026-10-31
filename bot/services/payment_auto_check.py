@@ -19,7 +19,8 @@ from database.requests import (
 
 logger = logging.getLogger(__name__)
 
-AUTO_CHECK_OFFSETS_SECONDS = (120, 300, 600, 1200, 1800)
+# Первые 5 минут — раз в минуту: без вебхука это задержка уведомления об оплате
+AUTO_CHECK_OFFSETS_SECONDS = (20, 60, 120, 180, 240, 300, 600, 1200, 1800)
 AUTO_CHECK_MAX_ATTEMPTS = len(AUTO_CHECK_OFFSETS_SECONDS)
 AUTO_CHECK_MAX_AGE_SECONDS = AUTO_CHECK_OFFSETS_SECONDS[-1]
 AUTO_CHECK_BATCH_LIMIT = 10
