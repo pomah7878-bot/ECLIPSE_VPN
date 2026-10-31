@@ -19,6 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from bot.utils.inbounds import filter_inbounds_for_tariff_id
 from database.connection import get_db
 from database.requests import get_setting, set_setting
 
@@ -111,6 +112,7 @@ async def _create_standby(key: Dict[str, Any], backup_id: int) -> bool:
     )
     client = await get_client(backup_id)
     inbounds = await get_client_subscription_inbounds(client)
+    inbounds = filter_inbounds_for_tariff_id(inbounds, key.get('tariff_id'))
     if not inbounds:
         return False
     expires_at = datetime.fromisoformat(str(key["expires_at"]))

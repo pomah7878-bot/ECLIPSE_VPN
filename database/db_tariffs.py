@@ -15,6 +15,7 @@ __all__ = [
     'update_tariff',
     'update_tariff_field',
     'toggle_tariff_active',
+    'toggle_tariff_flag',
     'get_tariffs_count',
     'get_admin_tariff',
     'is_protected_tariff',
@@ -82,7 +83,8 @@ def get_tariff_by_id(tariff_id: int, raw: bool = False) -> Optional[Dict[str, An
     with get_db() as conn:
         cursor = conn.execute("""
             SELECT id, name, duration_days, price_cents, price_stars, price_rub, 
-                   display_order, is_active, traffic_limit_gb, group_id, max_ips
+                   display_order, is_active, traffic_limit_gb, group_id, max_ips,
+                   awg_enabled, awg_router_enabled
             FROM tariffs
             WHERE id = ?
         """, (tariff_id,))
@@ -203,6 +205,18 @@ def toggle_tariff_active(tariff_id: int) -> Optional[bool]:
         status_text = "активирован" if new_status else "скрыт"
         logger.info(f"Тариф ID {tariff_id}: {status_text}")
         return bool(new_status)
+
+def toggle_tariff_flag(tariff_id: int, column: str) -> Optional[int]:
+    """Переключает галочку AmneziaWG тарифа. Возвращает новое значение или None, если тарифа нет."""
+    if column not in ("awg_enabled", "awg_router_enabled"):
+        raise ValueError(f"Недопустимая колонка: {column}")
+    with get_db() as conn:
+        cursor = conn.execute(f"UPDATE tariffs SET {column} = 1 - {column} WHERE id = ?", (tariff_id,))
+        if not cursor.rowcount:
+            return None
+        value = conn.execute(f"SELECT {column} FROM tariffs WHERE id = ?", (tariff_id,)).fetchone()[0]
+    logger.info(f"Тариф ID {tariff_id}: {column} = {value}")
+    return value
 
 def get_tariffs_count() -> int:
     """

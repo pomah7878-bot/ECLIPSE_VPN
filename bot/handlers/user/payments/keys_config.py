@@ -1,3 +1,4 @@
+from bot.utils.inbounds import filter_inbounds_for_tariff_id
 import logging
 from types import SimpleNamespace
 from aiogram import Router, F
@@ -193,6 +194,7 @@ async def _continue_new_key_config(target, state: FSMContext, server: dict, *, f
     """Continues key configuration after manual or automatic server selection."""
     from bot.services.vpn_api import get_client, VPNAPIError, is_subscription_mode
     from bot.keyboards.user import new_key_inbound_list_kb
+    from database.requests import find_order_by_order_id
     from bot.states.user_states import NewKeyConfig
     from bot.utils.key_pages import build_server_screen_data, keyboard_rows
     from bot.utils.page_renderer import render_page
@@ -208,6 +210,8 @@ async def _continue_new_key_config(target, state: FSMContext, server: dict, *, f
     try:
         client = await get_client(server_id)
         inbounds = await client.get_inbounds()
+        _order = find_order_by_order_id((await state.get_data()).get('new_key_order_id'))
+        inbounds = filter_inbounds_for_tariff_id(inbounds, _order.get('tariff_id') if _order else None)
         if not inbounds:
             await _show_target_error(target, '❌ На сервере нет доступных протоколов')
             return
@@ -391,6 +395,7 @@ async def process_new_key_subscription_final(target, state: FSMContext, server_i
 
         client = await get_client(server_id)
         inbounds = await get_client_subscription_inbounds(client)
+        inbounds = filter_inbounds_for_tariff_id(inbounds, order['tariff_id'])
         if not inbounds:
             raise RuntimeError('На сервере нет доступных inbound')
 

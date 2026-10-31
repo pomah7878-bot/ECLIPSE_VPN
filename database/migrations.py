@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 168
+LATEST_VERSION = 169
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3857,6 +3857,17 @@ def migration_168(conn: sqlite3.Connection) -> None:
     logger.info("Migration v168 applied: функция client_cabinet и кнопка кабинета")
 
 
+def migration_169(conn: sqlite3.Connection) -> None:
+    """AmneziaWG по тарифам: две галочки на тарифе. Существующим тарифам обычный AmneziaWG
+    оставляем (как было до обновления), «для роутеров» — выключен; новые тарифы — 0/0."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tariffs)")}
+    for col in ("awg_enabled", "awg_router_enabled"):
+        if col not in columns:
+            conn.execute(f"ALTER TABLE tariffs ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0")
+    conn.execute("UPDATE tariffs SET awg_enabled = 1")
+    logger.info("Migration v169 applied: галочки AmneziaWG на тарифах")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3952,6 +3963,7 @@ MIGRATIONS = {
     166: migration_166,
     167: migration_167,
     168: migration_168,
+    169: migration_169,
 }
 
 

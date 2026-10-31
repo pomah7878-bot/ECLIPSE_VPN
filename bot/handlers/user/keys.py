@@ -1,3 +1,4 @@
+from bot.utils.inbounds import filter_inbounds_for_tariff_id
 import logging
 import uuid
 import asyncio
@@ -710,6 +711,8 @@ async def key_replace_server_handler(callback: CallbackQuery, state: FSMContext)
     try:
         client = await get_client(server_id)
         inbounds = await client.get_inbounds()
+        _key = get_key_details_for_user((await state.get_data()).get('replace_key_id'), callback.from_user.id)
+        inbounds = filter_inbounds_for_tariff_id(inbounds, _key.get('tariff_id') if _key else None)
         if not inbounds:
             await callback.answer('❌ На сервере нет доступных протоколов', show_alert=True)
             return
@@ -946,6 +949,7 @@ async def _key_replace_execute_locked(callback, state, key_id, new_server_id, ne
         # === 4. Creating a new one ===
         if subscription_mode:
             inbounds = await get_client_subscription_inbounds(new_client)
+            inbounds = filter_inbounds_for_tariff_id(inbounds, current_key.get('tariff_id'))
             if not inbounds:
                 raise RuntimeError('На сервере нет доступных inbound')
             new_sub_id = _uuid.uuid4().hex

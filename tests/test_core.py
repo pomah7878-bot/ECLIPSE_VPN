@@ -1240,3 +1240,133 @@ class BotVersionTest(unittest.TestCase):
         self.assertIsNone(parse_bot_release("Правка README"))
         info = parse_release_body("Новый вид меню: защита от падения (1.476)\n")
         self.assertEqual((info["version"], info["title"]), ("1.476", "Новый вид меню: защита от падения"))
+
+
+class AwgTariffFilterTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    @staticmethod
+    def _fx(name):
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", name + ".json")
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def setUp(self):
+        self.ext = self._fx("awg_inbound_extended")
+        self.router = self._fx("awg_inbound_router")
+        self.vless = {"protocol": "vless", "settings": "{}"}
+
+    def test_detects_kinds(self):
+        from bot.utils.inbounds import is_awg_inbound, is_awg_router_inbound
+        self.assertTrue(is_awg_inbound(self.ext) and is_awg_inbound(self.router))
+        self.assertFalse(is_awg_router_inbound(self.ext))
+        self.assertTrue(is_awg_router_inbound(self.router))
+        self.assertFalse(is_awg_inbound(self.vless))
+        self.assertFalse(is_awg_router_inbound(self.vless))
+        as_dict = dict(self.router, settings=json.loads(self.router["settings"]))
+        self.assertTrue(is_awg_router_inbound(as_dict))
+
+    def test_broken_settings_is_regular_awg(self):
+        from bot.utils.inbounds import is_awg_inbound, is_awg_router_inbound
+        for bad in ("{not json", "", None, "[]"):
+            inbound = {"protocol": "amneziawg", "settings": bad}
+            self.assertTrue(is_awg_inbound(inbound))
+            self.assertFalse(is_awg_router_inbound(inbound))
+
+    def test_allowed_matrix(self):
+        from bot.utils.inbounds import inbound_allowed_for_tariff
+        for awg, rtr in ((0, 0), (0, 1), (1, 0), (1, 1)):
+            t = {"awg_enabled": awg, "awg_router_enabled": rtr}
+            self.assertEqual(inbound_allowed_for_tariff(self.ext, t), bool(awg))
+            self.assertEqual(inbound_allowed_for_tariff(self.router, t), bool(rtr))
+            self.assertTrue(inbound_allowed_for_tariff(self.vless, t))
+        self.assertTrue(inbound_allowed_for_tariff(self.ext, None))
+        self.assertTrue(inbound_allowed_for_tariff(self.router, None))
+        self.assertTrue(inbound_allowed_for_tariff(self.router, {"max_ips": 1}))
+
+    def test_split_keeps_order(self):
+        from bot.utils.inbounds import split_inbounds_for_tariff
+        allowed, denied = split_inbounds_for_tariff(
+            [self.vless, self.ext, self.router], {"awg_enabled": 1, "awg_router_enabled": 0})
+        self.assertEqual([allowed, denied], [[self.vless, self.ext], [self.router]])
+
+    def test_migration_flags(self):
+        with get_db() as c:
+            cols = {r[1] for r in c.execute("PRAGMA table_info(tariffs)")}
+            self.assertTrue({"awg_enabled", "awg_router_enabled"} <= cols)
+            admin = c.execute("SELECT awg_enabled, awg_router_enabled FROM tariffs WHERE name='Admin Tariff'").fetchone()
+        self.assertEqual(tuple(admin), (1, 0))  # тариф существовал до миграции 169
+
+    def test_new_tariff_defaults_off(self):
+        with get_db() as c:
+            tid = c.execute("INSERT INTO tariffs (name, duration_days, price_cents, price_stars) "
+                            "VALUES ('awg_new', 30, 0, 0)").lastrowid
+            row = c.execute("SELECT awg_enabled, awg_router_enabled FROM tariffs WHERE id = ?", (tid,)).fetchone()
+        self.assertEqual(tuple(row), (0, 0))
+
+    def test_toggle_flag(self):
+        from database.requests import toggle_tariff_flag
+        with get_db() as c:
+            tid = c.execute("INSERT INTO tariffs (name, duration_days, price_cents, price_stars) "
+                            "VALUES ('awg_toggle', 30, 0, 0)").lastrowid
+        self.assertEqual(toggle_tariff_flag(tid, "awg_router_enabled"), 1)
+        self.assertEqual(toggle_tariff_flag(tid, "awg_router_enabled"), 0)
+        self.assertEqual(toggle_tariff_flag(tid, "awg_enabled"), 1)
+        from database.db_tariffs import get_tariff_by_id
+        from bot.utils.inbounds import filter_inbounds_for_tariff_id
+        t = get_tariff_by_id(tid)
+        self.assertEqual((t["awg_enabled"], t["awg_router_enabled"]), (1, 0))
+        self.assertEqual(filter_inbounds_for_tariff_id([self.ext, self.router, self.vless], tid),
+                         [self.ext, self.vless])
+        self.assertEqual(filter_inbounds_for_tariff_id([self.router], None), [self.router])
+        self.assertIsNone(toggle_tariff_flag(999999, "awg_enabled"))
+        with self.assertRaises(ValueError):
+            toggle_tariff_flag(tid, "is_active")
+
+    def test_tariff_view_kb_awg_row(self):
+        from bot.keyboards.admin_tariffs import tariff_view_kb
+        rows = tariff_view_kb(3, True, awg=True, awg_router=False).inline_keyboard
+        awg_row = next(r for r in rows if r[0].callback_data.startswith("admin_tariff_awg:"))
+        self.assertEqual([b.callback_data for b in awg_row],
+                         ["admin_tariff_awg:3:awg_enabled", "admin_tariff_awg:3:awg_router_enabled"])
+        self.assertEqual([b.text for b in awg_row], ["AmneziaWG: ✅", "AmneziaWG роутеры: ❌"])
+
+
+class AwgTariffSyncTests(unittest.IsolatedAsyncioTestCase):
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def _deleted(self, tariff, mode="key", tariff_id=7):
+        from unittest import mock
+        from bot.services import vpn_api
+        from bot.services.panels.base import PanelClientState, PanelServerSnapshot
+        router = AwgTariffFilterTests._fx("awg_inbound_router")
+        vless = {"id": 1, "protocol": "vless", "remark": "v", "settings": "{}"}
+        email = "user_awg_test"
+        client = {"email": email, "id": "u1", "subId": "s1", "enable": True}
+        snapshot = PanelServerSnapshot(
+            api_profile="legacy", inbounds=[vless, router],
+            clients={
+                # в режиме «ключ» клиент живёт в одном инбаунде, остальные копии — дубли
+                email: PanelClientState(email=email, client=client, inbound_ids={router["id"]},
+                                        placements={router["id"]: client}),
+                "user_other": PanelClientState(email="user_other", client={"email": "user_other", "id": "u2"},
+                                               inbound_ids={router["id"]}),
+            })
+        key = {"id": 5, "server_active": 1, "panel_email": email, "server_id": 3, "tariff_id": tariff_id,
+               "client_uuid": "u1", "sub_id": "s1", "expires_at": "2099-01-01 00:00:00", "traffic_limit": 0}
+        with mock.patch("database.requests.get_vpn_key_by_id", lambda _: dict(key)), \
+             mock.patch("database.db_tariffs.get_tariff_by_id", lambda _: tariff), \
+             mock.patch.object(vpn_api, "get_bot_mode", lambda: mode), \
+             mock.patch.object(vpn_api, "get_client_from_server_data", lambda _: object()):
+            stats = await vpn_api.ensure_subscription_keys_on_server(5, panel_snapshot=snapshot, dry_run=True)
+        return stats["deleted"]
+
+    async def test_router_awg_removed_only_without_flag(self):
+        for mode in ("key", "subscription"):
+            self.assertEqual(await self._deleted({"awg_enabled": 1, "awg_router_enabled": 0}, mode), 1)
+            self.assertEqual(await self._deleted({"awg_enabled": 1, "awg_router_enabled": 1}, mode), 0)
+            self.assertEqual(await self._deleted(None, mode, tariff_id=None), 0)

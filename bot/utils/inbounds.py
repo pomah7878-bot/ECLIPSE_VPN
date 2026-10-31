@@ -1,8 +1,9 @@
 """
 General rules for working with inbound panels.
 """
+import json
 import time
-from typing import Any, Dict, FrozenSet, List, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 
 IGNORED_INBOUND_PREFIX = "--!"
@@ -99,6 +100,69 @@ def is_cdn_inbound(inbound: Dict[str, Any]) -> bool:
         return int(inbound.get("id")) in get_cdn_inbound_ids()
     except (TypeError, ValueError):
         return False
+
+
+AWG_PROTOCOL = "amneziawg"
+# Параметры расширенного AmneziaWG (2.0+), которых нет у классического «для роутеров».
+_AWG_EXTENDED_FIELDS = (
+    "s3", "s4", "i1", "i2", "i3", "i4", "i5", "headerProtectionKey",
+    "contentPaddingAddition", "keepaliveTimeout", "maxHandshakeAttempts",
+    "rejectAfterTime", "rekeyAfterTime", "rekeyTimeout", "randomTrailers", "disableCookies",
+)
+
+
+def is_awg_inbound(inbound: Dict[str, Any]) -> bool:
+    return inbound_protocol(inbound) == AWG_PROTOCOL
+
+
+def is_awg_router_inbound(inbound: Dict[str, Any]) -> bool:
+    """AmneziaWG без расширенных параметров. Непарсящиеся settings — обычный AmneziaWG."""
+    if not is_awg_inbound(inbound):
+        return False
+    settings = inbound.get("settings")
+    if isinstance(settings, str):
+        try:
+            settings = json.loads(settings)
+        except ValueError:
+            return False
+    if not isinstance(settings, dict) or not settings:
+        return False
+    server = settings.get("server")
+    params = server if isinstance(server, dict) else settings
+    return all(params.get(name) in (None, "", 0, "0", False) for name in _AWG_EXTENDED_FIELDS)
+
+
+def inbound_allowed_for_tariff(inbound: Dict[str, Any], tariff: Optional[Dict[str, Any]]) -> bool:
+    """AmneziaWG выдаётся только тарифам с галочкой; без тарифа и остальные протоколы — всем."""
+    if tariff is None or not is_awg_inbound(inbound):
+        return True
+    column = "awg_router_enabled" if is_awg_router_inbound(inbound) else "awg_enabled"
+    # Нет колонки в словаре тарифа (неполный SELECT) — не отнимаем подключение
+    return bool(tariff.get(column, 1))
+
+
+def split_inbounds_for_tariff(
+    inbounds: List[Dict[str, Any]], tariff: Optional[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Делит инбаунды на разрешённые тарифу и запрещённые, порядок сохраняется."""
+    allowed: List[Dict[str, Any]] = []
+    denied: List[Dict[str, Any]] = []
+    for inbound in inbounds:
+        (allowed if inbound_allowed_for_tariff(inbound, tariff) else denied).append(inbound)
+    return allowed, denied
+
+
+def filter_inbounds_for_tariff_id(inbounds: List[Dict[str, Any]], tariff_id: Any) -> List[Dict[str, Any]]:
+    """Оставляет инбаунды, разрешённые тарифу по ID. Тариф не найден или ошибка базы — без фильтра."""
+    tariff = None
+    if tariff_id:
+        try:
+            from database.db_tariffs import get_tariff_by_id
+            tariff = get_tariff_by_id(int(tariff_id))
+        except Exception:
+            tariff = None
+    allowed, _ = split_inbounds_for_tariff(inbounds, tariff)
+    return allowed
 
 
 def is_prefix_ignored_inbound(inbound: Dict[str, Any]) -> bool:

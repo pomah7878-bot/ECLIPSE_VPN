@@ -59,7 +59,8 @@ def service_tariff_view_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=False, cdn_gb: int=0) -> InlineKeyboardMarkup:
+def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=False, cdn_gb: int=0,
+                   awg: bool=False, awg_router: bool=False) -> InlineKeyboardMarkup:
     """
     Tariff viewing keyboard.
     
@@ -77,6 +78,12 @@ def tariff_view_kb(tariff_id: int, is_active: bool, show_group_button: bool=Fals
     builder.row(InlineKeyboardButton(text=toggle_text, callback_data=f'admin_tariff_toggle:{tariff_id}'))
     if show_group_button:
         builder.row(InlineKeyboardButton(text='📂 Изменить группу', callback_data=f'admin_tariff_change_group:{tariff_id}'))
+    builder.row(
+        InlineKeyboardButton(text=f"AmneziaWG: {'✅' if awg else '❌'}",
+                             callback_data=f'admin_tariff_awg:{tariff_id}:awg_enabled'),
+        InlineKeyboardButton(text=f"AmneziaWG роутеры: {'✅' if awg_router else '❌'}",
+                             callback_data=f'admin_tariff_awg:{tariff_id}:awg_router_enabled'),
+    )
     builder.row(InlineKeyboardButton(text='🗑 Удалить тариф', callback_data=f'admin_tariff_delete:{tariff_id}'))
     builder.row(back_button('admin_tariffs'), home_button())
     return builder.as_markup()

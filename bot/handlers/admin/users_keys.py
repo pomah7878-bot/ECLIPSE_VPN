@@ -1,3 +1,4 @@
+from bot.utils.inbounds import filter_inbounds_for_tariff_id
 import logging
 import uuid
 from datetime import datetime, timedelta
@@ -535,6 +536,7 @@ async def confirm_add_key(callback: CallbackQuery, state: FSMContext, bot: Bot):
 
         if subscription_mode:
             inbounds = await get_client_subscription_inbounds(client)
+            inbounds = filter_inbounds_for_tariff_id(inbounds, tariff_id)
             if not inbounds:
                 await callback.answer('❌ На сервере нет inbound', show_alert=True)
                 return

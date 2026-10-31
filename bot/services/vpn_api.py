@@ -17,7 +17,7 @@ from .panels.base import (
     PanelServerSnapshot,
 )
 from .panels.xui import XUIClient
-from bot.utils.inbounds import split_ignored_inbounds
+from bot.utils.inbounds import split_ignored_inbounds, split_inbounds_for_tariff
 from bot.services.panel_sync_coordinator import (
     panel_sync_coordinator,
     regular_panel_operation,
@@ -1136,7 +1136,21 @@ async def _ensure_subscription_keys_on_server_impl(
         if not all_inbounds:
             return stats
 
+        tariff = None
+        if key.get('tariff_id'):
+            from database.db_tariffs import get_tariff_by_id
+            try:
+                tariff = get_tariff_by_id(key['tariff_id'])
+            except Exception as e:
+                logger.warning(
+                    f"ensure_subscription_keys: не удалось получить тариф "
+                    f"{key.get('tariff_id')}, limitIp = 1, AmneziaWG без ограничений: {e}"
+                )
+
         inbounds, ignored_inbounds = split_ignored_inbounds(all_inbounds)
+        # AmneziaWG, запрещённый тарифом, для этого ключа скрыт — как --! и CDN
+        inbounds, denied_inbounds = split_inbounds_for_tariff(inbounds, tariff)
+        ignored_inbounds = ignored_inbounds + denied_inbounds
         if panel_snapshot is not None:
             all_presence = panel_snapshot.presence_for_email(email)
             visible_ids = {int(inbound['id']) for inbound in inbounds}
@@ -1185,18 +1199,9 @@ async def _ensure_subscription_keys_on_server_impl(
         user_banned = bool(key.get('is_banned', 0))
         active = is_key_active(key) and not is_traffic_exhausted(key) and not user_banned
         limit_ip = 1
-        if key.get('tariff_id'):
-            from database.db_tariffs import get_tariff_by_id
-            try:
-                tariff = get_tariff_by_id(key['tariff_id'])
-                if tariff:
-                    max_ips = tariff.get('max_ips', 1)
-                    limit_ip = max_ips if max_ips is not None else 1
-            except Exception as e:
-                logger.warning(
-                    f"ensure_subscription_keys: не удалось получить тариф "
-                    f"{key.get('tariff_id')} для limitIp, используется 1: {e}"
-                )
+        if tariff:
+            max_ips = tariff.get('max_ips', 1)
+            limit_ip = max_ips if max_ips is not None else 1
 
         traffic_entry = build_inbound_traffic_map(inbounds).get(email, {})
         aggregate_panel_used = (traffic_entry.get('up', 0) or 0) + (traffic_entry.get('down', 0) or 0)

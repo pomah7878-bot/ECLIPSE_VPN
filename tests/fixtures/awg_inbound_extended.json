@@ -1,0 +1,6 @@
+{
+  "id": 293,
+  "protocol": "amneziawg",
+  "remark": "🇷🇺AmneziaWG🇫🇮",
+  "settings": "{\"clients\": [], \"server\": {\"contentPaddingAddition\": \"18-55\", \"disableCookies\": true, \"h1\": \"97530326\", \"h2\": \"556186359\", \"h3\": \"1145120068\", \"h4\": \"2029359106\", \"headerProtectionKey\": \"REDACTED\", \"i1\": \"<r 218>\", \"jc\": 5, \"jmax\": 241, \"jmin\": 74, \"keepaliveTimeout\": \"10-15\", \"maxHandshakeAttempts\": \"15-28\", \"primaryDns\": \"8.8.8.8\", \"privateKey\": \"REDACTED\", \"publicKey\": \"REDACTED\", \"randomTrailers\": true, \"rejectAfterTime\": \"200-281\", \"rekeyAfterTime\": \"REDACTED\", \"rekeyTimeout\": \"REDACTED\", \"s1\": 25, \"s2\": 46, \"s3\": 16, \"s4\": 12, \"secondaryDns\": \"8.8.4.4\", \"subnetCidr\": 24, \"subnetIp\": \"10.8.1.0\"}}"
+}

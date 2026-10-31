@@ -3,6 +3,7 @@
 Клиент не должен выбирать сервер: система сама берёт наименее загруженный
 сервер из доступных для тарифа. Сменить подписку клиент может позже сам.
 """
+from bot.utils.inbounds import filter_inbounds_for_tariff_id
 import asyncio
 import logging
 import uuid as _uuid
@@ -89,6 +90,7 @@ async def configure_draft_key(key_id: int, order_id: str) -> bool:
 
             client = await get_client(server_id)
             inbounds = await get_client_subscription_inbounds(client)
+            inbounds = filter_inbounds_for_tariff_id(inbounds, order['tariff_id'])
             if not inbounds:
                 raise RuntimeError('На сервере нет доступных inbound')
 

@@ -20,6 +20,7 @@ from database.requests import (
     add_tariff,
     update_tariff_field,
     toggle_tariff_active,
+    toggle_tariff_flag,
     get_groups_count,
     get_all_groups,
     get_group_by_id,
@@ -180,14 +181,20 @@ async def render_tariff_view(message: Message, tariff_id: int, state: FSMContext
     elif is_tariffs_on():
         lines.append("🌐 CDN в тарифе: <code>нет</code> (группа не выбрана в /cdn)")
 
+    awg = bool(tariff.get('awg_enabled'))
+    awg_router = bool(tariff.get('awg_router_enabled'))
     lines.extend([
+        f"🛡 AmneziaWG: <code>{'да' if awg else 'нет'}</code>",
+        f"📶 AmneziaWG для роутеров: <code>{'да' if awg_router else 'нет'}</code>",
+        "<i>Ключи появятся или исчезнут у пользователей тарифа при синхронизации</i>",
         f"📊 Порядок: <code>{tariff.get('display_order', 0)}</code>",
         f"\n{status_emoji}",
     ])
     
     await safe_edit_or_send(message, 
         "\n".join(lines),
-        reply_markup=tariff_view_kb(tariff_id, tariff['is_active'], groups_count > 1)
+        reply_markup=tariff_view_kb(tariff_id, tariff['is_active'], groups_count > 1,
+                                    awg=awg, awg_router=awg_router)
     )
 
 
@@ -242,6 +249,41 @@ async def toggle_tariff(callback: CallbackQuery, state: FSMContext):
     # Refresh the viewing screen
     # Refresh the viewing screen
     await render_tariff_view(callback.message, tariff_id, state)
+
+
+@router.callback_query(F.data.startswith("admin_tariff_awg:"))
+async def toggle_tariff_awg(callback: CallbackQuery, state: FSMContext):
+    """Галочки AmneziaWG тарифа и фоновая досинхронизация его ключей."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    try:
+        _, raw_id, column = callback.data.split(":")
+        tariff_id = int(raw_id)
+        new_value = toggle_tariff_flag(tariff_id, column)
+    except ValueError:
+        await callback.answer("❌ Неверная кнопка", show_alert=True)
+        return
+    if new_value is None:
+        await callback.answer("❌ Тариф не найден", show_alert=True)
+        return
+    await callback.answer("Сохранено, обновляю ключи тарифа…")
+    await render_tariff_view(callback.message, tariff_id, state)
+
+    import asyncio
+
+    async def _sync_tariff_keys():
+        try:
+            from database.requests import get_all_active_keys_with_server, get_all_servers
+            from bot.services.panel_sync import run_db_to_panel_sync
+            keys = [k for k in get_all_active_keys_with_server() if k.get('tariff_id') == tariff_id]
+            if keys:
+                await run_db_to_panel_sync(keys, get_all_servers(), apply=True,
+                                           candidate_key_ids=[k['id'] for k in keys])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("AmneziaWG тарифа %s: досинхронизация ключей не удалась: %s", tariff_id, e)
+
+    asyncio.create_task(_sync_tariff_keys())
 
 
 # ============================================================================

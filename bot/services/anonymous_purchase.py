@@ -3,6 +3,7 @@
 (без Telegram) — см. также database/db_payments.py (anonymous_purchases)
 и bot/webapp/server.py (публичные эндпоинты /api/public/*).
 """
+from bot.utils.inbounds import filter_inbounds_for_tariff_id
 import logging
 import time
 import uuid as uuid_module
@@ -78,6 +79,7 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str, site_accoun
 
     client = await get_client(server_id)
     inbounds = await get_client_subscription_inbounds(client)
+    inbounds = filter_inbounds_for_tariff_id(inbounds, tariff_id)
     if not inbounds:
         raise RuntimeError("На сервере нет доступных inbound")
 

@@ -1,0 +1,6 @@
+{
+  "id": 304,
+  "protocol": "amneziawg",
+  "remark": "🇷🇺AmneziaWG 🇫🇮 для роутеров",
+  "settings": "{\"clients\": [], \"server\": {\"disableCookies\": false, \"h1\": \"466004810\", \"h2\": \"657226968\", \"h3\": \"1304777854\", \"h4\": \"1940584223\", \"jc\": 6, \"jmax\": 280, \"jmin\": 45, \"mtu\": 1380, \"primaryDns\": \"8.8.8.8\", \"privateKey\": \"REDACTED\", \"publicKey\": \"REDACTED\", \"randomTrailers\": false, \"s1\": 56, \"s2\": 84, \"s3\": 0, \"s4\": 0, \"secondaryDns\": \"8.8.4.4\", \"subnetCidr\": 16, \"subnetIp\": \"10.10.0.0\"}}"
+}
