@@ -1343,6 +1343,30 @@ def _clean_connection_name(ib: dict, key: dict, host: str = '') -> str:
     return _re.sub(r'-user_[\w.]+$', '', name).strip()  # запасной вариант, если email ключа не известен
 
 
+def _conf_caption(item: dict) -> str:
+    """Подпись к .conf: для подключения «для роутеров» — шаги для роутера (Keenetic), иначе для приложения."""
+    head = f"📎 <b>Конфиг {item['protocol_label']}</b> — файл .conf прикреплён выше, нажмите на него, чтобы скачать\n\n"
+    if 'для роутеров' in str(item.get('name') or '').lower():
+        return (
+            head
+            + '<b>Как подключить роутер (Keenetic):</b>\n'
+            '1. Веб-интерфейс → «Управление» → «Параметры системы» → «Изменить набор компонентов» → '
+            'включите <b>WireGuard VPN</b> и обновите\n'
+            '2. «Интернет» → «Другие подключения» → «Загрузить из файла» → выберите этот .conf\n'
+            '3. Включите «Использовать для выхода в интернет» и включите подключение\n\n'
+            'Весь трафик роутера пойдёт через VPN. Один файл — одно устройство: '
+            'на два роутера один и тот же файл не ставьте. Никому его не пересылайте — в нём ваш личный ключ'
+        )
+    return (
+        head
+        + '<b>Как подключиться:</b>\n'
+        '1. Установите <b>AmneziaVPN</b> или <b>AmneziaWG</b> (кнопка «Скачать приложение» — в разделе «🛡 AmneziaWG»)\n'
+        '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
+        '   или отсканируйте QR-код ниже\n'
+        '3. Один файл — одно устройство. Никому не пересылайте его: в нём ваш личный ключ'
+    )
+
+
 def _connections_nav(key_id: int, back_callback: Optional[str] = None, back_text: str = '⬅️ Назад') -> list:
     """Нижняя строка навигации экранов «Подключения»: назад и на главную."""
     return [
@@ -1479,14 +1503,7 @@ async def key_proto_handler(callback: CallbackQuery):
         first_msg = await bot.send_document(
             chat_id,
             BufferedInputFile(item['config_text'].encode('utf-8'), filename=item.get('filename') or 'config.conf'),
-            caption=(
-                f"📎 <b>Конфиг {item['protocol_label']}</b> — файл .conf прикреплён выше, нажмите на него, чтобы скачать\n\n"
-                '<b>Как подключиться:</b>\n'
-                '1. Установите <b>AmneziaVPN</b> или <b>AmneziaWG</b> (кнопка «Скачать приложение» — в разделе «🛡 AmneziaWG»)\n'
-                '2. Нажмите на файл выше → «Открыть в» AmneziaWG\n'
-                '   или отсканируйте QR-код ниже\n'
-                '3. Один файл — одно устройство. Никому не пересылайте его: в нём ваш личный ключ'
-            ),
+            caption=_conf_caption(item),
             parse_mode='HTML',
             reply_markup=None if png else nav,
         )

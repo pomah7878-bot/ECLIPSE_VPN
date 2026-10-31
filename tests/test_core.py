@@ -298,6 +298,16 @@ class NewMenuLookTest(unittest.TestCase):
         self.assertEqual(_clean_connection_name({"name": "AmneziaWG-user_other_1a2b"}, {}, ""), "AmneziaWG")
         self.assertEqual(_clean_connection_name({"name": "Хельсинки"}, key, ""), "Хельсинки")
 
+    def test_conf_caption_router(self):
+        from bot.handlers.user.keys import _conf_caption
+        router = _conf_caption({"protocol_label": "AmneziaWG", "name": "🇷🇺 AmneziaWG для роутеров🇨🇿"})
+        phone = _conf_caption({"protocol_label": "AmneziaWG", "name": "🇷🇺 AmneziaWG🇨🇿"})
+        self.assertIn("Keenetic", router)
+        self.assertNotIn("Открыть в", router)
+        self.assertIn("Открыть в", phone)
+        self.assertLessEqual(len(router), 1024)
+        self.assertLessEqual(len(phone), 1024)
+
 if __name__ == "__main__":
     unittest.main()
 
