@@ -1251,6 +1251,8 @@ class BotVersionTest(unittest.TestCase):
         self.assertIsNone(parse_bot_release("Правка README"))
         info = parse_release_body("Новый вид меню: защита от падения (1.476)\n")
         self.assertEqual((info["version"], info["title"]), ("1.476", "Новый вид меню: защита от падения"))
+        info = parse_release_body("Версия 1.502: кабинет\n\n+ пункт\n\nCo-Authored-By: X <x@y>\nClaude-Session: https://e.x/s\n")
+        self.assertEqual(info["bullets"], [("+", "пункт")])
 
 
 class AwgTariffFilterTests(unittest.TestCase):

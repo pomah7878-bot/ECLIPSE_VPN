@@ -87,6 +87,10 @@ BOT_RELEASE, BOT_COMMIT = resolve_bot_version()
 _RELEASE_SEARCH_DEPTH = 300  # разумный предел обхода истории назад
 
 
+# Служебные строки git в конце коммита — не часть описания версии
+_TRAILER_RE = re.compile(r"^(co-authored-by|signed-off-by|claude-session):", re.IGNORECASE)
+
+
 def parse_release_body(body: str) -> dict | None:
     """Разбирает полное тело коммита-версии (git log --format=%B) на структуру
     {marker, version, title, bullets: [(kind, text), ...]}. kind — исходный
@@ -104,7 +108,7 @@ def parse_release_body(body: str) -> dict | None:
     bullets: list[tuple[str, str]] = []
     for line in lines[1:]:
         stripped = line.strip()
-        if not stripped:
+        if not stripped or _TRAILER_RE.match(stripped):
             continue
         if stripped[0] in "+-" and len(stripped) > 1:
             bullets.append((stripped[0], stripped[1:].strip()))
