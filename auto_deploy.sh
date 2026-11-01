@@ -16,7 +16,7 @@ set -e
 
 REPO_DIR="${REPO_DIR:-/root/EclipseVPN}"
 REMOTE="${REMOTE:-origin}"
-BRANCH="main"
+BRANCH="${BRANCH:-}"  # пусто = ветка, на которой стоит сервер (можно тестировать ветку до слияния в main)
 LOG_FILE="${LOG_FILE:-/root/backups/auto_deploy.log}"
 BAD_FILE="${BAD_FILE:-/root/backups/auto_deploy.bad}"
 PY="${PY:-$REPO_DIR/venv/bin/python}"
@@ -54,6 +54,8 @@ rollback() {
 
 mkdir -p "$(dirname "$LOG_FILE")"
 cd "$REPO_DIR"
+BRANCH="${BRANCH:-$(git branch --show-current)}"
+BRANCH="${BRANCH:-main}"
 
 # Если есть несохранённые изменения — не трогаем, только предупреждаем в лог
 if [ -n "$(git status --porcelain)" ]; then
