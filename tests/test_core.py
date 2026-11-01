@@ -1692,3 +1692,36 @@ class FixesBatchTest(unittest.TestCase):
             with self.assertRaises(TelegramBadRequest):
                 asyncio.run(bc.ButtonColorsMiddleware()(make_request, None, method))
         self.assertEqual(len(calls), 1)  # без повтора и без счёта «отказов цвета»
+
+
+class AutoServerAfterPaymentTest(unittest.TestCase):
+    def _run(self, configure_result):
+        import asyncio
+        from unittest import mock
+        from bot.services import billing
+        keys = iter([{"id": 7}, {"id": 7, "server_id": 5}])
+        bot = mock.MagicMock()
+        bot.send_message = mock.AsyncMock()
+        bot.get_me = mock.AsyncMock(return_value=mock.MagicMock(username="b"))
+
+        async def configure(key_id, order_id):
+            return configure_result
+
+        with mock.patch("database.requests.get_user_by_id", lambda uid: {"telegram_id": 42}), \
+                mock.patch("database.requests.get_key_details_for_user", lambda k, t: next(keys)), \
+                mock.patch("bot.services.cdn.is_cdn_tariff", lambda t: False), \
+                mock.patch("bot.services.auto_provision.configure_draft_key", configure):
+            asyncio.run(billing._notify_automatic_payment_user(
+                bot, {"user_id": 1, "vpn_key_id": 7, "tariff_id": 3, "order_id": "X", "_payment_action": "new_key"}))
+        args, kwargs = bot.send_message.await_args
+        return args[1], str(kwargs["reply_markup"])
+
+    def test_draft_key_configured_automatically(self):
+        text, kb = self._run(True)
+        self.assertIn("сервер выбран автоматически", text)
+        self.assertIn("key:7", kb)
+
+    def test_falls_back_to_manual_setup(self):
+        text, kb = self._run(False)
+        self.assertIn("осталось выбрать", text)
+        self.assertIn("replace_7", kb)

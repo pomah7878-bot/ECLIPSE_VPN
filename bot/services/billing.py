@@ -1479,6 +1479,20 @@ async def _notify_automatic_payment_user(bot: Any, order: Dict[str, Any]) -> boo
         try:
             key = get_key_details_for_user(int(key_id), telegram_id)
             if key and not key.get('server_id'):
+                # Сервер выбирается автоматически — клиенту ничего доделывать не нужно
+                from bot.services.auto_provision import configure_draft_key
+                try:
+                    if await configure_draft_key(int(key_id), str(order.get('order_id') or '')):
+                        key = get_key_details_for_user(int(key_id), telegram_id)
+                except Exception as e:  # не вышло — клиент настроит сам по ссылке ниже
+                    logger.warning(f"Автонастройка ключа {key_id} после оплаты не удалась: {e}")
+            if key and key.get('server_id') and order.get('_payment_action') == 'new_key':
+                from aiogram.types import InlineKeyboardButton as _Btn, InlineKeyboardMarkup as _Kb
+                text = ('✅ <b>Оплата получена</b>\n\n'
+                        'Ключ готов: сервер выбран автоматически. Откройте его, чтобы подключиться.')
+                markup = _Kb(inline_keyboard=[[_Btn(text='🔑 Открыть ключ', callback_data=f'key:{int(key_id)}')],
+                                              [_Btn(text='🈴 На главную', callback_data='start')]])
+            elif key and not key.get('server_id'):
                 bot_info = await bot.get_me()
                 deep_link = f"https://t.me/{bot_info.username}?start=replace_{key_id}"
                 from aiogram.utils.keyboard import InlineKeyboardBuilder
