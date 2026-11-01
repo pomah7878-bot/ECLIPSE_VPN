@@ -61,6 +61,10 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
 
     from database.requests import get_effective_webapp_url
     my_keys_append_buttons = []
+    bonus_days = phone_bonus_offer_days(telegram_id)
+    if bonus_days:
+        my_keys_append_buttons.append([InlineKeyboardButton(
+            text=f'📱 Подтвердить номер · +{bonus_days} дн. к подписке', callback_data='phone_bonus')])
     if get_effective_webapp_url():
         my_keys_append_buttons.append([InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')])
     my_keys_append_buttons.append([InlineKeyboardButton(text='🈴 На главную', callback_data='start')])
@@ -170,8 +174,10 @@ async def site_login_code_handler(callback: CallbackQuery, state: FSMContext):
         from bot.states.user_states import PhoneLinking
 
         await state.set_state(PhoneLinking.waiting_for_contact)
+        _bonus_days = phone_bonus_offer_days(callback.from_user.id)
         await callback.message.answer(
             "📱 <b>Хочешь входить на сайт по номеру телефона — без кода?</b>\n\n"
+            + (f"🎁 За подтверждение номера — <b>+{_bonus_days} дн. к подписке</b>.\n\n" if _bonus_days else "") +
             "Поделись контактом один раз — дальше вход на сайт будет таким:\n"
             "1. введи номер\n"
             "2. подтверди его звонком\n\n"
@@ -188,6 +194,89 @@ async def site_login_code_handler(callback: CallbackQuery, state: FSMContext):
             ),
         )
     await callback.answer()
+
+
+PHONE_BONUS_DEFAULT_DAYS = 5
+
+
+def phone_bonus_days() -> int:
+    """Бонус за подтверждение номера в боте (настройка phone_bonus_days, 0 — выключен)."""
+    try:
+        return max(0, min(365, int(get_setting('phone_bonus_days', str(PHONE_BONUS_DEFAULT_DAYS)) or 0)))
+    except (TypeError, ValueError):
+        return PHONE_BONUS_DEFAULT_DAYS
+
+
+def phone_bonus_offer_days(telegram_id: int) -> int:
+    """Сколько дней предложить за номер: 0, если бонус выключен, номер уже есть или нет активной подписки
+    (дни добавляются к активному ключу)."""
+    days = phone_bonus_days()
+    if not days:
+        return 0
+    try:
+        from bot.services.trial_phone_registry import has_telegram_id_linked_phone
+        from database.requests import get_user_internal_id, get_first_active_key_for_user
+        if has_telegram_id_linked_phone(telegram_id) or get_setting(f'phone_bonus_given_{telegram_id}', ''):
+            return 0
+        user_id = get_user_internal_id(telegram_id)
+        return days if user_id and get_first_active_key_for_user(user_id) else 0
+    except Exception as e:  # noqa: BLE001
+        logger.debug('Бонус за номер: не проверить %s: %s', telegram_id, e)
+        return 0
+
+
+@router.callback_query(F.data == 'phone_bonus')
+async def phone_bonus_handler(callback: CallbackQuery, state: FSMContext):
+    """«📱 Подтвердить номер» в «Мои ключи»: просим контакт, за него — бонусные дни."""
+    from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+    days = phone_bonus_offer_days(callback.from_user.id)
+    if not days:
+        await callback.answer('Номер уже подтверждён или бонус сейчас недоступен.', show_alert=True)
+        return
+    await state.set_state(PhoneLinking.waiting_for_contact)
+    await callback.message.answer(
+        f"📱 <b>Подтвердите номер — и получите +{days} дн. к подписке</b>\n\n"
+        "Нажмите кнопку ниже, Telegram сам передаст ваш номер.\n"
+        "Зачем: вход на сайт по номеру без кода, а если войдёте на сайте по номеру — "
+        "мы сразу узнаем вас и покажем ваши ключи.\n\n"
+        "🔐 Рекламных звонков и SMS не будет — номер используется только для входа.",
+        parse_mode='HTML',
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text='📱 Поделиться номером телефона', request_contact=True)],
+                [KeyboardButton(text='Не сейчас')],
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        ),
+    )
+    await callback.answer()
+
+
+async def _grant_phone_bonus(telegram_id: int) -> str:
+    """Начисляет бонус за номер один раз. Возвращает строку для сообщения клиенту (или пустую)."""
+    days = phone_bonus_days()
+    if not days or get_setting(f'phone_bonus_given_{telegram_id}', ''):
+        return ''
+    from database.requests import get_user_internal_id, set_setting
+    from bot.services.rewards import grant_days_to_first_active_key
+    user_id = get_user_internal_id(telegram_id)
+    if not user_id:
+        return ''
+    try:
+        result = await grant_days_to_first_active_key(
+            user_id, days, source='phone_bonus', reason='phone_verified',
+            reference_type='phone_bonus', reference_id=str(telegram_id),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error('Бонус за номер: ошибка начисления %s: %s', telegram_id, e)
+        return ''
+    if result.get('ok'):
+        set_setting(f'phone_bonus_given_{telegram_id}', '1')
+        return f"\n\n🎁 <b>+{days} дн. к подписке начислено!</b>"
+    if result.get('reason') == 'no_active_key':
+        return f"\n\nℹ️ Бонус +{days} дн. добавляется к активной подписке — сейчас её нет."
+    return ''
 
 
 @router.message(PhoneLinking.waiting_for_contact, F.contact.as_('contact'))
@@ -213,11 +302,15 @@ async def handle_phone_linking_contact(message: Message, state: FSMContext, cont
         )
         return
 
-    mark_phone_trial_used(contact.phone_number, telegram_id=message.from_user.id)
+    from bot.services.trial_phone_registry import has_telegram_id_linked_phone
+    already_linked = has_telegram_id_linked_phone(message.from_user.id)
+    newly_marked = mark_phone_trial_used(contact.phone_number, telegram_id=message.from_user.id)
     await state.clear()
+    bonus = await _grant_phone_bonus(message.from_user.id) if newly_marked and not already_linked else ''
     await message.answer(
         "✅ Номер привязан! Теперь для входа на сайт можно использовать номер телефона "
-        "вместо кода из бота — на странице входа выбери «Войти по номеру телефона».",
+        "вместо кода из бота — на странице входа выбери «Войти по номеру телефона»." + bonus,
+        parse_mode='HTML',
         reply_markup=ReplyKeyboardRemove(),
     )
 

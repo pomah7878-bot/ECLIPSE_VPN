@@ -1891,3 +1891,30 @@ class SitePhoneMergeTest(unittest.TestCase):
 
         google = get_or_create_site_account("google", "g-merge", email="g@gmail.com")
         self.assertIn("Google", phone_merge_blocker(keep, google))  # вход через Google пропал бы
+
+
+class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
+    """Подтвердить номер в боте — +5 дней к подписке, один раз."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_offer_and_single_grant(self):
+        from unittest.mock import AsyncMock, patch
+        from database.requests import get_or_create_user
+        import bot.handlers.user.keys as keys
+
+        user, _ = get_or_create_user(777000555, username="bonus_user")
+        self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # нет активной подписки — не предлагаем
+        with get_db() as c:
+            c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (user["id"],))
+        with patch("database.requests.get_first_active_key_for_user", return_value={"id": 1}):
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 5)
+        grant = AsyncMock(return_value={"ok": True})
+        with patch("bot.services.rewards.grant_days_to_first_active_key", grant):
+            self.assertIn("+5 дн.", await keys._grant_phone_bonus(777000555))
+            self.assertEqual(await keys._grant_phone_bonus(777000555), "")  # второй раз — нет
+        grant.assert_awaited_once()
+        self.assertEqual(grant.await_args.args[1], 5)
+        self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # после начисления кнопки нет
