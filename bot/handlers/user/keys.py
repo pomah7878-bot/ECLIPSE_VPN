@@ -196,15 +196,28 @@ async def site_login_code_handler(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-PHONE_BONUS_DEFAULT_DAYS = 5
+PHONE_BONUS_FEATURE = 'bonus_tasks'  # лицензия «🎁 Бонусные дни»: без неё бонуса нет, бот работает как обычно
+
+
+def phone_bonus_licensed() -> bool:
+    try:
+        from bot.services.license import is_feature_available
+        return is_feature_available(PHONE_BONUS_FEATURE)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def phone_bonus_setting() -> int:
+    """Срок из настройки phone_bonus_days; по умолчанию выключен — админ включает сам в «Маркетинге»."""
+    try:
+        return max(0, min(365, int(get_setting('phone_bonus_days', '0') or 0)))
+    except (TypeError, ValueError):
+        return 0
 
 
 def phone_bonus_days() -> int:
-    """Бонус за подтверждение номера в боте (настройка phone_bonus_days, 0 — выключен)."""
-    try:
-        return max(0, min(365, int(get_setting('phone_bonus_days', str(PHONE_BONUS_DEFAULT_DAYS)) or 0)))
-    except (TypeError, ValueError):
-        return PHONE_BONUS_DEFAULT_DAYS
+    """Действующий бонус за подтверждение номера: 0 без лицензии или если выключен."""
+    return phone_bonus_setting() if phone_bonus_licensed() else 0
 
 
 def phone_bonus_offer_days(telegram_id: int) -> int:
@@ -291,7 +304,7 @@ def _phone_bonus_admin_text() -> str:
 
 
 def _phone_bonus_admin_kb() -> InlineKeyboardMarkup:
-    cur = phone_bonus_days()
+    cur = phone_bonus_setting()
     buttons = [InlineKeyboardButton(text=("✅ " if n == cur else "") + (f"{n} дн." if n else "Выкл"),
                                     callback_data=f"adm_pb_set:{n}") for n in PHONE_BONUS_CHOICES]
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -304,6 +317,9 @@ def _phone_bonus_admin_kb() -> InlineKeyboardMarkup:
 @router.callback_query(F.data == 'admin_phone_bonus')
 async def admin_phone_bonus(callback: CallbackQuery, state: FSMContext):
     from bot.utils.admin import is_admin
+    if is_admin(callback.from_user.id) and not phone_bonus_licensed():
+        await callback.answer("Бонус за номер входит в «🎁 Бонусные дни» — доступно в полном тарифе", show_alert=True)
+        return
     from bot.utils.text import safe_edit_or_send
     if not is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён", show_alert=True)
@@ -316,6 +332,9 @@ async def admin_phone_bonus(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data.startswith('adm_pb_set:'))
 async def admin_phone_bonus_set(callback: CallbackQuery):
     from bot.utils.admin import is_admin
+    if is_admin(callback.from_user.id) and not phone_bonus_licensed():
+        await callback.answer("Бонус за номер входит в «🎁 Бонусные дни» — доступно в полном тарифе", show_alert=True)
+        return
     from bot.utils.text import safe_edit_or_send
     from database.requests import set_setting
     if not is_admin(callback.from_user.id):

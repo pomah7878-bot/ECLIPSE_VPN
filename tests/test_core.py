@@ -1894,7 +1894,7 @@ class SitePhoneMergeTest(unittest.TestCase):
 
 
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
-    """Подтвердить номер в боте — +5 дней к подписке, один раз."""
+    """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 
     @classmethod
     def setUpClass(cls):
@@ -1902,34 +1902,43 @@ class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_offer_and_single_grant(self):
         from unittest.mock import AsyncMock, patch
-        from database.requests import get_or_create_user
+        from database.requests import get_or_create_user, set_setting
         import bot.handlers.user.keys as keys
 
         user, _ = get_or_create_user(777000555, username="bonus_user")
-        self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # нет активной подписки — не предлагаем
         with get_db() as c:
             c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (user["id"],))
-        with patch("database.requests.get_first_active_key_for_user", return_value={"id": 1}):
+        active = patch("database.requests.get_first_active_key_for_user", return_value={"id": 1})
+        licensed = patch("bot.services.license.is_feature_available", return_value=True)
+        with get_db() as c:  # настройка по умолчанию (соседний тест мог её выставить)
+            c.execute("DELETE FROM settings WHERE key = 'phone_bonus_days'")
+        from database.db_settings import invalidate_settings_cache
+        invalidate_settings_cache()
+        with active, licensed:
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # по умолчанию выключен
+            set_setting("phone_bonus_days", "5")
             self.assertEqual(keys.phone_bonus_offer_days(777000555), 5)
+        with active, patch("bot.services.license.is_feature_available", return_value=False):
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # без лицензии — нет, бот работает как раньше
         grant = AsyncMock(return_value={"ok": True})
-        with patch("bot.services.rewards.grant_days_to_first_active_key", grant):
+        with patch("bot.services.rewards.grant_days_to_first_active_key", grant), licensed:
             self.assertIn("+5 дн.", await keys._grant_phone_bonus(777000555))
             self.assertEqual(await keys._grant_phone_bonus(777000555), "")  # второй раз — нет
         grant.assert_awaited_once()
-        self.assertEqual(grant.await_args.args[1], 5)
-        self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # после начисления кнопки нет
+        with active, licensed:
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # после начисления кнопки нет
 
     def test_admin_screen_and_stats(self):
+        from unittest.mock import patch
         import bot.handlers.user.keys as keys
         from bot.keyboards.admin_misc import marketing_menu_kb
         from database.requests import set_setting
         self.assertIn("admin_phone_bonus", [b.callback_data for row in marketing_menu_kb().inline_keyboard for b in row])
         with get_db() as c:
-            c.execute("INSERT INTO trial_verified_phones (phone_normalized, telegram_id) VALUES ('79995550001', 777000666)")
-        st = keys.phone_bonus_stats()
-        self.assertGreaterEqual(st["phones"], 1)
-        set_setting("phone_bonus_days", "0")
-        self.assertIn("выключен", keys._phone_bonus_admin_text())
-        self.assertEqual(keys.phone_bonus_days(), 0)
-        set_setting("phone_bonus_days", "5")
-        self.assertIn("+5 дн.", keys._phone_bonus_admin_text())
+            c.execute("INSERT OR IGNORE INTO trial_verified_phones (phone_normalized, telegram_id) VALUES ('79995550001', 777000666)")
+        self.assertGreaterEqual(keys.phone_bonus_stats()["phones"], 1)
+        with patch("bot.services.license.is_feature_available", return_value=True):
+            set_setting("phone_bonus_days", "0")
+            self.assertIn("выключен", keys._phone_bonus_admin_text())
+            set_setting("phone_bonus_days", "5")
+            self.assertIn("+5 дн.", keys._phone_bonus_admin_text())
