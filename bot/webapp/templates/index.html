@@ -2004,6 +2004,11 @@
             "Telegram initData не обнаружен. Откройте через бота.": "Telegram initData not found. Please open via the bot.",
             "Ошибка инициализации": "Initialization error",
             "Способы входа": "Sign-in methods",
+            "✈️ Привязать Telegram": "✈️ Link Telegram",
+            "📱 Добавить номер телефона": "📱 Add phone number",
+            "🔑 Добавить вход через": "🔑 Add sign-in with",
+            "Добавьте другие способы входа — пригодятся, если потеряете доступ к одному из них.": "Add more sign-in methods in case you lose access to one of them.",
+            " С Telegram будут приходить уведомления об оплате и окончании подписки.": " With Telegram you will get payment and expiry notifications.",
             "Выйти": "Sign out",
             "AI Помощник": "AI Assistant",
             "АКТИВНА": "ACTIVE",
@@ -2098,6 +2103,39 @@
             } catch (e) { return 'error'; }
         }
 
+        // Клиенту в браузере — недостающие способы входа и привязка Telegram
+        async function renderLoginHints() {
+            const box = document.getElementById('loginHints');
+            if (!box) return;
+            try {
+                const [s, prov] = await Promise.all([
+                    fetch('/api/public/account/session').then(r => r.json()),
+                    fetch('/api/public/oauth/providers').then(r => r.json()).catch(() => ({})),
+                ]);
+                if (!s.logged_in) return;
+                const names = { google: 'Google', yandex: 'Яндекс', vk: 'VK' };
+                const providers = (prov.providers || []).map(p => names[p] || p);
+                const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
+                const items = [];
+                if (s.account_type !== 'telegram') items.push(`<button onclick="linkTelegram()" class="${btn}">✈️ Привязать Telegram</button>`);
+                if (!s.phone) items.push(`<a href="/shop#account" class="${btn}">📱 Добавить номер телефона</a>`);
+                if (!s.email && providers.length) items.push(`<a href="/shop#account" class="${btn}">🔑 Добавить вход через ${escapeHtml(providers.join(' / '))}</a>`);
+                if (!items.length) return;
+                box.innerHTML = translateHtml(`<div class="card rounded-2xl p-4 space-y-2">
+                    <p class="text-xs text-mist mb-1">Добавьте другие способы входа — пригодятся, если потеряете доступ к одному из них.${s.account_type !== 'telegram' ? ' С Telegram будут приходить уведомления об оплате и окончании подписки.' : ''}</p>
+                    ${items.join('')}</div>`);
+            } catch (e) { /* подсказка необязательна */ }
+        }
+
+        async function linkTelegram() {
+            try {
+                const res = await fetch('/api/public/account/telegram-link', { method: 'POST' });
+                const data = await res.json();
+                if (data.url) { location.href = data.url; return; }
+                showToast(data.message || 'Не удалось получить ссылку');
+            } catch (e) { showToast('Не удалось получить ссылку'); }
+        }
+
         async function browserLogout() {
             try { await fetch('/api/public/account/logout', { method: 'POST' }); } catch (e) {}
             location.reload();
@@ -2171,6 +2209,7 @@
                     html += '<div class="mt-2"><button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full">Пробная подписка</button></div>';
                 }
 
+                if (!initData) html += '<div id="loginHints" class="mt-4"></div>';
                 if (!initData) html += '<div class="text-center mt-4"><a href="/shop#account" class="py-2.5 text-xs text-mist-dim underline" style="margin-right:24px">Способы входа</a><button onclick="browserLogout()" class="py-2.5 text-xs text-mist-dim underline transition">Выйти</button></div>';
                 html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
 
@@ -2180,6 +2219,7 @@
                 if (renewMatch) { history.replaceState(null, '', location.pathname); openPayFlow(parseInt(renewMatch[1], 10)); }
                 fetchPings();
                 if (window._appView) fetchDevices();
+                if (!initData) renderLoginHints();
 
                 if (window._trialAvailable) {
                     const trialBtnEmpty = document.getElementById('trial-btn-empty');

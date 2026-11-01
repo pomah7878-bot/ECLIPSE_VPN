@@ -1787,3 +1787,49 @@ class TariffGroupsTest(unittest.TestCase):
         self.assertEqual(rows[2]["short_name"], "1 месяц — (100 ГБ)")  # название целиком
         same = [{"id": 1, "name": "a", "traffic_limit_gb": 0}]
         self.assertNotIn("group", srv._with_groups([{"id": 1, "name": "a"}], same)[0])  # один лимит — без групп
+
+
+class SiteTelegramLinkTest(unittest.TestCase):
+    """Клиент сайта привязывает Telegram: ключи из кабинета переходят к нему; карточка в админке."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_link_moves_keys_and_token(self):
+        import time
+        from database.requests import get_or_create_user
+        from database.db_accounts import (
+            get_or_create_site_account_by_phone, get_or_create_placeholder_user_for_site_account,
+            link_oauth_to_site_account, make_telegram_link_token, verify_telegram_link_token, site_account_phone,
+        )
+        account = get_or_create_site_account_by_phone("79990003344")
+        self.assertEqual(site_account_phone(account), "79990003344")  # номер входа считается номером аккаунта
+        placeholder_id = get_or_create_placeholder_user_for_site_account(account["id"])
+        with get_db() as c:
+            key_id = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))",
+                               (placeholder_id,)).lastrowid
+
+        token = make_telegram_link_token(account["id"])
+        self.assertEqual(verify_telegram_link_token(token), account["id"])
+        self.assertIsNone(verify_telegram_link_token(token[:-1] + ("0" if token[-1] != "0" else "1")))  # подделка
+        self.assertIsNone(verify_telegram_link_token(f"{account['id']}_{int(time.time()) - 1}_x"))  # просрочен
+
+        real, _ = get_or_create_user(777000333, username="real_link")
+        self.assertTrue(link_oauth_to_site_account(account["id"], 777000333))
+        with get_db() as c:
+            owner = c.execute("SELECT user_id FROM vpn_keys WHERE id = ?", (key_id,)).fetchone()[0]
+        self.assertEqual(owner, real["id"])
+        self.assertFalse(link_oauth_to_site_account(account["id"], 777000444))  # второй Telegram не привязать
+
+    def test_admin_card_for_site_client(self):
+        from database.requests import get_user_by_id
+        from database.db_accounts import get_or_create_site_account_by_phone, get_or_create_placeholder_user_for_site_account
+        from bot.handlers.admin.users_manage import _format_user_card
+        account = get_or_create_site_account_by_phone("79990005566")
+        user = get_user_by_id(get_or_create_placeholder_user_for_site_account(account["id"]))
+        text, _ = _format_user_card(user)
+        self.assertIn("Клиент сайта", text)
+        self.assertIn("+79990005566", text)
+        self.assertIn("сообщения не доставляются", text)
+        self.assertNotIn("Username: @site_", text)

@@ -18,6 +18,9 @@ __all__ = [
     'consume_site_login_code',
     'link_purchase_to_account',
     'adopt_account_purchase_keys',
+    'make_telegram_link_token',
+    'site_account_phone',
+    'verify_telegram_link_token',
     'get_site_referrer_code_for_order',
     'get_latest_purchase_for_account',
     'create_oauth_exchange_code',
@@ -79,6 +82,13 @@ def _get_or_create_telegram_site_account(telegram_id: int, referred_by_code: Opt
         return dict(row)
 
 
+def site_account_phone(account: Dict[str, Any]) -> Optional[str]:
+    """Номер аккаунта: привязанный (phone) или тот, по которому он создан (provider='phone')."""
+    if account.get("phone"):
+        return account["phone"]
+    return account.get("provider_user_id") if account.get("provider") == "phone" else None
+
+
 def get_or_create_site_account_by_phone(phone_normalized: str, referred_by_code: Optional[str] = None) -> Dict[str, Any]:
     """Аккаунт по номеру телефона (provider='phone', provider_user_id=
     нормализованный номер) — подтверждается звонком через zvonok.com
@@ -126,7 +136,46 @@ def link_oauth_to_site_account(account_id: int, telegram_id: int) -> bool:
             "UPDATE site_accounts SET telegram_id = ? WHERE id = ? AND telegram_id IS NULL",
             (telegram_id, account_id),
         )
+        if cursor.rowcount:
+            # Ключи, купленные в кабинете до привязки, лежат на служебной личности аккаунта —
+            # переносим их на Telegram-пользователя, иначе после привязки они пропадут из кабинета
+            conn.execute(
+                """UPDATE vpn_keys SET user_id = (SELECT id FROM users WHERE telegram_id = ?)
+                   WHERE user_id = (SELECT placeholder_user_id FROM site_accounts WHERE id = ?)
+                     AND EXISTS (SELECT 1 FROM users WHERE telegram_id = ?)""",
+                (telegram_id, account_id, telegram_id),
+            )
         return cursor.rowcount > 0
+
+
+def _telegram_link_sig(account_id: int, expires: int) -> str:
+    import hashlib as _hashlib
+    import hmac as _hmac
+    from database.db_settings import get_site_session_secret
+    msg = f"tglink:{account_id}:{expires}".encode()
+    return _hmac.new(get_site_session_secret().encode(), msg, _hashlib.sha256).hexdigest()[:20]
+
+
+def make_telegram_link_token(account_id: int, ttl_seconds: int = 900) -> str:
+    """Код для ссылки t.me/<бот>?start=sitelink_<код>: клиент сайта привязывает свой Telegram.
+    Подписан секретом сессий сайта; повторно не сработает — привязка ставится, только пока telegram_id пуст."""
+    import time as _time
+    expires = int(_time.time()) + ttl_seconds
+    return f"{account_id}_{expires}_{_telegram_link_sig(account_id, expires)}"
+
+
+def verify_telegram_link_token(token: str) -> Optional[int]:
+    """account_id из кода привязки Telegram или None (подделка, истёк срок)."""
+    import hmac as _hmac
+    import time as _time
+    try:
+        account_id_str, expires_str, sig = (token or "").split("_")
+        account_id, expires = int(account_id_str), int(expires_str)
+    except ValueError:
+        return None
+    if expires < _time.time() or not _hmac.compare_digest(sig, _telegram_link_sig(account_id, expires)):
+        return None
+    return account_id
 
 
 def set_account_phone(account_id: int, phone_normalized: str) -> bool:
