@@ -1996,7 +1996,8 @@
             "Telegram initData не обнаружен. Откройте через бота.": "Telegram initData not found. Please open via the bot.",
             "Ошибка инициализации": "Initialization error",
             "Вход в личный кабинет": "Sign in to your account",
-            "Войдите кодом из бота («Мои ключи» → «Управлять на сайте») или другим способом.": "Sign in with a code from the bot or another method.",
+            "Войдите по номеру телефона, через Google/Яндекс/VK или кодом из бота («Мои ключи» → «Управлять на сайте»).": "Sign in with your phone number, Google/Yandex/VK or a code from the bot.",
+            "Способы входа": "Sign-in methods",
             "Открыть бота": "Open bot",
             "Войти": "Sign in",
             "Выйти": "Sign out",
@@ -2099,7 +2100,7 @@
             return `
                 <div class="text-center py-14 fade-in">
                     <h2 class="font-display text-base font-bold mb-2">Вход в личный кабинет</h2>
-                    <p class="text-sm text-mist mb-6">Войдите кодом из бота («Мои ключи» → «Управлять на сайте») или другим способом.</p>
+                    <p class="text-sm text-mist mb-6">Войдите по номеру телефона, через Google/Яндекс/VK или кодом из бота («Мои ключи» → «Управлять на сайте»).</p>
                     <a href="/shop" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Войти</a>
                     ${bot}
                 </div>
@@ -2170,10 +2171,13 @@
                     html += '<div class="mt-2"><button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full">Пробная подписка</button></div>';
                 }
 
-                if (!initData) html += '<button onclick="browserLogout()" class="w-full py-2.5 text-xs text-mist-dim underline transition mt-4">Выйти</button>';
+                if (!initData) html += '<div class="text-center mt-4"><a href="/shop#account" class="py-2.5 text-xs text-mist-dim underline" style="margin-right:24px">Способы входа</a><button onclick="browserLogout()" class="py-2.5 text-xs text-mist-dim underline transition">Выйти</button></div>';
                 html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
 
                 container.innerHTML = translateHtml(html);
+                // /#renew-<id> — продление ключа по ссылке из /shop (кнопка в приложении Happ)
+                const renewMatch = location.hash.match(/^#renew-(\d+)$/);
+                if (renewMatch) { history.replaceState(null, '', location.pathname); openPayFlow(parseInt(renewMatch[1], 10)); }
                 fetchPings();
                 if (window._appView) fetchDevices();
 

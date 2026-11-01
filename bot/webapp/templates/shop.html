@@ -634,7 +634,7 @@
             "Трафик": "Traffic",
             "Трафик:": "Traffic:",
             "Уже пользуетесь ботом?": "Already using the bot?",
-            "Управлять на сайте»), чтобы увидеть свои реальные ключи здесь.": "Manage on the website\"), to see your real keys here.",
+            "Управлять на сайте»), чтобы ключи из бота появились в личном кабинете.": "Manage on the website\"), so your bot keys appear in your account.",
             "Управлять на сайте»).": "Manage on the website\").",
             "Яндекс": "Yandex",
             "без ограничений. Оплатите прямо здесь — ключ будет готов мгновенно,": "without limits. Pay right here — your key will be ready instantly,",
@@ -1232,7 +1232,13 @@
             } catch(e) { /* тихо — просто не показываем OAuth-кнопки */ }
         }
 
-        function revealApp(session) {
+        async function revealApp(session) {
+            // Единый личный кабинет — это «/». Здесь, в #account, остаются только способы входа.
+            if (window.location.hash !== '#account') {
+                await tryAutoClaimPendingCode();
+                location.replace('/');
+                return;
+            }
             document.getElementById('authGate').classList.add('hidden');
             document.getElementById('mainApp').classList.remove('hidden');
             loadTariffs();
@@ -1318,11 +1324,12 @@
             try {
                 const res = await postAPI('account/session-login', { code });
                 if (!res.ok) return false;
+                if (keyId) {
+                    location.replace('/#renew-' + parseInt(keyId, 10));
+                    return true;
+                }
                 const sessionRes = await fetchAPI('account/session');
                 revealApp(sessionRes);
-                if (keyId) {
-                    openRenewForKey(parseInt(keyId, 10));
-                }
                 return true;
             } catch(e) {
                 return false;
@@ -2041,24 +2048,20 @@
             _sessionKeys = session.keys || [];
             _sessionBalanceCents = session.balance_cents || 0;
 
-            if (_sessionKeys.length === 0) {
-                box.innerHTML = `
-                    <div class="card rounded-2xl p-5 mb-4 text-center">
-                        <p class="text-sm text-mist mb-3">Пока нет активных ключей на этом аккаунте.</p>
-                        <button onclick="switchTab('buy')" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Купить ключ</button>
-                    </div>
+            const cabinetBtn = `<a href="/" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-4 text-center">Открыть личный кабинет</a>`;
+            let linkCodeBlock = '';
+            if (session.account_type !== 'telegram') {
+                linkCodeBlock = `
                     <div class="card rounded-2xl p-5 mb-6">
                         <h3 class="font-display text-sm font-bold mb-1 text-center">Уже пользуетесь ботом?</h3>
-                        <p class="text-xs text-mist mb-4 text-center">Введите код из бота («Мои ключи» → «Управлять на сайте»), чтобы увидеть свои реальные ключи здесь.</p>
+                        <p class="text-xs text-mist mb-4 text-center">Введите код из бота («Мои ключи» → «Управлять на сайте»), чтобы ключи из бота появились в личном кабинете.</p>
                         <input id="linkCodeInput" type="text" placeholder="XXXX-XXXX" autocomplete="off"
                             class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink font-mono tracking-wider text-center mb-3 uppercase"
                             style="outline:none;" maxlength="9">
                         <button onclick="doLinkExistingCode()" class="w-full py-3 btn-secondary rounded-xl font-bold text-sm transition">Привязать</button>
                         <div id="linkCodeError" class="text-xs text-alert mt-2 text-center"></div>
                     </div>
-                    <button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>
                 `;
-                return;
             }
 
             let linkOAuthBlock = '';
@@ -2090,24 +2093,11 @@
                 `;
             }
 
-            let balanceBlock = '';
-            if (session.balance_human) {
-                balanceBlock = `
-                    <div class="card rounded-2xl p-4 mb-4 flex items-center justify-between">
-                        <div>
-                            <div class="text-[10px] text-mist-dim uppercase tracking-wide">Личный баланс</div>
-                            <div class="font-display text-xl font-bold text-teal">${escapeHtml(session.balance_human)}</div>
-                        </div>
-                    </div>
-                `;
-            }
-
             box.innerHTML =
-                balanceBlock +
-                _sessionKeys.map(renderKeyCard).join('') +
+                cabinetBtn +
+                linkCodeBlock +
                 linkOAuthBlock +
                 linkPhoneBlock +
-                (session.account_type === 'telegram' ? `<a href="/" class="block w-full py-3 btn-secondary rounded-xl font-bold text-sm transition mb-3 text-center">Полный личный кабинет</a>` : '') +
                 `<button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>`;
         }
 

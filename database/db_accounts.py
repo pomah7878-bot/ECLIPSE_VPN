@@ -17,6 +17,7 @@ __all__ = [
     'create_site_login_code',
     'consume_site_login_code',
     'link_purchase_to_account',
+    'adopt_account_purchase_keys',
     'get_site_referrer_code_for_order',
     'get_latest_purchase_for_account',
     'create_oauth_exchange_code',
@@ -223,6 +224,22 @@ def link_purchase_to_account(order_id: str, site_account_id: int) -> bool:
             (site_account_id, order_id),
         )
         return cursor.rowcount > 0
+
+
+def adopt_account_purchase_keys(site_account_id: int, owner_user_id: int) -> int:
+    """Ключи покупок, привязанных к сайт-аккаунту, переводит на его владельца,
+    чтобы единый кабинет находил их по владельцу. Только ключи, которые ещё лежат
+    на служебной личности (telegram_id < 0): забранные в бот ключи не трогаем."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            """UPDATE vpn_keys SET user_id = ?
+               WHERE id IN (SELECT vpn_key_id FROM anonymous_purchases
+                            WHERE site_account_id = ? AND vpn_key_id IS NOT NULL)
+                 AND user_id != ?
+                 AND user_id IN (SELECT id FROM users WHERE telegram_id < 0)""",
+            (owner_user_id, site_account_id, owner_user_id),
+        )
+        return cursor.rowcount
 
 
 def get_site_referrer_code_for_order(order_id: str) -> Optional[str]:

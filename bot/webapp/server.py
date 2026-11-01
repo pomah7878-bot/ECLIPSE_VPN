@@ -175,14 +175,23 @@ def _get_telegram_id(request: web.Request) -> Optional[int]:
     if token:
         from bot.utils.webtoken import verify_token
         return verify_token(token, BOT_TOKEN)
-    # Вход из обычного браузера (без Telegram): cookie личного кабинета сайта.
-    # Только аккаунты, привязанные к Telegram — у чисто сайтовых нет telegram_id.
+    # Вход из обычного браузера: cookie личного кабинета сайта. Сайт-аккаунт без
+    # Telegram (телефон, Google и т.п.) работает через свою служебную личность в
+    # users (telegram_id < 0) — на ней лежат его ключи и баланс.
     account_id = _verify_session(request.cookies.get("site_session"))
     if account_id:
-        from database.requests import get_site_account_by_id
+        from database.requests import get_site_account_by_id, get_user_by_id, adopt_account_purchase_keys
         account = get_site_account_by_id(account_id)
-        if account and account.get("telegram_id"):
+        if not account:
+            return None
+        owner_user_id = _resolve_site_account_internal_user_id(account)
+        if owner_user_id:
+            adopt_account_purchase_keys(account_id, owner_user_id)
+        if account.get("telegram_id"):
             return int(account["telegram_id"])
+        owner = get_user_by_id(owner_user_id) if owner_user_id else None
+        if owner and owner.get("telegram_id"):
+            return int(owner["telegram_id"])
     return None
 
 
@@ -4836,6 +4845,10 @@ async def handle_referral(request: web.Request) -> web.Response:
         # удался, лучше пустая ссылка (клиент попробует обновить страницу),
         # чем реферальная ссылка, ведущая на другого, чужого бота.
         referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}" if bot_username else ""
+        if telegram_id < 0:  # клиент сайта без Telegram — приглашаем на сайт, как в /shop
+            from database.requests import get_effective_webapp_url
+            site = (get_effective_webapp_url() or "").rstrip("/")
+            referral_link = f"{site}/shop?ref={referral_code}" if site else ""
 
         # Count referrals
         referrals_count = 0
@@ -4901,7 +4914,7 @@ async def handle_weblink(request: web.Request) -> web.Response:
     site = (get_effective_webapp_url() or "").strip().rstrip("/")
     if not site:
         return web.json_response({"error": "not_configured"}, status=404)
-    if not is_site_auth_method_enabled('code'):
+    if telegram_id < 0 or not is_site_auth_method_enabled('code'):  # <0: сайт-аккаунт, он уже в браузере
         return web.json_response({"url": f"{site}/"})
     # Одноразовый код (10 мин): кабинет в браузере сразу открывается под этим клиентом
     from database.requests import create_site_login_code
