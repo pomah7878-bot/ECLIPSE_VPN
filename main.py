@@ -128,13 +128,16 @@ async def on_startup(bot: Bot):
         pending_admin_id = get_setting('pending_restart_notify_admin_id', '')
         if pending_admin_id:
             set_setting('pending_restart_notify_admin_id', '')
-            await bot.send_message(
+            notice = await bot.send_message(
                 int(pending_admin_id),
                 "✅ <b>Бот перезапущен и снова готов к работе.</b>\n\n"
                 "Нажмите /start, чтобы открыть меню — старые кнопки в чате "
                 "после перезапуска могли устареть.",
                 parse_mode="HTML",
             )
+            # одноразовое: уберётся при следующем /start или «На главную» (список хранится в БД)
+            from bot.services.main_menu_tracker import track_sensitive
+            track_sensitive(int(pending_admin_id), notice)
     except Exception as e:
         logger.warning(f"Не удалось отправить уведомление о завершении перезапуска: {e}")
 
