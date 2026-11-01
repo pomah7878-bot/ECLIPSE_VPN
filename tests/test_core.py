@@ -1918,3 +1918,18 @@ class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
         grant.assert_awaited_once()
         self.assertEqual(grant.await_args.args[1], 5)
         self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # после начисления кнопки нет
+
+    def test_admin_screen_and_stats(self):
+        import bot.handlers.user.keys as keys
+        from bot.keyboards.admin_misc import marketing_menu_kb
+        from database.requests import set_setting
+        self.assertIn("admin_phone_bonus", [b.callback_data for row in marketing_menu_kb().inline_keyboard for b in row])
+        with get_db() as c:
+            c.execute("INSERT INTO trial_verified_phones (phone_normalized, telegram_id) VALUES ('79995550001', 777000666)")
+        st = keys.phone_bonus_stats()
+        self.assertGreaterEqual(st["phones"], 1)
+        set_setting("phone_bonus_days", "0")
+        self.assertIn("выключен", keys._phone_bonus_admin_text())
+        self.assertEqual(keys.phone_bonus_days(), 0)
+        set_setting("phone_bonus_days", "5")
+        self.assertIn("+5 дн.", keys._phone_bonus_admin_text())
