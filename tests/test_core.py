@@ -1833,6 +1833,10 @@ class SiteTelegramLinkTest(unittest.TestCase):
         self.assertIn("+79990005566", text)
         self.assertIn("сообщения не доставляются", text)
         self.assertNotIn("Username: @site_", text)
+        from bot.keyboards.admin_users import user_view_kb
+        buttons = lambda tg: [b.text for row in user_view_kb(tg, [], False).inline_keyboard for b in row]
+        self.assertFalse(any("Написать" in t or "Найти на всех панелях" in t for t in buttons(-123)))
+        self.assertTrue(any("Написать" in t for t in buttons(555)))
 
 
 class SitePhoneLinkTest(unittest.TestCase):
