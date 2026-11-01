@@ -830,6 +830,51 @@ async def handle_site_ai_ask(request: web.Request) -> web.Response:
     return out
 
 
+def _tariff_groups(tariffs: list) -> dict:
+    """Группы тарифов для витрины и кабинета: {tariff_id: {group, group_order, short_name}}.
+    Несколько групп в админке — как в боте (заголовок группы · лимит, название без хвоста-лимита);
+    одна группа — делим по трафику (безлимит / N ГБ), если лимиты разные; иначе без групп."""
+    from database.requests import get_groups_count, get_all_groups, get_tariffs_by_group
+    from bot.utils.page_dynamic_data import _group_header, _limit_label, _clean_tariff_name
+    from bot.utils.rich_view import _plain
+
+    out = {}
+    if get_groups_count() > 1:
+        for order, group in enumerate(get_all_groups()):
+            group_tariffs = get_tariffs_by_group(group["id"])
+            if not group_tariffs:
+                continue
+            header = _plain(_group_header(group["name"]))
+            limit = _limit_label(group_tariffs, group)
+            for t in group_tariffs:
+                out[int(t["id"])] = {
+                    "group": f"{header} · {limit}" if limit else header, "group_order": order,
+                    "short_name": _clean_tariff_name(t["name"]) if limit else t["name"],
+                }
+        return out
+    limits = sorted({int(t.get("traffic_limit_gb") or 0) for t in tariffs}, key=lambda gb: (gb != 0, gb))
+    if len(limits) < 2:
+        return out
+    for t in tariffs:
+        gb = int(t.get("traffic_limit_gb") or 0)
+        out[int(t["id"])] = {
+            # название целиком: группа по трафику не знает про ежемесячный сброс, «ежемесячно» не теряем
+            "group": "♾ Безлимит" if gb == 0 else f"{gb} ГБ", "group_order": limits.index(gb),
+            "short_name": t["name"],
+        }
+    return out
+
+
+def _with_groups(rows: list, tariffs: list) -> list:
+    """Добавляет к строкам тарифов группу и упорядочивает по группам (внутри — как было)."""
+    groups = _tariff_groups(tariffs)
+    if not groups:
+        return rows
+    for row in rows:
+        row.update(groups.get(int(row["id"]), {"group": "", "group_order": len(groups) + 1, "short_name": row["name"]}))
+    return sorted(rows, key=lambda r: r["group_order"])
+
+
 async def handle_tariffs_list(request: web.Request) -> web.Response:
     """GET /api/tariffs — список активных тарифов для экрана оплаты в WebApp.
 
@@ -884,7 +929,7 @@ async def handle_tariffs_list(request: web.Request) -> web.Response:
             row["promo_percent"] = pp["percent"]
         return row
 
-    return web.json_response({"tariffs": [_tariff_row(t) for t in tariffs]})
+    return web.json_response({"tariffs": _with_groups([_tariff_row(t) for t in tariffs], tariffs)})
 
 
 async def handle_pay_create(request: web.Request) -> web.Response:
@@ -2480,7 +2525,7 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
         return row
 
     return web.json_response({
-        "tariffs": [_site_tariff_row(t) for t in tariffs],
+        "tariffs": _with_groups([_site_tariff_row(t) for t in tariffs], tariffs),
         "trial_available": trial_available,
     })
 

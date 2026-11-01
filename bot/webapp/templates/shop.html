@@ -949,7 +949,12 @@
                     shortestByGroup[key] = t;
                 }
             });
+            let prevGroup = null;
             box.innerHTML = tariffs.map((t, i) => {
+                // Заголовок группы на всю ширину сетки — как в боте
+                const groupHeader = t.group && t.group !== prevGroup
+                    ? `<div class="text-sm font-bold text-mist pt-2" style="grid-column:1/-1">${escapeHtml(t.group)}</div>` : '';
+                prevGroup = t.group;
                 const dailyPrice = t.price_rub / t.duration_days;
                 const baselineTariff = shortestByGroup[t.traffic_limit_gb || 'unlimited'];
                 const baselineDaily = baselineTariff.price_rub / baselineTariff.duration_days;
@@ -959,9 +964,9 @@
                     : '';
                 const priceCents = Math.round(t.price_rub * 100);
                 const disabled = _buyPayMethod === 'balance' && priceCents > _sessionBalanceCents;
-                return `
+                return groupHeader + `
                 <button onclick="${disabled ? '' : `selectTariffCard(${t.id})`}" ${disabled ? 'disabled' : ''} class="tariff-card w-full h-full card rounded-2xl p-5 flex flex-col items-center text-center transition active:scale-[0.98]${disabled ? ' opacity-40' : ''}" style="animation-delay:${i * 0.07}s">
-                    <div class="font-semibold text-sm mb-1">${escapeHtml(t.name)}</div>
+                    <div class="font-semibold text-sm mb-1">${escapeHtml(t.short_name || t.name)}</div>
                     <div class="text-xs text-mist mb-4">${daysRu(t.duration_days)}${t.traffic_limit_gb ? ', ' + t.traffic_limit_gb + ' ГБ' : ', безлимит'}</div>
                     ${t.cdn_gb ? `<div class="text-[11px] text-gold mb-3">🌐 + CDN ${t.cdn_gb} ГБ (обход белых списков)</div>` : ''}
                     ${t.old_price_rub ? `<div class="text-xs text-mist-dim line-through mt-auto">${t.old_price_rub.toFixed(0)} ₽</div>` : ''}

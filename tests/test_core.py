@@ -1768,3 +1768,22 @@ class UnifiedCabinetTest(unittest.TestCase):
         self.assertEqual(owners[k1], owner_id)       # ключ со служебной личности перешёл к владельцу аккаунта
         self.assertEqual(owners[k2], real["id"])     # забранный в бот ключ не тронут
         self.assertEqual(adopt_account_purchase_keys(account["id"], owner_id), 0)  # повторно ничего не меняет
+
+
+class TariffGroupsTest(unittest.TestCase):
+    """Витрина и кабинет делят тарифы на группы, как бот."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_single_group_splits_by_traffic(self):
+        import bot.webapp.server as srv
+        tariffs = [{"id": 1, "name": "1 месяц — ♾", "traffic_limit_gb": 0},
+                   {"id": 2, "name": "1 месяц — (100 ГБ)", "traffic_limit_gb": 100},
+                   {"id": 3, "name": "1 год — ♾", "traffic_limit_gb": 0}]
+        rows = srv._with_groups([{"id": t["id"], "name": t["name"]} for t in tariffs], tariffs)
+        self.assertEqual([(r["id"], r["group"]) for r in rows], [(1, "♾ Безлимит"), (3, "♾ Безлимит"), (2, "100 ГБ")])
+        self.assertEqual(rows[2]["short_name"], "1 месяц — (100 ГБ)")  # название целиком
+        same = [{"id": 1, "name": "a", "traffic_limit_gb": 0}]
+        self.assertNotIn("group", srv._with_groups([{"id": 1, "name": "a"}], same)[0])  # один лимит — без групп
