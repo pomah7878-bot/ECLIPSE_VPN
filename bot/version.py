@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 
-from bot.utils.git_utils import run_git_command
+from bot.utils.git_utils import run_git_command, strip_git_trailers
 
 
 logger = logging.getLogger(__name__)
@@ -87,17 +87,13 @@ BOT_RELEASE, BOT_COMMIT = resolve_bot_version()
 _RELEASE_SEARCH_DEPTH = 300  # разумный предел обхода истории назад
 
 
-# Служебные строки git в конце коммита — не часть описания версии
-_TRAILER_RE = re.compile(r"^(co-authored-by|signed-off-by|claude-session):", re.IGNORECASE)
-
-
 def parse_release_body(body: str) -> dict | None:
     """Разбирает полное тело коммита-версии (git log --format=%B) на структуру
     {marker, version, title, bullets: [(kind, text), ...]}. kind — исходный
     символ строки ('+' или '-'); используется только как маркер начала пункта,
     а не как индикатор типа изменения (в истории проекта смысл +/- не всегда
     последователен). Возвращает None, если первая строка не похожа на версию."""
-    lines = [line.rstrip() for line in (body or "").strip("\n").split("\n")]
+    lines = [line.rstrip() for line in strip_git_trailers(body).strip("\n").split("\n")]
     if not lines:
         return None
     header = _match_release_header(lines[0])
@@ -108,7 +104,7 @@ def parse_release_body(body: str) -> dict | None:
     bullets: list[tuple[str, str]] = []
     for line in lines[1:]:
         stripped = line.strip()
-        if not stripped or _TRAILER_RE.match(stripped):
+        if not stripped:
             continue
         if stripped[0] in "+-" and len(stripped) > 1:
             bullets.append((stripped[0], stripped[1:].strip()))

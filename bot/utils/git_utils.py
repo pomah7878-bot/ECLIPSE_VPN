@@ -7,6 +7,7 @@ import subprocess
 import logging
 import sys
 import os
+import re
 from typing import Tuple, Optional, List, Dict
 from bot.utils.text import escape_html
 
@@ -37,6 +38,14 @@ def get_project_root() -> str:
     """
     # We rise from bot/utils/ to the root
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# Служебные строки в конце коммитов (соавторы, ссылки на сессию) — не показываем в боте
+_TRAILER_LINE_RE = re.compile(r"^[ \t]*(co-authored-by|signed-off-by|claude-session):.*(?:\n|$)", re.IGNORECASE | re.MULTILINE)
+
+
+def strip_git_trailers(text: str) -> str:
+    return _TRAILER_LINE_RE.sub("", text or "").rstrip()
 
 
 def run_git_command(args: List[str], timeout: int = 30) -> Tuple[bool, str]:
@@ -283,6 +292,7 @@ def check_for_updates() -> Tuple[bool, int, str, bool, Optional[Dict[str, str]],
     success_log, log_output = run_git_command([
         'log', '--format=%h %B', f'HEAD..origin/{branch}', '-n', '10'
     ])
+    log_output = strip_git_trailers(log_output)
     
     log_text = f"📦 Доступно обновлений: {commits_behind}\n\n"
     if success_log and log_output:
@@ -496,7 +506,7 @@ def get_last_commit_info(revision: str = 'HEAD') -> str:
         'log', '--format=%h %B', '-n', '1', revision
     ])
     if success and output:
-        return output
+        return strip_git_trailers(output)
     return "Не удалось получить информацию о последнем коммите"
 
 
@@ -506,7 +516,7 @@ def get_previous_commits_info(limit: int = 5, revision: str = 'HEAD') -> str:
         'log', '--format=%h %B', '--skip=1', '-n', str(limit), revision
     ])
     if success and output:
-        return output
+        return strip_git_trailers(output)
     return "Нет предыдущих коммитов"
 
 

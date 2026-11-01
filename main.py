@@ -185,7 +185,7 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
     """
     try:
         from database.requests import get_setting, set_setting
-        from bot.utils.git_utils import get_current_commit, run_git_command
+        from bot.utils.git_utils import get_current_commit, run_git_command, strip_git_trailers
         from bot.utils.text import escape_html
         from config import ADMIN_IDS
 
@@ -209,6 +209,7 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
         success, log_output = run_git_command([
             'log', '--format=%h %B', f'{last_notified}..HEAD', '-n', '30',
         ])
+        log_output = strip_git_trailers(log_output)
         set_setting('last_notified_deploy_commit', current_commit)
 
         if not success or not log_output.strip():
