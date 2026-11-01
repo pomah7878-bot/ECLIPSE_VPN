@@ -1731,3 +1731,40 @@ class AutoServerAfterPaymentTest(unittest.TestCase):
         text, kb = self._run(False)
         self.assertIn("осталось выбрать", text)
         self.assertIn("replace_7", kb)
+
+
+class UnifiedCabinetTest(unittest.TestCase):
+    """Единый кабинет: клиент сайта без Telegram входит в «/» и видит ключ, купленный без входа."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_site_account_adopts_purchase_keys(self):
+        from unittest.mock import patch
+        from aiohttp.test_utils import make_mocked_request
+        from database.requests import get_or_create_user
+        from database.db_accounts import adopt_account_purchase_keys, get_or_create_site_account_by_phone
+        import bot.webapp.server as srv
+
+        account = get_or_create_site_account_by_phone("79990001122")
+        anon, _ = get_or_create_user(-777000111, username="anon_x")   # служебная личность анонимной покупки
+        real, _ = get_or_create_user(777000222, username="real")      # ключ, уже забранный в бот
+        with get_db() as c:
+            k1 = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (anon["id"],)).lastrowid
+            k2 = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (real["id"],)).lastrowid
+            for i, k in enumerate((k1, k2)):
+                c.execute("INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, vpn_key_id, site_account_id)"
+                          " VALUES (?, 1, ?, 'paid', ?, ?)", (f"ucab{i}", f"UC{i}", k, account["id"]))
+
+        with patch.object(srv, "_get_session_secret", return_value=b"s"):
+            req = make_mocked_request("GET", "/api/keys", headers={"Cookie": f"site_session={srv._sign_session(account['id'])}"})
+            tg_id = srv._get_telegram_id(req)
+        self.assertLess(tg_id, 0)
+        from database.requests import get_user_internal_id
+        owner_id = get_user_internal_id(tg_id)
+        with get_db() as c:
+            owners = dict(c.execute("SELECT id, user_id FROM vpn_keys WHERE id IN (?, ?)", (k1, k2)).fetchall())
+        self.assertEqual(owners[k1], owner_id)       # ключ со служебной личности перешёл к владельцу аккаунта
+        self.assertEqual(owners[k2], real["id"])     # забранный в бот ключ не тронут
+        self.assertEqual(adopt_account_purchase_keys(account["id"], owner_id), 0)  # повторно ничего не меняет
