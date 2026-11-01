@@ -1942,3 +1942,28 @@ class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("выключен", keys._phone_bonus_admin_text())
             set_setting("phone_bonus_days", "5")
             self.assertIn("+5 дн.", keys._phone_bonus_admin_text())
+
+
+class StartCleanChatTest(unittest.IsolatedAsyncioTestCase):
+    """/start чистит переписку клиента: всё до команды, пачками по 100; админов не трогает."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_clean_ranges_and_admin(self):
+        from unittest.mock import AsyncMock, patch
+        from bot.services import main_menu_tracker as mt
+        bot = AsyncMock()
+        with patch("config.ADMIN_IDS", [111]):
+            await mt.clean_chat_history(bot, 222, 222, 450)  # первая очистка: 300 сообщений назад
+            batches = [c.kwargs["message_ids"] for c in bot.delete_messages.await_args_list]
+            self.assertEqual(batches[0][0], 150)
+            self.assertEqual(batches[-1][-1], 449)  # сама команда 450 остаётся
+            self.assertTrue(all(len(b) <= 100 for b in batches))
+            bot.delete_messages.reset_mock()
+            await mt.clean_chat_history(bot, 222, 222, 460)  # следующая — с прошлой команды
+            self.assertEqual(bot.delete_messages.await_args.kwargs["message_ids"], list(range(450, 460)))
+            bot.delete_messages.reset_mock()
+            await mt.clean_chat_history(bot, 111, 111, 500)  # чат админа не трогаем
+            bot.delete_messages.assert_not_awaited()
