@@ -309,11 +309,12 @@ def attach_local_qr(groups: list[dict]) -> list[dict]:
     return groups
 
 
-def build_connection_groups(raw_links_text: str) -> list[dict[str, Any]]:
-    """Готовый список подключений для бота, мини-приложения и сайта."""
+def build_connection_groups(raw_links_text: str, with_qr: bool = True) -> list[dict[str, Any]]:
+    """Готовый список подключений для бота, мини-приложения и сайта.
+    with_qr=False — без QR-картинок: их сборка занимает секунды и останавливает бота."""
     groups = parse_and_group_inbound_links(raw_links_text)
     groups = filter_extra_protocols(groups, extra_protocols_allowed())
-    return attach_local_qr(groups)
+    return attach_local_qr(groups) if with_qr else groups
 
 
 def _tcp_ping(host: str, port: int, timeout: float = 2.0) -> int | None:

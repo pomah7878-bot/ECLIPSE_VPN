@@ -108,11 +108,17 @@ async def add_domain(domain_or_url: str, domain_name: Optional[str] = None) -> D
     raise HappProxyError(data.get("msg", "Unknown error"), data.get("rc", 0))
 
 
+_DOMAIN_RETRY_SECONDS = 6 * 3600
+_domain_failed_at: Dict[str, float] = {}
+
+
 async def ensure_domain_registered(webapp_url: str) -> bool:
     """Регистрирует домен сайта в happ-proxy.com, только если он ещё не
     был зарегистрирован (или сменился с прошлого раза) — чтобы не дёргать
     API на каждый импорт. Возвращает True, если домен зарегистрирован
-    (сейчас или ранее), False — если регистрация не удалась."""
+    (сейчас или ранее), False — если регистрация не удалась.
+    После отказа (например, «требуется активная подписка») следующая попытка — через 6 часов."""
+    import time
     from database.requests import (
         get_happ_proxy_registered_domain_hash,
         set_happ_proxy_registered_domain_hash,
@@ -120,10 +126,13 @@ async def ensure_domain_registered(webapp_url: str) -> bool:
     current_hash = domain_hash(webapp_url)
     if get_happ_proxy_registered_domain_hash() == current_hash:
         return True
+    if time.monotonic() - _domain_failed_at.get(current_hash, -_DOMAIN_RETRY_SECONDS) < _DOMAIN_RETRY_SECONDS:
+        return False
     try:
         await add_domain(webapp_url)
     except HappProxyError as e:
-        logger.warning(f"happ-proxy.com: не удалось зарегистрировать домен: {e.msg}")
+        _domain_failed_at[current_hash] = time.monotonic()
+        logger.warning(f"happ-proxy.com: не удалось зарегистрировать домен: {e.msg} (следующая попытка через 6 ч)")
         return False
     set_happ_proxy_registered_domain_hash(current_hash)
     return True

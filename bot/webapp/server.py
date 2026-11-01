@@ -1125,6 +1125,61 @@ async def _complete_webapp_order(order_id: str, quote_final_amount_cents: int, t
         await complete_bot.session.close()
 
 
+# Адреса, с которых ЮKassa шлёт HTTP-уведомления (yookassa.ru/developers/using-api/webhooks)
+_YOOKASSA_NETS = None
+
+
+def _is_yookassa_ip(ip: str) -> bool:
+    import ipaddress as _ip
+    global _YOOKASSA_NETS
+    if _YOOKASSA_NETS is None:
+        _YOOKASSA_NETS = [_ip.ip_network(n) for n in (
+            "185.71.76.0/27", "185.71.77.0/27", "77.75.153.0/25", "77.75.156.11/32",
+            "77.75.156.35/32", "77.75.154.128/25", "2a02:5180::/32")]
+    try:
+        addr = _ip.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in _YOOKASSA_NETS)
+
+
+async def handle_yookassa_notify(request: web.Request) -> web.Response:
+    """HTTP-уведомление ЮKassa об оплате: заказ проверяется сразу, а не по расписанию.
+
+    Содержимому уведомления не доверяем: из него берём только id платежа, статус бот
+    сам запрашивает у ЮKassa (как автопроверка). Чужие адреса отклоняются."""
+    ip = _get_client_ip(request)
+    if not _is_yookassa_ip(ip):
+        logger.warning("ЮKassa: уведомление с постороннего адреса %s отклонено", ip)
+        return web.Response(status=403)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.Response(status=400)
+    payment_id = str(((data or {}).get("object") or {}).get("id") or "")[:64]
+    if data.get("event") in ("payment.succeeded", "payment.canceled") and payment_id:
+        asyncio.create_task(_yookassa_check_now(payment_id))
+    return web.Response(status=200)  # ЮKassa ждёт быстрый ответ 200, иначе повторяет
+
+
+async def _yookassa_check_now(payment_id: str) -> None:
+    from database.requests import find_anonymous_purchase_by_yookassa_id, find_order_by_yookassa_id
+    try:
+        order = find_order_by_yookassa_id(payment_id)
+        if order:
+            if order.get("status") == "pending":
+                from bot.services.payment_auto_check import check_order_now
+                from bot.utils.runtime_state import get_bot_instance
+                await check_order_now(get_bot_instance(), order["order_id"])
+            return
+        anon = find_anonymous_purchase_by_yookassa_id(payment_id)
+        if anon and anon.get("status") == "pending":
+            from bot.services.anonymous_purchase import check_and_complete_anonymous_payment
+            await check_and_complete_anonymous_payment(anon["order_id"])
+    except Exception as e:
+        logger.error("ЮKassa: проверка платежа по уведомлению не удалась: %s", e, exc_info=True)
+
+
 async def handle_pay_check(request: web.Request) -> web.Response:
     """POST /api/pay/check — проверяет статус YooKassa QR-платежа и завершает
     заказ (выдача/продление ключа), если оплата прошла.
@@ -5249,6 +5304,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/tariffs", handle_tariffs_list)
     app.router.add_post("/api/pay/create", handle_pay_create)
     app.router.add_post("/api/pay/check", handle_pay_check)
+    app.router.add_post("/api/yookassa/notify", handle_yookassa_notify)
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
     app.router.add_get("/api/public/site-info", handle_public_site_info)

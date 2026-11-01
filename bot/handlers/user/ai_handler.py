@@ -5,7 +5,7 @@ AI Support Handler - полноценная интеграция AI помощн
 import logging
 import base64
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, LinkPreviewOptions
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -326,13 +326,13 @@ async def ai_feedback_handler(query: CallbackQuery):
 
     # Убираем кнопки фидбека из клавиатуры, чтобы нельзя было проголосовать повторно
     if query.message and query.message.reply_markup:
-        new_builder = InlineKeyboardBuilder()
-        for row in query.message.reply_markup.inline_keyboard:
-            kept = [btn for btn in row if not (btn.callback_data or "").startswith("ai_fb:")]
-            if kept:
-                new_builder.row(*kept)
+        # Без InlineKeyboardBuilder: он копирует кнопки, а кнопки полученного сообщения
+        # привязаны к боту и не копируются (cannot pickle '_asyncio.Future')
+        rows = [[btn for btn in row if not (btn.callback_data or "").startswith("ai_fb:")]
+                for row in query.message.reply_markup.inline_keyboard]
         try:
-            await query.message.edit_reply_markup(reply_markup=new_builder.as_markup())
+            await query.message.edit_reply_markup(
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[r for r in rows if r]))
         except Exception as e:
             logger.warning(f"Не удалось обновить клавиатуру после фидбека: {e}")
 

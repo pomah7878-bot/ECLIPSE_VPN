@@ -36,12 +36,32 @@ _BUILTIN_CHECKS = {
 }
 
 
+# Минутная автопроверка и уведомление провайдера (вебхук) не должны брать один заказ одновременно
+_RUN_LOCK = asyncio.Lock()
+
+
 async def auto_check_payment_orders(
     *,
     bot: Any,
     limit: int = AUTO_CHECK_BATCH_LIMIT,
     concurrency: int = AUTO_CHECK_CONCURRENCY,
 ) -> dict[str, int]:
+    async with _RUN_LOCK:
+        return await _auto_check_batch(bot=bot, limit=limit, concurrency=concurrency)
+
+
+async def check_order_now(bot: Any, order_id: str) -> bool:
+    """Провайдер сообщил об оплате: проверяем заказ сразу, не дожидаясь расписания.
+    Статус всё равно берётся из API провайдера — содержимому уведомления не доверяем."""
+    row = get_payment_auto_check(order_id)
+    if not row or row.get('state') not in ('active', 'exhausted'):
+        return False
+    update_payment_auto_check(order_id, state='active', next_delay_seconds=0)
+    await auto_check_payment_orders(bot=bot)
+    return True
+
+
+async def _auto_check_batch(*, bot: Any, limit: int, concurrency: int) -> dict[str, int]:
     """Checks one bounded batch with a hard concurrency cap."""
     rows = get_due_payment_auto_checks(limit=min(max(1, int(limit)), AUTO_CHECK_BATCH_LIMIT))
     summary = {
@@ -406,5 +426,6 @@ __all__ = [
     'AUTO_CHECK_MAX_ATTEMPTS',
     'AUTO_CHECK_OFFSETS_SECONDS',
     'auto_check_payment_orders',
+    'check_order_now',
     'run_payment_auto_check_scheduler',
 ]

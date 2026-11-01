@@ -3,6 +3,7 @@
 Если Telegram отклонил клавиатуру с цветами — запрос тут же повторяется без них; после нескольких отказов подряд
 цвета на 15 минут отключаются (как у иконок на кнопках)."""
 import logging
+import re
 import time
 from typing import Any
 
@@ -35,7 +36,8 @@ class ButtonColorsMiddleware(BaseRequestMiddleware):
         try:
             result = await make_request(bot, colored)
         except TelegramBadRequest as e:
-            if "not modified" in str(e).lower():
+            # Ошибка не про кнопки (нельзя править, нет текста, not modified) — повтор без цвета не поможет
+            if not re.search(r"button|markup|style", str(e), re.I):
                 raise
             logger.warning("Цветные кнопки отклонены Telegram (%s) — отправляю обычные", e)
             _state["fails"] += 1

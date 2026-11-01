@@ -1621,3 +1621,74 @@ class RichMiddlewareTest(unittest.TestCase):
         with mock.patch.object(rv, "_enabled", lambda: True):
             res = asyncio.run(rv.RichViewMiddleware()(make_request, None, SendMessage(chat_id=5, text="a: 1\nb: 2", parse_mode="HTML")))
         self.assertEqual((res, calls), ("ok", ["SendRichMessage", "SendMessage"]))
+
+
+class FixesBatchTest(unittest.TestCase):
+    def test_yookassa_notify(self):
+        import asyncio, json
+        from unittest import mock
+        from aiohttp.test_utils import make_mocked_request
+        from bot.webapp import server as sv
+        self.assertTrue(sv._is_yookassa_ip("185.71.76.5"))
+        self.assertFalse(sv._is_yookassa_ip("203.0.113.5"))
+        body = json.dumps({"event": "payment.succeeded", "object": {"id": "pay-1"}}).encode()
+        called = []
+
+        async def fake_check(pid):
+            called.append(pid)
+
+        async def run(ip):
+            req = make_mocked_request("POST", "/api/yookassa/notify", headers={"X-Forwarded-For": ip,
+                                      "Content-Type": "application/json"})
+            req._read_bytes = body
+            with mock.patch.object(sv, "_yookassa_check_now", fake_check):
+                resp = await sv.handle_yookassa_notify(req)
+                await asyncio.sleep(0)
+            return resp.status
+
+        self.assertEqual(asyncio.run(run("203.0.113.5")), 403)  # чужой адрес
+        self.assertEqual(asyncio.run(run("77.75.153.10")), 200)
+        self.assertEqual(called, ["pay-1"])
+
+    def test_happ_domain_retry_pause(self):
+        import asyncio
+        from unittest import mock
+        from bot.services import happ_proxy as hp
+        hp._domain_failed_at.clear()
+        calls = []
+
+        async def failing(url):
+            calls.append(url)
+            raise hp.HappProxyError("This feature requires an active subscription")
+
+        with mock.patch.object(hp, "add_domain", failing), \
+                mock.patch("database.requests.get_happ_proxy_registered_domain_hash", lambda: ""):
+            self.assertFalse(asyncio.run(hp.ensure_domain_registered("https://example.com/x")))
+            self.assertFalse(asyncio.run(hp.ensure_domain_registered("https://example.com/x")))
+        self.assertEqual(len(calls), 1)  # второй раз API не дёргаем
+
+    def test_connection_groups_without_qr(self):
+        from unittest import mock
+        from bot.utils import inbound_links as il
+        with mock.patch.object(il, "attach_local_qr", side_effect=AssertionError("QR не нужен")):
+            il.build_connection_groups("", with_qr=False)
+
+    def test_button_colors_reraises_unrelated_errors(self):
+        import asyncio
+        from unittest import mock
+        from aiogram.exceptions import TelegramBadRequest
+        from aiogram.methods import EditMessageText
+        from aiogram.types import InlineKeyboardButton as B, InlineKeyboardMarkup as M
+        from bot.middlewares import button_colors as bc
+        method = EditMessageText(chat_id=1, message_id=1, text="x",
+                                 reply_markup=M(inline_keyboard=[[B(text="✅ Да, удалить", callback_data="confirm_delete_key:1")]]))
+        calls = []
+
+        async def make_request(bot, m):
+            calls.append(m)
+            raise TelegramBadRequest(method=m, message="Bad Request: there is no text in the message to edit")
+
+        with mock.patch("bot.services.client_cabinet.enabled", lambda: True):
+            with self.assertRaises(TelegramBadRequest):
+                asyncio.run(bc.ButtonColorsMiddleware()(make_request, None, method))
+        self.assertEqual(len(calls), 1)  # без повтора и без счёта «отказов цвета»

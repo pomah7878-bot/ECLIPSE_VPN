@@ -43,6 +43,7 @@ DEFAULT_REFERRAL_PURCHASE_NOTIFICATION_TEXT = (
 __all__ = [
     'save_yookassa_payment_id',
     'find_order_by_yookassa_id',
+    'find_anonymous_purchase_by_yookassa_id',
     'create_anonymous_purchase',
     'mark_anonymous_purchase_paid',
     'reopen_anonymous_purchase',
@@ -1230,6 +1231,14 @@ def reassign_vpn_key_owner(key_id: int, new_user_id: int) -> bool:
             (new_user_id, key_id),
         )
         return cursor.rowcount > 0
+
+
+def find_anonymous_purchase_by_yookassa_id(yookassa_payment_id: str) -> Optional[Dict[str, Any]]:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM anonymous_purchases WHERE yookassa_payment_id = ?", (yookassa_payment_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def get_anonymous_purchase_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
