@@ -2087,7 +2087,11 @@
                     });
                 } catch (e) { /* покажем экран входа */ }
             }
-            try { return (await fetch('/api/language')).ok; } catch (e) { return false; }
+            // Экран входа — только если входа действительно нет (401); сбой сервера или сети — ошибка с «Обновить»
+            try {
+                const res = await fetch('/api/language');
+                return res.ok ? true : (res.status === 401 ? false : 'error');
+            } catch (e) { return 'error'; }
         }
 
         async function browserLogout() {
@@ -2109,7 +2113,12 @@
 
         async function init() {
             try {
-                if (!initData && !(await browserLogin())) {
+                const browserAuth = initData ? true : await browserLogin();
+                if (browserAuth === 'error') {
+                    container.innerHTML = translateHtml(renderError('Не удалось загрузить данные. Попробуйте обновить.'));
+                    return;
+                }
+                if (!browserAuth) {
                     await siteInfoPromise;
                     container.innerHTML = translateHtml(renderBrowserLogin());
                     return;

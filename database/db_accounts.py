@@ -230,16 +230,16 @@ def adopt_account_purchase_keys(site_account_id: int, owner_user_id: int) -> int
     """Ключи покупок, привязанных к сайт-аккаунту, переводит на его владельца,
     чтобы единый кабинет находил их по владельцу. Только ключи, которые ещё лежат
     на служебной личности (telegram_id < 0): забранные в бот ключи не трогаем."""
-    with get_db() as conn:
-        cursor = conn.execute(
-            """UPDATE vpn_keys SET user_id = ?
-               WHERE id IN (SELECT vpn_key_id FROM anonymous_purchases
+    where = """WHERE id IN (SELECT vpn_key_id FROM anonymous_purchases
                             WHERE site_account_id = ? AND vpn_key_id IS NOT NULL)
                  AND user_id != ?
-                 AND user_id IN (SELECT id FROM users WHERE telegram_id < 0)""",
-            (owner_user_id, site_account_id, owner_user_id),
-        )
-        return cursor.rowcount
+                 AND user_id IN (SELECT id FROM users WHERE telegram_id < 0)"""
+    args = (site_account_id, owner_user_id)
+    with get_db() as conn:
+        # Вызывается на каждый запрос кабинета: пишем в базу, только если есть что переносить
+        if not conn.execute(f"SELECT 1 FROM vpn_keys {where} LIMIT 1", args).fetchone():
+            return 0
+        return conn.execute(f"UPDATE vpn_keys SET user_id = ? {where}", (owner_user_id, *args)).rowcount
 
 
 def get_site_referrer_code_for_order(order_id: str) -> Optional[str]:

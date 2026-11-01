@@ -186,7 +186,10 @@ def _get_telegram_id(request: web.Request) -> Optional[int]:
             return None
         owner_user_id = _resolve_site_account_internal_user_id(account)
         if owner_user_id:
-            adopt_account_purchase_keys(account_id, owner_user_id)
+            try:
+                adopt_account_purchase_keys(account_id, owner_user_id)
+            except Exception as e:  # перенос повторится на следующем запросе, вход не ломаем
+                logger.warning(f"Перенос ключей на сайт-аккаунт {account_id} не удался: {e}")
         if account.get("telegram_id"):
             return int(account["telegram_id"])
         owner = get_user_by_id(owner_user_id) if owner_user_id else None
