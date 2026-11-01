@@ -1498,11 +1498,11 @@
             else if (key.expiry.days_left <= 7) expiryColor = 'text-amber';
 
             const expiryText = key.expiry.is_active
-                ? (key.expiry.days_left <= 30 ? `Осталось ${key.expiry.remaining_human}` : `До ${key.expiry.date}`)
+                ? (key.expiry.days_left === 0 ? key.expiry.remaining_human : key.expiry.days_left <= 30 ? `Осталось ${key.expiry.remaining_human}` : `До ${key.expiry.date}`)
                 : `Истёк ${key.expiry.date}`;
 
             const urgentNote = (isActive && key.expiry.days_left <= 7)
-                ? `<p class="text-[11px] text-amber mt-1.5">Продлите в течение ${key.expiry.days_left} ${daysWord(key.expiry.days_left)}, чтобы не потерять доступ</p>`
+                ? `<p class="text-[11px] text-amber mt-1.5">${key.expiry.days_left === 0 ? 'Продлите сегодня' : `Продлите в течение ${key.expiry.days_left} ${daysWord(key.expiry.days_left)}`}, чтобы не потерять доступ</p>`
                 : '';
 
             let primaryBtn = isActive

@@ -1109,6 +1109,7 @@
 
         function startPayPolling(orderId) {
             let attempts = 0;
+            let waitKeyPolls = 0;
             const maxAttempts = 90;
             _payPollTimer = setInterval(async () => {
                 attempts++;
@@ -1122,6 +1123,13 @@
                 try {
                     const res = await postAPI('pay/check', { order_id: orderId });
                     if (res.status === 'paid') {
+                        // Оплату мог засчитать параллельный запрос, пока ключ ещё создаётся — ждём ссылку до 30 с
+                        if (!res.sub_url && waitKeyPolls < 6) {
+                            waitKeyPolls++;
+                            const note = document.getElementById('payStatusNote');
+                            if (note) note.textContent = 'Оплата получена, готовим ключ…';
+                            return;
+                        }
                         clearInterval(_payPollTimer);
                         _payPollTimer = null;
                         showPaySuccess(res);
