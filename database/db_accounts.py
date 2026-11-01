@@ -95,7 +95,11 @@ def get_or_create_site_account_by_phone(phone_normalized: str, referred_by_code:
     при каждом входе. Повторный вход тем же номером возвращает ТОТ ЖЕ
     аккаунт (со всей историей покупок), а не создаёт новый."""
     with get_db() as conn:
+        # Сначала аккаунт, к которому этот номер привязан как второй способ входа (Google/Яндекс/VK + телефон),
+        # иначе вход по добавленному номеру открывал бы новый пустой аккаунт
         row = conn.execute(
+            "SELECT * FROM site_accounts WHERE phone = ? ORDER BY id LIMIT 1", (phone_normalized,),
+        ).fetchone() or conn.execute(
             "SELECT * FROM site_accounts WHERE provider = 'phone' AND provider_user_id = ?",
             (phone_normalized,),
         ).fetchone()
@@ -186,11 +190,12 @@ def set_account_phone(account_id: int, phone_normalized: str) -> bool:
     одновременно, для полной связки. Отклоняет, если номер уже
     привязан к ДРУГОМУ аккаунту."""
     with get_db() as conn:
+        # занят и привязанный номер, и номер, по которому создан другой аккаунт (вход по телефону)
         existing = conn.execute(
-            "SELECT id FROM site_accounts WHERE phone = ?",
-            (phone_normalized,),
+            "SELECT id FROM site_accounts WHERE (phone = ? OR (provider = 'phone' AND provider_user_id = ?)) AND id != ?",
+            (phone_normalized, phone_normalized, account_id),
         ).fetchone()
-        if existing and existing["id"] != account_id:
+        if existing:
             return False
         cursor = conn.execute(
             "UPDATE site_accounts SET phone = ? WHERE id = ?",

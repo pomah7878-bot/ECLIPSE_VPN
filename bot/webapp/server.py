@@ -4007,7 +4007,23 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     if not ok:
         return web.json_response({"ok": False, "message": "Этот номер уже привязан к другому аккаунту."}, status=409)
 
-    return web.json_response({"ok": True, "verified": True, "phone": normalized})
+    # Номер подтверждался в боте (например, при пробном периоде) — это тот же человек в Telegram:
+    # привязываем его Telegram сразу, как при входе по номеру (ключи переходят к нему)
+    telegram_linked = False
+    try:
+        from bot.services.trial_phone_registry import get_telegram_id_for_verified_phone
+        from database.requests import get_site_account_by_id, get_user_by_telegram_id, adopt_account_purchase_keys
+        from database.db_accounts import link_oauth_to_site_account
+        tg_id = get_telegram_id_for_verified_phone(normalized)
+        account = get_site_account_by_id(account_id)
+        tg_user = get_user_by_telegram_id(tg_id) if tg_id else None
+        if tg_user and account and not account.get("telegram_id") and link_oauth_to_site_account(account_id, tg_id):
+            adopt_account_purchase_keys(account_id, tg_user["id"])
+            telegram_linked = True
+    except Exception as e:
+        logger.warning(f"Автопривязка Telegram по номеру для аккаунта {account_id} не удалась: {e}")
+
+    return web.json_response({"ok": True, "verified": True, "phone": normalized, "telegram_linked": telegram_linked})
 
 
 async def handle_public_account_logout(request: web.Request) -> web.Response:

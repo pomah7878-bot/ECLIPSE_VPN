@@ -1833,3 +1833,20 @@ class SiteTelegramLinkTest(unittest.TestCase):
         self.assertIn("+79990005566", text)
         self.assertIn("сообщения не доставляются", text)
         self.assertNotIn("Username: @site_", text)
+
+
+class SitePhoneLinkTest(unittest.TestCase):
+    """Номер как второй способ входа: вход по нему открывает тот же аккаунт; чужой номер не привязать."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_linked_phone_login_and_conflict(self):
+        from database.db_accounts import get_or_create_site_account, get_or_create_site_account_by_phone, set_account_phone
+        yandex = get_or_create_site_account("yandex", "ya-777", email="a@ya.ru")
+        self.assertTrue(set_account_phone(yandex["id"], "79990007788"))
+        self.assertEqual(get_or_create_site_account_by_phone("79990007788")["id"], yandex["id"])  # тот же аккаунт
+        phone_only = get_or_create_site_account_by_phone("79990009900")
+        self.assertFalse(set_account_phone(yandex["id"], "79990009900"))  # номер занят аккаунтом «вход по телефону»
+        self.assertNotEqual(phone_only["id"], yandex["id"])

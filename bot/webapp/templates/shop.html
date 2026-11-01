@@ -1462,7 +1462,7 @@
                 const sessionRes = await fetchAPI('account/session');
                 revealApp(sessionRes);
             } else {
-                errBox.textContent = 'Код не совпадает, попробуйте ещё раз.';
+                errBox.textContent = res.message || 'Код не совпадает, попробуйте ещё раз.';
             }
         }
 
@@ -1516,11 +1516,12 @@
             errBox.textContent = '';
             const res = await postAPISafe('account/link-phone-check', { phone: window._linkPhone, call_id: window._linkCallId, entered_code: code });
             if (res.verified) {
-                showToast('Телефон привязан!');
+                showToast(res.telegram_linked ? 'Телефон привязан, и мы нашли ваш Telegram — он тоже привязан!' : 'Телефон привязан!');
                 const sessionRes = await fetchAPI('account/session');
                 renderAccountData(sessionRes);
             } else {
-                errBox.textContent = 'Код не совпадает, попробуйте ещё раз.';
+                // Отказ бывает не только из-за кода: номер занят, звонок устарел, много попыток
+                errBox.textContent = res.message || 'Код не совпадает, попробуйте ещё раз.';
             }
         }
 
@@ -1528,7 +1529,7 @@
             const res = await postAPISafe('account/link-phone-check', { phone: window._linkPhone, call_id: window._linkCallId });
             if (res.verified) {
                 clearInterval(window._linkPhonePollInterval);
-                showToast('Телефон привязан!');
+                showToast(res.telegram_linked ? 'Телефон привязан, и мы нашли ваш Telegram — он тоже привязан!' : 'Телефон привязан!');
                 const sessionRes = await fetchAPI('account/session');
                 renderAccountData(sessionRes);
             } else if (res.ok === false) {
