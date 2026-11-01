@@ -156,9 +156,14 @@ class CoreTests(unittest.TestCase):
         asyncio.run(sc._run_daily_step("t", work(), "backup"))
         asyncio.run(sc._run_daily_step("t", work(), "backup"))
         self.assertEqual(len(runs), 1)
-        for step in sc._DAILY_STEPS:
+        for step in sc._DAILY_STEPS + ("monthly",):  # monthly обязателен 1-го числа
             sc._daily_mark(step)
         self.assertFalse(sc._daily_pending(now, 0, 0))
+        # первый запуск 1-го числа: ежемесячное тоже не «догоняем»
+        first = datetime(2026, 11, 1, 12, 0)
+        st.set_setting("daily_done", "")
+        self.assertFalse(sc._daily_pending(first, 0, 0))
+        self.assertFalse(sc._daily_pending(first, 0, 0))
         # новый день — снова все шаги к выполнению
         st.set_setting("daily_done", json.dumps({"date": "2000-01-01", "steps": list(sc._DAILY_STEPS)}))
         self.assertTrue(sc._daily_pending(now, 0, 0))

@@ -982,12 +982,12 @@ def _daily_pending(now: datetime, target_hour: int, target_minute: int) -> bool:
     import json as _json
     if now < now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0):
         return False
+    required = _DAILY_STEPS + (("monthly",) if now.day == 1 else ())
     if not (get_setting("daily_done", "") or "").strip():
         from database.requests import set_setting
-        set_setting("daily_done", _json.dumps({"date": now.strftime("%Y-%m-%d"), "steps": list(_DAILY_STEPS)}))
+        set_setting("daily_done", _json.dumps({"date": now.strftime("%Y-%m-%d"), "steps": list(required)}))
         return False
     state = _daily_state()
-    required = _DAILY_STEPS + (("monthly",) if now.day == 1 else ())
     return any(step not in state["steps"] for step in required)
 
 
