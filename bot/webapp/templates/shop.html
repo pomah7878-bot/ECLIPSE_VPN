@@ -1046,7 +1046,6 @@
         }
 
         let _payPollTimer = null;
-        let _payMode = 'buy'; // 'buy' | 'renew'
         let _renewCode = null;
 
         function closePay() {
@@ -1056,7 +1055,6 @@
         }
 
         async function selectTariffAndPay(tariffId) {
-            _payMode = 'buy';
             document.getElementById('payOverlay').classList.add('active');
             const box = document.getElementById('payContent');
             box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Создаём платёж…</p>';
@@ -1073,7 +1071,6 @@
         }
 
         async function buyTariffWithBalance(tariffId) {
-            _payMode = 'buy';
             document.getElementById('payOverlay').classList.add('active');
             const box = document.getElementById('payContent');
             box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Списываем с баланса…</p>';
@@ -1087,24 +1084,6 @@
                 refreshAccountDashboard();
             } catch(e) {
                 box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при оплате балансом. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
-            }
-        }
-
-        async function selectTariffAndRenew(tariffId) {
-            _payMode = 'renew';
-            _renewIsCdn = false;
-            document.getElementById('payOverlay').classList.add('active');
-            const box = document.getElementById('payContent');
-            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Создаём платёж на продление…</p>';
-            try {
-                const res = await postAPI('account/renew/create', { code: _renewCode, tariff_id: tariffId });
-                if (res.error) {
-                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось создать платёж.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
-                    return;
-                }
-                renderPayQR(res);
-            } catch(e) {
-                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
             }
         }
 
@@ -1136,16 +1115,11 @@
                     return;
                 }
                 try {
-                    const endpoint = _payMode === 'renew' ? 'account/key/renew/check' : 'pay/check';
-                    const res = await postAPI(endpoint, { order_id: orderId });
+                    const res = await postAPI('pay/check', { order_id: orderId });
                     if (res.status === 'paid') {
                         clearInterval(_payPollTimer);
                         _payPollTimer = null;
-                        if (_payMode === 'renew') {
-                            showRenewSuccess(res.message);
-                        } else {
-                            showPaySuccess(res);
-                        }
+                        showPaySuccess(res);
                     } else if (res.status === 'failed') {
                         clearInterval(_payPollTimer);
                         _payPollTimer = null;
@@ -1193,16 +1167,6 @@
             `;
         }
 
-        function showRenewSuccess(message) {
-            const box = document.getElementById('payContent');
-            box.innerHTML = `
-                <div class="text-4xl mb-3">✅</div>
-                <h3 class="font-display text-base font-bold mb-3">${_renewIsCdn ? 'Готово!' : 'Продлено!'}</h3>
-                <p class="text-sm text-mist mb-4">${escapeHtml(message || (_renewIsCdn ? 'Услуга CDN активирована. Откройте Happ и обновите подписку кнопкой 🔄: появится подключение CDN.' : 'Ключ успешно продлён.'))}</p>
-                <button onclick="closePay();refreshAccountDashboard()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Обновить личный кабинет</button>
-            `;
-        }
-
         async function refreshAccountDashboard() {
             try {
                 const res = await fetchAPI('account/session');
@@ -1218,7 +1182,6 @@
 
         // ==================== ЛИЧНЫЙ КАБИНЕТ ====================
 
-        let _sessionKeys = []; // ключи текущей сессии (может быть несколько)
         let _sessionBalanceCents = 0; // личный баланс сайт-аккаунта, для кнопки "оплатить балансом" в продлении
 
         async function initOAuthButtons() {
@@ -1603,429 +1566,11 @@
             }
         }
 
-        function formatBytes(bytes) {
-            if (!bytes || bytes <= 0) return '0 ГБ';
-            const gb = bytes / (1024 ** 3);
-            return gb >= 10 ? gb.toFixed(0) + ' ГБ' : gb.toFixed(1) + ' ГБ';
-        }
-
-        function daysLeft(expiresAt) {
-            if (!expiresAt) return null;
-            const diff = new Date(expiresAt.replace(' ', 'T') + 'Z') - new Date();
-            return Math.ceil(diff / (1000 * 60 * 60 * 24));
-        }
-
-        function renderKeyCard(key) {
-            const days = daysLeft(key.expires_at);
-            const daysText = days === null ? '—' : (days > 0 ? `${days} дн.` : 'истекла');
-            const daysClass = days !== null && days <= 3 ? 'text-alert' : 'text-ink';
-
-            let trafficBlock = '';
-            if (key.traffic_limit && key.traffic_limit > 0) {
-                const pct = Math.min(100, Math.round((key.traffic_used / key.traffic_limit) * 100));
-                const fillClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
-                trafficBlock = `
-                    <div class="mt-4">
-                        <div class="flex justify-between text-xs text-mist mb-1.5">
-                            <span>Трафик</span>
-                            <span>${formatBytes(key.traffic_used)} / ${formatBytes(key.traffic_limit)}</span>
-                        </div>
-                        <div class="traffic-bar-bg"><div class="traffic-fill ${fillClass}" style="width:${pct}%"></div></div>
-                    </div>
-                `;
-            } else {
-                trafficBlock = `<div class="mt-4 text-xs text-mist">Трафик: <span class="text-ink font-semibold">безлимит</span> (использовано ${formatBytes(key.traffic_used)})</div>`;
-            }
-
-            let subBlock = '';
-            if (key.sub_url) {
-                const subUrlId = `sub-url-${key.key_id}`;
-                subBlock = `
-                    <div class="mt-4">
-                        <div class="text-xs text-mist mb-1.5">Ссылка для подключения (нажмите, чтобы выделить и скопировать)</div>
-                        <div class="sub-url-box bg-panel-2 border border-[color:var(--hairline)] rounded-xl p-3 flex items-center gap-2 mb-2" onclick="copySubUrl(this, '${subUrlId}')" data-url="${escapeHtml(key.sub_url)}">
-                            <code id="${subUrlId}" class="text-[11px] break-all font-mono flex-1">${escapeHtml(key.sub_url)}</code>
-                            <span class="flex-shrink-0 text-mist text-sm">📋</span>
-                        </div>
-                        <div class="flex gap-2 mb-2">
-                            <button onclick="copySubUrl(this, '${subUrlId}')" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">📋 Копировать</button>
-                            <button onclick="showKeyQR(this)" data-url="${escapeHtml(key.sub_url)}" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">▦ Показать QR</button>
-                        </div>
-                        ${(() => {
-                            // Помимо общей лицензионной фичи app_import, у админа
-                            // установки есть отдельный переключатель на каждое из
-                            // трёх приложений (window._cabinetImportEnabled) —
-                            // можно скрыть, например, только Karing.
-                            if (!window._appImportEnabled) return '';
-                            const ie = window._cabinetImportEnabled || {};
-                            let btns = '';
-                            if (ie.happ) btns += `<button data-scheme="happ" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🚀 Импорт в Happ</button>`;
-                            if (ie.incy) btns += `<button data-scheme="incy" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">⚡️ Импорт в INCY</button>`;
-                            if (ie.karing) btns += `<button data-scheme="karing" data-url="${escapeHtml(key.sub_url)}" onclick="goImport(this)" class="flex-1 text-xs btn-secondary rounded-lg px-2.5 py-2">🎯 Импорт в Karing</button>`;
-                            return btns ? `<div class="flex gap-2">${btns}</div>` : '';
-                        })()}
-                    </div>
-                `;
-            }
-
-            let claimBlock = '';
-            if (key.claim_code && BOT_USERNAME) {
-                const claimLink = `https://t.me/${BOT_USERNAME}?start=claim_${encodeURIComponent(key.claim_code)}`;
-                claimBlock = `
-                    <div class="mt-4 card rounded-xl p-3" style="background:var(--panel-2);">
-                        <div class="text-xs text-mist mb-2">Есть Telegram? Привяжите этот ключ к боту — сможете продлевать и управлять прямо оттуда.</div>
-                        <a href="${claimLink}" class="block w-full py-2.5 btn-tg rounded-xl font-bold text-xs text-center transition">📲 Открыть в Telegram (привязать)</a>
-                    </div>
-                `;
-            }
-
-            return `
-                <div class="card rounded-2xl p-5 mb-4">
-                    <div class="flex justify-between items-start mb-1">
-                        <div>
-                            <div class="text-xs text-mist">${key.server_name ? escapeHtml(key.server_name) : 'Ключ'}</div>
-                            <div class="font-display font-bold text-sm mt-0.5">${escapeHtml(key.display_name || ('Ключ #' + key.key_id))}</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="text-xs text-mist">Осталось</div>
-                            <div class="font-display font-bold text-sm mt-0.5 ${daysClass}">${daysText}</div>
-                        </div>
-                    </div>
-                    ${trafficBlock}
-                    ${subBlock}
-                    ${claimBlock}
-                    <button onclick="toggleInbounds(${key.key_id})" class="w-full py-2 mt-2 text-xs text-mist-dim hover:text-ink transition text-center">🔌 Все подключения</button>
-                    <div id="inbounds-${key.key_id}" style="display:none;"></div>
-                    <button onclick="toggleDevices(${key.key_id})" class="w-full py-2 text-xs text-mist-dim hover:text-ink transition text-center">📱 Устройства</button>
-                    <div id="devices-${key.key_id}" style="display:none;"></div>
-                    ${renderCdnBlock(key)}
-                    ${key.is_trial ? '<div class="mt-4 rounded-xl p-3 text-xs" style="border:1px solid var(--gold);">🎁 <b>Пробный период.</b> Нажмите «Продлить» и выберите тариф — оставшиеся дни добавятся, ключ и подписка в приложении не изменятся.</div>' : ''}
-                    <button onclick="openRenewForKey(${key.key_id})" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition mt-4">Продлить</button>
-                </div>
-            `;
-        }
-
         let _inboundsCache = {};
 
         const UDP_PROTOCOLS = ['hysteria2', 'tuic', 'amneziawg', 'wireguard'];
 
-        function inboundBadgeClass(kind, value) {
-            const map = {
-                protocol: { 'Vless': 'bg-[color:rgba(59,130,246,0.15)] text-[#60a5fa]', 'Hysteria2': 'bg-[color:rgba(236,72,153,0.15)] text-[#f472b6]', 'AmneziaWG': 'bg-[color:rgba(34,197,94,0.15)] text-[#4ade80]', 'WireGuard': 'bg-[color:rgba(239,68,68,0.15)] text-[#f87171]', 'TUIC': 'bg-[color:rgba(234,179,8,0.15)] text-[#facc15]' },
-                transport: { 'TCP': 'bg-[color:rgba(45,212,191,0.15)] text-teal', 'XHTTP': 'bg-[color:rgba(251,146,60,0.15)] text-[#fb923c]', 'UDP': 'bg-[color:rgba(56,189,248,0.15)] text-[#38bdf8]', 'QUIC': 'bg-[color:rgba(56,189,248,0.15)] text-[#38bdf8]' },
-                security: { 'REALITY': 'bg-[color:rgba(168,85,247,0.15)] text-[#c084fc]', 'TLS': 'bg-[color:rgba(45,212,191,0.15)] text-teal', 'AWG': 'bg-[color:rgba(34,197,94,0.15)] text-[#4ade80]', 'WG': 'bg-[color:rgba(239,68,68,0.15)] text-[#f87171]' },
-            };
-            return (map[kind] && map[kind][value]) || 'bg-panel-2 text-mist';
-        }
-
-        async function toggleInbounds(keyId) {
-            const box = document.getElementById('inbounds-' + keyId);
-            const isHidden = box.style.display === 'none' || !box.style.display;
-            if (!isHidden) { box.style.display = 'none'; return; }
-            box.style.display = 'block';
-            box.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
-            try {
-                const res = await fetchAPI(`key/${keyId}/inbounds`);
-                const groups = res.groups || [];
-                _inboundsCache[keyId] = groups;
-                box.innerHTML = renderInboundGroups(keyId, groups);
-                measureClientPings(keyId, groups, !!res.vpn_active);
-            } catch (e) {
-                box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить подключения</p>';
-            }
-        }
-
-        function formatDeviceTimestamp(ts) {
-            if (!ts) return '';
-            try {
-                return new Date(ts * 1000).toLocaleString();
-            } catch (e) {
-                return '';
-            }
-        }
-
-        function renderDevicesList(keyId, data) {
-            const devices = data.devices || [];
-            const maxDevices = data.max_devices != null ? data.max_devices : '—';
-            let html = `<div class="card rounded-xl p-3 mt-2" style="background:var(--panel-2);">`;
-            html += `<div class="text-xs text-mist mb-2">Подключено: <span class="text-ink font-semibold">${devices.length} из ${maxDevices}</span></div>`;
-            if (data.limit_type !== 'hwid') {
-                html += `<div class="text-[11px] text-mist mb-2">ℹ️ Режим ограничения — по IP: тип/модель устройства панель не хранит, отключить можно только все устройства сразу (обратитесь в поддержку).</div>`;
-            }
-            if (!devices.length) {
-                html += `<div class="text-xs text-mist">Сейчас не подключено ни одного устройства.</div>`;
-            } else {
-                devices.forEach((d, i) => {
-                    const label = d.model || d.os
-                        ? escapeHtml((d.model || 'неизвестная модель') + (d.os ? ` (${d.os}${d.os_version ? ' ' + d.os_version : ''})` : ''))
-                        : (d.ip ? `IP ${escapeHtml(d.ip)}` : 'Устройство');
-                    const lastSeen = formatDeviceTimestamp(d.last_seen);
-                    html += `<div class="flex justify-between items-center py-1.5 border-t border-[color:var(--hairline)] first:border-t-0">`;
-                    html += `<div class="text-xs"><div class="text-ink">${i + 1}. ${label}</div>${lastSeen ? `<div class="text-mist text-[10px] mt-0.5">был(а) активен(на): ${lastSeen}</div>` : ''}</div>`;
-                    if (data.limit_type === 'hwid' && d.device_id != null) {
-                        html += `<button onclick="disconnectDevice(${keyId}, ${d.device_id})" class="text-[11px] btn-secondary rounded-lg px-2 py-1 flex-shrink-0 ml-2">❌ Отключить</button>`;
-                    }
-                    html += `</div>`;
-                });
-            }
-            html += `</div>`;
-            return html;
-        }
-
-        async function toggleDevices(keyId) {
-            const box = document.getElementById('devices-' + keyId);
-            const isHidden = box.style.display === 'none' || !box.style.display;
-            if (!isHidden) { box.style.display = 'none'; return; }
-            box.style.display = 'block';
-            box.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
-            try {
-                const data = await postAPISafe('account/key/devices', { key_id: keyId });
-                if (data.error) {
-                    box.innerHTML = `<p class="text-xs text-alert py-3 text-center">${escapeHtml(data.message || 'Не удалось загрузить устройства')}</p>`;
-                    return;
-                }
-                box.innerHTML = renderDevicesList(keyId, data);
-            } catch (e) {
-                box.innerHTML = '<p class="text-xs text-alert py-3 text-center">Не удалось загрузить устройства</p>';
-            }
-        }
-
-        async function disconnectDevice(keyId, deviceId) {
-            const box = document.getElementById('devices-' + keyId);
-            try {
-                const data = await postAPISafe('account/key/device_disconnect', { key_id: keyId, device_id: deviceId });
-                if (data.error) {
-                    showToast(data.message || 'Не удалось отключить устройство');
-                    return;
-                }
-                showToast('Устройство отключено');
-                const refreshed = await postAPISafe('account/key/devices', { key_id: keyId });
-                if (!refreshed.error) box.innerHTML = renderDevicesList(keyId, refreshed);
-            } catch (e) {
-                showToast('Не удалось отключить устройство');
-            }
-        }
-
         const _cdnState = {};
-
-        function renderCdnBlock(key) {
-            const cdn = key.cdn;
-            if (!cdn || !cdn.offered) return '';
-            _cdnState[key.key_id] = cdn;
-            const active = cdn.pack && cdn.pack.status === 'active' ? ' 🟢' : '';
-            return `<button onclick="toggleCdn(${key.key_id})" class="w-full py-2 text-xs text-mist-dim hover:text-ink transition text-center">🌐 CDN — обход белых списков${active}</button>
-                    <div id="cdn-${key.key_id}" style="display:none;"></div>`;
-        }
-
-        function cdnStatusLabel(status) {
-            return ({
-                active: '🟢 Активен',
-                exhausted: '🔴 Объём исчерпан',
-                expired: '🔴 Срок вышел',
-                suspended: '⏸ Приостановлен (ключ неактивен)',
-                revoked: '⛔ Отключён'
-            })[status] || status;
-        }
-
-        function cdnFormatUntil(value) {
-            if (!value) return '—';
-            const d = new Date(String(value).replace(' ', 'T') + 'Z');
-            return isNaN(d.getTime()) ? escapeHtml(value) : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-        }
-
-        function renderCdnPanel(keyId) {
-            const cdn = _cdnState[keyId];
-            if (!cdn) return '';
-            const pack = cdn.pack;
-            let html = '<div class="card rounded-xl p-3 mt-2" style="background:var(--panel-2);">';
-            html += '<div class="text-xs text-mist mb-2">Дополнительный ключ в вашей подписке, который работает через CDN. Нужен там, где мобильный интернет пропускает только «белые» адреса. Обычные ключи работают как раньше.</div>';
-            if (pack) {
-                const pct = pack.limit_bytes > 0 ? Math.min(100, Math.round((pack.used_bytes / pack.limit_bytes) * 100)) : 0;
-                const fillClass = pct >= 90 ? 'danger' : (pct >= 70 ? 'warn' : '');
-                html += `<div class="text-xs mb-1">Статус: <span class="text-ink font-semibold">${cdnStatusLabel(pack.status)}</span></div>`;
-                html += `<div class="flex justify-between text-xs text-mist mb-1.5"><span>Объём</span><span>${formatBytes(pack.used_bytes)} / ${formatBytes(pack.limit_bytes)}</span></div>`;
-                html += `<div class="traffic-bar-bg mb-2"><div class="traffic-fill ${fillClass}" style="width:${pct}%"></div></div>`;
-                html += `<div class="text-xs text-mist mb-2">Действует до: <span class="text-ink">${cdnFormatUntil(pack.expires_at)}</span>${pack.is_free ? ' · 🎁 выдан администратором' : ''}</div>`;
-                if (pack.status === 'active') {
-                    html += '<div class="text-[11px] text-mist mb-2">Докупленный объём прибавится к остатку, срок тоже суммируется (не дольше подписки).</div>';
-                }
-            } else {
-                html += '<div class="text-xs mb-2">Пакет не подключён.</div>';
-            }
-            if (cdn.price_cents > 0) {
-                const label = pack ? `➕ Докупить ${cdn.gb} ГБ` : `🛒 Купить ${cdn.gb} ГБ`;
-                html += `<div class="text-xs text-mist mb-2">Пакет: <span class="text-ink font-semibold">${cdn.gb} ГБ на ${cdn.days} дн. — ${escapeHtml(cdn.price_text)}</span>, оплата с баланса${cdn.balance_cents != null ? ` (на балансе ${escapeHtml((cdn.balance_cents / 100).toLocaleString('ru-RU', { maximumFractionDigits: 2 }))} ₽)` : ''}.</div>`;
-                html += `<button id="cdn-buy-${keyId}" onclick="buyCdnPack(${keyId})" class="w-full py-2.5 btn-primary rounded-xl font-bold text-xs transition mb-2">${label} с баланса — ${escapeHtml(cdn.price_text)}</button>`;
-                if (cdn.tariff_id) {
-                    html += `<button onclick="payCdnPackQR(${keyId})" class="w-full py-2.5 btn-secondary rounded-xl font-bold text-xs transition">💳 Банк / СБП — ${escapeHtml(cdn.price_text)}</button>`;
-                }
-            }
-            html += '</div>';
-            return html;
-        }
-
-        function toggleCdn(keyId) {
-            const box = document.getElementById('cdn-' + keyId);
-            if (!box) return;
-            const isHidden = box.style.display === 'none' || !box.style.display;
-            if (!isHidden) { box.style.display = 'none'; return; }
-            box.innerHTML = renderCdnPanel(keyId);
-            box.style.display = 'block';
-        }
-
-        function payCdnPackQR(keyId) {
-            const cdn = _cdnState[keyId];
-            if (!cdn || !cdn.tariff_id) return;
-            _renewKeyId = keyId;
-            _payMode = 'renew';
-            _renewIsCdn = true;
-            document.getElementById('payOverlay').classList.add('active');
-            selectTariffAndRenewKey(cdn.tariff_id);
-        }
-
-        async function buyCdnPack(keyId) {
-            const cdn = _cdnState[keyId];
-            if (!cdn) return;
-            if (!confirm(`Купить CDN-пакет: ${cdn.gb} ГБ на ${cdn.days} дн. за ${cdn.price_text}? Оплата спишется с баланса.`)) return;
-            const btn = document.getElementById('cdn-buy-' + keyId);
-            if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
-            try {
-                const res = await postAPISafe('account/key/cdn/buy', { key_id: keyId });
-                if (res.error) {
-                    showToast(res.message || 'Не удалось оформить пакет');
-                    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-                    return;
-                }
-                showToast(res.message || 'Услуга CDN активирована. Обновите подписку в Happ 🔄');
-                if (res.cdn) _cdnState[keyId] = res.cdn;
-                refreshAccountDashboard();
-            } catch (e) {
-                showToast('Не удалось оформить пакет');
-                if (btn) { btn.disabled = false; btn.style.opacity = ''; }
-            }
-        }
-
-        async function clientPing(host, port) {
-            const start = performance.now();
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 4000);
-            try {
-                await fetch(`https://${host}:${port}/`, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
-                clearTimeout(timeoutId);
-                return Math.round(performance.now() - start);
-            } catch (e) {
-                clearTimeout(timeoutId);
-                const elapsed = performance.now() - start;
-                if (e.name === 'AbortError' || elapsed > 3900) return null;
-                return Math.round(elapsed);
-            }
-        }
-
-        // Как в кабинете: 3 замера параллельно, минимум, пополам (запрос к узлу занимает ~2 круга сети).
-        // shortcut: для обычного TLS с валидным сертификатом кругов 3, значение завышено ~на треть.
-        async function devicePing(host, port) {
-            const r = (await Promise.all([clientPing(host, port), clientPing(host, port), clientPing(host, port)]))
-                .filter(v => v !== null);
-            return r.length ? Math.max(1, Math.round(Math.min(...r) / 2)) : null;
-        }
-
-        async function measureClientPings(keyId, groups, vpnActive) {
-            if (vpnActive) {
-                // С включённым VPN замер идёт через туннель и не показывает реальную задержку
-                groups.forEach((g, gi) => g.inbounds.forEach((ib, ii) => {
-                    const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
-                    if (el) el.textContent = '—';
-                }));
-                groups.forEach((g, gi) => {
-                    const hostEl = document.getElementById(`ping-host-${keyId}-${gi}`);
-                    if (hostEl) hostEl.textContent = '· VPN включён: задержку можно измерить только без него';
-                });
-                return;
-            }
-            for (let gi = 0; gi < groups.length; gi++) {
-                const group = groups[gi];
-                const tcpPings = [];
-                for (let ii = 0; ii < group.inbounds.length; ii++) {
-                    const ib = group.inbounds[ii];
-                    if (UDP_PROTOCOLS.includes(ib.protocol)) continue;
-                    const ms = await devicePing(group.host, ib.port);
-                    const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
-                    if (el) el.textContent = ms !== null ? ms + 'мс' : '—';
-                    if (ms !== null) tcpPings.push(ms);
-                }
-                if (tcpPings.length) {
-                    const approx = Math.min(...tcpPings);
-                    const hostEl = document.getElementById(`ping-host-${keyId}-${gi}`);
-                    if (hostEl) hostEl.textContent = '· задержка ≈ ' + approx + ' мс';
-                    group.inbounds.forEach((ib, ii) => {
-                        if (UDP_PROTOCOLS.includes(ib.protocol)) {
-                            const el = document.getElementById(`ping-${keyId}-${gi}-${ii}`);
-                            if (el) el.textContent = '≈' + approx + 'мс';
-                        }
-                    });
-                }
-            }
-        }
-
-        function renderInboundGroups(keyId, groups) {
-            if (!groups.length) return '<p class="text-xs text-mist py-3 text-center">Нет данных о подключениях</p>';
-            return groups.map((g, gi) => `
-                <div class="mb-3">
-                    <div class="text-[11px] text-mist-dim uppercase tracking-wide mb-1.5">🖥 ${escapeHtml(g.host)} <span id="ping-host-${keyId}-${gi}" class="text-teal normal-case"></span></div>
-                    ${g.inbounds.map((ib, ii) => {
-                        const ping = '…';
-                        return `
-                        <div class="flex items-center gap-1.5 bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-2.5 py-2 mb-1.5 text-[11px]">
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${inboundBadgeClass('protocol', ib.protocol_label)}">${ib.protocol_label}</span>
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${inboundBadgeClass('transport', ib.transport_label)}">${ib.transport_label}</span>
-                            <span class="px-1.5 py-0.5 rounded font-semibold ${inboundBadgeClass('security', ib.security_label)}">${ib.security_label}</span>
-                            <span class="text-mist-dim flex-1"></span>
-                            <span class="text-mist-dim" id="ping-${keyId}-${gi}-${ii}">${ping}</span>
-                            <button onclick="copyInboundLink(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">⧉</button>
-                            <button onclick="showInboundQR(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0">▦</button>
-                            ${ib.kind === 'conf' ? `<button onclick="downloadInboundConf(${keyId}, ${gi}, ${ii})" class="w-6 h-6 flex items-center justify-center rounded-lg bg-panel hover:bg-[color:var(--hairline)] transition flex-shrink-0" title="Скачать .conf">⬇</button>` : ''}
-                        </div>`;
-                    }).join('')}
-                </div>
-            `).join('');
-        }
-
-        function copyInboundLink(keyId, gi, ii) {
-            const _ib = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii];
-            const link = _ib ? (_ib.config_text || _ib.link) : null;
-            if (!link) return;
-            navigator.clipboard.writeText(link).catch(() => {});
-        }
-
-        function showInboundQR(keyId, gi, ii) {
-            const _ib = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii];
-            const link = _ib ? (_ib.config_text || _ib.link) : null;
-            if (!link) return;
-            const qrUrl = (_ib && _ib.qr_png) ? _ib.qr_png : '/api/qr.png?d=' + encodeURIComponent(link);
-            const win = document.createElement('div');
-            win.className = 'fixed inset-0 bg-black/70 flex items-center justify-center z-50';
-            win.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:50;';
-            win.onclick = () => win.remove();
-            win.innerHTML = `<div style="background:white;border-radius:16px;padding:12px;"><img src="${qrUrl}" style="width:min(86vw,340px);height:auto;border-radius:8px;image-rendering:pixelated;"></div>`;
-            document.body.appendChild(win);
-        }
-
-        function downloadInboundConf(keyId, gi, ii) {
-            const ib = _inboundsCache[keyId]?.[gi]?.inbounds?.[ii];
-            if (!ib || !ib.config_text) return;
-            try {
-                const blob = new Blob([ib.config_text], { type: 'text/plain' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = ib.filename || 'config.conf';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => URL.revokeObjectURL(a.href), 1500);
-            } catch (e) {
-                navigator.clipboard.writeText(ib.config_text).catch(() => {});
-            }
-        }
 
         async function renderAccountData(session) {
             const box = document.getElementById('accountDataBox');
@@ -2045,7 +1590,6 @@
                 karing: siteInfo.karing_import_enabled === true,
             };
 
-            _sessionKeys = session.keys || [];
             _sessionBalanceCents = session.balance_cents || 0;
 
             const cabinetBtn = `<a href="/" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-4 text-center">Открыть личный кабинет</a>`;
@@ -2101,200 +1645,11 @@
                 `<button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>`;
         }
 
-        let _renewKeyId = null;
-        let _renewIsCdn = false;
-        let _renewPayMethod = 'card';
-
-        function openRenewForKey(keyId) {
-            _renewKeyId = keyId;
-            _renewIsCdn = false;
-            _renewPayMethod = 'card';
-            _payMode = 'renew';
-            document.getElementById('payOverlay').classList.add('active');
-            const box = document.getElementById('payContent');
-            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Загружаем тарифы…</p>';
-            loadRenewTariffsForOverlay();
-        }
-
-        function setRenewPayMethod(method) {
-            _renewPayMethod = method;
-            renderRenewTariffCards();
-        }
-
-        function selectRenewTariff(tariffId) {
-            if (_renewPayMethod === 'balance') {
-                return payRenewKeyWithBalance(tariffId);
-            }
-            return selectTariffAndRenewKey(tariffId);
-        }
 
         let _lastRenewTariffs = [];
 
-        async function loadRenewTariffsForOverlay() {
-            const box = document.getElementById('payContent');
-            try {
-                const res = await fetchAPI(`tariffs?vpn_key_id=${_renewKeyId}`);
-                _lastRenewTariffs = res.tariffs || [];
-                renderRenewTariffCards();
-            } catch(e) {
-                box.innerHTML = '<p class="text-sm text-alert py-6">Не удалось загрузить тарифы.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
-            }
-        }
-
-        function renderRenewTariffCards() {
-            const box = document.getElementById('payContent');
-            const tariffs = _lastRenewTariffs;
-            try {
-                const methodToggle = _sessionBalanceCents > 0 ? `
-                    <div class="flex gap-2 mb-3 p-1 bg-panel-2 rounded-xl">
-                        <button onclick="setRenewPayMethod('card')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition ${_renewPayMethod === 'card' ? 'btn-primary' : 'btn-secondary'}">💳 Банк / СБП</button>
-                        <button onclick="setRenewPayMethod('balance')" class="flex-1 py-2 rounded-lg text-xs font-semibold transition ${_renewPayMethod === 'balance' ? 'btn-primary' : 'btn-secondary'}">💎 Баланс: ${(_sessionBalanceCents / 100).toFixed(0)} ₽</button>
-                    </div>
-                ` : '';
-                box.innerHTML = `
-                    <h3 class="font-display text-base font-bold mb-3">Продлить на</h3>
-                    ${methodToggle}
-                    <div class="space-y-2 mb-2">
-                        ${tariffs.map(t => {
-                            const priceCents = Math.round(t.price_rub * 100);
-                            const disabled = _renewPayMethod === 'balance' && priceCents > _sessionBalanceCents;
-                            return `
-                            <button onclick="${disabled ? '' : `selectRenewTariff(${t.id})`}" ${disabled ? 'disabled' : ''} class="w-full bg-panel-2 border ${t.is_current ? 'border-teal ring-2 ring-teal' : 'border-[color:var(--hairline)]'} rounded-xl p-3 flex justify-between items-center transition active:scale-[0.98]${disabled ? ' opacity-40' : ''}">
-                                <span class="text-sm font-semibold">${escapeHtml(t.name)}${t.is_current ? ' <span class="text-teal text-[11px] font-bold">✅ текущий</span>' : ''}</span>
-                                <span class="text-gold font-display font-bold text-sm">${t.price_rub.toFixed(0)} ₽</span>
-                            </button>
-                        `;}).join('')}
-                    </div>
-                    <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Отмена</button>
-                `;
-            } catch(e) {
-                box.innerHTML = '<p class="text-sm text-alert py-6">Не удалось загрузить тарифы.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
-            }
-        }
-
-        async function payRenewKeyWithBalance(tariffId) {
-            const box = document.getElementById('payContent');
-            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Списываем с баланса…</p>';
-            try {
-                const res = await postAPI('account/key/renew/balance', { key_id: _renewKeyId, tariff_id: tariffId });
-                if (res.error) {
-                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось оплатить балансом.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
-                    return;
-                }
-                showRenewSuccess(res.message);
-                refreshAccountDashboard();
-            } catch(e) {
-                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при оплате балансом. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
-            }
-        }
-
-        async function selectTariffAndRenewKey(tariffId) {
-            const box = document.getElementById('payContent');
-            box.innerHTML = '<div class="flex justify-center py-10"><div class="spinner"></div></div><p class="text-xs text-mist text-center mt-3">Создаём платёж на продление…</p>';
-            try {
-                const res = await postAPI('account/key/renew/create', { key_id: _renewKeyId, tariff_id: tariffId });
-                if (res.error) {
-                    box.innerHTML = `<p class="text-sm text-alert py-4">${escapeHtml(res.message || 'Не удалось создать платёж.')}</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>`;
-                    return;
-                }
-                renderPayQR(res);
-            } catch(e) {
-                box.innerHTML = '<p class="text-sm text-alert py-6">Ошибка при создании платежа. Попробуйте ещё раз.</p><button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition mt-2">Закрыть</button>';
-            }
-        }
-
-        function copySubUrl(btn, textElId) {
-            const url = btn.getAttribute('data-url');
-
-            // Визуально выделяем сам текст ссылки, чтобы было видно, что именно скопировалось
-            if (textElId) {
-                const el = document.getElementById(textElId);
-                if (el && window.getSelection) {
-                    const range = document.createRange();
-                    range.selectNodeContents(el);
-                    const sel = window.getSelection();
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                }
-            }
-
-            navigator.clipboard.writeText(url).then(() => {
-                showToast('Ссылка скопирована');
-            }).catch(() => {
-                showToast('Не удалось скопировать');
-            });
-        }
-
-        function showImportGuide(app) {
-            const box = document.getElementById('payContent');
-            const guides = {
-                happ: {
-                    title: 'Добавление в Happ',
-                    steps: [
-                        'Скопируйте ссылку кнопкой «Копировать» выше',
-                        'Откройте приложение Happ',
-                        'Нажмите «+» в правом верхнем углу главного экрана',
-                        'Выберите «Добавить подписку» — приложение само распознает скопированную ссылку из буфера обмена',
-                    ],
-                },
-                incy: {
-                    title: 'Добавление в INCY',
-                    steps: [
-                        'Скопируйте ссылку кнопкой «Копировать» выше',
-                        'Откройте приложение INCY',
-                        'Нажмите «+» на главном экране',
-                        'Выберите «Импорт из буфера обмена» — ссылка подставится автоматически',
-                    ],
-                },
-                karing: {
-                    title: 'Добавление в Karing',
-                    steps: [
-                        'Скопируйте ссылку кнопкой «Копировать» выше',
-                        'Откройте приложение Karing',
-                        'Нажмите «+» на главном экране',
-                        'Выберите «Import Configuration Link» и вставьте ссылку (или просто откройте Karing — он сам подхватит ссылку из буфера обмена)',
-                    ],
-                },
-            };
-            const guide = guides[app];
-            if (!guide) return;
-            box.innerHTML = `
-                <h3 class="font-display text-base font-bold mb-4">${guide.title}</h3>
-                <ol class="text-left text-sm space-y-3 mb-5">
-                    ${guide.steps.map((s, i) => `<li class="flex gap-2.5"><span class="flex-shrink-0 w-5 h-5 rounded-full bg-panel-2 border border-[color:var(--hairline)] flex items-center justify-center text-[11px] text-gold font-bold">${i + 1}</span><span class="text-mist">${s}</span></li>`).join('')}
-                </ol>
-                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Понятно</button>
-            `;
-            document.getElementById('payOverlay').classList.add('active');
-        }
-
-        function showKeyQR(btn) {
-            const url = btn.getAttribute('data-url');
-            const qrUrl = '/api/qr.png?d=' + encodeURIComponent(url);
-            document.getElementById('payContent').innerHTML = `
-                <h3 class="font-display text-base font-bold mb-4">QR-код подключения</h3>
-                <div class="bg-white rounded-2xl p-3 mx-auto mb-4 w-[264px] h-[264px] flex items-center justify-center">
-                    <img src="${qrUrl}" alt="QR" class="w-[240px] h-[240px] rounded-lg">
-                </div>
-                <p class="text-[11px] text-mist-dim mb-4">Отсканируйте камерой приложения Happ / INCY / v2rayN</p>
-                <button onclick="closePay()" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition">Закрыть</button>
-            `;
-            document.getElementById('payOverlay').classList.add('active');
-        }
-
-        function goImport(btn) {
-            const url = btn.getAttribute('data-url');
-            const scheme = btn.getAttribute('data-scheme');
-            if (!url) {
-                showToast('Ссылка подписки пока недоступна, попробуйте позже');
-                return;
-            }
-            location.href = '/import?scheme=' + encodeURIComponent(scheme) + '&url=' + encodeURIComponent(url);
-        }
-
         async function logoutAccount() {
             try { await postAPI('account/logout', {}); } catch(e) {}
-            _sessionKeys = [];
             document.getElementById('accountDataBox').innerHTML = '';
             document.getElementById('mainApp').classList.add('hidden');
             document.getElementById('authGate').classList.remove('hidden');
