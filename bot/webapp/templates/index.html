@@ -1995,6 +1995,11 @@
             "Не удалось загрузить данные. Попробуйте обновить.": "Failed to load data. Please refresh.",
             "Telegram initData не обнаружен. Откройте через бота.": "Telegram initData not found. Please open via the bot.",
             "Ошибка инициализации": "Initialization error",
+            "Вход в личный кабинет": "Sign in to your account",
+            "Войдите кодом из бота («Мои ключи» → «Управлять на сайте») или другим способом.": "Sign in with a code from the bot or another method.",
+            "Открыть бота": "Open bot",
+            "Войти": "Sign in",
+            "Выйти": "Sign out",
             "AI Помощник": "AI Assistant",
             "АКТИВНА": "ACTIVE",
             "Задайте вопрос…": "Ask a question…",
@@ -2067,10 +2072,45 @@
             return result;
         }
 
+        // Кабинет в обычном браузере (без Telegram): вход по cookie сайта.
+        // ?code=XXXX-XXXX — одноразовый код из кнопки «Открыть в браузере».
+        async function browserLogin() {
+            const code = new URLSearchParams(location.search).get('code');
+            if (code) {
+                history.replaceState(null, '', location.pathname);
+                try {
+                    await fetch('/api/public/account/session-login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code })
+                    });
+                } catch (e) { /* покажем экран входа */ }
+            }
+            try { return (await fetch('/api/language')).ok; } catch (e) { return false; }
+        }
+
+        async function browserLogout() {
+            try { await fetch('/api/public/account/logout', { method: 'POST' }); } catch (e) {}
+            location.reload();
+        }
+
+        function renderBrowserLogin() {
+            const bot = BOT_USERNAME ? `<a href="https://t.me/${escapeHtml(BOT_USERNAME)}" class="block w-full py-3 btn-secondary rounded-xl font-bold text-sm transition mt-2">Открыть бота</a>` : '';
+            return `
+                <div class="text-center py-14 fade-in">
+                    <h2 class="font-display text-base font-bold mb-2">Вход в личный кабинет</h2>
+                    <p class="text-sm text-mist mb-6">Войдите кодом из бота («Мои ключи» → «Управлять на сайте») или другим способом.</p>
+                    <a href="/shop" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Войти</a>
+                    ${bot}
+                </div>
+            `;
+        }
+
         async function init() {
             try {
-                if (!initData) {
-                    container.innerHTML = renderError('Telegram initData не обнаружен. Откройте через бота.');
+                if (!initData && !(await browserLogin())) {
+                    await siteInfoPromise;
+                    container.innerHTML = translateHtml(renderBrowserLogin());
                     return;
                 }
 
@@ -2130,6 +2170,7 @@
                     html += '<div class="mt-2"><button onclick="goTrial()" class="px-8 py-3.5 btn-secondary rounded-xl font-bold text-base transition w-full">Пробная подписка</button></div>';
                 }
 
+                if (!initData) html += '<button onclick="browserLogout()" class="w-full py-2.5 text-xs text-mist-dim underline transition mt-4">Выйти</button>';
                 html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
 
                 container.innerHTML = translateHtml(html);

@@ -175,6 +175,14 @@ def _get_telegram_id(request: web.Request) -> Optional[int]:
     if token:
         from bot.utils.webtoken import verify_token
         return verify_token(token, BOT_TOKEN)
+    # Вход из обычного браузера (без Telegram): cookie личного кабинета сайта.
+    # Только аккаунты, привязанные к Telegram — у чисто сайтовых нет telegram_id.
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if account_id:
+        from database.requests import get_site_account_by_id
+        account = get_site_account_by_id(account_id)
+        if account and account.get("telegram_id"):
+            return int(account["telegram_id"])
     return None
 
 
@@ -4889,11 +4897,16 @@ async def handle_weblink(request: web.Request) -> web.Response:
         from bot.utils.webtoken import make_token
         token = make_token(telegram_id, BOT_TOKEN, ttl_seconds=3600)
         return web.json_response({"url": f"{base}?token={token}"})
-    from database.requests import get_effective_webapp_url
+    from database.requests import get_effective_webapp_url, is_site_auth_method_enabled
     site = (get_effective_webapp_url() or "").strip().rstrip("/")
     if not site:
         return web.json_response({"error": "not_configured"}, status=404)
-    return web.json_response({"url": f"{site}/shop"})
+    if not is_site_auth_method_enabled('code'):
+        return web.json_response({"url": f"{site}/"})
+    # Одноразовый код (10 мин): кабинет в браузере сразу открывается под этим клиентом
+    from database.requests import create_site_login_code
+    code = create_site_login_code(telegram_id)
+    return web.json_response({"url": f"{site}/?code={code}"})
 
 async def handle_qr_png(request: web.Request) -> web.Response:
     """GET /api/qr.png?d=... — v1.329: QR-код рисуется на своём сервере. Раньше страницы
