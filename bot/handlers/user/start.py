@@ -650,6 +650,31 @@ async def _continue_start(
         await show_license_tariffs(send_target, telegram_id)
         return
 
+    if args and args.startswith('sitelink_'):
+        # Клиент сайта (телефон / Google / Яндекс / VK) привязывает свой Telegram из личного кабинета
+        from database.requests import (
+            verify_telegram_link_token, link_oauth_to_site_account, get_site_account_by_id,
+            adopt_account_purchase_keys,
+        )
+        from bot.keyboards.admin import home_only_kb
+
+        account_id = verify_telegram_link_token(args[len('sitelink_'):].strip())
+        account = get_site_account_by_id(account_id) if account_id else None
+        if not account:
+            text = '⚠️ Ссылка устарела. Нажмите «Привязать Telegram» в личном кабинете на сайте ещё раз.'
+        elif account.get('telegram_id') == telegram_id:
+            text = '✅ Этот Telegram уже привязан к вашему аккаунту на сайте.'
+        elif account.get('telegram_id'):
+            text = '⚠️ К этому аккаунту на сайте уже привязан другой Telegram.'
+        elif link_oauth_to_site_account(account_id, telegram_id):
+            adopt_account_purchase_keys(account_id, user['id'])
+            text = ('✅ <b>Telegram привязан к аккаунту на сайте!</b>\n\n'
+                    'Ключи с сайта теперь в разделе «Мои ключи», а уведомления будут приходить сюда.')
+        else:
+            text = '⚠️ Не удалось привязать Telegram. Попробуйте ещё раз или напишите в поддержку.'
+        await send_target.answer(text, parse_mode='HTML', reply_markup=home_only_kb())
+        return
+
     if args and args.startswith('claim_'):
         from bot.services.anonymous_purchase import claim_anonymous_purchase
         from bot.keyboards.admin import home_only_kb

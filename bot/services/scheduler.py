@@ -1790,8 +1790,9 @@ async def run_traffic_sync_scheduler(bot: Bot) -> None:
                         )
                     except Exception as e:
                         logger.error(f"Ошибка в materialize_subscription_state: {e}")
-                # Пинг серверов — каждый третий цикл (примерно раз в 15 минут)
-                if cycle % 3 == 0:
+                # Пинг серверов — на первом цикле после запуска и дальше каждый третий (раз в ~15 минут):
+                # иначе частые перезапуски откладывают пинг, и проверка «Планировщик» поднимает ложную тревогу
+                if cycle % 3 == 1:
                     try:
                         await update_all_server_latencies()
                     except Exception as e:

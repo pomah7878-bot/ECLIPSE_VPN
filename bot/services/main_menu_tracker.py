@@ -3,6 +3,8 @@
 Раньше каждый /start присылал новое меню, и старые копились в чате. Теперь при /start
 предыдущее меню клиента и прежняя команда удаляются, а новое меню появляется внизу чата.
 Самая последняя команда /start остаётся: без сообщений клиента Telegram показывает кнопку «Старт».
+v1.505: /start чистит и всю остальную переписку клиента (clean_chat_history) — в чате остаются
+только /start и главное меню. Чаты админов не чистятся.
 """
 import asyncio
 import logging
@@ -132,6 +134,35 @@ def _previous_menu_id(user_id: int) -> Optional[int]:
         return None
 
 
+_CLEAN_PREFIX = "chat_clean_from:"
+_CLEAN_DEPTH = 300  # при первой очистке — столько последних сообщений назад
+_CLEAN_BATCH = 100  # deleteMessages принимает до 100 id за раз
+
+
+async def clean_chat_history(bot, chat_id: int, user_id: int, current_id: int) -> None:
+    """/start: чистит переписку клиента — всё до текущей команды (она остаётся, см. ниже).
+    Удаляет пачками по 100; несуществующие id Telegram пропускает, сообщения старше 48 часов
+    боту удалить нельзя — они остаются. Чаты админов не трогаем: там уведомления об оплатах и сбоях."""
+    try:
+        from config import ADMIN_IDS
+        if int(user_id) in {int(a) for a in ADMIN_IDS} or int(chat_id) != int(user_id) or not current_id:
+            return
+        from database.db_settings import get_setting, set_setting
+        key = f"{_CLEAN_PREFIX}{int(user_id)}"
+        start = max(1, int(get_setting(key) or 0), int(current_id) - _CLEAN_DEPTH)
+        ids = list(range(start, int(current_id)))
+        for i in range(0, len(ids), _CLEAN_BATCH):
+            try:
+                await bot.delete_messages(chat_id=chat_id, message_ids=ids[i:i + _CLEAN_BATCH])
+            except Exception as e:  # старые (>48 ч) или уже удалённые — не страшно
+                logger.debug("Очистка чата %s: пачка с %s не удалена: %s", chat_id, ids[i], e)
+        # следующая очистка начнётся с этой команды /start (её уберём в следующий раз)
+        set_setting(key, str(int(current_id)))
+        _trail.pop(int(chat_id), None)
+    except Exception as e:
+        logger.debug("Очистка чата %s не выполнена: %s", chat_id, e)
+
+
 async def cleanup_before_start(bot, chat_id: int, user_id: int, command_message=None) -> None:
     """Удаляет предыдущее главное меню клиента и сообщение с командой /start."""
     prev = _previous_menu_id(user_id)
@@ -160,3 +191,5 @@ async def cleanup_before_start(bot, chat_id: int, user_id: int, command_message=
                 set_setting(key, str(current))
         except Exception as e:
             logger.debug("Не удалось обработать сообщение /start: %s", e)
+        # Вся остальная переписка клиента тоже убирается: в чате остаются только /start и главное меню
+        await clean_chat_history(bot, chat_id, user_id, int(getattr(command_message, "message_id", 0) or 0))

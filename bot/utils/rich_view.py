@@ -95,6 +95,9 @@ async def send(msg: Message, rich_html: str, fallback_text: str, reply_markup: O
 _TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)[^>]*?(/?)>")
 _VOID = {"br"}
 _KV = re.compile(r"^[^\w<]{0,4}\s*(?:<b>)?([^:<>\n]{2,30}?)(?::</b>|</b>:|:)\s*(.+)$")
+# Жирное название — явная разметка «название: значение», ему можно быть длиннее
+# («Панель ECLIPSE Unlimited 🌍 Global Auto»): иначе такая строка рвёт таблицу на две разной ширины
+_KV_BOLD = re.compile(r"^[^\w<]{0,4}\s*<b>([^:<>\n]{2,60}?)(?::</b>|</b>:)\s*(.+)$")
 _SECTION = re.compile(r"^\s*(?:<b>)?\s*[━─—=]{2,}\s*(.+?)\s*[━─—=]{2,}\s*(?:</b>)?\s*$")
 _WHOLE_BOLD = re.compile(r"^[^\w<]{0,6}\s*<b>[^<]*</b>\s*:?$")
 _BLOCK = re.compile(r"<(blockquote|pre)\b[^>]*>.*?</\1>", re.S)
@@ -124,7 +127,7 @@ def _is_sep(line: str) -> bool:
 
 def _pair(line: str):
     """«Название: значение» -> (название, значение HTML) или None."""
-    m = _KV.match(line)
+    m = _KV.match(line) or _KV_BOLD.match(line)
     if not m:
         return None
     label = _plain(line[: m.start(2)]).rstrip(":").strip().lstrip("•-– ").strip()

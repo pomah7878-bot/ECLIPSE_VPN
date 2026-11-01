@@ -1768,3 +1768,202 @@ class UnifiedCabinetTest(unittest.TestCase):
         self.assertEqual(owners[k1], owner_id)       # ключ со служебной личности перешёл к владельцу аккаунта
         self.assertEqual(owners[k2], real["id"])     # забранный в бот ключ не тронут
         self.assertEqual(adopt_account_purchase_keys(account["id"], owner_id), 0)  # повторно ничего не меняет
+
+
+class TariffGroupsTest(unittest.TestCase):
+    """Витрина и кабинет делят тарифы на группы, как бот."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_single_group_splits_by_traffic(self):
+        import bot.webapp.server as srv
+        tariffs = [{"id": 1, "name": "1 месяц — ♾", "traffic_limit_gb": 0},
+                   {"id": 2, "name": "1 месяц — (100 ГБ)", "traffic_limit_gb": 100},
+                   {"id": 3, "name": "1 год — ♾", "traffic_limit_gb": 0}]
+        rows = srv._with_groups([{"id": t["id"], "name": t["name"]} for t in tariffs], tariffs)
+        self.assertEqual([(r["id"], r["group"]) for r in rows], [(1, "♾ Безлимит"), (3, "♾ Безлимит"), (2, "100 ГБ")])
+        self.assertEqual(rows[2]["short_name"], "1 месяц — (100 ГБ)")  # название целиком
+        same = [{"id": 1, "name": "a", "traffic_limit_gb": 0}]
+        self.assertNotIn("group", srv._with_groups([{"id": 1, "name": "a"}], same)[0])  # один лимит — без групп
+
+
+class SiteTelegramLinkTest(unittest.TestCase):
+    """Клиент сайта привязывает Telegram: ключи из кабинета переходят к нему; карточка в админке."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_link_moves_keys_and_token(self):
+        import time
+        from database.requests import get_or_create_user
+        from database.db_accounts import (
+            get_or_create_site_account_by_phone, get_or_create_placeholder_user_for_site_account,
+            link_oauth_to_site_account, make_telegram_link_token, verify_telegram_link_token, site_account_phone,
+        )
+        account = get_or_create_site_account_by_phone("79990003344")
+        self.assertEqual(site_account_phone(account), "79990003344")  # номер входа считается номером аккаунта
+        placeholder_id = get_or_create_placeholder_user_for_site_account(account["id"])
+        with get_db() as c:
+            key_id = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))",
+                               (placeholder_id,)).lastrowid
+
+        token = make_telegram_link_token(account["id"])
+        self.assertEqual(verify_telegram_link_token(token), account["id"])
+        self.assertIsNone(verify_telegram_link_token(token[:-1] + ("0" if token[-1] != "0" else "1")))  # подделка
+        self.assertIsNone(verify_telegram_link_token(f"{account['id']}_{int(time.time()) - 1}_x"))  # просрочен
+
+        real, _ = get_or_create_user(777000333, username="real_link")
+        self.assertTrue(link_oauth_to_site_account(account["id"], 777000333))
+        with get_db() as c:
+            owner = c.execute("SELECT user_id FROM vpn_keys WHERE id = ?", (key_id,)).fetchone()[0]
+        self.assertEqual(owner, real["id"])
+        self.assertFalse(link_oauth_to_site_account(account["id"], 777000444))  # второй Telegram не привязать
+
+    def test_admin_card_for_site_client(self):
+        from database.requests import get_user_by_id
+        from database.db_accounts import get_or_create_site_account_by_phone, get_or_create_placeholder_user_for_site_account
+        from bot.handlers.admin.users_manage import _format_user_card
+        account = get_or_create_site_account_by_phone("79990005566")
+        user = get_user_by_id(get_or_create_placeholder_user_for_site_account(account["id"]))
+        text, _ = _format_user_card(user)
+        self.assertIn("Клиент сайта", text)
+        self.assertIn("+79990005566", text)
+        self.assertIn("сообщения не доставляются", text)
+        self.assertNotIn("Username: @site_", text)
+        from bot.keyboards.admin_users import user_view_kb
+        buttons = lambda tg: [b.text for row in user_view_kb(tg, [], False).inline_keyboard for b in row]
+        self.assertFalse(any("Написать" in t or "Найти на всех панелях" in t for t in buttons(-123)))
+        self.assertTrue(any("Написать" in t for t in buttons(555)))
+
+
+class SitePhoneLinkTest(unittest.TestCase):
+    """Номер как второй способ входа: вход по нему открывает тот же аккаунт; чужой номер не привязать."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_linked_phone_login_and_conflict(self):
+        from database.db_accounts import get_or_create_site_account, get_or_create_site_account_by_phone, set_account_phone
+        yandex = get_or_create_site_account("yandex", "ya-777", email="a@ya.ru")
+        self.assertTrue(set_account_phone(yandex["id"], "79990007788"))
+        self.assertEqual(get_or_create_site_account_by_phone("79990007788")["id"], yandex["id"])  # тот же аккаунт
+        phone_only = get_or_create_site_account_by_phone("79990009900")
+        self.assertFalse(set_account_phone(yandex["id"], "79990009900"))  # номер занят аккаунтом «вход по телефону»
+        self.assertNotEqual(phone_only["id"], yandex["id"])
+
+
+class SitePhoneMergeTest(unittest.TestCase):
+    """Номер уже есть у другого аккаунта: объединение без потерь, отказ, когда потери были бы."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_merge_phone_account_into_oauth(self):
+        from database.db_accounts import (
+            get_or_create_site_account, get_or_create_site_account_by_phone, get_or_create_placeholder_user_for_site_account,
+            find_site_account_by_phone, make_phone_proof, verify_phone_proof, merge_site_account_into,
+            get_site_account_by_id, phone_merge_blocker,
+        )
+        keep = get_or_create_site_account("yandex", "ya-merge", email="m@ya.ru")
+        drop = get_or_create_site_account_by_phone("79991112233")
+        drop_owner = get_or_create_placeholder_user_for_site_account(drop["id"])
+        with get_db() as c:
+            key_id = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))",
+                               (drop_owner,)).lastrowid
+        self.assertEqual(find_site_account_by_phone("79991112233", exclude_id=keep["id"])["id"], drop["id"])
+
+        proof = make_phone_proof(keep["id"], drop["id"], "79991112233")
+        self.assertEqual(verify_phone_proof(proof, keep["id"]), (drop["id"], "79991112233"))
+        self.assertIsNone(verify_phone_proof(proof, drop["id"]))  # выдано другому аккаунту
+        self.assertIsNone(verify_phone_proof(proof.replace("79991112233", "79990000000"), keep["id"]))  # подмена номера
+
+        self.assertIsNone(merge_site_account_into(keep["id"], drop["id"], "79991112233"))
+        keep_owner = get_site_account_by_id(keep["id"])["placeholder_user_id"]
+        with get_db() as c:
+            self.assertEqual(c.execute("SELECT user_id FROM vpn_keys WHERE id = ?", (key_id,)).fetchone()[0], keep_owner)
+        self.assertIsNone(get_site_account_by_id(drop["id"]))
+        self.assertEqual(get_or_create_site_account_by_phone("79991112233")["id"], keep["id"])  # вход по номеру — в keep
+
+        google = get_or_create_site_account("google", "g-merge", email="g@gmail.com")
+        self.assertIn("Google", phone_merge_blocker(keep, google))  # вход через Google пропал бы
+
+
+class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
+    """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_offer_and_single_grant(self):
+        from unittest.mock import AsyncMock, patch
+        from database.requests import get_or_create_user, set_setting
+        import bot.handlers.user.keys as keys
+
+        user, _ = get_or_create_user(777000555, username="bonus_user")
+        with get_db() as c:
+            c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (user["id"],))
+        active = patch("database.requests.get_first_active_key_for_user", return_value={"id": 1})
+        licensed = patch("bot.services.license.is_feature_available", return_value=True)
+        with get_db() as c:  # настройка по умолчанию (соседний тест мог её выставить)
+            c.execute("DELETE FROM settings WHERE key = 'phone_bonus_days'")
+        from database.db_settings import invalidate_settings_cache
+        invalidate_settings_cache()
+        with active, licensed:
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # по умолчанию выключен
+            set_setting("phone_bonus_days", "5")
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 5)
+        with active, patch("bot.services.license.is_feature_available", return_value=False):
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # без лицензии — нет, бот работает как раньше
+        grant = AsyncMock(return_value={"ok": True})
+        with patch("bot.services.rewards.grant_days_to_first_active_key", grant), licensed:
+            self.assertIn("+5 дн.", await keys._grant_phone_bonus(777000555))
+            self.assertEqual(await keys._grant_phone_bonus(777000555), "")  # второй раз — нет
+        grant.assert_awaited_once()
+        with active, licensed:
+            self.assertEqual(keys.phone_bonus_offer_days(777000555), 0)  # после начисления кнопки нет
+
+    def test_admin_screen_and_stats(self):
+        from unittest.mock import patch
+        import bot.handlers.user.keys as keys
+        from bot.keyboards.admin_misc import marketing_menu_kb
+        from database.requests import set_setting
+        self.assertIn("admin_phone_bonus", [b.callback_data for row in marketing_menu_kb().inline_keyboard for b in row])
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO trial_verified_phones (phone_normalized, telegram_id) VALUES ('79995550001', 777000666)")
+        self.assertGreaterEqual(keys.phone_bonus_stats()["phones"], 1)
+        with patch("bot.services.license.is_feature_available", return_value=True):
+            set_setting("phone_bonus_days", "0")
+            self.assertIn("выключен", keys._phone_bonus_admin_text())
+            set_setting("phone_bonus_days", "5")
+            self.assertIn("+5 дн.", keys._phone_bonus_admin_text())
+
+
+class StartCleanChatTest(unittest.IsolatedAsyncioTestCase):
+    """/start чистит переписку клиента: всё до команды, пачками по 100; админов не трогает."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_clean_ranges_and_admin(self):
+        from unittest.mock import AsyncMock, patch
+        from bot.services import main_menu_tracker as mt
+        bot = AsyncMock()
+        with patch("config.ADMIN_IDS", [111]):
+            await mt.clean_chat_history(bot, 222, 222, 450)  # первая очистка: 300 сообщений назад
+            batches = [c.kwargs["message_ids"] for c in bot.delete_messages.await_args_list]
+            self.assertEqual(batches[0][0], 150)
+            self.assertEqual(batches[-1][-1], 449)  # сама команда 450 остаётся
+            self.assertTrue(all(len(b) <= 100 for b in batches))
+            bot.delete_messages.reset_mock()
+            await mt.clean_chat_history(bot, 222, 222, 460)  # следующая — с прошлой команды
+            self.assertEqual(bot.delete_messages.await_args.kwargs["message_ids"], list(range(450, 460)))
+            bot.delete_messages.reset_mock()
+            await mt.clean_chat_history(bot, 111, 111, 500)  # чат админа не трогаем
+            bot.delete_messages.assert_not_awaited()

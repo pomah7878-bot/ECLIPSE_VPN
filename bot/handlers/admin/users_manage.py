@@ -119,6 +119,29 @@ async def _show_user_view_edit(callback: CallbackQuery, state: FSMContext, teleg
     await safe_edit_or_send(callback.message, text, reply_markup=keyboard)
     await callback.answer()
 
+_SITE_PROVIDERS = {'google': 'Google', 'yandex': 'Яндекс', 'vk': 'VK', 'phone': 'по номеру телефона', 'telegram': 'кодом из бота'}
+
+
+def _site_client_lines(user: dict) -> list[str]:
+    """Строки карточки для клиента сайта: почта, телефон, способ входа вместо @site_N и отрицательного ID."""
+    from database.requests import get_site_account_by_placeholder_user_id, site_account_phone
+    account = get_site_account_by_placeholder_user_id(user['id'])
+    if not account:
+        return ['🌐 <b>Покупатель с сайта без аккаунта</b> (купил без входа, ключ ещё не забран)',
+                f'📱 Служебный ID: <code>{user["telegram_id"]}</code>']
+    lines = [f'🌐 <b>Клиент сайта #{account["id"]}</b> (без Telegram)']
+    provider = _SITE_PROVIDERS.get(account.get('provider') or '', account.get('provider') or '')
+    if account.get('email'):
+        lines.append(f'📧 Почта: <code>{escape_html(account["email"])}</code>' + (f' · вход через {escape_html(provider)}' if provider and provider in ('Google', 'Яндекс', 'VK') else ''))
+    phone = site_account_phone(account)
+    if phone:
+        lines.append(f'📱 Телефон: <code>+{escape_html(str(phone).lstrip("+"))}</code>' + (' · вход по номеру' if account.get('provider') == 'phone' else ''))
+    if not account.get('email') and not phone and provider:
+        lines.append(f'🔑 Вход: {escape_html(provider)}')
+    lines.append(f'🆔 Служебный ID: <code>{user["telegram_id"]}</code>')
+    return lines
+
+
 def _format_user_card(user: dict) -> tuple[str, any]:
     """Formats a user card."""
     telegram_id = user['telegram_id']
@@ -135,13 +158,18 @@ def _format_user_card(user: dict) -> tuple[str, any]:
         lines.append('🚫 <b>ПОЛЬЗОВАТЕЛЬ ЗАБАНЕН</b>')
         lines.append('')
         
-    if username:
-        lines.append(f'👤 Username: @{escape_html(username)}')
+    if int(telegram_id) < 0:
+        # Клиент сайта без Telegram: служебная личность, настоящие данные — в аккаунте сайта
+        lines.extend(_site_client_lines(user))
     else:
-        lines.append('👤 Username: _не указан_')
-        
-    lines.append(f'📱 Telegram ID: <code>{telegram_id}</code>')
-    if is_bot_blocked:
+        if username:
+            lines.append(f'👤 Username: @{escape_html(username)}')
+        else:
+            lines.append('👤 Username: _не указан_')
+        lines.append(f'📱 Telegram ID: <code>{telegram_id}</code>')
+    if int(telegram_id) < 0:
+        lines.append('📵 Статус доставки: <b>нет Telegram — сообщения не доставляются</b>')
+    elif is_bot_blocked:
         lines.append('📵 Статус доставки: <b>бот заблокирован пользователем</b>')
     else:
         lines.append('📨 Статус доставки: <b>доступен для сообщений</b>')

@@ -111,6 +111,7 @@ def marketing_menu_kb() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text='🤝 Совместные акции', callback_data='admin_collabs'))
     builder.row(InlineKeyboardButton(text='🎰 Рулетка', callback_data='admin_roulette'))
     builder.row(InlineKeyboardButton(text='🎁 Бонусные дни (отзыв, сторис)' + _bonus_badge(), callback_data='admin_bonus_tasks'))
+    builder.row(InlineKeyboardButton(text='📱 Бонус за номер телефона', callback_data='admin_phone_bonus'))
     builder.row(back_button('admin_panel'), home_button())
     return builder.as_markup()
 

@@ -18,6 +18,14 @@ __all__ = [
     'consume_site_login_code',
     'link_purchase_to_account',
     'adopt_account_purchase_keys',
+    'make_telegram_link_token',
+    'site_account_phone',
+    'find_site_account_by_phone',
+    'make_phone_proof',
+    'verify_phone_proof',
+    'phone_merge_blocker',
+    'merge_site_account_into',
+    'verify_telegram_link_token',
     'get_site_referrer_code_for_order',
     'get_latest_purchase_for_account',
     'create_oauth_exchange_code',
@@ -79,13 +87,97 @@ def _get_or_create_telegram_site_account(telegram_id: int, referred_by_code: Opt
         return dict(row)
 
 
+def site_account_phone(account: Dict[str, Any]) -> Optional[str]:
+    """Номер аккаунта: привязанный (phone) или тот, по которому он создан (provider='phone')."""
+    if account.get("phone"):
+        return account["phone"]
+    return account.get("provider_user_id") if account.get("provider") == "phone" else None
+
+
+def find_site_account_by_phone(phone_normalized: str, exclude_id: int = 0) -> Optional[Dict[str, Any]]:
+    """Аккаунт, которому принадлежит номер: привязанный (phone) или созданный входом по нему."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM site_accounts WHERE (phone = ? OR (provider = 'phone' AND provider_user_id = ?)) AND id != ? ORDER BY id LIMIT 1",
+            (phone_normalized, phone_normalized, exclude_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def make_phone_proof(account_id: int, other_id: int, phone: str, ttl_seconds: int = 600) -> str:
+    """Подтверждение звонком, что номер чужого аккаунта принадлежит вошедшему: для «объединить / войти в тот»."""
+    import time as _time
+    expires = int(_time.time()) + ttl_seconds
+    body = f"{account_id}.{other_id}.{phone}.{expires}"
+    return f"{body}.{_sign_short('phoneproof:' + body)}"
+
+
+def verify_phone_proof(proof: str, account_id: int):
+    """(other_id, phone) из подтверждения или None (подделка, истёк, выдано другому аккаунту)."""
+    import hmac as _hmac
+    import time as _time
+    try:
+        acc, other, phone, expires, sig = (proof or "").split(".")
+        if int(acc) != account_id or int(expires) < _time.time():
+            return None
+        if not _hmac.compare_digest(sig, _sign_short(f"phoneproof:{acc}.{other}.{phone}.{expires}")):
+            return None
+        return int(other), phone
+    except ValueError:
+        return None
+
+
+def phone_merge_blocker(keep: Dict[str, Any], drop: Dict[str, Any]) -> Optional[str]:
+    """Почему нельзя влить drop в keep без потерь (None — можно)."""
+    if drop.get("provider") not in ("phone", "telegram"):
+        return "Тот аккаунт создан входом через Google/Яндекс/VK — при объединении этот вход пропал бы."
+    if keep.get("telegram_id") and drop.get("telegram_id") and keep["telegram_id"] != drop["telegram_id"]:
+        return "К аккаунтам привязаны разные Telegram."
+    if not drop.get("telegram_id") and drop.get("placeholder_user_id"):
+        with get_db() as conn:
+            row = conn.execute("SELECT personal_balance FROM users WHERE id = ?", (drop["placeholder_user_id"],)).fetchone()
+        if row and (row["personal_balance"] or 0) > 0:
+            return "На том аккаунте есть баланс — для переноса напишите в поддержку."
+    return None
+
+
+def merge_site_account_into(keep_id: int, drop_id: int, phone_normalized: str) -> Optional[str]:
+    """Вливает аккаунт drop (вход по номеру / кодом из бота) в keep: покупки, ключи, Telegram, номер.
+    Возвращает текст ошибки или None при успехе."""
+    keep, drop = get_site_account_by_id(keep_id), get_site_account_by_id(drop_id)
+    if not keep or not drop or keep_id == drop_id:
+        return "Аккаунт не найден."
+    blocker = phone_merge_blocker(keep, drop)
+    if blocker:
+        return blocker
+    telegram_id = keep.get("telegram_id") or drop.get("telegram_id")
+    keep_placeholder = keep.get("placeholder_user_id")
+    if not telegram_id:
+        keep_placeholder = get_or_create_placeholder_user_for_site_account(keep_id)
+    with get_db() as conn:
+        owner = (conn.execute("SELECT id FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone() or {"id": None})["id"] \
+            if telegram_id else keep_placeholder
+        if not owner:
+            return "Пользователь Telegram не найден."
+        for placeholder in {drop.get("placeholder_user_id"), keep_placeholder if telegram_id else None} - {None, owner}:
+            conn.execute("UPDATE vpn_keys SET user_id = ? WHERE user_id = ?", (owner, placeholder))
+        conn.execute("UPDATE anonymous_purchases SET site_account_id = ? WHERE site_account_id = ?", (keep_id, drop_id))
+        conn.execute("DELETE FROM site_accounts WHERE id = ?", (drop_id,))
+        conn.execute("UPDATE site_accounts SET phone = ?, telegram_id = ? WHERE id = ?", (phone_normalized, telegram_id, keep_id))
+    return None
+
+
 def get_or_create_site_account_by_phone(phone_normalized: str, referred_by_code: Optional[str] = None) -> Dict[str, Any]:
     """Аккаунт по номеру телефона (provider='phone', provider_user_id=
     нормализованный номер) — подтверждается звонком через zvonok.com
     при каждом входе. Повторный вход тем же номером возвращает ТОТ ЖЕ
     аккаунт (со всей историей покупок), а не создаёт новый."""
     with get_db() as conn:
+        # Сначала аккаунт, к которому этот номер привязан как второй способ входа (Google/Яндекс/VK + телефон),
+        # иначе вход по добавленному номеру открывал бы новый пустой аккаунт
         row = conn.execute(
+            "SELECT * FROM site_accounts WHERE phone = ? ORDER BY id LIMIT 1", (phone_normalized,),
+        ).fetchone() or conn.execute(
             "SELECT * FROM site_accounts WHERE provider = 'phone' AND provider_user_id = ?",
             (phone_normalized,),
         ).fetchone()
@@ -126,7 +218,49 @@ def link_oauth_to_site_account(account_id: int, telegram_id: int) -> bool:
             "UPDATE site_accounts SET telegram_id = ? WHERE id = ? AND telegram_id IS NULL",
             (telegram_id, account_id),
         )
+        if cursor.rowcount:
+            # Ключи, купленные в кабинете до привязки, лежат на служебной личности аккаунта —
+            # переносим их на Telegram-пользователя, иначе после привязки они пропадут из кабинета
+            conn.execute(
+                """UPDATE vpn_keys SET user_id = (SELECT id FROM users WHERE telegram_id = ?)
+                   WHERE user_id = (SELECT placeholder_user_id FROM site_accounts WHERE id = ?)
+                     AND EXISTS (SELECT 1 FROM users WHERE telegram_id = ?)""",
+                (telegram_id, account_id, telegram_id),
+            )
         return cursor.rowcount > 0
+
+
+def _sign_short(message: str) -> str:
+    import hashlib as _hashlib
+    import hmac as _hmac
+    from database.db_settings import get_site_session_secret
+    return _hmac.new(get_site_session_secret().encode(), message.encode(), _hashlib.sha256).hexdigest()[:20]
+
+
+def _telegram_link_sig(account_id: int, expires: int) -> str:
+    return _sign_short(f"tglink:{account_id}:{expires}")
+
+
+def make_telegram_link_token(account_id: int, ttl_seconds: int = 900) -> str:
+    """Код для ссылки t.me/<бот>?start=sitelink_<код>: клиент сайта привязывает свой Telegram.
+    Подписан секретом сессий сайта; повторно не сработает — привязка ставится, только пока telegram_id пуст."""
+    import time as _time
+    expires = int(_time.time()) + ttl_seconds
+    return f"{account_id}_{expires}_{_telegram_link_sig(account_id, expires)}"
+
+
+def verify_telegram_link_token(token: str) -> Optional[int]:
+    """account_id из кода привязки Telegram или None (подделка, истёк срок)."""
+    import hmac as _hmac
+    import time as _time
+    try:
+        account_id_str, expires_str, sig = (token or "").split("_")
+        account_id, expires = int(account_id_str), int(expires_str)
+    except ValueError:
+        return None
+    if expires < _time.time() or not _hmac.compare_digest(sig, _telegram_link_sig(account_id, expires)):
+        return None
+    return account_id
 
 
 def set_account_phone(account_id: int, phone_normalized: str) -> bool:
@@ -137,11 +271,12 @@ def set_account_phone(account_id: int, phone_normalized: str) -> bool:
     одновременно, для полной связки. Отклоняет, если номер уже
     привязан к ДРУГОМУ аккаунту."""
     with get_db() as conn:
+        # занят и привязанный номер, и номер, по которому создан другой аккаунт (вход по телефону)
         existing = conn.execute(
-            "SELECT id FROM site_accounts WHERE phone = ?",
-            (phone_normalized,),
+            "SELECT id FROM site_accounts WHERE (phone = ? OR (provider = 'phone' AND provider_user_id = ?)) AND id != ?",
+            (phone_normalized, phone_normalized, account_id),
         ).fetchone()
-        if existing and existing["id"] != account_id:
+        if existing:
             return False
         cursor = conn.execute(
             "UPDATE site_accounts SET phone = ? WHERE id = ?",

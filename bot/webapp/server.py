@@ -830,6 +830,51 @@ async def handle_site_ai_ask(request: web.Request) -> web.Response:
     return out
 
 
+def _tariff_groups(tariffs: list) -> dict:
+    """Группы тарифов для витрины и кабинета: {tariff_id: {group, group_order, short_name}}.
+    Несколько групп в админке — как в боте (заголовок группы · лимит, название без хвоста-лимита);
+    одна группа — делим по трафику (безлимит / N ГБ), если лимиты разные; иначе без групп."""
+    from database.requests import get_groups_count, get_all_groups, get_tariffs_by_group
+    from bot.utils.page_dynamic_data import _group_header, _limit_label, _clean_tariff_name
+    from bot.utils.rich_view import _plain
+
+    out = {}
+    if get_groups_count() > 1:
+        for order, group in enumerate(get_all_groups()):
+            group_tariffs = get_tariffs_by_group(group["id"])
+            if not group_tariffs:
+                continue
+            header = _plain(_group_header(group["name"]))
+            limit = _limit_label(group_tariffs, group)
+            for t in group_tariffs:
+                out[int(t["id"])] = {
+                    "group": f"{header} · {limit}" if limit else header, "group_order": order,
+                    "short_name": _clean_tariff_name(t["name"]) if limit else t["name"],
+                }
+        return out
+    limits = sorted({int(t.get("traffic_limit_gb") or 0) for t in tariffs}, key=lambda gb: (gb != 0, gb))
+    if len(limits) < 2:
+        return out
+    for t in tariffs:
+        gb = int(t.get("traffic_limit_gb") or 0)
+        out[int(t["id"])] = {
+            # название целиком: группа по трафику не знает про ежемесячный сброс, «ежемесячно» не теряем
+            "group": "♾ Безлимит" if gb == 0 else f"{gb} ГБ", "group_order": limits.index(gb),
+            "short_name": t["name"],
+        }
+    return out
+
+
+def _with_groups(rows: list, tariffs: list) -> list:
+    """Добавляет к строкам тарифов группу и упорядочивает по группам (внутри — как было)."""
+    groups = _tariff_groups(tariffs)
+    if not groups:
+        return rows
+    for row in rows:
+        row.update(groups.get(int(row["id"]), {"group": "", "group_order": len(groups) + 1, "short_name": row["name"]}))
+    return sorted(rows, key=lambda r: r["group_order"])
+
+
 async def handle_tariffs_list(request: web.Request) -> web.Response:
     """GET /api/tariffs — список активных тарифов для экрана оплаты в WebApp.
 
@@ -884,7 +929,7 @@ async def handle_tariffs_list(request: web.Request) -> web.Response:
             row["promo_percent"] = pp["percent"]
         return row
 
-    return web.json_response({"tariffs": [_tariff_row(t) for t in tariffs]})
+    return web.json_response({"tariffs": _with_groups([_tariff_row(t) for t in tariffs], tariffs)})
 
 
 async def handle_pay_create(request: web.Request) -> web.Response:
@@ -2480,7 +2525,7 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
         return row
 
     return web.json_response({
-        "tariffs": [_site_tariff_row(t) for t in tariffs],
+        "tariffs": _with_groups([_site_tariff_row(t) for t in tariffs], tariffs),
         "trial_available": trial_available,
     })
 
@@ -3803,6 +3848,26 @@ async def handle_public_account_referral(request: web.Request) -> web.Response:
     })
 
 
+async def handle_public_account_telegram_link(request: web.Request) -> web.Response:
+    """POST /api/public/account/telegram-link — ссылка в бота, по которой клиент сайта сам
+    привязывает свой Telegram (найти человека в Telegram по номеру или почте бот не может)."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    from database.requests import get_site_account_by_id, make_telegram_link_token
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"error": "account_not_found"}, status=404)
+    if account.get("telegram_id"):
+        return web.json_response({"ok": False, "message": "Telegram уже привязан."})
+    from bot.utils.runtime_state import get_bot_username
+    bot_username = get_bot_username()
+    if not bot_username:
+        return web.json_response({"ok": False, "message": "Бот недоступен, попробуйте позже."}, status=503)
+    token = make_telegram_link_token(account_id)
+    return web.json_response({"ok": True, "url": f"https://t.me/{bot_username}?start=sitelink_{token}"})
+
+
 async def handle_public_account_session(request: web.Request) -> web.Response:
     """GET /api/public/account/session — данные кабинета для текущей
     сессии (OAuth или вход по коду). Показывает ВСЕ ключи для клиентов,
@@ -3811,7 +3876,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     if not account_id:
         return web.json_response({"ok": True, "logged_in": False})
 
-    from database.requests import get_site_account_by_id
+    from database.requests import get_site_account_by_id, site_account_phone
     account = get_site_account_by_id(account_id)
     if not account:
         return web.json_response({"ok": True, "logged_in": False})
@@ -3850,7 +3915,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         return web.json_response({
             "ok": True, "logged_in": True, "account_type": "telegram",
             "can_link_oauth": account.get("provider") in (None, "telegram"),
-            "phone": account.get("phone"),
+            "phone": site_account_phone(account),
             "email": account.get("email"),
             "keys": keys_with_urls,
             "balance_cents": balance_cents,
@@ -3860,16 +3925,20 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     from database.requests import get_latest_purchase_for_account, get_key_details_by_id
     purchase = get_latest_purchase_for_account(account_id)
     if not purchase:
-        return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": []})
+        return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": [],
+                                  "phone": site_account_phone(account), "email": account.get("email"),
+                                  "can_link_oauth": not account.get("email")})
 
     key = get_key_details_by_id(purchase["vpn_key_id"])
     if not key:
-        return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": []})
+        return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": [],
+                                  "phone": site_account_phone(account), "email": account.get("email"),
+                                  "can_link_oauth": not account.get("email")})
 
     return web.json_response({
         "ok": True, "logged_in": True, "account_type": "oauth",
-        "can_link_oauth": False,
-        "phone": account.get("phone"),
+        "can_link_oauth": not account.get("email"),  # вошёл по телефону — предлагаем Google/Яндекс/VK
+        "phone": site_account_phone(account),
         "email": account.get("email"),
         "keys": [{
             "key_id": key["id"],
@@ -3936,9 +4005,78 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     normalized = normalize_phone(phone)
     ok = set_account_phone(account_id, normalized)
     if not ok:
-        return web.json_response({"ok": False, "message": "Этот номер уже привязан к другому аккаунту."}, status=409)
+        # Номер подтверждён звонком, но уже принадлежит другому аккаунту — предлагаем действия
+        from database.requests import (
+            find_site_account_by_phone, get_site_account_by_id, make_phone_proof, phone_merge_blocker,
+        )
+        other = find_site_account_by_phone(normalized, exclude_id=account_id)
+        current = get_site_account_by_id(account_id)
+        if not other or not current:
+            return web.json_response({"ok": False, "message": "Этот номер уже привязан к другому аккаунту."}, status=409)
+        blocker = phone_merge_blocker(current, other)
+        return web.json_response({
+            "ok": False, "phone_taken": True,
+            "message": "Этот номер уже есть у другого аккаунта на сайте.",
+            "proof": make_phone_proof(account_id, other["id"], normalized),
+            "can_merge": blocker is None, "merge_blocker": blocker,
+        }, status=409)
 
-    return web.json_response({"ok": True, "verified": True, "phone": normalized})
+    # Номер подтверждался в боте (например, при пробном периоде) — это тот же человек в Telegram:
+    # привязываем его Telegram сразу, как при входе по номеру (ключи переходят к нему)
+    telegram_linked = False
+    try:
+        from bot.services.trial_phone_registry import get_telegram_id_for_verified_phone
+        from database.requests import get_site_account_by_id, get_user_by_telegram_id, adopt_account_purchase_keys
+        from database.db_accounts import link_oauth_to_site_account
+        tg_id = get_telegram_id_for_verified_phone(normalized)
+        account = get_site_account_by_id(account_id)
+        tg_user = get_user_by_telegram_id(tg_id) if tg_id else None
+        if tg_user and account and not account.get("telegram_id") and link_oauth_to_site_account(account_id, tg_id):
+            adopt_account_purchase_keys(account_id, tg_user["id"])
+            telegram_linked = True
+    except Exception as e:
+        logger.warning(f"Автопривязка Telegram по номеру для аккаунта {account_id} не удалась: {e}")
+
+    return web.json_response({"ok": True, "verified": True, "phone": normalized, "telegram_linked": telegram_linked})
+
+
+async def handle_public_account_phone_switch(request: web.Request) -> web.Response:
+    """POST /api/public/account/phone-switch {proof} — войти в аккаунт, которому принадлежит
+    только что подтверждённый звонком номер."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    from database.requests import verify_phone_proof, get_site_account_by_id
+    proved = verify_phone_proof((body or {}).get("proof"), account_id)
+    if not proved or not get_site_account_by_id(proved[0]):
+        return web.json_response({"ok": False, "message": "Подтверждение устарело. Подтвердите номер ещё раз."}, status=400)
+    resp = web.json_response({"ok": True})
+    resp.set_cookie("site_session", _sign_session(proved[0]), max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
+    return resp
+
+
+async def handle_public_account_phone_merge(request: web.Request) -> web.Response:
+    """POST /api/public/account/phone-merge {proof} — влить аккаунт с этим номером в текущий."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    from database.requests import verify_phone_proof, merge_site_account_into
+    proved = verify_phone_proof((body or {}).get("proof"), account_id)
+    if not proved:
+        return web.json_response({"ok": False, "message": "Подтверждение устарело. Подтвердите номер ещё раз."}, status=400)
+    error = merge_site_account_into(account_id, proved[0], proved[1])
+    if error:
+        return web.json_response({"ok": False, "message": error}, status=409)
+    logger.info(f"Сайт: аккаунт {proved[0]} объединён с {account_id} по подтверждённому номеру")
+    return web.json_response({"ok": True})
 
 
 async def handle_public_account_logout(request: web.Request) -> web.Response:
@@ -5375,6 +5513,9 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)
     app.router.add_get("/api/public/account/session", handle_public_account_session)
+    app.router.add_post("/api/public/account/telegram-link", handle_public_account_telegram_link)
+    app.router.add_post("/api/public/account/phone-switch", handle_public_account_phone_switch)
+    app.router.add_post("/api/public/account/phone-merge", handle_public_account_phone_merge)
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)
