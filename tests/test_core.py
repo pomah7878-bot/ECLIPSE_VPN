@@ -1251,6 +1251,12 @@ class BotVersionTest(unittest.TestCase):
         self.assertIsNone(parse_bot_release("Правка README"))
         info = parse_release_body("Новый вид меню: защита от падения (1.476)\n")
         self.assertEqual((info["version"], info["title"]), ("1.476", "Новый вид меню: защита от падения"))
+        info = parse_release_body("Версия 1.502: кабинет\n\n+ пункт\n\nCo-Authored-By: X <x@y>\nClaude-Session: https://e.x/s\n")
+        self.assertEqual(info["bullets"], [("+", "пункт")])
+        from bot.utils.git_utils import strip_git_trailers
+        log = "abc Версия 2: a\n\n+ x\n\nCo-Authored-By: X <x@y>\nClaude-Session: u\n\ndef Версия 1: b\n"
+        self.assertNotIn("Claude", strip_git_trailers(log))
+        self.assertIn("def Версия 1: b", strip_git_trailers(log))
 
 
 class AwgTariffFilterTests(unittest.TestCase):

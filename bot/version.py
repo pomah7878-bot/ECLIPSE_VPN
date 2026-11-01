@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 
-from bot.utils.git_utils import run_git_command
+from bot.utils.git_utils import run_git_command, strip_git_trailers
 
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def parse_release_body(body: str) -> dict | None:
     символ строки ('+' или '-'); используется только как маркер начала пункта,
     а не как индикатор типа изменения (в истории проекта смысл +/- не всегда
     последователен). Возвращает None, если первая строка не похожа на версию."""
-    lines = [line.rstrip() for line in (body or "").strip("\n").split("\n")]
+    lines = [line.rstrip() for line in strip_git_trailers(body).strip("\n").split("\n")]
     if not lines:
         return None
     header = _match_release_header(lines[0])
