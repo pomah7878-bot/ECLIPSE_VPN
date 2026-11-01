@@ -1850,3 +1850,40 @@ class SitePhoneLinkTest(unittest.TestCase):
         phone_only = get_or_create_site_account_by_phone("79990009900")
         self.assertFalse(set_account_phone(yandex["id"], "79990009900"))  # номер занят аккаунтом «вход по телефону»
         self.assertNotEqual(phone_only["id"], yandex["id"])
+
+
+class SitePhoneMergeTest(unittest.TestCase):
+    """Номер уже есть у другого аккаунта: объединение без потерь, отказ, когда потери были бы."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_merge_phone_account_into_oauth(self):
+        from database.db_accounts import (
+            get_or_create_site_account, get_or_create_site_account_by_phone, get_or_create_placeholder_user_for_site_account,
+            find_site_account_by_phone, make_phone_proof, verify_phone_proof, merge_site_account_into,
+            get_site_account_by_id, phone_merge_blocker,
+        )
+        keep = get_or_create_site_account("yandex", "ya-merge", email="m@ya.ru")
+        drop = get_or_create_site_account_by_phone("79991112233")
+        drop_owner = get_or_create_placeholder_user_for_site_account(drop["id"])
+        with get_db() as c:
+            key_id = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))",
+                               (drop_owner,)).lastrowid
+        self.assertEqual(find_site_account_by_phone("79991112233", exclude_id=keep["id"])["id"], drop["id"])
+
+        proof = make_phone_proof(keep["id"], drop["id"], "79991112233")
+        self.assertEqual(verify_phone_proof(proof, keep["id"]), (drop["id"], "79991112233"))
+        self.assertIsNone(verify_phone_proof(proof, drop["id"]))  # выдано другому аккаунту
+        self.assertIsNone(verify_phone_proof(proof.replace("79991112233", "79990000000"), keep["id"]))  # подмена номера
+
+        self.assertIsNone(merge_site_account_into(keep["id"], drop["id"], "79991112233"))
+        keep_owner = get_site_account_by_id(keep["id"])["placeholder_user_id"]
+        with get_db() as c:
+            self.assertEqual(c.execute("SELECT user_id FROM vpn_keys WHERE id = ?", (key_id,)).fetchone()[0], keep_owner)
+        self.assertIsNone(get_site_account_by_id(drop["id"]))
+        self.assertEqual(get_or_create_site_account_by_phone("79991112233")["id"], keep["id"])  # вход по номеру — в keep
+
+        google = get_or_create_site_account("google", "g-merge", email="g@gmail.com")
+        self.assertIn("Google", phone_merge_blocker(keep, google))  # вход через Google пропал бы

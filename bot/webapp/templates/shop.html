@@ -1519,6 +1519,8 @@
                 showToast(res.telegram_linked ? 'Телефон привязан, и мы нашли ваш Telegram — он тоже привязан!' : 'Телефон привязан!');
                 const sessionRes = await fetchAPI('account/session');
                 renderAccountData(sessionRes);
+            } else if (res.phone_taken) {
+                showPhoneTaken(res);
             } else {
                 // Отказ бывает не только из-за кода: номер занят, звонок устарел, много попыток
                 errBox.textContent = res.message || 'Код не совпадает, попробуйте ещё раз.';
@@ -1534,9 +1536,36 @@
                 renderAccountData(sessionRes);
             } else if (res.ok === false) {
                 clearInterval(window._linkPhonePollInterval);
+                if (res.phone_taken) { showPhoneTaken(res); return; }
                 document.getElementById('linkPhoneBody').innerHTML =
                     `<p class="text-xs text-alert text-center py-3">${escapeHtml(res.message || 'Не удалось привязать номер.')}</p>`;
             }
+        }
+
+        // Номер подтверждён, но уже есть у другого аккаунта — объяснить и предложить действия
+        let _phoneProof = null;
+        function showPhoneTaken(res) {
+            clearInterval(window._linkPhonePollInterval);
+            _phoneProof = res.proof;
+            const btn = 'w-full py-3 rounded-xl font-semibold text-sm transition';
+            document.getElementById('linkPhoneBody').innerHTML = `
+                <div class="text-center py-2">
+                    <p class="text-sm font-bold mb-1">Этот номер уже есть у другого аккаунта</p>
+                    <p class="text-xs text-mist mb-3">Номер ваш — вы подтвердили его звонком. Что сделать?</p>
+                    ${res.can_merge
+                        ? `<button onclick="phoneTakenAction('phone-merge')" class="${btn} btn-primary mb-2">Объединить аккаунты</button>
+                           <p class="text-[11px] text-mist-dim mb-3">Ключи и покупки того аккаунта перейдут сюда, а номер станет ещё одним способом входа.</p>`
+                        : `<p class="text-[11px] text-mist-dim mb-3">Объединить нельзя: ${escapeHtml(res.merge_blocker || '')}</p>`}
+                    <button onclick="phoneTakenAction('phone-switch')" class="${btn} btn-secondary mb-2">Войти в тот аккаунт</button>
+                    <button onclick="showLinkPhoneStep()" class="${btn} btn-secondary">Отмена</button>
+                    <div id="phoneTakenError" class="text-xs text-alert mt-2"></div>
+                </div>`;
+        }
+
+        async function phoneTakenAction(endpoint) {
+            const res = await postAPISafe('account/' + endpoint, { proof: _phoneProof });
+            if (res.ok) { location.replace('/'); return; }
+            document.getElementById('phoneTakenError').textContent = res.message || 'Не получилось, попробуйте ещё раз.';
         }
 
         async function doAccountLogin() {

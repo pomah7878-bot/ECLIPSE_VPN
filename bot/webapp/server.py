@@ -4005,7 +4005,21 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     normalized = normalize_phone(phone)
     ok = set_account_phone(account_id, normalized)
     if not ok:
-        return web.json_response({"ok": False, "message": "Этот номер уже привязан к другому аккаунту."}, status=409)
+        # Номер подтверждён звонком, но уже принадлежит другому аккаунту — предлагаем действия
+        from database.requests import (
+            find_site_account_by_phone, get_site_account_by_id, make_phone_proof, phone_merge_blocker,
+        )
+        other = find_site_account_by_phone(normalized, exclude_id=account_id)
+        current = get_site_account_by_id(account_id)
+        if not other or not current:
+            return web.json_response({"ok": False, "message": "Этот номер уже привязан к другому аккаунту."}, status=409)
+        blocker = phone_merge_blocker(current, other)
+        return web.json_response({
+            "ok": False, "phone_taken": True,
+            "message": "Этот номер уже есть у другого аккаунта на сайте.",
+            "proof": make_phone_proof(account_id, other["id"], normalized),
+            "can_merge": blocker is None, "merge_blocker": blocker,
+        }, status=409)
 
     # Номер подтверждался в боте (например, при пробном периоде) — это тот же человек в Telegram:
     # привязываем его Telegram сразу, как при входе по номеру (ключи переходят к нему)
@@ -4024,6 +4038,45 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
         logger.warning(f"Автопривязка Telegram по номеру для аккаунта {account_id} не удалась: {e}")
 
     return web.json_response({"ok": True, "verified": True, "phone": normalized, "telegram_linked": telegram_linked})
+
+
+async def handle_public_account_phone_switch(request: web.Request) -> web.Response:
+    """POST /api/public/account/phone-switch {proof} — войти в аккаунт, которому принадлежит
+    только что подтверждённый звонком номер."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    from database.requests import verify_phone_proof, get_site_account_by_id
+    proved = verify_phone_proof((body or {}).get("proof"), account_id)
+    if not proved or not get_site_account_by_id(proved[0]):
+        return web.json_response({"ok": False, "message": "Подтверждение устарело. Подтвердите номер ещё раз."}, status=400)
+    resp = web.json_response({"ok": True})
+    resp.set_cookie("site_session", _sign_session(proved[0]), max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
+    return resp
+
+
+async def handle_public_account_phone_merge(request: web.Request) -> web.Response:
+    """POST /api/public/account/phone-merge {proof} — влить аккаунт с этим номером в текущий."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    from database.requests import verify_phone_proof, merge_site_account_into
+    proved = verify_phone_proof((body or {}).get("proof"), account_id)
+    if not proved:
+        return web.json_response({"ok": False, "message": "Подтверждение устарело. Подтвердите номер ещё раз."}, status=400)
+    error = merge_site_account_into(account_id, proved[0], proved[1])
+    if error:
+        return web.json_response({"ok": False, "message": error}, status=409)
+    logger.info(f"Сайт: аккаунт {proved[0]} объединён с {account_id} по подтверждённому номеру")
+    return web.json_response({"ok": True})
 
 
 async def handle_public_account_logout(request: web.Request) -> web.Response:
@@ -5461,6 +5514,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)
     app.router.add_get("/api/public/account/session", handle_public_account_session)
     app.router.add_post("/api/public/account/telegram-link", handle_public_account_telegram_link)
+    app.router.add_post("/api/public/account/phone-switch", handle_public_account_phone_switch)
+    app.router.add_post("/api/public/account/phone-merge", handle_public_account_phone_merge)
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)
