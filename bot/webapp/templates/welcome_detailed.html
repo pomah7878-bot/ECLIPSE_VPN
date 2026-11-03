@@ -104,7 +104,6 @@ async function init() {
         const siteRes = await fetch('/api/public/site-info');
         const site = await siteRes.json();
         botUsername = site.bot_username || '';
-        document.title = site.brand_name || 'VPN';
         document.getElementById('brandName').textContent = site.brand_name || 'VPN';
     } catch (e) {
         document.getElementById('brandName').textContent = 'VPN';

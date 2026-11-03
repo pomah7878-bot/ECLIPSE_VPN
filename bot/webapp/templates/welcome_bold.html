@@ -94,7 +94,6 @@ async function init() {
         const siteRes = await fetch('/api/public/site-info');
         const site = await siteRes.json();
         botUsername = site.bot_username || '';
-        document.title = site.brand_name || 'VPN';
         document.getElementById('brandName').innerHTML = (site.brand_name || 'VPN') + ' <span class="accent">без границ</span>';
     } catch (e) {
         document.getElementById('brandName').textContent = 'VPN без границ';

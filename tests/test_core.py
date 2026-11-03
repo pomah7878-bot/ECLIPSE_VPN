@@ -2135,6 +2135,43 @@ class ReleaseNotesTest(unittest.TestCase):
         self.assertIsNone(rn.notes(log, "v1.12"))
 
 
+class SeoTest(unittest.IsolatedAsyncioTestCase):
+    """SEO: robots.txt, sitemap.xml, описание и превью на витрине."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_robots_sitemap_head(self):
+        from unittest.mock import patch
+        from aiohttp.test_utils import TestClient, TestServer
+        import bot.webapp.server as srv
+        with patch("database.requests.get_effective_webapp_url", return_value="https://vpn.example"), \
+                patch("database.requests.get_effective_brand_name", return_value="Луна <VPN>"), \
+                patch("bot.services.license.is_feature_available", return_value=True):
+            client = TestClient(TestServer(srv.create_web_app()))
+            await client.start_server()
+            try:
+                robots = await (await client.get("/robots.txt")).text()
+                self.assertIn("Disallow: /happ-sub/", robots)
+                self.assertIn("Sitemap: https://vpn.example/sitemap.xml", robots)
+                sm = await (await client.get("/sitemap.xml")).text()
+                self.assertIn("<loc>https://vpn.example/shop</loc>", sm)
+                shop = await (await client.get("/shop")).text()
+                head = shop.split("</head>")[0]
+                self.assertIn('<link rel="canonical" href="https://vpn.example/shop">', head)
+                self.assertIn('name="description" content="Луна &lt;VPN&gt; — быстрый', head)
+                self.assertNotIn("<VPN>", head.split("<title")[0] + head.split("</title>")[1])
+                with patch("database.requests.is_welcome_page_enabled", return_value=True):
+                    wl = await (await client.get("/welcome")).text()
+                    sm2 = await (await client.get("/sitemap.xml")).text()
+                self.assertIn("<title>Луна &lt;VPN&gt; — быстрый и надёжный VPN</title>", wl)
+                self.assertIn('href="https://vpn.example/welcome"', wl)
+                self.assertIn("/welcome</loc>", sm2)
+            finally:
+                await client.close()
+
+
 class SubscriptionPageTest(unittest.TestCase):
     """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
 
