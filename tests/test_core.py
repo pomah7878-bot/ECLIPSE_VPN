@@ -1967,3 +1967,28 @@ class StartCleanChatTest(unittest.IsolatedAsyncioTestCase):
             bot.delete_messages.reset_mock()
             await mt.clean_chat_history(bot, 111, 111, 500)  # чат админа не трогаем
             bot.delete_messages.assert_not_awaited()
+
+
+class ThemesExclusiveTest(unittest.TestCase):
+    """Темы не смешиваются: космическая и темы кабинета/витрины взаимоисключающие."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_switching(self):
+        from database.db_settings import (set_cabinet_theme_id, set_shop_theme_id, get_cabinet_theme_id,
+                                          get_shop_theme_id)
+        from bot.services.main_screen import set_webapp_cosmic, webapp_cosmic_enabled
+        set_cabinet_theme_id("vivid")
+        set_shop_theme_id("rose")
+        set_webapp_cosmic(True)
+        self.assertEqual((get_cabinet_theme_id(), get_shop_theme_id()), ("classic", "classic"))
+        set_cabinet_theme_id("sharp")
+        self.assertFalse(webapp_cosmic_enabled())
+        set_webapp_cosmic(True)
+        set_shop_theme_id("aurora")
+        self.assertFalse(webapp_cosmic_enabled())
+        set_webapp_cosmic(True)
+        set_cabinet_theme_id("classic")  # классическая тема космическую не выключает
+        self.assertTrue(webapp_cosmic_enabled())

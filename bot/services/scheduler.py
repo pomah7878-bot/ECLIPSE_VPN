@@ -953,10 +953,11 @@ def get_seconds_until(target_hour: int, target_minute: int = 0) -> int:
 _DAILY_STEPS = ("stats", "backup", "expiry", "autorenew", "snapshot")
 
 
-def _daily_state() -> Dict[str, Any]:
-    """Какие шаги ежедневных задач уже выполнены сегодня: {'date': 'ГГГГ-ММ-ДД', 'steps': [...]}."""
+def _daily_state(now: Optional[datetime] = None) -> Dict[str, Any]:
+    """Какие шаги ежедневных задач уже выполнены сегодня: {'date': 'ГГГГ-ММ-ДД', 'steps': [...]}.
+    now — тот же момент, что у вызывающего (иначе около полуночи «сегодня» у них разное)."""
     import json as _json
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = (now or datetime.now()).strftime("%Y-%m-%d")
     try:
         state = _json.loads(get_setting("daily_done", "") or "{}")
     except Exception:
@@ -987,7 +988,7 @@ def _daily_pending(now: datetime, target_hour: int, target_minute: int) -> bool:
         from database.requests import set_setting
         set_setting("daily_done", _json.dumps({"date": now.strftime("%Y-%m-%d"), "steps": list(required)}))
         return False
-    state = _daily_state()
+    state = _daily_state(now)
     return any(step not in state["steps"] for step in required)
 
 

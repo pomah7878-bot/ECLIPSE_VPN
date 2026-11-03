@@ -625,7 +625,8 @@
                 if (!BOT_USERNAME && site.bot_username) {
                     BOT_USERNAME = site.bot_username;
                 }
-                if (site.cabinet_theme_id && site.cabinet_theme_id !== 'classic') {
+                // Тема кабинета не смешивается с космической: при космической её не ставим
+                if (site.cabinet_theme_id && site.cabinet_theme_id !== 'classic' && !document.body.classList.contains('cosmic')) {
                     document.body.setAttribute('data-theme', site.cabinet_theme_id);
                 }
                 if (site.news_channel_url) {
@@ -2179,6 +2180,7 @@
                     html += statusRes.value.app_view ? renderAppHome(statusRes.value, keysRes.status === 'fulfilled' ? keysRes.value.keys : [], refRes.status === 'fulfilled' ? refRes.value : null) : renderSummary(statusRes.value);
                     window._appView = !!statusRes.value.app_view;
                     document.body.classList.toggle('cosmic', !!statusRes.value.cosmic);
+                    if (statusRes.value.cosmic) document.body.removeAttribute('data-theme');
                     if (statusRes.value.cosmic) { try { tg?.setHeaderColor?.('#04050D'); tg?.setBackgroundColor?.('#04050D'); } catch (e) {} }
                 } else { html += renderSummary(null); }
 

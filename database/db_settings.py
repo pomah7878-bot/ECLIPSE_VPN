@@ -622,6 +622,9 @@ def set_cabinet_theme_id(theme_id: str) -> None:
     if theme_id not in CABINET_THEMES:
         raise ValueError(f"Неизвестная тема кабинета: {theme_id}")
     set_setting('cabinet_theme_id', theme_id)
+    if theme_id != 'classic':
+        # темы не смешиваются: своя тема кабинета выключает «Космическую тему» (webapp_cosmic)
+        set_setting('webapp_cosmic', '0')
 
 
 SHOP_THEMES = {
@@ -644,6 +647,9 @@ def set_shop_theme_id(theme_id: str) -> None:
     if theme_id not in SHOP_THEMES:
         raise ValueError(f"Неизвестная тема магазина: {theme_id}")
     set_setting('shop_theme_id', theme_id)
+    if theme_id != 'classic':
+        # темы не смешиваются: своя тема витрины выключает «Космическую тему» (webapp_cosmic)
+        set_setting('webapp_cosmic', '0')
 
 
 def is_channel_gate_enabled() -> bool:
