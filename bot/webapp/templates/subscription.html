@@ -75,6 +75,26 @@
   .amark .glyph { width:22px; height:22px; background:var(--accent); -webkit-mask:var(--m) center/contain no-repeat; mask:var(--m) center/contain no-repeat; }
   .amark.full { border:none; background:none; }
   .bar { padding:12px 0 4px; }
+  .cfgbar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; padding-bottom:12px; }
+  .filters { display:flex; gap:6px; flex-wrap:wrap; }
+  .fchip { --c:var(--accent); border:1px solid var(--line); background:var(--panel2); color:var(--mist); border-radius:999px;
+           padding:5px 8px 5px 12px; cursor:pointer; font-weight:600; font-size:13px; display:inline-flex; gap:6px; align-items:center; }
+  .fchip.on { color:var(--c); border-color:var(--c); background:color-mix(in srgb,var(--c) 12%,transparent); }
+  .cfgs { display:flex; flex-direction:column; gap:8px; }
+  .cfg { --pc:var(--blue); position:relative; display:flex; align-items:center; gap:12px; padding:12px 12px 12px 18px; border-radius:14px;
+         border:1px solid var(--line); overflow:hidden; transition:border-color .15s, transform .15s;
+         background:linear-gradient(90deg, color-mix(in srgb,var(--pc) 10%,var(--panel2)) 0%, var(--panel2) 45%); }
+  .cfg::before { content:""; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--pc); box-shadow:0 0 12px var(--pc); }
+  .cfg:hover { border-color:color-mix(in srgb,var(--pc) 55%,var(--line)); transform:translateY(-1px); }
+  .cfg-body { flex:1; min-width:0; }
+  .chips { display:flex; gap:5px; align-items:center; flex-wrap:wrap; margin-bottom:5px; }
+  .chip { --c:var(--blue); font:700 11px/1 ui-monospace,Menlo,monospace; letter-spacing:.04em; padding:4px 7px; border-radius:6px;
+          color:var(--c); border:1px solid color-mix(in srgb,var(--c) 45%,transparent); background:color-mix(in srgb,var(--c) 10%,transparent); }
+  .chip.solid { background:var(--c); color:#fff; border-color:var(--c); text-shadow:0 1px 1px rgba(0,0,0,.25); }
+  :root[data-theme="light"] .chip:not(.solid), :root[data-theme="light"] .fchip.on { color:color-mix(in srgb,var(--c) 55%,#000); border-color:color-mix(in srgb,var(--c) 60%,transparent); }
+  .chip.solid.ink { color:#2a2000; text-shadow:none; }
+  .port { font:600 12px ui-monospace,Menlo,monospace; color:var(--mist); margin-left:2px; }
+  .cfg-title { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .foot { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; padding-top:16px; margin-top:8px; border-top:1px solid var(--line); }
   .foot a { color:var(--accent); text-decoration:none; }
   /* окно QR */
@@ -242,18 +262,46 @@ function render() {
   drawApps();
   addTab('Приложения', null, pA);
 
-  // 3. Подключения
+  // 3. Подключения: метки «протокол · транспорт · защита» как в 3x-ui, цвет карточки по протоколу, фильтр
   if (D.configs.length) {
-    const pC = $('div'); const bar = $('div', 'bar');
-    const all = $('button', 'btn', '⧉ Копировать все'); all.onclick = () => copy(D.configs.map(c => c.link).join('\n'), 'Все подключения скопированы');
-    bar.append(all); pC.append(bar);
-    const pcls = { vless: 't-blue', vmess: 't-purple', trojan: 't-gold', ss: 't-ok', hysteria2: 't-bad', hy2: 't-bad' };
-    D.configs.forEach((c, i) => {
-      const row = $('div', 'row'), title = c.name || ('Подключение ' + (i + 1));
-      const acts = $('div', 'acts'); acts.append(iconBtn('⧉', 'Копировать', () => copy(c.link)), iconBtn('▦', 'QR-код', () => qrModal(c.link, title)));
-      const tt = $('span', 'rmain rtitle', title); tt.title = title;
-      row.append($('span', 'tag ' + (pcls[c.proto] || 't-blue'), c.proto.toUpperCase()), tt, acts); pC.append(row);
-    });
+    const PROTO = { vless: ['VLESS', '#5b7cfa'], vmess: ['VMess', '#3b9cff'], trojan: ['Trojan', '#ff7a45'], ss: ['Shadowsocks', '#a66bff'],
+      shadowsocks: ['Shadowsocks', '#a66bff'], hysteria2: ['Hysteria2', '#f759ab'], hy2: ['Hysteria2', '#f759ab'], hysteria: ['Hysteria', '#f759ab'],
+      tuic: ['TUIC', '#fa8c16'], wireguard: ['WireGuard', '#13c2c2'], wg: ['WireGuard', '#13c2c2'], vpn: ['AmneziaWG', '#e8c02b'], tg: ['MTProto', '#3b9cff'] };
+    const SEC = { TLS: '#3dd6b0', XTLS: '#3dd6b0', REALITY: '#b48cff', FAKETLS: '#3dd6b0' };
+    const meta = c => PROTO[c.proto] || [c.proto.charAt(0).toUpperCase() + c.proto.slice(1), '#6aa8ff'];
+    const chip = (text, color, solid) => { const e = $('span', 'chip' + (solid ? ' solid' : '') + (solid && color === '#e8c02b' ? ' ink' : ''), text); e.style.setProperty('--c', color); return e; };
+    const pC = $('div'); const bar = $('div', 'bar cfgbar');
+    const filters = $('div', 'filters'); let cur = '';
+    const counts = {}; D.configs.forEach(c => { const n = meta(c)[0]; counts[n] = (counts[n] || 0) + 1; });
+    const list = $('div', 'cfgs');
+    const visible = () => D.configs.filter(c => !cur || meta(c)[0] === cur);
+    const all = $('button', 'btn', '⧉ Копировать все');
+    all.onclick = () => copy(visible().map(c => c.link).join('\n'), cur ? 'Подключения ' + cur + ' скопированы' : 'Все подключения скопированы');
+    const draw = () => {
+      filters.querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.f === cur));
+      list.replaceChildren();
+      visible().forEach(c => {
+        const i = D.configs.indexOf(c), [pn, pc] = meta(c), title = c.name || ('Подключение ' + (i + 1));
+        const card = $('div', 'cfg'); card.style.setProperty('--pc', pc);
+        const body = $('div', 'cfg-body'), tags = $('div', 'chips');
+        tags.append(chip(pn, pc, true));
+        if (c.net) tags.append(chip(c.net, '#e6b866'));
+        if (c.sec) tags.append(chip(c.sec, SEC[c.sec] || '#8b93a7'));
+        if (c.port) tags.append($('span', 'port', ':' + c.port));
+        const tt = $('div', 'cfg-title', title); tt.title = title;
+        body.append(tags, tt);
+        const acts = $('div', 'acts'); acts.append(iconBtn('⧉', 'Копировать', () => copy(c.link)), iconBtn('▦', 'QR-код', () => qrModal(c.link, title)));
+        card.append(body, acts); list.append(card);
+      });
+    };
+    if (Object.keys(counts).length > 1) {
+      [['', 'Все', D.configs.length]].concat(Object.entries(counts).map(([n, k]) => [n, n, k])).forEach(([f, label, k]) => {
+        const b = $('button', 'fchip', label); b.dataset.f = f; b.append($('span', 'cnt', String(k)));
+        if (f) b.style.setProperty('--c', (Object.values(PROTO).find(x => x[0] === f) || [0, '#6aa8ff'])[1]);
+        b.onclick = () => { cur = f; draw(); }; filters.append(b);
+      });
+    }
+    bar.append(filters, all); pC.append(bar, list); draw();
     addTab('Подключения', D.configs.length, pC);
   }
 

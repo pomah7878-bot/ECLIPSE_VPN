@@ -2355,7 +2355,7 @@ def _is_browser_request(request: web.Request) -> bool:
 
 
 def _parse_sub_configs(body: bytes) -> list:
-    """Подключения из тела подписки (base64 или текст): [{proto, name, link}]."""
+    """Подключения из тела подписки (base64 или текст): [{proto, net, sec, port, name, link}] — как метки в 3x-ui."""
     import urllib.parse as _up
     raw = body.decode("utf-8", "ignore").strip() if isinstance(body, (bytes, bytearray)) else str(body or "")
     if "://" not in raw:
@@ -2363,22 +2363,44 @@ def _parse_sub_configs(body: bytes) -> list:
             raw = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8", "ignore")
         except Exception:
             return []
+
+    def _b64(s):
+        s = s.replace("-", "+").replace("_", "/")
+        return base64.b64decode(s + "=" * (-len(s) % 4)).decode("utf-8", "ignore")
+
     out = []
     for ln in raw.splitlines():
         ln = ln.strip()
         if "://" not in ln:
             continue
         proto = ln.split("://", 1)[0].lower()
-        name = ""
-        if proto == "vmess":
-            try:
-                b = ln.split("://", 1)[1]
-                name = json.loads(base64.b64decode(b + "=" * (-len(b) % 4)).decode("utf-8", "ignore")).get("ps", "")
-            except Exception:
-                pass
-        elif "#" in ln:
-            name = _up.unquote(ln.rsplit("#", 1)[1])
-        out.append({"proto": proto, "name": name[:120], "link": ln})
+        name = net = sec = port = ""
+        try:
+            if proto == "vmess":
+                j = json.loads(_b64(ln.split("://", 1)[1].split("#")[0]))
+                name, net, sec, port = j.get("ps", ""), j.get("net", ""), j.get("tls", ""), str(j.get("port", "") or "")
+            elif proto == "vpn":  # AmneziaWG: base64url текста .conf, название — строка «# …»
+                conf = _b64(ln.split("://", 1)[1])
+                m = re.search(r"^#\s?(.*)$", conf, re.M)
+                name = m.group(1).strip() if m else ""
+                m = re.search(r"^Endpoint\s*=\s*.+:(\d+)\s*$", conf, re.M)
+                port = m.group(1) if m else ""
+            else:
+                u = _up.urlsplit(ln)
+                q = _up.parse_qs(u.query)
+                net, sec = (q.get("type") or [""])[0], (q.get("security") or [""])[0]
+                port = str(u.port or (q.get("port") or [""])[0] or "")
+                name = _up.unquote(u.fragment)
+                if proto == "tuic":
+                    net, sec = "quic", "tls"
+                elif proto == "tg":
+                    sec = "faketls"
+        except Exception:
+            pass
+        if sec == "none":
+            sec = ""
+        out.append({"proto": proto, "net": net.upper()[:12], "sec": sec.upper()[:12], "port": port[:6],
+                    "name": name[:120], "link": ln})
     return out[:200]
 
 

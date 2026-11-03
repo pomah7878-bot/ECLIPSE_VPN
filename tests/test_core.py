@@ -2013,6 +2013,10 @@ class SubscriptionPageTest(unittest.TestCase):
         body = b64.b64encode(("vless://u@h:443#NL%20%3C%2Fscript%3E\nvmess://" + vm).encode())
         cfgs = srv._parse_sub_configs(body)
         self.assertEqual([(c["proto"], c["name"]) for c in cfgs], [("vless", "NL </script>"), ("vmess", "DE")])
+        awg = b64.urlsafe_b64encode(b"[Interface]\n# RU AWG\n[Peer]\nEndpoint = 1.2.3.4:51820\n").decode().rstrip("=")
+        c = srv._parse_sub_configs(("vless://u@h:8443?type=xhttp&security=reality#R\ntuic://u@h:443#T\nvpn://" + awg).encode())
+        self.assertEqual([(x["proto"], x["net"], x["sec"], x["port"], x["name"]) for x in c],
+                         [("vless", "XHTTP", "REALITY", "8443", "R"), ("tuic", "QUIC", "TLS", "443", "T"), ("vpn", "", "", "51820", "RU AWG")])
         with patch("bot.services.license.is_feature_available", return_value=False):
             resp = srv._subscription_page({"custom_name": "</script><b>", "expires_at": "2099-01-01 00:00:00"}, body,
                                           "https://s.example/happ-sub/X", "bot", False, None,
