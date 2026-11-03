@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, WebAppInfo
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramForbiddenError
@@ -264,6 +264,17 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         admin_append_buttons = [
             [InlineKeyboardButton(text="⚙️ Админ-панель" + _admin_bonus_badge(), callback_data="admin_panel")]
         ]
+    else:
+        # клиентам на месте «Админ-панели» — личный кабинет в мини-приложении (нужен https-домен сайта)
+        try:
+            from database.requests import get_effective_webapp_url
+            _cab_url = (get_effective_webapp_url() or '').rstrip('/')
+            if _cab_url.startswith('https://'):
+                admin_append_buttons = [
+                    [InlineKeyboardButton(text="👤 Личный кабинет", web_app=WebAppInfo(url=f"{_cab_url}/"))]
+                ]
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Кнопка личного кабинета не построена: {e}")
 
     context = build_page_flow_context(target, telegram_id=user_id, page_key='main')
     if app_screen_audience:
