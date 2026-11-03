@@ -1398,6 +1398,19 @@ def _seo_head(path: str, title: str) -> str:
     return "\n".join(tags) + "\n"
 
 
+_VERIFICATION_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "site_verification")
+
+
+async def handle_site_verification(request: web.Request) -> web.Response:
+    """GET /yandex_XXXX.html, /googleXXXX.html — файл подтверждения прав на сайт для Яндекс Вебмастера
+    и Google Search Console. Отдаётся, только если админ положил его в папку site_verification
+    (иначе любой мог бы подтвердить права на чужой сайт)."""
+    path = os.path.join(_VERIFICATION_DIR, request.match_info["name"])
+    if not os.path.isfile(path):
+        raise web.HTTPNotFound()
+    return web.FileResponse(path, headers={"Content-Type": "text/html; charset=utf-8"})
+
+
 async def handle_robots_txt(request: web.Request) -> web.Response:
     """GET /robots.txt — поисковикам открыты витрина и описание, закрыты личные и служебные адреса."""
     from database.requests import get_effective_webapp_url
@@ -5611,6 +5624,8 @@ _LICENSE_GATE_ALWAYS_ALLOWED_PREFIXES = (
     "/static/",
     "/favicon.ico",
     "/api/qr.png",
+    "/yandex_",
+    "/google",
     # v1.165: Telegram Mini App и оплата из него — базовые функции, они работают
     # всегда (сайт и личный кабинет закрываются лицензией «site_webapp»)
     "/api/keys",
@@ -5704,6 +5719,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
     app.router.add_get("/favicon.ico", handle_favicon)
+    app.router.add_get(r"/{name:(?:yandex_[0-9a-f]{8,40}|google[0-9a-f]{8,40})\.html}", handle_site_verification)
     app.router.add_get("/robots.txt", handle_robots_txt)
     app.router.add_get("/sitemap.xml", handle_sitemap_xml)
     app.router.add_get("/api/qr.png", handle_qr_png)

@@ -62,3 +62,6 @@ patch_*.py
 *.bundle
 purge_*.sh
 bot/webapp/static/posts/
+
+# файлы подтверждения прав на сайт (Яндекс Вебмастер, Google Search Console)
+site_verification/
