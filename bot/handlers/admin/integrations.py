@@ -1433,7 +1433,9 @@ async def show_cabinet_theme_menu(callback: CallbackQuery, state: FSMContext):
         return
 
     current_id = get_cabinet_theme_id()
-    lines = ["🎭 <b>Тема личного кабинета</b>\n", "Применяется сразу, без обновления бота:\n"]
+    lines = ["🎭 <b>Тема личного кабинета</b>\n", "Применяется сразу, без обновления бота. "
+             "Темы не смешиваются: выбор любой темы, кроме «Классический», выключает «Космическую тему» "
+             "(«Вид главной»).\n"]
     for tid, info in CABINET_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
@@ -1483,7 +1485,9 @@ async def show_shop_theme_menu(callback: CallbackQuery, state: FSMContext):
         return
 
     current_id = get_shop_theme_id()
-    lines = ["🛍 <b>Тема витрины (/shop)</b>\n", "Применяется сразу, без обновления бота:\n"]
+    lines = ["🛍 <b>Тема витрины (/shop)</b>\n", "Применяется сразу, без обновления бота. "
+             "Темы не смешиваются: выбор любой темы, кроме «Classic Gold», выключает «Космическую тему» "
+             "(«Вид главной»).\n"]
     for tid, info in SHOP_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")

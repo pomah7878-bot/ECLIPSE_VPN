@@ -435,6 +435,10 @@ def webapp_cosmic_enabled() -> bool:
 def set_webapp_cosmic(enabled: bool) -> None:
     from database.requests import set_setting
     set_setting(WEBAPP_COSMIC_KEY, '1' if enabled else '0')
+    if enabled:
+        # темы не смешиваются: космическая заменяет выбранные темы кабинета и витрины
+        set_setting('cabinet_theme_id', 'classic')
+        set_setting('shop_theme_id', 'classic')
 
 
 def _merged_buttons(page: Dict[str, Any]) -> List[Dict[str, Any]]:

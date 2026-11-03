@@ -717,7 +717,7 @@
             try {
                 const site = await siteInfoPromise;
                 if (site.cosmic) document.body.classList.add('cosmic');
-                if (site.shop_theme_id && site.shop_theme_id !== 'classic') {
+                if (site.shop_theme_id && site.shop_theme_id !== 'classic' && !site.cosmic) {  // темы не смешиваются
                     document.body.dataset.theme = site.shop_theme_id;
                 }
                 if (site.brand_name) {
