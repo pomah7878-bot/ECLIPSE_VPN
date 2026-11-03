@@ -1374,6 +1374,53 @@ def _serve_html_with_brand(filepath: str, title_format: str, header_format: str)
     return resp
 
 
+def _seo_head(path: str, title: str) -> str:
+    """Теги для поисковиков и превью ссылок (Яндекс, Google, Telegram): описание, адрес страницы, картинка.
+    Описание — настройка seo_description, иначе общее по названию бренда."""
+    from database.requests import get_effective_brand_name, get_effective_webapp_url, get_setting
+    brand = get_effective_brand_name() or "VPN"
+    base = (get_effective_webapp_url() or "").rstrip("/")
+    desc = (get_setting("seo_description", "") or "").strip() or (
+        f"{brand} — быстрый и надёжный VPN. Подключение за минуту, оплата картой и СБП, "
+        "работает на телефоне, компьютере и роутере. Управление в Telegram и в личном кабинете.")
+    e = lambda v: _html_module.escape(v, quote=True)
+    logo = "logo.png" if os.path.exists(os.path.join(_STATIC_DIR, "logo.png")) else "logo.default.png"
+    tags = [f'<meta name="description" content="{e(desc)}">',
+            '<meta property="og:type" content="website">',
+            f'<meta property="og:site_name" content="{e(brand)}">',
+            f'<meta property="og:title" content="{e(title)}">',
+            f'<meta property="og:description" content="{e(desc)}">',
+            '<meta name="twitter:card" content="summary">']
+    if base:
+        tags += [f'<link rel="canonical" href="{e(base + path)}">',
+                 f'<meta property="og:url" content="{e(base + path)}">',
+                 f'<meta property="og:image" content="{e(base + "/static/" + logo)}">']
+    return "\n".join(tags) + "\n"
+
+
+async def handle_robots_txt(request: web.Request) -> web.Response:
+    """GET /robots.txt — поисковикам открыты витрина и описание, закрыты личные и служебные адреса."""
+    from database.requests import get_effective_webapp_url
+    base = (get_effective_webapp_url() or "").rstrip("/")
+    lines = ["User-agent: *", "Disallow: /api/", "Disallow: /happ-sub/", "Disallow: /import",
+             "Disallow: /routing/", "Allow: /"]
+    if base:
+        lines.append(f"Sitemap: {base}/sitemap.xml")
+    return web.Response(text="\n".join(lines) + "\n", content_type="text/plain")
+
+
+async def handle_sitemap_xml(request: web.Request) -> web.Response:
+    """GET /sitemap.xml — публичные страницы сайта (включённые в админке)."""
+    from database.requests import get_effective_webapp_url, is_welcome_page_enabled
+    from bot.services import server_status
+    base = (get_effective_webapp_url() or "").rstrip("/")
+    paths = ["/shop"] + (["/welcome"] if is_welcome_page_enabled() else []) + (["/status"] if server_status.is_enabled() else [])
+    urls = "".join(f"<url><loc>{_html_module.escape(base + p)}</loc></url>" for p in paths) if base else ""
+    return web.Response(text='<?xml version="1.0" encoding="UTF-8"?>\n'
+                        f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>\n',
+                        content_type="application/xml")
+
+
 async def handle_shop_page(request: web.Request) -> web.Response:
     """GET /shop — публичная страница покупки, без Telegram."""
     shop_path = os.path.join(_TEMPLATES_DIR, "shop.html")
@@ -1398,6 +1445,8 @@ async def handle_shop_page(request: web.Request) -> web.Response:
         patched_body = patched_body.replace("{{POWERED_BY}}", powered_by_html())
     except Exception:
         patched_body = patched_body.replace("{{POWERED_BY}}", "")
+    from database.requests import get_effective_brand_name as _gbn
+    patched_body = patched_body.replace("</head>", _seo_head("/shop", f"{_gbn() or 'VPN'} — премиальный VPN") + "</head>", 1)
     from bot.utils.static_version import version_static_urls
     patched_body = version_static_urls(patched_body, _STATIC_DIR)
     new_resp = web.Response(text=patched_body, content_type="text/html")
@@ -1496,7 +1545,13 @@ async def handle_welcome_page(request: web.Request) -> web.Response:
     filename = WELCOME_TEMPLATES[template_id]['file']
     welcome_path = os.path.join(_TEMPLATES_DIR, filename)
     if os.path.exists(welcome_path):
-        resp = web.FileResponse(welcome_path)
+        from database.requests import get_effective_brand_name
+        with open(welcome_path, encoding="utf-8") as f:
+            page = f.read()
+        title = f"{get_effective_brand_name() or 'VPN'} — быстрый и надёжный VPN"
+        page = page.replace("<title>Загрузка…</title>", f"<title>{_html_module.escape(title)}</title>", 1)
+        page = page.replace("</head>", _seo_head("/welcome", title) + "</head>", 1)
+        resp = web.Response(text=page, content_type="text/html")
         # Без этого браузер кэширует /welcome по URL и продолжает
         # показывать старый шаблон даже после того, как админ выбрал
         # другой в настройках — адрес-то не меняется, а разные шаблоны
@@ -5633,6 +5688,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")
     app.router.add_get("/favicon.ico", handle_favicon)
+    app.router.add_get("/robots.txt", handle_robots_txt)
+    app.router.add_get("/sitemap.xml", handle_sitemap_xml)
     app.router.add_get("/api/qr.png", handle_qr_png)
     app.router.add_get("/", handle_index)
     app.router.add_get("/import", handle_import)
