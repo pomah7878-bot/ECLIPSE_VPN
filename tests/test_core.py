@@ -337,6 +337,19 @@ if __name__ == "__main__":
 
 
 class WebLogoTest(unittest.TestCase):
+
+    def test_round_favicon(self):
+        from PIL import Image
+        from bot.utils.web_logo import build_favicons
+        d = tempfile.mkdtemp()
+        self.assertFalse(build_favicons(d))  # логотипа нет — иконку не трогаем
+        Image.new("RGB", (300, 200), (0, 0, 0)).save(os.path.join(d, "logo.png"))
+        self.assertTrue(build_favicons(d))
+        with Image.open(os.path.join(d, "favicon-32x32.png")) as ico:
+            self.assertEqual(ico.size, (32, 32))
+            self.assertEqual(ico.getpixel((0, 0))[3], 0)      # угол прозрачный — иконка круглая
+            self.assertEqual(ico.getpixel((16, 16))[3], 255)  # центр непрозрачный
+        self.assertTrue(os.path.exists(os.path.join(d, "favicon.ico")))
     def test_web_logo_is_small_and_rebuilt_only_when_source_newer(self):
         import tempfile
         from PIL import Image

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title id="pageTitle">💎ECLIPSE Unlimited💎</title>
+    <title id="pageTitle">ECLIPSE Unlimited · Личный кабинет</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
@@ -619,7 +619,7 @@
             try {
                 const site = await siteInfoPromise;
                 if (site.brand_name) {
-                    document.getElementById('pageTitle').textContent = '💎' + site.brand_name + '💎';
+                    document.getElementById('pageTitle').textContent = site.brand_name + ' · Личный кабинет';
                     document.getElementById('brandHeader').textContent = site.brand_name;
                 }
                 if (!BOT_USERNAME && site.bot_username) {

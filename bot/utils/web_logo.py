@@ -30,3 +30,34 @@ def build_web_logo(static_dir: str) -> bool:
     except Exception as e:
         logger.warning(f"Не удалось подготовить лёгкий логотип для сайта: {e}")
         return False
+
+
+def build_favicons(static_dir: str) -> bool:
+    """Иконка вкладки из logo.png: круглая, с прозрачными углами (без тёмного квадрата вокруг логотипа).
+    Пересобирается, если логотип новее прошлой сборки. Возвращает True, если иконки готовы."""
+    src = os.path.join(static_dir, "logo.png")
+    marker = os.path.join(static_dir, ".favicon-round")
+    try:
+        if not os.path.exists(src):
+            return False
+        if os.path.exists(marker) and os.path.getmtime(marker) >= os.path.getmtime(src):
+            return True
+        from PIL import Image, ImageDraw
+        with Image.open(src) as img:
+            img = img.convert("RGBA")
+            side = min(img.size)
+            left, top = (img.width - side) // 2, (img.height - side) // 2
+            img = img.crop((left, top, left + side, top + side)).resize((256, 256), Image.LANCZOS)
+        # маска круга рисуется крупно и уменьшается — ровный сглаженный край
+        mask = Image.new("L", (1024, 1024), 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, 1023, 1023), fill=255)
+        img.putalpha(mask.resize((256, 256), Image.LANCZOS))
+        img.resize((32, 32), Image.LANCZOS).save(os.path.join(static_dir, "favicon-32x32.png"), format="PNG")
+        img.resize((16, 16), Image.LANCZOS).save(os.path.join(static_dir, "favicon-16x16.png"), format="PNG")
+        img.save(os.path.join(static_dir, "favicon.ico"), format="ICO", sizes=[(16, 16), (32, 32), (48, 48)])
+        with open(marker, "w") as f:
+            f.write("1")
+        return True
+    except Exception as e:
+        logger.warning(f"Не удалось собрать иконку вкладки из логотипа: {e}")
+        return False
