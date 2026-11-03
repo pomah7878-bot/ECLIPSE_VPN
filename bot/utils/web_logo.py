@@ -36,7 +36,7 @@ def build_favicons(static_dir: str) -> bool:
     """Иконка вкладки из logo.png: круглая, с прозрачными углами (без тёмного квадрата вокруг логотипа).
     Пересобирается, если логотип новее прошлой сборки. Возвращает True, если иконки готовы."""
     src = os.path.join(static_dir, "logo.png")
-    marker = os.path.join(static_dir, ".favicon-round")
+    marker = os.path.join(static_dir, ".favicon-round2")
     try:
         if not os.path.exists(src):
             return False
@@ -45,9 +45,11 @@ def build_favicons(static_dir: str) -> bool:
         from PIL import Image, ImageDraw
         with Image.open(src) as img:
             img = img.convert("RGBA")
-            side = min(img.size)
-            left, top = (img.width - side) // 2, (img.height - side) // 2
-            img = img.crop((left, top, left + side, top + side)).resize((256, 256), Image.LANCZOS)
+            # свечение и прозрачные поля вокруг логотипа обрезаем: иконка — по плотной части картинки
+            box = img.getchannel("A").point(lambda a: 255 if a > 200 else 0).getbbox() or (0, 0, img.width, img.height)
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            half = min(max(box[2] - box[0], box[3] - box[1]) * 0.56, min(img.size) / 2)
+            img = img.crop((int(cx - half), int(cy - half), int(cx + half), int(cy + half))).resize((256, 256), Image.LANCZOS)
         # маска круга рисуется крупно и уменьшается — ровный сглаженный край
         mask = Image.new("L", (1024, 1024), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, 1023, 1023), fill=255)
