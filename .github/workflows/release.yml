@@ -1,0 +1,32 @@
+name: Release
+
+# Новая версия в CHANGELOG.md на main → релиз на GitHub (тег vX.YYY, описание — версии после прошлого релиза)
+on:
+  push:
+    branches: [ main ]
+    paths: [ CHANGELOG.md ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          python3 .github/scripts/release_notes.py "$last" > out.txt
+          if [ ! -s out.txt ]; then echo "Новых версий нет (последний релиз: $last)"; exit 0; fi
+          tag=$(head -n1 out.txt)
+          tail -n +3 out.txt > notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then echo "Релиз $tag уже есть"; exit 0; fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --notes-file notes.md
+          echo "Опубликован $tag (после $last)"
