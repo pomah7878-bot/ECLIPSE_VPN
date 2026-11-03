@@ -34,6 +34,7 @@ bot/webapp/static/logo-web.png
 bot/webapp/static/favicon.ico
 bot/webapp/static/favicon-32x32.png
 bot/webapp/static/favicon-16x16.png
+bot/webapp/static/.favicon-round*
 
 # Virtual Environment
 venv/

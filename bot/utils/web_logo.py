@@ -30,3 +30,62 @@ def build_web_logo(static_dir: str) -> bool:
     except Exception as e:
         logger.warning(f"Не удалось подготовить лёгкий логотип для сайта: {e}")
         return False
+
+
+def _favicon_is_auto(static_dir: str, logo: str) -> bool:
+    """Текущая иконка вкладки — стандартная или собрана ботом из логотипа (а не своя, положенная админом)."""
+    import filecmp
+    fav = os.path.join(static_dir, "favicon.ico")
+    default = os.path.join(static_dir, "favicon.default.ico")
+    if not os.path.exists(fav) or os.path.exists(os.path.join(static_dir, ".favicon-round")):
+        return True
+    if os.path.exists(default) and filecmp.cmp(fav, default, shallow=False):
+        return True
+    # при загрузке логотипа в боте иконка собиралась тут же — время файлов почти совпадает
+    return abs(os.path.getmtime(fav) - os.path.getmtime(logo)) < 300
+
+
+def build_favicons(static_dir: str, force: bool = False) -> bool:
+    """Иконка вкладки из logo.png: обрезана по самому логотипу (без свечения и полей), квадратный —
+    круглая с прозрачными углами, вытянутый — вписан целиком. При запуске (force=False) своя иконка
+    админа не трогается; при загрузке логотипа в боте (force=True) собирается всегда."""
+    src = os.path.join(static_dir, "logo.png")
+    marker = os.path.join(static_dir, ".favicon-round2")
+    try:
+        if not os.path.exists(src):
+            return False
+        if not force:
+            if os.path.exists(marker) and os.path.getmtime(marker) >= os.path.getmtime(src):
+                return True
+            if not _favicon_is_auto(static_dir, src):
+                open(marker, "w").close()  # своя иконка админа — оставляем и больше не проверяем
+                return True
+        from PIL import Image, ImageDraw
+        with Image.open(src) as img:
+            img = img.convert("RGBA")
+        box = img.getchannel("A").point(lambda a: 255 if a > 200 else 0).getbbox() or (0, 0, img.width, img.height)
+        w, h = box[2] - box[0], box[3] - box[1]
+        if max(w, h) > 1.25 * min(w, h):
+            # вытянутый логотип (надпись): вписываем целиком на прозрачный квадрат, без круга
+            side = int(max(w, h) * 1.06)
+            canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+            canvas.paste(img.crop(box), ((side - w) // 2, (side - h) // 2))
+            img = canvas.resize((256, 256), Image.LANCZOS)
+        else:
+            cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+            half = min(max(w, h) * 0.56, min(img.size) / 2)
+            img = img.crop((int(cx - half), int(cy - half), int(cx + half), int(cy + half))).resize((256, 256), Image.LANCZOS)
+            # маска круга рисуется крупно и уменьшается — ровный сглаженный край
+            mask = Image.new("L", (1024, 1024), 0)
+            ImageDraw.Draw(mask).ellipse((0, 0, 1023, 1023), fill=255)
+            from PIL import ImageChops
+            img.putalpha(ImageChops.multiply(img.getchannel("A"), mask.resize((256, 256), Image.LANCZOS)))
+        img.resize((32, 32), Image.LANCZOS).save(os.path.join(static_dir, "favicon-32x32.png"), format="PNG")
+        img.resize((16, 16), Image.LANCZOS).save(os.path.join(static_dir, "favicon-16x16.png"), format="PNG")
+        img.save(os.path.join(static_dir, "favicon.ico"), format="ICO", sizes=[(16, 16), (32, 32), (48, 48)])
+        with open(marker, "w") as f:
+            f.write("1")
+        return True
+    except Exception as e:
+        logger.warning(f"Не удалось собрать иконку вкладки из логотипа: {e}")
+        return False

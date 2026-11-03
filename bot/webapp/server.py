@@ -1340,7 +1340,7 @@ def _serve_html_with_brand(filepath: str, title_format: str, header_format: str)
     "ECLIPSE Unlimited" до его замены — раньше это было заметно как
     мимолётное мигание чужого бренда.
 
-    title_format / header_format — Python-шаблоны вида "💎{brand}💎" под
+    title_format / header_format — Python-шаблоны вида "{brand} · Личный кабинет" под
     оформление конкретного файла (title и h1 у index.html/shop.html
     отличаются по формату). Название бренда обязательно экранируется
     (html.escape) — это ввод админа, а не доверенная константа,
@@ -1439,7 +1439,7 @@ async def handle_shop_page(request: web.Request) -> web.Response:
     shop_path = os.path.join(_TEMPLATES_DIR, "shop.html")
     resp = _serve_html_with_brand(
         shop_path,
-        title_format="💎 {brand} — премиальный VPN",
+        title_format="{brand} — премиальный VPN",
         header_format="{brand}",
     )
 
@@ -5349,7 +5349,7 @@ async def handle_index(request: web.Request) -> web.Response:
     index_path = os.path.join(_TEMPLATES_DIR, "index.html")
     return _serve_html_with_brand(
         index_path,
-        title_format="💎{brand}💎",
+        title_format="{brand} · Личный кабинет",
         header_format="{brand}",
     )
 def _extract_sub_id_from_sub_url(sub_url: str) -> Optional[str]:

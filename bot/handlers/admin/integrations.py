@@ -852,29 +852,8 @@ async def edit_logo_save(message: Message, state: FSMContext):
         await safe_edit_or_send(message, "❌ Не удалось сохранить файл логотипа на сервере. Попробуй ещё раз.")
         return
 
-    # Автогенерация favicon из того же изображения — квадратный логотип
-    # уменьшается до трёх стандартных размеров, которые уже подключены
-    # во всех HTML-шаблонах (favicon.ico + два PNG для разных плотностей
-    # экрана). Ошибка здесь не должна ломать сохранение логотипа целиком —
-    # старый favicon просто останется висеть, если конвертация не удалась.
-    try:
-        from PIL import Image
-        import io as _io
-
-        with Image.open(_io.BytesIO(logo_bytes)) as img:
-            img = img.convert("RGBA")
-            png32 = img.resize((32, 32), Image.LANCZOS)
-            png16 = img.resize((16, 16), Image.LANCZOS)
-            png32.save(os.path.join(static_dir, "favicon-32x32.png"), format="PNG")
-            png16.save(os.path.join(static_dir, "favicon-16x16.png"), format="PNG")
-            img.save(
-                os.path.join(static_dir, "favicon.ico"),
-                format="ICO",
-                sizes=[(16, 16), (32, 32), (48, 48)],
-            )
-        logger.info("Favicon пересобран из нового логотипа")
-    except Exception as e:
-        logger.warning(f"Не удалось пересобрать favicon из логотипа (сам логотип сохранён успешно): {e}")
+    from bot.utils.web_logo import build_favicons
+    build_favicons(static_dir, force=True)  # иконка вкладки из нового логотипа
 
     from database.db_pages import update_page_custom
     update_page_custom('main', image=photo.file_id, media_type='photo')
