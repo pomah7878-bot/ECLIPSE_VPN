@@ -154,6 +154,17 @@ async def process_license_notices(bot) -> None:
         logger.warning(f"Уведомление об окончании лицензии: {e}")
 
 
+    try:
+        note = get_setting("license_server_notice", "") or ""
+        if note:
+            set_setting("license_server_notice", "")
+            from html import escape
+            first, _, rest = escape(note).partition("\n")
+            await _notify(f"<b>{first}</b>\n{rest}".rstrip(), buy=True)
+    except Exception as e:
+        logger.warning(f"Сообщение от поставщика лицензии: {e}")
+
+
 def _buy_kb():
     """«Купить» (тарифы в боте поставщика лицензий) и «Ввести код» — под уведомлениями о лицензии."""
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup

@@ -2085,6 +2085,38 @@ class LicenseOfferTest(unittest.IsolatedAsyncioTestCase):
             await h.license_offer(cb)
             cb.bot.send_message.assert_not_called()  # кому писать — неизвестно
 
+    async def test_relay_when_partner_never_started_bot(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import bot.handlers.admin.licenses as h
+        import bot.webapp.server as srv
+        from bot.services import license as lic_mod, license_limits as ll
+        from database.db_licenses import issue_trial_license
+        from database.requests import get_setting
+        key = issue_trial_license(434343, "tg434343", 3, {"ai_assistant"})["license_key"]
+        cb = MagicMock(); cb.from_user.id = 1; cb.answer = AsyncMock()
+        cb.bot.send_message = AsyncMock(side_effect=Exception("Forbidden: bot can't initiate conversation"))
+        cb.data = f"license_offer_send:{key}"
+        with patch.object(h, "is_admin", return_value=True), patch.object(h, "safe_edit_or_send", AsyncMock()), \
+                patch.object(h, "show_license_detail", AsyncMock()):
+            await h.license_offer(cb)
+        self.assertIn("собственном боте", cb.answer.call_args.args[0])
+        self.assertIn("<b>", h._license_offer_text({"partner_name": "x (пробный)", "expires_at": "2020-01-01 00:00:00"}))
+        self.assertNotIn("<", get_setting(f"license_notice:{key}", ""))  # в очереди — без HTML
+        out = srv._attach_license_notice({"valid": False}, key)
+        self.assertIn("Пробный период", out["notice"])
+        self.assertNotIn("notice", srv._attach_license_notice({"valid": False}, key))  # отдаётся один раз
+        lic_mod._save_server_notice(out["notice"])  # бот партнёра получил ответ
+        bot = MagicMock(); bot.send_message = AsyncMock()
+        with patch("bot.services.license.get_license_key", return_value=""), \
+                patch.object(ll, "is_over_limits", return_value=False), \
+                patch("bot.services.license.get_license_bot_username", return_value="srv_bot"), \
+                patch("config.ADMIN_IDS", [9]):
+            await ll.process_license_notices(bot)
+        text = bot.send_message.call_args.args[1]
+        self.assertTrue(text.startswith("<b>"))
+        self.assertIn("Пробный период", text)
+        self.assertEqual(get_setting("license_server_notice", ""), "")
+
 
 class ReleaseNotesTest(unittest.TestCase):
     """Автоматический релиз: версии из CHANGELOG после прошлого релиза."""
