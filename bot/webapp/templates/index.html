@@ -556,11 +556,30 @@
             100% { opacity: 1; transform: none; }
         }
         @keyframes popShine { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        /* ---------- Фирменные анимации тем (общие — в /static/motion.css; classic — «дыхание» короны выше) ---------- */
+        /* sharp: карточки «штампуются» рывком — без плавности, как в брутализме */
+        body[data-theme="sharp"] .card { animation: sharpStamp 0.3s steps(3, end) backwards; }
+        @keyframes sharpStamp { from { opacity: 0; transform: scale(1.06); } to { opacity: 1; transform: none; } }
+        /* vivid: цветные пятна медленно плывут под стеклом */
+        body[data-theme="vivid"]::before {
+            content: ''; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
+            background: radial-gradient(30% 25% at 25% 25%, rgba(108,92,231,0.35), transparent 70%),
+                        radial-gradient(25% 25% at 75% 60%, rgba(0,217,192,0.25), transparent 70%);
+            animation: vividDrift 18s ease-in-out infinite alternate;
+        }
+        @keyframes vividDrift { from { transform: translate(-5%, -3%) scale(1); } to { transform: translate(5%, 4%) scale(1.1); } }
+        /* soft: карточки мягко «выдавливаются» из фона */
+        body[data-theme="soft"] .card { animation: softRise 0.7s cubic-bezier(.3,1.3,.5,1) backwards; }
+        @keyframes softRise { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: none; } }
+        /* mono: только спокойное проявление, без движения */
+        body[data-theme="mono"] .card { animation: monoFade 0.6s ease backwards; }
+        @keyframes monoFade { from { opacity: 0; } to { opacity: 1; } }
         /* «Уменьшение движения» уже глушит все анимации общим правилом выше; здесь — только сдвиги при наведении */
         @media (prefers-reduced-motion: reduce) {
             body[data-theme="pop"] .btn-primary:hover, body[data-theme="pop"] .btn-secondary:hover { transform: none; }
         }
     </style>
+    <link rel="stylesheet" href="/static/motion.css">
 </head>
 <body class="p-4 min-h-screen pb-8">
 

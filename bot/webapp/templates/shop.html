@@ -321,6 +321,36 @@
             body[data-theme="pop"] .feature-chip:hover, body[data-theme="pop"] .tariff-card:hover,
             body[data-theme="pop"] .btn-primary:hover, body[data-theme="pop"] .btn-secondary:hover { transform: none; }
         }
+        /* ---------- Фирменные анимации тем (общие — в /static/motion.css) ---------- */
+        /* classic: корона медленно «дышит» */
+        .corona-glow { animation: shopGlow 7s ease-in-out infinite; }
+        @keyframes shopGlow {
+            0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+            50% { opacity: 0.7; transform: translateX(-50%) scale(1.12); }
+        }
+        /* platinum: тарифы резко «въезжают» слева — строгая механика */
+        body[data-theme="platinum"] .tariff-card, body[data-theme="platinum"] .card {
+            animation: platSnap 0.35s cubic-bezier(.2,1,.2,1) backwards;
+        }
+        @keyframes platSnap { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+        /* rose: карточки проявляются из мягкого размытия */
+        body[data-theme="rose"] .tariff-card, body[data-theme="rose"] .card, body[data-theme="rose"] .feature-chip {
+            animation: roseBloom 0.8s ease-out backwards;
+        }
+        @keyframes roseBloom { from { opacity: 0; filter: blur(8px); transform: scale(0.97); } to { opacity: 1; filter: none; transform: none; } }
+        /* aurora: сияние медленно переливается за страницей */
+        body[data-theme="aurora"]::before {
+            content: ''; position: fixed; inset: -20%; z-index: -1; pointer-events: none;
+            background: radial-gradient(40% 30% at 30% 20%, rgba(52,211,153,0.16), transparent 70%),
+                        radial-gradient(35% 30% at 70% 30%, rgba(34,211,238,0.12), transparent 70%);
+            animation: auroraDrift 22s ease-in-out infinite alternate;
+        }
+        @keyframes auroraDrift { from { transform: translate(-4%, -2%) rotate(-3deg); } to { transform: translate(4%, 3%) rotate(3deg); } }
+        @media (prefers-reduced-motion: reduce) {
+            .corona-glow, body[data-theme="aurora"]::before,
+            body[data-theme="platinum"] .tariff-card, body[data-theme="platinum"] .card,
+            body[data-theme="rose"] .tariff-card, body[data-theme="rose"] .card, body[data-theme="rose"] .feature-chip { animation: none; }
+        }
         * { box-sizing: border-box; }
         body {
             background-color: var(--void);
@@ -497,6 +527,7 @@
         }
 
     </style>
+    <link rel="stylesheet" href="/static/motion.css">
 </head>
 <body>
     <div class="relative overflow-hidden">

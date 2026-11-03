@@ -1,0 +1,41 @@
+/* Общие анимации страниц сайта (витрина, кабинет, /welcome). Подключается
+   после стилей страницы. Появление — с fill-mode backwards, чтобы после
+   окончания анимация не держала transform и не мешала hover-эффектам тем.
+   Свои анимации у отдельных тем — в самих шаблонах, у них выше специфичность. */
+
+@keyframes mIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* Появление блоков */
+.hero, .top, .card, .feature, .feature-chip, .benefit, .spec, .faq-item,
+.tariff, .tariff-card, .cta, .section-title, .tariffs-title, .badge {
+    animation: mIn 0.55s cubic-bezier(.22,.8,.3,1) backwards;
+}
+.features > :nth-child(2), .benefits > :nth-child(2), .spec-grid > :nth-child(2),
+.tariffs > :nth-child(2), #tariffList > :nth-child(2), #app > :nth-child(2),
+.faq > :nth-child(2) { animation-delay: 0.06s; }
+.features > :nth-child(3), .benefits > :nth-child(3), .spec-grid > :nth-child(3),
+.tariffs > :nth-child(3), #tariffList > :nth-child(3), #app > :nth-child(3),
+.faq > :nth-child(3) { animation-delay: 0.12s; }
+.features > :nth-child(n+4), .benefits > :nth-child(n+4), .spec-grid > :nth-child(n+4),
+.tariffs > :nth-child(n+4), #tariffList > :nth-child(n+4), #app > :nth-child(n+4),
+.faq > :nth-child(n+4) { animation-delay: 0.18s; }
+
+/* Мягкий отклик на наведение — только там, где есть мышь */
+.cta, .btn-primary, .btn-secondary, .feature, .benefit, .tariff, .spec {
+    transition: transform 0.25s cubic-bezier(.22,.8,.3,1), box-shadow 0.25s ease,
+                border-color 0.25s ease, background 0.25s ease, filter 0.2s ease, opacity 0.15s ease;
+}
+@media (hover: hover) {
+    .cta:hover, .btn-primary:hover { transform: translateY(-1px); }
+    .feature:hover, .benefit:hover, .tariff:hover, .spec:hover { transform: translateY(-2px); }
+}
+.cta:active, .btn-primary:active, .btn-secondary:active { transform: scale(0.97); }
+
+@media (prefers-reduced-motion: reduce) {
+    .hero, .top, .card, .feature, .feature-chip, .benefit, .spec, .faq-item,
+    .tariff, .tariff-card, .cta, .section-title, .tariffs-title, .badge { animation: none; }
+    .cta:hover, .btn-primary:hover, .feature:hover, .benefit:hover, .tariff:hover, .spec:hover { transform: none; }
+}
