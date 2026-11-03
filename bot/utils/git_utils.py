@@ -175,7 +175,7 @@ def get_pending_commits_list() -> Tuple[bool, List[Dict[str, str]]]:
         
     # We get a list of commits from old to new
     success, output = run_git_command([
-        'log', f'HEAD..origin/{branch}', '--format=%H|%s', '--reverse'
+        'log', '--no-merges', f'HEAD..origin/{branch}', '--format=%H|%s', '--reverse'
     ])
     
     if not success:
@@ -290,7 +290,7 @@ def check_for_updates() -> Tuple[bool, int, str, bool, Optional[Dict[str, str]],
     
     # We get a log of new commits
     success_log, log_output = run_git_command([
-        'log', '--format=%h %B', f'HEAD..origin/{branch}', '-n', '10'
+        'log', '--no-merges', '--format=%h %B', f'HEAD..origin/{branch}', '-n', '10'
     ])
     log_output = strip_git_trailers(log_output)
     
@@ -513,7 +513,7 @@ def get_last_commit_info(revision: str = 'HEAD') -> str:
 def get_previous_commits_info(limit: int = 5, revision: str = 'HEAD') -> str:
     """Retrieves previous commits, skipping the last one."""
     success, output = run_git_command([
-        'log', '--format=%h %B', '--skip=1', '-n', str(limit), revision
+        'log', '--no-merges', '--format=%h %B', '--skip=1', '-n', str(limit), revision
     ])
     if success and output:
         return strip_git_trailers(output)

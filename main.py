@@ -229,7 +229,7 @@ async def _notify_admins_about_deploy(bot: Bot, restart_admin_id=None) -> set:
             return sent
 
         success, log_output = run_git_command([
-            'log', '--format=%h %B', f'{last_notified}..HEAD', '-n', '30',
+            'log', '--no-merges', '--format=%h %B', f'{last_notified}..HEAD', '-n', '30',
         ])
         log_output = strip_git_trailers(log_output)
         set_setting('last_notified_deploy_commit', current_commit)

@@ -2010,10 +2010,11 @@ class UpdateNoticeTest(unittest.IsolatedAsyncioTestCase):
         bot = MagicMock()
         bot.send_message = AsyncMock(side_effect=lambda chat, text, **k: MagicMock(message_id=77, text=text))
         with patch("bot.utils.git_utils.get_current_commit", return_value="bbb"), \
-                patch("bot.utils.git_utils.run_git_command", return_value=(True, "bbb Новое")), \
+                patch("bot.utils.git_utils.run_git_command", return_value=(True, "bbb Новое")) as git_log, \
                 patch("config.ADMIN_IDS", [101, 202]):
             sent = await main._notify_admins_about_deploy(bot, restart_admin_id="101")
         self.assertEqual(sent, {101, 202})
+        self.assertIn("--no-merges", git_log.call_args.args[0])  # служебные коммиты слияния не показываем
         texts = {c.args[0]: c.args[1] for c in bot.send_message.call_args_list}
         self.assertIn("/start", texts[101])
         self.assertNotIn("/start", texts[202])
