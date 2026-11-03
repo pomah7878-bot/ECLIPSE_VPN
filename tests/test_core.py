@@ -2086,6 +2086,23 @@ class LicenseOfferTest(unittest.IsolatedAsyncioTestCase):
             cb.bot.send_message.assert_not_called()  # кому писать — неизвестно
 
 
+class ReleaseNotesTest(unittest.TestCase):
+    """Автоматический релиз: версии из CHANGELOG после прошлого релиза."""
+
+    def test_notes(self):
+        import importlib.util
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        spec = importlib.util.spec_from_file_location("rn", os.path.join(root, ".github", "scripts", "release_notes.py"))
+        rn = importlib.util.module_from_spec(spec); spec.loader.exec_module(rn)
+        log = "# X\n- **1.12** — в\n- **1.11** — б\n- **1.9** — а\n"
+        tag, body = rn.notes(log, "v1.9")
+        self.assertEqual(tag, "v1.12")
+        self.assertIn("с 1.11 по 1.12", body)
+        self.assertNotIn("1.9**", body)
+        self.assertEqual(rn.notes(log, "v1.11"), ("v1.12", "- **1.12** — в"))
+        self.assertIsNone(rn.notes(log, "v1.12"))
+
+
 class SubscriptionPageTest(unittest.TestCase):
     """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
 
