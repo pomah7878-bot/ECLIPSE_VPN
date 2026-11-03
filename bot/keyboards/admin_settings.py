@@ -284,17 +284,11 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
         text='📡 Статус серверов (/status): ✅' if _server_status.is_enabled() else '📡 Статус серверов (/status): ❌',
         callback_data='admin_toggle_status_page',
     ))
+    from database.requests import SITE_STYLES, get_site_style_id
+    style_id = get_site_style_id()
     builder.row(InlineKeyboardButton(
-        text=f"🎨 Шаблон витрины: {WELCOME_TEMPLATES[get_welcome_template_id()]['label']}",
-        callback_data='admin_welcome_template_menu',
-    ))
-    builder.row(InlineKeyboardButton(
-        text=f"🎭 Тема личного кабинета: {CABINET_THEMES[get_cabinet_theme_id()]['label']}",
-        callback_data='admin_cabinet_theme_menu',
-    ))
-    builder.row(InlineKeyboardButton(
-        text=f"🛍 Тема магазина (/shop): {SHOP_THEMES[get_shop_theme_id()]['label']}",
-        callback_data='admin_shop_theme_menu',
+        text=f"🎨 Оформление сайта: {SITE_STYLES[style_id]['label'] if style_id else 'свой набор'}",
+        callback_data='admin_site_style_menu',
     ))
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()

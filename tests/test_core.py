@@ -2043,6 +2043,22 @@ class ThemesExclusiveTest(unittest.TestCase):
         set_cabinet_theme_id("classic")  # классическая тема космическую не выключает
         self.assertTrue(webapp_cosmic_enabled())
 
+    def test_site_styles(self):
+        from database.db_settings import (SITE_STYLES, CABINET_THEMES, SHOP_THEMES, set_site_style,
+                                          get_site_style_id, set_cabinet_theme_id, get_shop_theme_id)
+        from bot.services.main_screen import webapp_cosmic_enabled
+        for sid, s in SITE_STYLES.items():
+            self.assertIn(s["shop"], SHOP_THEMES, sid)
+            self.assertIn(s["cabinet"], CABINET_THEMES, sid)
+            set_site_style(sid)
+            self.assertEqual(get_site_style_id(), sid)
+            self.assertEqual(webapp_cosmic_enabled(), bool(s.get("cosmic")), sid)
+        set_site_style("cosmic")
+        set_site_style("pop")  # уход с «Космоса» выключает его
+        self.assertFalse(webapp_cosmic_enabled())
+        set_cabinet_theme_id("mono")  # ручная тонкая настройка — свой набор
+        self.assertEqual((get_site_style_id(), get_shop_theme_id()), ("", "pop"))
+
 
 class UpdateNoticeTest(unittest.IsolatedAsyncioTestCase):
     """После обновления админу — одно одноразовое сообщение со списком изменений и подсказкой про /start."""

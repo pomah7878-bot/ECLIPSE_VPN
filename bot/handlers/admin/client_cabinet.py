@@ -14,8 +14,9 @@ _LOCK = "🔒 Эта функция доступна по лицензии"
 
 @router.callback_query(F.data == "admin_client_cabinet")
 async def cabinet_admin_open(callback: CallbackQuery, state: FSMContext):
-    from bot.handlers.admin.integrations import show_cabinet_theme_menu
-    await show_cabinet_theme_menu(callback, state)
+    from bot.handlers.admin.main_view import _show
+    await _show(callback)
+    await callback.answer()
 
 
 @router.callback_query(F.data == "admin_cabinet_toggle")
@@ -24,5 +25,6 @@ async def cabinet_admin_toggle(callback: CallbackQuery, state: FSMContext):
         await callback.answer(_LOCK, show_alert=True)
         return
     cab.set_enabled(not cab.enabled())
-    from bot.handlers.admin.integrations import show_cabinet_theme_menu
-    await show_cabinet_theme_menu(callback, state)
+    from bot.handlers.admin.main_view import _show
+    await _show(callback)
+    await callback.answer('✅ Новый вид меню ' + ('включён' if cab.enabled() else 'выключен'))

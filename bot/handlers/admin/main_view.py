@@ -41,13 +41,14 @@ def _webapp_on() -> bool:
     return webapp_app_view_enabled()
 
 
-def _cosmic_on() -> bool:
-    from bot.services.main_screen import webapp_cosmic_enabled
-    return webapp_cosmic_enabled()
-
-
 def _text(view: str) -> str:
-    cs = '🟢 включена' if _cosmic_on() else '⚪ выключена'
+    from bot.services import client_cabinet
+    menu_view = ''
+    if client_cabinet.licensed():
+        mv = '🟢 включён' if client_cabinet.enabled() else '⚪ выключен'
+        menu_view = (f"<b>🎨 Новый вид меню:</b> {mv}\n"
+                     "• таблицы и цветные кнопки на экранах бота (клиентских и админских)\n"
+                     "• если Telegram не примет такое сообщение, экран покажется обычным текстом\n\n")
     wa = '🟢 включён' if _webapp_on() else '⚪ выключен'
     from bot.services import button_icons as bi
     ic = '🟢 включены' if bi.is_enabled() else '⚪ выключены'
@@ -66,10 +67,8 @@ def _text(view: str) -> str:
         "• переключается отдельно от бота\n"
         "• новичку — предложение и «🎁 Попробовать», клиенту — карточка подписки, "
         "при истёкшей — «🔄 Продлить»\n\n"
-        f"<b>🌌 Космическая тема (мини-приложение и сайт):</b> {cs}\n"
-        "• звёздное небо, туманности и свечение на всех экранах кабинета и на сайте\n"
-        "• функции кабинета не меняются; заменяет темы кабинета и витрины — они сбрасываются на "
-        "классические, а выбор другой темы выключает космическую (темы не смешиваются)\n\n"
+        + menu_view +
+        "<b>🌌 Космическая тема</b> — теперь стиль «🌌 Космос» в «Интеграции → Сайт → 🎨 Оформление сайта»\n\n"
         f"<b>🎨 Иконки на кнопках:</b> {ic}\n"
         f"• набор: {pk}\n"
         "• вместо обычного эмодзи в начале кнопки показывается иконка из набора (часто анимированная)\n"
@@ -82,6 +81,11 @@ def _text(view: str) -> str:
 
 def _kb(view: str) -> InlineKeyboardMarkup:
     from bot.services import button_icons as bi
+    from bot.services import client_cabinet
+    menu_view_row = [[InlineKeyboardButton(
+        text=('🟢 Новый вид меню — выключить' if client_cabinet.enabled() else '⚪ Новый вид меню — включить'),
+        callback_data='admin_cabinet_toggle',
+    )]] if client_cabinet.licensed() else []
     return InlineKeyboardMarkup(inline_keyboard=[
         list(state_pair_buttons(
             view == 'classic',
@@ -93,10 +97,7 @@ def _kb(view: str) -> InlineKeyboardMarkup:
             text=('🟢 Webapp: «Приложение» — выключить' if _webapp_on() else '⚪ Webapp: «Приложение» — включить'),
             callback_data='admin_webapp_view_toggle',
         )],
-        [InlineKeyboardButton(
-            text=('🟢 Космическая тема — выключить' if _cosmic_on() else '⚪ Космическая тема — включить'),
-            callback_data='admin_webapp_cosmic_toggle',
-        )],
+        *menu_view_row,
         [InlineKeyboardButton(
             text=('🟢 Иконки на кнопках — выключить' if bi.is_enabled() else '⚪ Иконки на кнопках — включить'),
             callback_data='admin_btn_icons_toggle',
@@ -162,20 +163,10 @@ async def cb_webapp_view_toggle(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == 'admin_webapp_cosmic_toggle')
-async def cb_webapp_cosmic_toggle(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer('⛔ Доступ запрещён', show_alert=True)
-        return
-    from bot.services.main_screen import set_webapp_cosmic
-    new = not _cosmic_on()
-    try:
-        set_webapp_cosmic(new)
-    except Exception as e:  # noqa: BLE001
-        logger.error('Не удалось переключить космическую тему: %s', e)
-        await callback.answer('❌ Не удалось переключить', show_alert=True)
-        return
-    await _show(callback)
-    await callback.answer('✅ Космическая тема ' + ('включена' if new else 'выключена'))
+async def cb_webapp_cosmic_toggle(callback: CallbackQuery, state: FSMContext):
+    # кнопка из старых сообщений: «Космос» теперь — стиль в «🎨 Оформление сайта»
+    from bot.handlers.admin.integrations import show_site_style_menu
+    await show_site_style_menu(callback, state)
 
 
 @router.callback_query(F.data == 'admin_btn_icons_toggle')

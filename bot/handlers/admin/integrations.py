@@ -1380,7 +1380,8 @@ async def show_welcome_template_menu(callback: CallbackQuery, state: FSMContext)
     for tid, info in WELCOME_TEMPLATES.items():
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_welcome_template:{tid}"))
-    builder.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_integrations_site"))
+    from bot.keyboards.admin_misc import back_button, home_button
+    builder.row(back_button("admin_site_style_menu"), home_button())
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
@@ -1413,8 +1414,8 @@ async def show_cabinet_theme_menu(callback: CallbackQuery, state: FSMContext):
 
     current_id = get_cabinet_theme_id()
     lines = ["🎭 <b>Тема личного кабинета</b>\n", "Применяется сразу, без обновления бота. "
-             "Темы не смешиваются: выбор любой темы, кроме «Классический», выключает «Космическую тему» "
-             "(«Вид главной»).\n"]
+             "Темы не смешиваются: выбор любой темы, кроме «Классический», выключает стиль «🌌 Космос» "
+             "(«🎨 Оформление сайта»).\n"]
     for tid, info in CABINET_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
@@ -1424,15 +1425,8 @@ async def show_cabinet_theme_menu(callback: CallbackQuery, state: FSMContext):
     for tid, info in CABINET_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_cabinet_theme:{tid}"))
-    from bot.services import client_cabinet
-    if client_cabinet.licensed():
-        on = client_cabinet.enabled()
-        lines.append("🎨 <b>Новый вид меню</b>\nТаблицы и цветные кнопки на экранах бота (клиентских и админских). "
-                     "Если Telegram не примет такое сообщение, экран покажется обычным текстом.")
-        builder.row(InlineKeyboardButton(text=f"🎨 Новый вид меню: {'✅ вкл' if on else '❌ выкл'}",
-                                         callback_data="admin_cabinet_toggle"))
     from bot.keyboards.admin_misc import back_button, home_button
-    builder.row(back_button("admin_integrations_site"), home_button())
+    builder.row(back_button("admin_site_style_menu"), home_button())
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
@@ -1465,8 +1459,8 @@ async def show_shop_theme_menu(callback: CallbackQuery, state: FSMContext):
 
     current_id = get_shop_theme_id()
     lines = ["🛍 <b>Тема витрины (/shop)</b>\n", "Применяется сразу, без обновления бота. "
-             "Темы не смешиваются: выбор любой темы, кроме «Classic Gold», выключает «Космическую тему» "
-             "(«Вид главной»).\n"]
+             "Темы не смешиваются: выбор любой темы, кроме «Classic Gold», выключает стиль «🌌 Космос» "
+             "(«🎨 Оформление сайта»).\n"]
     for tid, info in SHOP_THEMES.items():
         mark = "✅ " if tid == current_id else ""
         lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
@@ -1477,7 +1471,7 @@ async def show_shop_theme_menu(callback: CallbackQuery, state: FSMContext):
         mark = "✅ " if tid == current_id else ""
         builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_shop_theme:{tid}"))
     from bot.keyboards.admin_misc import back_button, home_button
-    builder.row(back_button("admin_integrations_site"), home_button())
+    builder.row(back_button("admin_site_style_menu"), home_button())
 
     await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
@@ -1499,6 +1493,57 @@ async def set_shop_theme_handler(callback: CallbackQuery, state: FSMContext):
         return
 
     await show_shop_theme_menu(callback, state)
+
+
+@router.callback_query(F.data == "admin_site_style_menu")
+async def show_site_style_menu(callback: CallbackQuery, state: FSMContext):
+    """Одно меню оформления сайта: готовый стиль сразу для витрины, кабинета и «Космоса»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import SITE_STYLES, get_site_style_id
+    current_id = get_site_style_id()
+    lines = ["🎨 <b>Оформление сайта</b>\n",
+             "Стиль применяется сразу ко всему сайту:\n"
+             "• витрина /shop\n"
+             "• личный кабинет и мини-приложение\n"]
+    for sid, info in SITE_STYLES.items():
+        mark = "✅ " if sid == current_id else ""
+        lines.append(f"{mark}<b>{info['label']}</b>\n{info['description']}")
+    if not current_id:
+        lines.append("✳️ Сейчас — свой набор тем (выбран в «Тонкой настройке»).")
+
+    builder = InlineKeyboardBuilder()
+    for sid, info in SITE_STYLES.items():
+        mark = "✅ " if sid == current_id else ""
+        builder.row(InlineKeyboardButton(text=f"{mark}{info['label']}", callback_data=f"admin_set_site_style:{sid}"))
+    builder.row(InlineKeyboardButton(text=f"📄 Шаблон /welcome: {WELCOME_TEMPLATES[get_welcome_template_id()]['label']}",
+                                     callback_data="admin_welcome_template_menu"))
+    builder.row(InlineKeyboardButton(text="🛍 Тонкая настройка: витрина", callback_data="admin_shop_theme_menu"),
+                InlineKeyboardButton(text="🎭 Тонкая настройка: кабинет", callback_data="admin_cabinet_theme_menu"))
+    from bot.keyboards.admin_misc import back_button, home_button
+    builder.row(back_button("admin_integrations_site"), home_button())
+
+    await safe_edit_or_send(callback.message, "\n\n".join(lines), reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_set_site_style:"))
+async def set_site_style_handler(callback: CallbackQuery, state: FSMContext):
+    """Применяет готовый стиль сайта и возвращает в это же меню."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import SITE_STYLES, set_site_style
+    style_id = callback.data.split(":", 1)[1]
+    if style_id not in SITE_STYLES:
+        await callback.answer("❌ Неизвестный стиль", show_alert=True)
+        return
+    set_site_style(style_id)
+    await callback.answer(f"✅ Применён стиль: {SITE_STYLES[style_id]['label']}")
+    await show_site_style_menu(callback, state)
 
 
 @router.callback_query(F.data == "admin_device_limit_type_menu")

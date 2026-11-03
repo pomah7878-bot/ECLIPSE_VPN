@@ -119,6 +119,9 @@ __all__ = [
     'SHOP_THEMES',
     'get_shop_theme_id',
     'set_shop_theme_id',
+    'SITE_STYLES',
+    'get_site_style_id',
+    'set_site_style',
     'delete_setting',
     'get_site_session_secret',
     'get_zvonok_postback_token',
@@ -635,6 +638,37 @@ SHOP_THEMES = {
     'aurora':   {'label': '🌌 Aurora Bento', 'description': 'Северное сияние на тёмном фоне, крупные скруглённые карточки, кнопки-пилюли, тарифы bento-сеткой'},
     'pop':      {'label': '🍭 Pop Candy', 'description': 'Сочные розово-жёлтые цвета, плавные переходы, карточки и кнопки появляются с анимацией'},
 }
+
+
+# Готовые стили сайта для меню «🎨 Оформление сайта»: одной кнопкой задают
+# пару тем витрины и кабинета (cosmic — «Космическая тема» поверх классических).
+SITE_STYLES = {
+    'classic': {'label': '🥇 Классический', 'shop': 'classic', 'cabinet': 'classic', 'description': 'Тёплое золото на графите — исходный вид'},
+    'pop':     {'label': '🍭 Pop Candy', 'shop': 'pop', 'cabinet': 'pop', 'description': 'Сочные розово-жёлтые цвета и пружинящие анимации'},
+    'cosmic':  {'label': '🌌 Космос', 'shop': 'classic', 'cabinet': 'classic', 'cosmic': True, 'description': 'Звёздное небо и туманности на сайте и в мини-приложении'},
+    'strict':  {'label': '🖤 Строгий', 'shop': 'platinum', 'cabinet': 'sharp', 'description': 'Острые углы, контрастные рамки, офсетные тени'},
+    'glass':   {'label': '🔮 Стекло', 'shop': 'aurora', 'cabinet': 'vivid', 'description': 'Северное сияние и матовые стеклянные панели'},
+    'soft':    {'label': '🌸 Мягкий', 'shop': 'rose', 'cabinet': 'soft', 'description': 'Мягкое свечение и тактильные, «выпуклые» карточки'},
+    'minimal': {'label': '⬜ Минимализм', 'shop': 'platinum', 'cabinet': 'mono', 'description': 'Почти без цвета, крупная типографика'},
+}
+
+
+def get_site_style_id() -> str:
+    """id готового стиля, совпадающего с текущими настройками, или '' — свой набор тем."""
+    cosmic = get_setting('webapp_cosmic', '0') == '1'
+    shop, cabinet = get_shop_theme_id(), get_cabinet_theme_id()
+    for sid, s in SITE_STYLES.items():
+        if bool(s.get('cosmic')) == cosmic and s['shop'] == shop and s['cabinet'] == cabinet:
+            return sid
+    return ''
+
+
+def set_site_style(style_id: str) -> None:
+    """Применяет готовый стиль: темы витрины и кабинета вместе и «Космическую тему»."""
+    style = SITE_STYLES[style_id]  # KeyError — неизвестный стиль
+    set_shop_theme_id(style['shop'])
+    set_cabinet_theme_id(style['cabinet'])
+    set_setting('webapp_cosmic', '1' if style.get('cosmic') else '0')
 
 
 def get_shop_theme_id() -> str:
