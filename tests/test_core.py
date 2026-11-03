@@ -1994,6 +1994,37 @@ class ThemesExclusiveTest(unittest.TestCase):
         self.assertTrue(webapp_cosmic_enabled())
 
 
+class SubscriptionPageTest(unittest.TestCase):
+    """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_browser_page_and_apps(self):
+        import base64 as b64
+        from unittest.mock import MagicMock, patch
+        import bot.webapp.server as srv
+        req = lambda ua, acc: MagicMock(headers={"User-Agent": ua, "Accept": acc})
+        self.assertTrue(srv._is_browser_request(req("Mozilla/5.0 (iPhone)", "text/html,*/*")))
+        self.assertFalse(srv._is_browser_request(req("Happ/4.3.0", "*/*")))
+        self.assertFalse(srv._is_browser_request(req("Mozilla/5.0", "*/*")))  # v2rayN и т.п. HTML не просят
+        vm = b64.b64encode(json.dumps({"ps": "DE"}).encode()).decode()
+        body = b64.b64encode(("vless://u@h:443#NL%20%3C%2Fscript%3E\nvmess://" + vm).encode())
+        cfgs = srv._parse_sub_configs(body)
+        self.assertEqual([(c["proto"], c["name"]) for c in cfgs], [("vless", "NL </script>"), ("vmess", "DE")])
+        with patch("bot.services.license.is_feature_available", return_value=False):
+            resp = srv._subscription_page({"custom_name": "</script><b>", "expires_at": "2099-01-01 00:00:00"}, body,
+                                          "https://s.example/happ-sub/X", "bot", False, None,
+                                          {"subscription-userinfo": "upload=5; download=7; total=0"}, None)
+        html = resp.text
+        self.assertEqual(html.count("</script>"), 1)  # данные не закрывают тег скрипта
+        data = json.loads(html.split("const D = ", 1)[1].split(";\n", 1)[0])
+        self.assertEqual((data["upload"], data["download"]), (5, 7))
+        self.assertEqual(data["import"], {"happ": False, "incy": False})
+        self.assertEqual(resp.headers["X-Robots-Tag"], "noindex, nofollow")
+
+
 class SecurityHardeningTest(unittest.IsolatedAsyncioTestCase):
     """Защита сайта и данных: лимит звонков, заголовки, данные для ИИ, журнал сроков."""
 

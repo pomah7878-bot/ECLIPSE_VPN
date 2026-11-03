@@ -2282,6 +2282,12 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             _who = f"@{bot_username}" if bot_username else "Telegram-бот"
             body = add_info_line(body, f"ℹ️ Оплата: {_who}")
 
+    if detected_app is None and _is_browser_request(request):
+        # ссылку открыли в браузере — понятная страница вместо сырого списка подключений
+        return _subscription_page(key, body, f"{(webapp_url or '').rstrip('/')}/happ-sub/{sub_id}",
+                                  bot_username, is_expired, days_left, headers,
+                                  _build_renew_link(key, webapp_url, bot_username))
+
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp
@@ -2340,6 +2346,88 @@ def _strip_routing_lines(body: bytes) -> bytes:
     if out is None:
         return body
     return base64.b64encode(out.encode("utf-8"))
+
+
+def _is_browser_request(request: web.Request) -> bool:
+    """Браузер (а не VPN-приложение): просит HTML и представляется Mozilla. Приложения так не делают."""
+    ua = request.headers.get("User-Agent", "") or ""
+    return ua.startswith("Mozilla") and "text/html" in (request.headers.get("Accept", "") or "")
+
+
+def _parse_sub_configs(body: bytes) -> list:
+    """Подключения из тела подписки (base64 или текст): [{proto, name, link}]."""
+    import urllib.parse as _up
+    raw = body.decode("utf-8", "ignore").strip() if isinstance(body, (bytes, bytearray)) else str(body or "")
+    if "://" not in raw:
+        try:
+            raw = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8", "ignore")
+        except Exception:
+            return []
+    out = []
+    for ln in raw.splitlines():
+        ln = ln.strip()
+        if "://" not in ln:
+            continue
+        proto = ln.split("://", 1)[0].lower()
+        name = ""
+        if proto == "vmess":
+            try:
+                b = ln.split("://", 1)[1]
+                name = json.loads(base64.b64decode(b + "=" * (-len(b) % 4)).decode("utf-8", "ignore")).get("ps", "")
+            except Exception:
+                pass
+        elif "#" in ln:
+            name = _up.unquote(ln.rsplit("#", 1)[1])
+        out.append({"proto": proto, "name": name[:120], "link": ln})
+    return out[:200]
+
+
+def _subscription_page(key: dict, body: bytes, sub_url: str, bot_username, is_expired: bool, days_left,
+                       headers=None, renew_url=None) -> web.Response:
+    """Страница подписки для браузера: срок, трафик, ссылка (копия, QR, импорт), список подключений.
+    Видна тому же, кто знает ссылку, — что и сама подписка; поисковикам закрыта."""
+    from database.requests import get_effective_brand_name, is_cabinet_import_app_enabled
+    from bot.services.license import is_feature_available
+    imp = is_feature_available("app_import")
+    headers = headers or {}
+    # скачано/отдано — из subscription-userinfo панели (как в 3x-ui); нет — весь трафик считаем скачанным
+    info = dict(kv.split("=", 1) for kv in str(headers.get("subscription-userinfo", "")).replace(" ", "").split(";") if "=" in kv)
+    def _int(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return 0
+    used = int((key or {}).get("traffic_used") or 0)
+    up = _int(info.get("upload"))
+    down = _int(info.get("download")) or max(used - up, 0)
+    data = {
+        "brand": get_effective_brand_name(),
+        "bot": bot_username or "",
+        "sub_url": sub_url,
+        "key_name": (key or {}).get("custom_name") or "",
+        "expires_at": (key or {}).get("expires_at") or "",
+        "days_left": days_left,
+        "expired": bool(is_expired),
+        "traffic_used": int((key or {}).get("traffic_used") or 0),
+        "traffic_limit": int((key or {}).get("traffic_limit") or 0),
+        "upload": up,
+        "download": down,
+        "update_hours": _int(headers.get("profile-update-interval")),
+        "support_url": headers.get("support-url") or "",
+        "renew_url": renew_url or "",
+        "configs": _parse_sub_configs(body),
+        "import": {"happ": imp and is_cabinet_import_app_enabled("happ"),
+                   "incy": imp and is_cabinet_import_app_enabled("incy")},
+    }
+    with open(os.path.join(_TEMPLATES_DIR, "subscription.html"), encoding="utf-8") as f:
+        page = f.read()
+    # JSON внутрь <script>: «<» экранируем, чтобы название ключа не закрыло тег
+    page = page.replace("/*__DATA__*/null", json.dumps(data, ensure_ascii=False).replace("<", "\\u003c"))
+    resp = web.Response(text=page, content_type="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
 
 
 def _strip_email_suffix(body: bytes, emails) -> bytes:

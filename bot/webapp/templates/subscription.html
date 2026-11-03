@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Подписка</title>
+<style>
+  :root { --bg:#0b0d14; --panel:#141824; --panel2:#1b2030; --line:#262c3d; --ink:#e8ebf3; --mist:#8b93a7;
+          --accent:#e6b866; --accent-ink:#1a1205; --ok:#3dd6b0; --warn:#f0a73a; --bad:#ff6b6b; --blue:#6aa8ff; --purple:#b48cff; }
+  :root[data-theme="light"] { --bg:#f3f5f9; --panel:#ffffff; --panel2:#f6f7fb; --line:#e3e6ee; --ink:#151a26; --mist:#667085;
+          --accent:#c98f2a; --accent-ink:#ffffff; --ok:#12a37f; --warn:#d48806; --bad:#e5484d; --blue:#2f6fde; --purple:#7a4fd6; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  button { font:inherit; }
+  .wrap { max-width:820px; margin:0 auto; padding:20px 16px 40px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:20px; padding:20px; }
+  /* шапка */
+  .head { display:flex; align-items:center; gap:12px; padding-bottom:16px; border-bottom:1px solid var(--line); }
+  .mark { width:44px; height:44px; border-radius:12px; background:var(--accent); color:var(--accent-ink);
+          display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; flex-shrink:0; }
+  .brand { flex:1; min-width:0; }
+  .title { font-weight:700; font-size:18px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .muted { color:var(--mist); font-size:13px; }
+  .round { width:40px; height:40px; border-radius:50%; border:1px solid var(--line); background:var(--panel2); color:var(--ink);
+           cursor:pointer; font-size:17px; flex-shrink:0; }
+  /* главный блок */
+  .hero { display:flex; gap:22px; align-items:center; padding:20px 0; flex-wrap:wrap; }
+  .ring { position:relative; width:156px; height:156px; flex-shrink:0; margin:0 auto; }
+  .ring svg { transform:rotate(-90deg); }
+  .ring .c { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .ring .v { font-size:26px; font-weight:700; } .ring .l { color:var(--mist); font-size:12px; }
+  .sum { flex:1; min-width:260px; }
+  .label { color:var(--mist); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .big { font-size:34px; font-weight:800; line-height:1.1; margin:2px 0; } .big small { font-size:16px; font-weight:600; color:var(--mist); margin-left:4px; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:12px 16px; margin:14px 0 0; }
+  .stats div { min-width:0; } .stats dd { margin:2px 0 0; font-weight:600; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:6px; font-size:12px; font-weight:700; }
+  .t-ok { background:color-mix(in srgb,var(--ok) 16%,transparent); color:var(--ok); }
+  .t-bad { background:color-mix(in srgb,var(--bad) 16%,transparent); color:var(--bad); }
+  .t-purple { background:color-mix(in srgb,var(--purple) 16%,transparent); color:var(--purple); }
+  .t-blue { background:color-mix(in srgb,var(--blue) 14%,transparent); color:var(--blue); }
+  .t-gold { background:color-mix(in srgb,var(--accent) 18%,transparent); color:var(--accent); }
+  .alert { margin-top:4px; padding:10px 12px; border-radius:12px; border:1px solid color-mix(in srgb,var(--bad) 40%,transparent);
+           background:color-mix(in srgb,var(--bad) 8%,transparent); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .alert span { flex:1; min-width:180px; }
+  /* вкладки */
+  .tabs { display:flex; gap:22px; border-bottom:1px solid var(--line); overflow-x:auto; }
+  .tab { background:none; border:none; color:var(--mist); padding:10px 0; cursor:pointer; font-weight:600; border-bottom:2px solid transparent;
+         white-space:nowrap; display:flex; gap:6px; align-items:center; }
+  .tab.on { color:var(--ink); border-bottom-color:var(--accent); }
+  .cnt { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:0 7px; font-size:12px; }
+  .pane { padding-top:6px; } .hidden { display:none !important; }
+  .row { display:flex; align-items:center; gap:10px; padding:12px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .rmain { flex:1; min-width:0; }
+  .rtitle { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; color:var(--ink); text-decoration:none; }
+  .rurl { font:12px ui-monospace,Menlo,monospace; color:var(--mist); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .acts { display:flex; gap:6px; flex-shrink:0; }
+  .ib { width:36px; height:36px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--ink); cursor:pointer; font-size:15px; }
+  .btn { padding:9px 14px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--ink);
+         font-weight:600; font-size:14px; cursor:pointer; text-decoration:none; display:inline-block; text-align:center; }
+  .btn.pri { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn.sm { padding:6px 12px; font-size:13px; }
+  .qrcard { display:flex; gap:16px; align-items:center; margin-top:14px; padding:14px; border-radius:14px; background:var(--panel2); border:1px solid var(--line); }
+  .qrcard img { width:112px; height:112px; background:#fff; border-radius:10px; padding:6px; flex-shrink:0; }
+  .seg { display:inline-flex; background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:3px; margin:12px 0 4px; }
+  .seg button { border:none; background:none; color:var(--mist); padding:7px 16px; border-radius:9px; cursor:pointer; font-weight:600; }
+  .seg button.on { background:var(--panel); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.2); }
+  .appgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); column-gap:20px; }
+  .amark { width:32px; height:32px; border-radius:9px; background:var(--panel2); border:1px solid var(--line); display:flex;
+           align-items:center; justify-content:center; font-weight:700; color:var(--accent); flex-shrink:0; }
+  .bar { padding:12px 0 4px; }
+  .foot { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; padding-top:16px; margin-top:8px; border-top:1px solid var(--line); }
+  .foot a { color:var(--accent); text-decoration:none; }
+  /* окно QR */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px; z-index:10; }
+  .mbox { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:18px; width:100%; max-width:320px; text-align:center; }
+  .mbox img { width:240px; height:240px; max-width:100%; background:#fff; border-radius:12px; padding:8px; }
+  .mbox .t { font-weight:700; margin-bottom:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mbox .acts { justify-content:center; margin-top:12px; }
+  .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:var(--panel2); border:1px solid var(--line); color:var(--ink);
+           padding:10px 16px; border-radius:12px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:20; }
+  .toast.on { opacity:1; }
+  @media (max-width:520px) { .card { padding:16px; } .big { font-size:28px; } .qrcard img { width:96px; height:96px; } }
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card" id="app"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+const D = /*__DATA__*/null;
+const $ = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+function toast(t) { const el = document.getElementById('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('on'), 1600); }
+function copy(t, msg) {
+  const done = () => toast(msg || 'Скопировано');
+  const fallback = () => { const a = document.createElement('textarea'); a.value = t; document.body.appendChild(a); a.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast('Не удалось скопировать'); } a.remove(); };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(t).then(done, fallback); else fallback();
+}
+const qrSrc = t => '/api/qr.png?d=' + encodeURIComponent(t);
+function size(n) { const u = ['Б','КБ','МБ','ГБ','ТБ']; let i = 0; n = Number(n) || 0; while (n >= 1024 && i < 4) { n /= 1024; i++; }
+  return [i ? n.toFixed(2) : String(n), u[i]]; }
+const sizeStr = n => size(n).join(' ');
+function parseDate(s) { if (!s) return null; const d = new Date(String(s).replace(' ', 'T') + (/[zZ+]/.test(String(s).slice(10)) ? '' : 'Z')); return isNaN(d) ? null : d; }
+function qrModal(value, title) {
+  const m = $('div', 'modal'), b = $('div', 'mbox'), img = $('img'); img.alt = 'QR-код'; img.src = qrSrc(value);
+  const acts = $('div', 'acts'), c = $('button', 'btn pri', 'Копировать'), x = $('button', 'btn', 'Закрыть');
+  c.onclick = () => copy(value); x.onclick = () => m.remove();
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  acts.append(c, x); b.append($('div', 't', title), img, acts); m.append(b); document.body.append(m);
+}
+function iconBtn(sym, title, fn) { const b = $('button', 'ib', sym); b.title = title; b.setAttribute('aria-label', title); b.onclick = fn; return b; }
+
+// тема: как в 3x-ui — кнопка в шапке, выбор запоминается в этом браузере
+function applyTheme(t) { document.documentElement.dataset.theme = t; }
+applyTheme(store.get('sub-theme') || (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'));
+
+function apps() {
+  const u = D.sub_url, enc = encodeURIComponent(u), name = encodeURIComponent(D.key_name || D.brand || 'VPN');
+  const rocket = u + (u.includes('?') ? '&' : '?') + 'flag=shadowrocket';
+  const direct = { happ: 'happ://add/' + u, incy: 'incy://add/' + u };
+  // Happ/INCY через страницу импорта сайта (с маршрутизацией), если она включена
+  const viaSite = id => D.import && D.import[id] ? '/import?scheme=' + id + '&url=' + enc : direct[id];
+  const v2box = ['V2Box', 'v2box://install-sub?url=' + enc + '&name=' + name];
+  const v2raytun = ['V2RayTun', 'v2raytun://import/' + u];
+  const happ = ['Happ', viaSite('happ')], incy = ['INCY', viaSite('incy')];
+  let b64 = ''; try { b64 = btoa(rocket); } catch (e) {}
+  return {
+    android: [happ, incy, v2box, ['v2rayNG', 'v2rayng://install-config?url=' + enc], ['sing-box', 'sing-box://import-remote-profile?url=' + enc + '#' + name], v2raytun],
+    ios: [happ, incy, ['Shadowrocket', 'shadowrocket://add/sub://' + b64 + '?remark=' + name], v2box, ['Streisand', 'streisand://import/' + enc], v2raytun],
+  };
+}
+
+function render() {
+  const app = document.getElementById('app');
+  document.title = (D.brand || 'VPN') + ' — подписка';
+  const used = Number(D.traffic_used) || (Number(D.upload) + Number(D.download)) || 0;
+  const total = Number(D.traffic_limit) || 0;
+  const exp = parseDate(D.expires_at);
+  const forever = !exp || exp.getUTCFullYear() >= 2090;
+  const depleted = total > 0 && used >= total;
+  const status = D.expired ? 'expired' : depleted ? 'depleted' : (forever && !total ? 'unlimited' : 'active');
+  const healthy = status === 'active' || status === 'unlimited';
+  const pct = total > 0 ? Math.min(100, used / total * 100) : 0;
+
+  // шапка
+  const head = $('div', 'head');
+  const brand = $('div', 'brand');
+  brand.append($('div', 'title', D.brand || 'VPN'), $('div', 'muted', D.key_name ? 'Ключ «' + D.key_name + '»' : 'Ваша подписка'));
+  const th = iconBtn(document.documentElement.dataset.theme === 'light' ? '☀' : '☾', 'Тема', () => {
+    const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'; applyTheme(t); store.set('sub-theme', t);
+    th.textContent = t === 'light' ? '☀' : '☾'; });
+  th.className = 'round';
+  head.append($('div', 'mark', (D.brand || 'V').trim().charAt(0).toUpperCase() || 'V'), brand, th);
+  app.append(head);
+
+  // кольцо и статистика
+  const hero = $('div', 'hero');
+  const ring = $('div', 'ring'); const R = 70, C = 2 * Math.PI * R;
+  const col = !healthy || pct >= 90 ? 'var(--bad)' : pct >= 75 ? 'var(--warn)' : 'var(--accent)';
+  ring.innerHTML = '<svg width="156" height="156" viewBox="0 0 156 156"><circle cx="78" cy="78" r="' + R + '" fill="none" stroke="var(--line)" stroke-width="10"/>' +
+    '<circle cx="78" cy="78" r="' + R + '" fill="none" stroke="' + col + '" stroke-width="10" stroke-linecap="round" stroke-dasharray="' + C +
+    '" stroke-dashoffset="' + (C * (1 - (total > 0 ? pct : (healthy ? 0 : 100)) / 100)) + '"/></svg>';
+  const rc = $('div', 'c'); rc.append($('div', 'v', total > 0 ? pct.toFixed(1) + '%' : (healthy ? '∞' : '✕')),
+            $('div', 'l', total > 0 ? 'использовано' : (healthy ? 'без лимита' : 'истекла')));
+  ring.append(rc);
+  const sum = $('div', 'sum');
+  const [amt, unit] = size(total > 0 ? Math.max(total - used, 0) : used);
+  const big = $('div', 'big', amt); big.append($('small', '', unit));
+  sum.append($('div', 'label', total > 0 ? 'Осталось трафика' : 'Использовано'), big,
+             $('div', 'muted', total > 0 ? 'из ' + sizeStr(total) : 'Трафик без ограничений'));
+  const stats = $('dl', 'stats');
+  const tags = { active: ['Активна', 't-ok'], unlimited: ['Бессрочно', 't-purple'], expired: ['Истекла', 't-bad'], depleted: ['Трафик исчерпан', 't-bad'] };
+  const st = (label, val) => { const d = $('div'); const dd = $('dd'); if (typeof val === 'string') dd.textContent = val; else dd.append(val);
+    d.append($('dt', 'label', label), dd); stats.append(d); };
+  st('Осталось дней', D.expired ? '0' : (forever || D.days_left == null ? '∞' : String(D.days_left)));
+  st('Действует до', forever ? 'Бессрочно' : exp.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }));
+  st('Статус', $('span', 'tag ' + tags[status][1], tags[status][0]));
+  st('Скачано', sizeStr(D.download || 0));
+  st('Отдано', sizeStr(D.upload || 0));
+  st('Лимит', total > 0 ? sizeStr(total) : '∞');
+  sum.append(stats);
+  hero.append(ring, sum); app.append(hero);
+
+  const renew = D.renew_url || (D.bot ? 'https://t.me/' + encodeURIComponent(D.bot) : '');
+  if (!healthy || (D.days_left != null && D.days_left <= 3 && !forever)) {
+    const al = $('div', 'alert');
+    al.append($('span', '', D.expired ? 'Подписка истекла — продлите её, чтобы VPN снова заработал.' : depleted ? 'Трафик закончился.' : 'Подписка скоро закончится.'));
+    if (renew) { const a = $('a', 'btn pri sm', 'Продлить'); a.href = renew; a.target = '_blank'; a.rel = 'noopener'; al.append(a); }
+    app.append(al);
+  }
+
+  // вкладки
+  const tabs = $('div', 'tabs'); app.append(tabs);
+  const panes = [];
+  const addTab = (label, count, pane) => {
+    const t = $('button', 'tab', label); if (count != null) t.append($('span', 'cnt', String(count)));
+    t.onclick = () => { tabs.querySelectorAll('.tab').forEach(x => x.classList.remove('on')); t.classList.add('on');
+      panes.forEach(p => p.classList.add('hidden')); pane.classList.remove('hidden'); };
+    tabs.append(t); panes.push(pane); pane.classList.add('pane'); app.append(pane);
+    if (panes.length === 1) t.classList.add('on'); else pane.classList.add('hidden');
+  };
+
+  // 1. Ссылки
+  const pL = $('div');
+  const r = $('div', 'row'), m = $('div', 'rmain');
+  const a = $('a', 'rtitle', 'Ссылка подписки'); a.href = D.sub_url; a.target = '_blank'; a.rel = 'noopener';
+  m.append(a, $('div', 'rurl', D.sub_url));
+  const ac = $('div', 'acts'); ac.append(iconBtn('⧉', 'Копировать', () => copy(D.sub_url)), iconBtn('▦', 'QR-код', () => qrModal(D.sub_url, 'Ссылка подписки')));
+  r.append($('span', 'tag t-ok', 'SUB'), m, ac); pL.append(r);
+  const qc = $('div', 'qrcard'), qi = $('img'); qi.alt = 'QR-код подписки'; qi.src = qrSrc(D.sub_url);
+  const qt = $('div'); qt.append($('div', '', 'Отсканируйте в приложении'), $('div', 'muted', 'Откройте VPN-приложение, нажмите «+» и выберите сканирование QR-кода — подключения будут обновляться сами.'));
+  qc.append(qi, qt); pL.append(qc);
+  addTab('Ссылки', null, pL);
+
+  // 2. Приложения
+  const pA = $('div'), list = apps();
+  const seg = $('div', 'seg'), grid = $('div', 'appgrid');
+  let plat = /iphone|ipad|ipod|macintosh/i.test(navigator.userAgent) ? 'ios' : 'android';
+  const drawApps = () => { grid.replaceChildren(); seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.p === plat));
+    list[plat].forEach(([n, url]) => { const row = $('div', 'row'); const add = $('a', 'btn pri sm', 'Добавить'); add.href = url;
+      row.append($('span', 'amark', n.charAt(0).toUpperCase()), $('span', 'rmain rtitle', n), add); grid.append(row); }); };
+  [['android', 'Android'], ['ios', 'iOS']].forEach(([p, l]) => { const b = $('button', '', l); b.dataset.p = p; b.onclick = () => { plat = p; drawApps(); }; seg.append(b); });
+  pA.append(seg, grid, $('div', 'muted', 'Если приложение не открылось — установите его и нажмите «Добавить» ещё раз, или скопируйте ссылку подписки на вкладке «Ссылки».'));
+  drawApps();
+  addTab('Приложения', null, pA);
+
+  // 3. Подключения
+  if (D.configs.length) {
+    const pC = $('div'); const bar = $('div', 'bar');
+    const all = $('button', 'btn', '⧉ Копировать все'); all.onclick = () => copy(D.configs.map(c => c.link).join('\n'), 'Все подключения скопированы');
+    bar.append(all); pC.append(bar);
+    const pcls = { vless: 't-blue', vmess: 't-purple', trojan: 't-gold', ss: 't-ok', hysteria2: 't-bad', hy2: 't-bad' };
+    D.configs.forEach((c, i) => {
+      const row = $('div', 'row'), title = c.name || ('Подключение ' + (i + 1));
+      const acts = $('div', 'acts'); acts.append(iconBtn('⧉', 'Копировать', () => copy(c.link)), iconBtn('▦', 'QR-код', () => qrModal(c.link, title)));
+      const tt = $('span', 'rmain rtitle', title); tt.title = title;
+      row.append($('span', 'tag ' + (pcls[c.proto] || 't-blue'), c.proto.toUpperCase()), tt, acts); pC.append(row);
+    });
+    addTab('Подключения', D.configs.length, pC);
+  }
+
+  // подвал
+  const foot = $('div', 'foot');
+  if (D.update_hours > 0) foot.append($('span', 'muted', '🕒 Обновляется каждые ' + D.update_hours + ' ч'));
+  if (D.support_url) { const s = $('a', '', '💬 Поддержка'); s.href = D.support_url; s.target = '_blank'; s.rel = 'noopener'; foot.append(s); }
+  if (renew && healthy) { const s = $('a', '', '🔄 Продлить'); s.href = renew; s.target = '_blank'; s.rel = 'noopener'; foot.append(s); }
+  if (foot.childNodes.length) app.append(foot);
+}
+render();
+</script>
+</body>
+</html>
