@@ -2050,6 +2050,10 @@ class SecurityHardeningTest(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(secret, text)
         self.assertIn("Иван", text)
         self.assertEqual(a._restore_links("ссылка: [[ССЫЛКА_КЛЮЧА_22]]", p), "ссылка: https://site/happ-sub/SECRET123")
+        # ИИ оформляет ссылку по-разному: в href, Markdown — после фильтра HTML ссылка должна остаться рабочей
+        for raw in ('<a href="[[ССЫЛКА_КЛЮЧА_22]]">ключ</a>', '[ключ]([[ССЫЛКА_КЛЮЧА_22]])'):
+            self.assertEqual(a._restore_links(a._sanitize_reply(raw), p), '<a href="https://site/happ-sub/SECRET123">ключ</a>')
+        self.assertNotIn("javascript", a._sanitize_reply('<a href="javascript:alert(1)">x</a>'))
 
     async def test_expiry_audit_log(self):
         from unittest.mock import AsyncMock, patch

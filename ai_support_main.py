@@ -159,7 +159,8 @@ class _TelegramHTMLSanitizer(HTMLParser):
             self.out.append('\n'); return
         if tag == 'a':
             href = dict(attrs).get('href', '')
-            if re.match(r'^(https?://|tg://)', href):
+            # метка ссылки подписки ([[ССЫЛКА_КЛЮЧА_N]]) — настоящий адрес подставит _restore_links
+            if re.match(r'^(https?://|tg://)', href) or re.fullmatch(r'\[\[ССЫЛКА_КЛЮЧА_\d+\]\]', href):
                 self.out.append(f'<a href="{html.escape(href, quote=True)}">')
                 self.open_stack.append('a')
             return
@@ -204,6 +205,8 @@ def _convert_markdown_to_telegram(text: str) -> str:
     text = re.sub(r'^\s*-{3,}\s*$', '', text, flags=re.MULTILINE)  # markdown-разделитель ---
     text = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # [текст](ссылка) → <a>: Telegram Markdown-ссылки не понимает (метку ссылки подписки — тоже)
+    text = re.sub(r'\[([^\]\n]+)\]\(((?:https?://|tg://)[^)\s]+|\[\[ССЫЛКА_КЛЮЧА_\d+\]\])\)', r'<a href="\2">\1</a>', text)
     text = re.sub(r'^[*-]\s+', '• ', text, flags=re.MULTILINE)  # markdown-буллеты * / - -> •
 
     lines = text.split('\n')
@@ -1992,7 +1995,7 @@ def _restore_links(text: str, profile) -> str:
     """Подставляет в ответ ИИ настоящие ссылки подписки вместо меток [[ССЫЛКА_КЛЮЧА_N]].
     В историю диалога сохраняется версия с метками — она снова уходит во внешний ИИ."""
     for token, url in ((profile or {}).get("_links") or {}).items():
-        text = text.replace(token, url)
+        text = text.replace(token, html.escape(url, quote=True))  # ответ — Telegram HTML, ссылка бывает и в href
     return text
 
 
