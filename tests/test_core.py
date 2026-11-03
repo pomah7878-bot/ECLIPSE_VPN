@@ -2168,6 +2168,25 @@ class SeoTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("<title>Луна &lt;VPN&gt; — быстрый и надёжный VPN</title>", wl)
                 self.assertIn('href="https://vpn.example/welcome"', wl)
                 self.assertIn("/welcome</loc>", sm2)
+
+    async def test_verification_file(self):
+        from unittest.mock import patch
+        from aiohttp.test_utils import TestClient, TestServer
+        import bot.webapp.server as srv
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "yandex_7306692f4273f3d0.html"), "w") as f:
+            f.write("<html><body>Verification: 7306692f4273f3d0</body></html>")
+        with patch.object(srv, "_VERIFICATION_DIR", d):
+            client = TestClient(TestServer(srv.create_web_app()))
+            await client.start_server()
+            try:
+                r = await client.get("/yandex_7306692f4273f3d0.html")
+                self.assertEqual(r.status, 200)
+                self.assertIn("Verification: 7306692f4273f3d0", await r.text())
+                # чужой код не подтверждается: файла нет — 404
+                self.assertEqual((await client.get("/yandex_aaaaaaaaaaaaaaaa.html")).status, 404)
+            finally:
+                await client.close()
             finally:
                 await client.close()
 
