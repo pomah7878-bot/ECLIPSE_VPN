@@ -2286,7 +2286,8 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         # ссылку открыли в браузере — понятная страница вместо сырого списка подключений
         return _subscription_page(key, body, f"{(webapp_url or '').rstrip('/')}/happ-sub/{sub_id}",
                                   bot_username, is_expired, days_left, headers,
-                                  _build_renew_link(key, webapp_url, bot_username), _strip_emails)
+                                  _build_renew_link(key, webapp_url, bot_username), _strip_emails,
+                                  _site_ai_support_url(request, webapp_url))
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
@@ -2408,8 +2409,23 @@ def _parse_sub_configs(body: bytes, strip_emails=()) -> list:
     return out[:200]
 
 
+def _site_ai_support_url(request: web.Request, webapp_url) -> str:
+    """«Поддержка» на странице подписки: AI-помощник сайта, если он сейчас показался бы этому посетителю
+    на /shop (те же проверки, что у виджета); иначе пусто — тогда ссылка ведёт к живому админу в бота."""
+    if not webapp_url:
+        return ""
+    try:
+        from bot.services import site_ai
+        mode, _tg = _site_ai_identity(request)
+        if site_ai.public_config(mode == "client", "shop").get("enabled"):
+            return f"{webapp_url.rstrip('/')}/shop#ai"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"sub page: AI-помощник недоступен: {e}")
+    return ""
+
+
 def _subscription_page(key: dict, body: bytes, sub_url: str, bot_username, is_expired: bool, days_left,
-                       headers=None, renew_url=None, strip_emails=()) -> web.Response:
+                       headers=None, renew_url=None, strip_emails=(), ai_url=None) -> web.Response:
     """Страница подписки для браузера: срок, трафик, ссылка (копия, QR, импорт), список подключений.
     Видна тому же, кто знает ссылку, — что и сама подписка; поисковикам закрыта."""
     from database.requests import get_effective_brand_name, is_cabinet_import_app_enabled
@@ -2439,7 +2455,8 @@ def _subscription_page(key: dict, body: bytes, sub_url: str, bot_username, is_ex
         "upload": up,
         "download": down,
         "update_hours": _int(headers.get("profile-update-interval")),
-        "support_url": headers.get("support-url") or "",
+        "support_url": ai_url or headers.get("support-url") or "",
+        "support_ai": bool(ai_url),
         "renew_url": renew_url or "",
         "configs": _parse_sub_configs(body, strip_emails),
         "import": {"happ": imp and is_cabinet_import_app_enabled("happ"),

@@ -2030,6 +2030,16 @@ class SubscriptionPageTest(unittest.TestCase):
         self.assertEqual(data["import"], {"happ": False, "incy": False})
         self.assertEqual(resp.headers["X-Robots-Tag"], "noindex, nofollow")
 
+    def test_support_link_prefers_site_ai(self):
+        from unittest.mock import MagicMock, patch
+        import bot.webapp.server as srv
+        req = MagicMock(cookies={})
+        with patch("bot.services.site_ai.public_config", return_value={"enabled": True}):
+            self.assertEqual(srv._site_ai_support_url(req, "https://s.example/"), "https://s.example/shop#ai")
+        with patch("bot.services.site_ai.public_config", return_value={"enabled": False}):
+            self.assertEqual(srv._site_ai_support_url(req, "https://s.example"), "")  # тогда — живой админ в боте
+        self.assertEqual(srv._site_ai_support_url(req, ""), "")
+
 
 class SecurityHardeningTest(unittest.IsolatedAsyncioTestCase):
     """Защита сайта и данных: лимит звонков, заголовки, данные для ИИ, журнал сроков."""

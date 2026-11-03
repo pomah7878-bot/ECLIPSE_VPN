@@ -2234,5 +2234,9 @@
 
         init();
     </script>
+<script>
+// «Поддержка» со страницы подписки ведёт сюда с #ai — подгружаем AI-помощника сайта только в этом случае
+if (location.hash === '#ai') { const s = document.createElement('script'); s.src = '/static/site-ai.js'; s.defer = true; document.body.appendChild(s); }
+</script>
 </body>
 </html>

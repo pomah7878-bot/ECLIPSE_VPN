@@ -308,7 +308,7 @@ function render() {
   // подвал
   const foot = $('div', 'foot');
   if (D.update_hours > 0) foot.append($('span', 'muted', '🕒 Обновляется каждые ' + D.update_hours + ' ч'));
-  if (D.support_url) { const s = $('a', '', '💬 Поддержка'); s.href = D.support_url; s.target = '_blank'; s.rel = 'noopener'; foot.append(s); }
+  if (D.support_url) { const s = $('a', '', D.support_ai ? '🤖 Поддержка' : '💬 Поддержка'); s.title = D.support_ai ? 'AI-помощник на сайте' : 'Написать администратору'; s.href = D.support_url; s.target = '_blank'; s.rel = 'noopener'; foot.append(s); }
   if (renew && healthy) { const s = $('a', '', '🔄 Продлить'); s.href = renew; s.target = '_blank'; s.rel = 'noopener'; foot.append(s); }
   if (foot.childNodes.length) app.append(foot);
 }
