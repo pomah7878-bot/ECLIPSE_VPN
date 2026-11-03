@@ -189,7 +189,7 @@ class XUIClient(BaseVPNClient):
         """Creates a session if there is none."""
         if self.session is None or self.session.closed:
             # Unsafe=True is important for IP addresses and self-signed certificates
-            # v1.450: при panel_tls_pin=1 принимаем только запомненный сертификат панели
+            # v1.518: сертификат панели проверяется (центр или запомненный отпечаток), panel_tls_pin=0 — выключить
             from bot.services.panel_tls import panel_ssl
             self._ssl_param = await panel_ssl(self.server_id, self.host, self.port, self.protocol)
             connector = aiohttp.TCPConnector(ssl=self._ssl_param)

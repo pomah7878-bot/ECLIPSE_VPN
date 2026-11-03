@@ -1022,19 +1022,30 @@ class AuditFixesTest(unittest.TestCase):
             rl_record("audit-rl")
         self.assertFalse(rl_allowed("audit-rl", 3, 60))
 
-    def test_panel_ssl_off_by_default_and_pins_when_enabled(self):
+    def test_panel_ssl_verifies_by_default(self):
         import asyncio
         import aiohttp
+        from unittest import mock
         from bot.services import panel_tls
-        self.assertIs(asyncio.run(panel_tls.panel_ssl(1, "h", 1)), False)
-        st.set_setting("panel_tls_pin", "1")
-        st.set_setting("panel_tls_pin_9", "ab" * 32)
+        ssl_for = lambda sid, proto="https": asyncio.run(panel_tls.panel_ssl(sid, "h", 1, proto))
+        # самоподписанный: отпечаток запоминается при первом подключении и больше не перепроверяется
+        with mock.patch.object(panel_tls, "_probe_sync", return_value="ab" * 32) as probe:
+            self.assertIsInstance(ssl_for(21), aiohttp.Fingerprint)
+            self.assertIsInstance(ssl_for(21), aiohttp.Fingerprint)
+            self.assertEqual(probe.call_count, 1)
+        # сертификат центра: обычная проверка, отпечаток не нужен (продление не ломает)
+        with mock.patch.object(panel_tls, "_probe_sync", return_value="ca"):
+            self.assertIs(ssl_for(22), True)
+        self.assertIs(ssl_for(22), True)
+        # сертификат не получен — строгая проверка, а не ssl=False
+        with mock.patch.object(panel_tls, "_probe_sync", side_effect=OSError("down")):
+            self.assertIs(ssl_for(23), True)
+        self.assertIs(ssl_for(21, "http"), False)
+        st.set_setting("panel_tls_pin", "0")
         try:
-            res = asyncio.run(panel_tls.panel_ssl(9, "h", 1))
-            self.assertIsInstance(res, aiohttp.Fingerprint)
-            self.assertIs(asyncio.run(panel_tls.panel_ssl(9, "h", 1, "http")), False)
+            self.assertIs(ssl_for(21), False)
         finally:
-            st.set_setting("panel_tls_pin", "0")
+            st.set_setting("panel_tls_pin", "1")
 
 
 class ShopThemesTest(unittest.TestCase):
