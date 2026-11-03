@@ -1057,6 +1057,14 @@ class ShopThemesTest(unittest.TestCase):
             if tid != "classic":  # classic — исходный вид, переопределений нет
                 self.assertIn(f'body[data-theme="{tid}"]', html, tid)
 
+    def test_every_cabinet_theme_has_css_in_index_html(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, "bot", "webapp", "templates", "index.html"), encoding="utf-8") as f:
+            html = f.read()
+        for tid in st.CABINET_THEMES:
+            if tid != "classic":
+                self.assertIn(f'body[data-theme="{tid}"]', html, tid)
+
 
 class SubInfoLineTest(unittest.TestCase):
     NAME = "ℹ️ Оплата: @bot"
