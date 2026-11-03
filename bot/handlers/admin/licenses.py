@@ -179,8 +179,17 @@ async def license_offer(callback: CallbackQuery):
     try:
         await callback.bot.send_message(rcp["telegram_id"], text, parse_mode="HTML", reply_markup=with_home(buy))
     except Exception as e:  # noqa: BLE001
-        logger.warning(f"Предложение купить лицензию не доставлено: {e}")
-        await callback.answer("❌ Не доставлено: партнёр заблокировал бота или ни разу его не запускал.", show_alert=True)
+        # пробную берут кнопкой в своём боте — нашего бота партнёр мог ни разу не запускать
+        logger.info(f"Предложение купить лицензию напрямую не доставлено ({e}) — ставлю в очередь")
+        from database.requests import set_setting
+        import re as _re
+        set_setting(f"license_notice:{license_key}", _re.sub(r"<[^>]+>", "", text))
+        log_license_event(license_key, "offer_queued", f"admin={callback.from_user.id}")
+        await callback.answer(
+            "📬 Напрямую не доставить: партнёр не запускал этого бота. Сообщение придёт ему "
+            "в его собственном боте при следующей проверке лицензии (обычно в течение 6 часов).",
+            show_alert=True)
+        await show_license_detail(callback, None, license_key)
         return
     log_license_event(license_key, "offer_sent", f"admin={callback.from_user.id}")
     await callback.answer("✅ Отправлено", show_alert=True)

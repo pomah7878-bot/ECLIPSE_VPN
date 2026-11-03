@@ -180,6 +180,7 @@ async def fetch_license(license_key: str):
     if status_code != 200 or not isinstance(data, dict):
         logger.warning(f"Лицензия: сервер ответил HTTP {status_code} — статус не меняем")
         return "unreachable", {}
+    _save_server_notice(data.get("notice"))
     if data.get("valid") is True:
         # v1.166: ответ должен быть подписан сервером лицензий; данные берём
         # из подписанной части, а не из открытых полей ответа.
@@ -201,6 +202,13 @@ async def fetch_license(license_key: str):
     if data.get("valid") is False:
         return "invalid", data
     return "unreachable", {}
+
+
+def _save_server_notice(note) -> None:
+    """Сообщение от поставщика лицензии — покажем админам при ближайшей рассылке уведомлений."""
+    if isinstance(note, str) and note.strip():
+        from database.requests import set_setting
+        set_setting("license_server_notice", note.strip()[:2000])
 
 
 async def request_trial_license(telegram_id: int):
