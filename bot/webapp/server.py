@@ -2286,7 +2286,7 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
         # ссылку открыли в браузере — понятная страница вместо сырого списка подключений
         return _subscription_page(key, body, f"{(webapp_url or '').rstrip('/')}/happ-sub/{sub_id}",
                                   bot_username, is_expired, days_left, headers,
-                                  _build_renew_link(key, webapp_url, bot_username))
+                                  _build_renew_link(key, webapp_url, bot_username), _strip_emails)
 
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
@@ -2354,7 +2354,7 @@ def _is_browser_request(request: web.Request) -> bool:
     return ua.startswith("Mozilla") and "text/html" in (request.headers.get("Accept", "") or "")
 
 
-def _parse_sub_configs(body: bytes) -> list:
+def _parse_sub_configs(body: bytes, strip_emails=()) -> list:
     """Подключения из тела подписки (base64 или текст): [{proto, net, sec, port, name, link}] — как метки в 3x-ui."""
     import urllib.parse as _up
     raw = body.decode("utf-8", "ignore").strip() if isinstance(body, (bytes, bytearray)) else str(body or "")
@@ -2399,13 +2399,17 @@ def _parse_sub_configs(body: bytes) -> list:
             pass
         if sec == "none":
             sec = ""
+        # хвост «-<email клиента>»: у AmneziaWG он внутри конфига, общая очистка его не видит
+        for e in strip_emails:
+            if e and name.lower().endswith("-" + e.lower()):
+                name = name[: -len(e) - 1].rstrip()
         out.append({"proto": proto, "net": net.upper()[:12], "sec": sec.upper()[:12], "port": port[:6],
                     "name": name[:120], "link": ln})
     return out[:200]
 
 
 def _subscription_page(key: dict, body: bytes, sub_url: str, bot_username, is_expired: bool, days_left,
-                       headers=None, renew_url=None) -> web.Response:
+                       headers=None, renew_url=None, strip_emails=()) -> web.Response:
     """Страница подписки для браузера: срок, трафик, ссылка (копия, QR, импорт), список подключений.
     Видна тому же, кто знает ссылку, — что и сама подписка; поисковикам закрыта."""
     from database.requests import get_effective_brand_name, is_cabinet_import_app_enabled
@@ -2437,7 +2441,7 @@ def _subscription_page(key: dict, body: bytes, sub_url: str, bot_username, is_ex
         "update_hours": _int(headers.get("profile-update-interval")),
         "support_url": headers.get("support-url") or "",
         "renew_url": renew_url or "",
-        "configs": _parse_sub_configs(body),
+        "configs": _parse_sub_configs(body, strip_emails),
         "import": {"happ": imp and is_cabinet_import_app_enabled("happ"),
                    "incy": imp and is_cabinet_import_app_enabled("incy")},
     }

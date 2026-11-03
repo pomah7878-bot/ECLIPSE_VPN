@@ -2017,6 +2017,8 @@ class SubscriptionPageTest(unittest.TestCase):
         c = srv._parse_sub_configs(("vless://u@h:8443?type=xhttp&security=reality#R\ntuic://u@h:443#T\nvpn://" + awg).encode())
         self.assertEqual([(x["proto"], x["net"], x["sec"], x["port"], x["name"]) for x in c],
                          [("vless", "XHTTP", "REALITY", "8443", "R"), ("tuic", "QUIC", "TLS", "443", "T"), ("vpn", "", "", "51820", "RU AWG")])
+        awg2 = b64.urlsafe_b64encode(b"# RU AWG FI-user_ab12\n").decode().rstrip("=")
+        self.assertEqual(srv._parse_sub_configs(("vpn://" + awg2).encode(), ["user_ab12"])[0]["name"], "RU AWG FI")
         with patch("bot.services.license.is_feature_available", return_value=False):
             resp = srv._subscription_page({"custom_name": "</script><b>", "expires_at": "2099-01-01 00:00:00"}, body,
                                           "https://s.example/happ-sub/X", "bot", False, None,
