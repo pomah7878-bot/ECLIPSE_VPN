@@ -1994,6 +1994,32 @@ class ThemesExclusiveTest(unittest.TestCase):
         self.assertTrue(webapp_cosmic_enabled())
 
 
+class UpdateNoticeTest(unittest.IsolatedAsyncioTestCase):
+    """После обновления админу — одно одноразовое сообщение со списком изменений и подсказкой про /start."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_single_tracked_message(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import main
+        from database.requests import set_setting
+        from bot.services import main_menu_tracker as mt
+        set_setting("last_notified_deploy_commit", "aaa")
+        bot = MagicMock()
+        bot.send_message = AsyncMock(side_effect=lambda chat, text, **k: MagicMock(message_id=77, text=text))
+        with patch("bot.utils.git_utils.get_current_commit", return_value="bbb"), \
+                patch("bot.utils.git_utils.run_git_command", return_value=(True, "bbb Новое")), \
+                patch("config.ADMIN_IDS", [101, 202]):
+            sent = await main._notify_admins_about_deploy(bot, restart_admin_id="101")
+        self.assertEqual(sent, {101, 202})
+        texts = {c.args[0]: c.args[1] for c in bot.send_message.call_args_list}
+        self.assertIn("/start", texts[101])
+        self.assertNotIn("/start", texts[202])
+        self.assertIn(77, mt._load_sensitive(101))  # уберётся при /start
+
+
 class SubscriptionPageTest(unittest.TestCase):
     """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
 

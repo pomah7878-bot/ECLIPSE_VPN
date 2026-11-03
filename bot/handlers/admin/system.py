@@ -154,6 +154,17 @@ _EXTENSION_UI_TOKENS: dict[str, dict[str, object]] = {}
 # MAIN SETTINGS MENU
 # ============================================================================
 
+
+def _remember_progress_message(chat_id, message_id) -> None:
+    """«Обновление завершено… перезапуск через 2 секунды» — после старта бот его удалит (main.py)."""
+    if not message_id:
+        return
+    try:
+        from database.requests import set_setting
+        set_setting('pending_restart_progress_msg', f"{chat_id}:{message_id}")
+    except Exception as e:
+        logger.warning(f"Не удалось запомнить сообщение об обновлении: {e}")
+
 @router.callback_query(F.data == "admin_bot_settings")
 async def show_bot_settings(callback: CallbackQuery, state: FSMContext):
     """Shows the bot settings menu."""
@@ -1193,7 +1204,7 @@ async def admin_update_cmd(message: Message, state: FSMContext):
         
     logger.info(f"🔄 Бот экстренно обновлён администратором {message.from_user.id} через команду /update")
     
-    await safe_edit_or_send(message,
+    progress = await safe_edit_or_send(message,
         f"✅ <b>Обновление завершено!</b>\n\n{log_message}\n\n"
         "🔄 Перезапуск бота через 2 секунды...",
         force_new=True
@@ -1213,6 +1224,7 @@ async def admin_update_cmd(message: Message, state: FSMContext):
         )
         return
     
+    _remember_progress_message(message.chat.id, getattr(progress, "message_id", None))
     restart_bot(notify_admin_id=message.from_user.id)
 
 
@@ -1411,6 +1423,7 @@ async def update_bot_confirmed(callback: CallbackQuery, state: FSMContext):
         return
     
     # Restarting the bot
+    _remember_progress_message(callback.message.chat.id, callback.message.message_id)
     restart_bot(notify_admin_id=callback.from_user.id)
 
 
@@ -1528,6 +1541,7 @@ async def force_overwrite_confirmed(callback: CallbackQuery, state: FSMContext):
         return
     
     # Restarting the bot
+    _remember_progress_message(callback.message.chat.id, callback.message.message_id)
     restart_bot(notify_admin_id=callback.from_user.id)
 
 
