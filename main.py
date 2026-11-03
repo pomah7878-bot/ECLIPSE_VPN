@@ -123,25 +123,37 @@ async def on_startup(bot: Bot):
     bot.my_username = bot_info.username
     logger.info(f"✅ Бот запущен: @{bot_info.username}")
 
+    # После обновления — одно сообщение вместо трёх («Обновление завершено…», «Бот перезапущен…»,
+    # «Бот обновился» со списком изменений). Оно одноразовое: уберётся при /start или «На главную».
+    from database.requests import get_setting, set_setting
+    pending_admin_id = ''
     try:
-        from database.requests import get_setting, set_setting
         pending_admin_id = get_setting('pending_restart_notify_admin_id', '')
-        if pending_admin_id:
-            set_setting('pending_restart_notify_admin_id', '')
+        progress = get_setting('pending_restart_progress_msg', '')
+        set_setting('pending_restart_notify_admin_id', '')
+        set_setting('pending_restart_progress_msg', '')
+        if progress:
+            chat_id, msg_id = progress.split(":", 1)
+            try:
+                await bot.delete_message(int(chat_id), int(msg_id))
+            except Exception as e:
+                logger.debug(f"Не удалось удалить сообщение об обновлении: {e}")
+    except Exception as e:
+        logger.warning(f"Не удалось прочитать данные перезапуска: {e}")
+
+    deploy_sent = await _notify_admins_about_deploy(bot, restart_admin_id=pending_admin_id)
+
+    try:
+        if pending_admin_id and int(pending_admin_id) not in deploy_sent:
             notice = await bot.send_message(
                 int(pending_admin_id),
-                "✅ <b>Бот перезапущен и снова готов к работе.</b>\n\n"
-                "Нажмите /start, чтобы открыть меню — старые кнопки в чате "
-                "после перезапуска могли устареть.",
+                "✅ <b>Бот перезапущен и снова готов к работе.</b>\n\n" + _RESTART_HINT,
                 parse_mode="HTML",
             )
-            # одноразовое: уберётся при следующем /start или «На главную» (список хранится в БД)
             from bot.services.main_menu_tracker import track_sensitive
             track_sensitive(int(pending_admin_id), notice)
     except Exception as e:
         logger.warning(f"Не удалось отправить уведомление о завершении перезапуска: {e}")
-
-    await _notify_admins_about_deploy(bot)
 
     try:
         from bot.services.bot_commands import sync_bot_commands, sync_menu_button
@@ -174,11 +186,17 @@ async def on_startup(bot: Bot):
                 logger.warning(f"Не удалось отправить уведомление о блокировке админу {admin_id}: {e}")
 
 
-async def _notify_admins_about_deploy(bot: Bot) -> None:
+_RESTART_HINT = "Нажмите /start, чтобы открыть меню — старые кнопки в чате после перезапуска могли устареть."
+
+
+async def _notify_admins_about_deploy(bot: Bot, restart_admin_id=None) -> set:
     """Если бот запустился на коммите, отличном от последнего замеченного —
     значит код обновился (auto_deploy.sh подтянул с GitHub и перезапустил
     сервис, или админ обновил вручную по SSH) — присылает админам changelog:
     что изменилось с прошлого запуска.
+
+    Возвращает id админов, которым ушло сообщение. Сообщение одноразовое (уберётся при /start);
+    админу, нажавшему «Обновить», к нему добавляется подсказка про /start.
 
     Работает при ЛЮБОМ способе обновления кода, в отличие от кнопки
     "Обновить бота" в самом боте (она уведомляет только того админа, кто её
@@ -186,6 +204,7 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
     о коммитах на GitHub, которые ещё не подтянуты) — а auto_deploy.sh
     вообще никого не уведомляет, просто тихо перезапускает сервис по cron.
     """
+    sent = set()
     try:
         from database.requests import get_setting, set_setting
         from bot.utils.git_utils import get_current_commit, run_git_command, strip_git_trailers
@@ -194,7 +213,7 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
 
         current_commit = get_current_commit()
         if not current_commit:
-            return
+            return sent
 
         last_notified = get_setting('last_notified_deploy_commit', '')
 
@@ -204,10 +223,10 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
             # старте после обновления бота админы получат "changelog" длиной
             # во всю историю репозитория.
             set_setting('last_notified_deploy_commit', current_commit)
-            return
+            return sent
 
         if last_notified == current_commit:
-            return
+            return sent
 
         success, log_output = run_git_command([
             'log', '--format=%h %B', f'{last_notified}..HEAD', '-n', '30',
@@ -220,7 +239,7 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
             # last_notified больше не существует в истории после
             # git reset --hard/force-push) — просто фиксируем текущий
             # коммит без рассылки, чем слать админам бесполезное сообщение.
-            return
+            return sent
 
         text = (
             "🔄 <b>Бот обновился и перезапустился</b>\n"
@@ -228,13 +247,18 @@ async def _notify_admins_about_deploy(bot: Bot) -> None:
             f"<b>Что изменилось:</b>\n<pre>{escape_html(log_output)}</pre>"
         )
 
+        from bot.services.main_menu_tracker import track_sensitive
         for admin_id in ADMIN_IDS:
             try:
-                await bot.send_message(admin_id, text, parse_mode="HTML")
+                extra = "\n\n" + _RESTART_HINT if str(admin_id) == str(restart_admin_id or "") else ""
+                msg = await bot.send_message(admin_id, text + extra, parse_mode="HTML")
+                track_sensitive(admin_id, msg)
+                sent.add(int(admin_id))
             except Exception as e:
                 logger.warning(f"Не удалось отправить changelog обновления админу {admin_id}: {e}")
     except Exception as e:
         logger.warning(f"Ошибка при уведомлении админов об обновлении: {e}")
+    return sent
 
 
 async def on_shutdown(bot: Bot):
