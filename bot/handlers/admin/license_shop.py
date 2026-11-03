@@ -59,6 +59,13 @@ async def buy_license_cmd(message: Message):
     await show_license_tariffs(message, message.from_user.id)
 
 
+@router.callback_query(F.data == "buy_license_open")
+async def buy_license_open(callback: CallbackQuery):
+    """Кнопка «💳 Купить лицензию» под напоминанием об окончании лицензии."""
+    await callback.answer()
+    await show_license_tariffs(callback.message, callback.from_user.id)
+
+
 async def show_license_tariffs(message: Message, user_id: int):
     """Показывает доступные тарифы на whitelabel-лицензию (команда и диплинк ?start=buy_license)."""
     from database.db_licenses import get_active_license_tariffs

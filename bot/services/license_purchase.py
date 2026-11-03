@@ -159,19 +159,21 @@ async def process_license_expiry_reminders(bot) -> None:
         if is_trial:
             text = (
                 f"⏰ <b>Пробный период заканчивается {expires.strftime('%d.%m.%Y')}</b>\n\n"
-                "Чтобы платные функции не отключились, выберите тариф командой /buy_license "
+                "Чтобы платные функции не отключились, выберите тариф (кнопка ниже или /buy_license) "
                 "и введите новый код в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии»."
             )
         else:
             text = (
                 f"⏰ <b>Лицензия заканчивается {expires.strftime('%d.%m.%Y')}</b>\n\n"
                 "Чтобы платные функции не отключились:\n"
-                "1. купите продление командой /buy_license\n"
+                "1. купите продление (кнопка ниже или /buy_license)\n"
                 "2. введите новый код: «💳 Моя лицензия» → «🔑 Ввести код лицензии»\n\n"
                 "Новый код заменит старый."
             )
         try:
             from bot.utils.notify_kb import with_home
-            await bot.send_message(lic["telegram_id"], text, parse_mode="HTML", reply_markup=with_home())
+            from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+            buy = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💳 Купить лицензию", callback_data="buy_license_open")]])
+            await bot.send_message(lic["telegram_id"], text, parse_mode="HTML", reply_markup=with_home(buy))
         except Exception as e:
             logger.warning(f"Напоминание о лицензии {mask_license_key(lic['license_key'])} не доставлено: {e}")

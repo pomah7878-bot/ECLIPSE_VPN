@@ -85,11 +85,12 @@ async def process_license_notices(bot) -> None:
     from config import ADMIN_IDS
     from database.requests import get_setting, set_setting
 
-    async def _notify(text: str):
+    async def _notify(text: str, buy: bool = False):
         for admin_id in ADMIN_IDS:
             try:
                 from bot.utils.notify_kb import with_home
-                await bot.send_message(admin_id, text, parse_mode="HTML", reply_markup=with_home())
+                await bot.send_message(admin_id, text, parse_mode="HTML",
+                                       reply_markup=with_home(_buy_kb() if buy else None))
             except Exception as e:  # noqa: BLE001
                 logger.warning("Не доставлено админу уведомление о лицензии %s: %s", admin_id, e)
 
@@ -127,7 +128,37 @@ async def process_license_notices(bot) -> None:
                 set_setting("license_expiry_notified", expires)
                 await _notify(
                     f"⏰ <b>Пробная лицензия заканчивается {expires[:10]}</b>\n\n"
-                    "Чтобы платные функции не отключились: «💳 Моя лицензия» → «💳 Купить / продлить»."
+                    "Чтобы платные функции не отключились, купите лицензию и введите её код.",
+                    buy=True,
                 )
     except Exception as e:
         logger.warning(f"Напоминание о пробной лицензии: {e}")
+
+    try:
+        # лицензия (пробная или платная) закончилась — один раз сказать, что произошло и как вернуть функции
+        from bot.services.license import get_license_key
+        expires = get_setting("license_expires_at", "") or ""
+        if (get_license_key() and expires and not is_licensed()
+                and datetime.strptime(expires, "%Y-%m-%d %H:%M:%S") <= datetime.utcnow()
+                and get_setting("license_ended_notified", "") != expires):
+            set_setting("license_ended_notified", expires)
+            trial = (get_setting("license_partner_name", "") or "").endswith("(пробный)")
+            await _notify(
+                ("⛔ <b>Пробный период закончился</b>" if trial else "⛔ <b>Лицензия закончилась</b>")
+                + f" ({expires[:10]})\n\n"
+                "Платные функции отключены, бот продолжает работать на бесплатных. "
+                "Чтобы вернуть их — купите лицензию и введите её код.",
+                buy=True,
+            )
+    except Exception as e:
+        logger.warning(f"Уведомление об окончании лицензии: {e}")
+
+
+def _buy_kb():
+    """«Купить» (тарифы в боте поставщика лицензий) и «Ввести код» — под уведомлениями о лицензии."""
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from bot.services.license import get_license_bot_username
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Купить лицензию", url=f"https://t.me/{get_license_bot_username()}?start=buy_license")],
+        [InlineKeyboardButton(text="🔑 Ввести код лицензии", callback_data="my_license_enter_code")],
+    ])

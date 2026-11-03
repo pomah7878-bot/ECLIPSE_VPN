@@ -2020,6 +2020,37 @@ class UpdateNoticeTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(77, mt._load_sensitive(101))  # уберётся при /start
 
 
+class LicenseEndNoticeTest(unittest.IsolatedAsyncioTestCase):
+    """Окончание лицензии: одно сообщение админам с кнопками «Купить» и «Ввести код»."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_ended_notice_once_with_buttons(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from bot.services import license_limits as ll
+        from database.requests import set_setting
+        set_setting("license_expires_at", "2020-01-01 00:00:00")
+        set_setting("license_partner_name", "Тест (пробный)")
+        set_setting("license_ended_notified", "")
+        bot = MagicMock(); bot.send_message = AsyncMock()
+        with patch("bot.services.license.get_license_key", return_value="KEY"), \
+                patch.object(ll, "is_licensed", return_value=False), \
+                patch.object(ll, "is_over_limits", return_value=False), \
+                patch("bot.services.license.get_license_bot_username", return_value="srv_bot"), \
+                patch("config.ADMIN_IDS", [7]):
+            await ll.process_license_notices(bot)
+            await ll.process_license_notices(bot)  # второй раз — уже не шлёт
+        self.assertEqual(bot.send_message.call_count, 1)
+        text = bot.send_message.call_args.args[1]
+        self.assertIn("Пробный период закончился", text)
+        kb = bot.send_message.call_args.kwargs["reply_markup"].inline_keyboard
+        flat = [b for r in kb for b in r]
+        self.assertEqual(flat[0].url, "https://t.me/srv_bot?start=buy_license")
+        self.assertEqual(flat[1].callback_data, "my_license_enter_code")
+
+
 class SubscriptionPageTest(unittest.TestCase):
     """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
 
