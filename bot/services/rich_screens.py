@@ -51,7 +51,7 @@ def _history_rows(payments: List[Mapping[str, Any]], limit: int = 5) -> List[tup
     for p in list(payments or [])[:limit]:
         if p.get("history_type") == "key_operation":
             days = int(p.get("delta_days") or 0)
-            rows.append((_date(p.get("paid_at")), p.get("reason") or "Начисление дней", f"+{days} дн." if days > 0 else "—"))
+            rows.append((_date(p.get("paid_at")), p.get("reason") or "Начисление дней", f"+{days} дн." if days > 0 else (f"−{-days} дн." if days < 0 else "—")))
         else:
             rows.append((_date(p.get("paid_at")), p.get("tariff_name") or "Тариф", _format_payment_amount(dict(p))))
     return rows

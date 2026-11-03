@@ -210,6 +210,8 @@ def get_key_operation_history(key_id: int) -> list[dict[str, Any]]:
                 'key_operation' AS history_type
             FROM key_operation_log
             WHERE vpn_key_id = ?
+              -- продления после оплаты уже видны в истории как сами оплаты
+              AND source NOT IN ('payment', 'site_payment')
             ORDER BY created_at DESC
             """,
             (_positive_int(key_id, 'key_id'),),

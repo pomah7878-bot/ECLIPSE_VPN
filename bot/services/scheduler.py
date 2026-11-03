@@ -695,6 +695,7 @@ async def process_auto_renewals(bot: Bot) -> None:
             from bot.services.key_lifecycle import renew_key_access
             renew_result = await renew_key_access(
                 key_id, duration_days, reset_traffic=True, tariff_id=key.get("tariff_id"),
+                source="auto_renew",
             )
             renew_ok = bool((renew_result or {}).get("db_updated"))
         except Exception as e:

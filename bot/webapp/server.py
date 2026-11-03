@@ -2282,6 +2282,13 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
             _who = f"@{bot_username}" if bot_username else "Telegram-бот"
             body = add_info_line(body, f"ℹ️ Оплата: {_who}")
 
+    if detected_app is None and _is_browser_request(request):
+        # ссылку открыли в браузере — понятная страница вместо сырого списка подключений
+        return _subscription_page(key, body, f"{(webapp_url or '').rstrip('/')}/happ-sub/{sub_id}",
+                                  bot_username, is_expired, days_left, headers,
+                                  _build_renew_link(key, webapp_url, bot_username), _strip_emails,
+                                  _site_ai_support_url(request, webapp_url))
+
     resp = web.Response(body=body, headers=headers)
     resp.headers['Cache-Control'] = 'no-store'
     return resp
@@ -2340,6 +2347,130 @@ def _strip_routing_lines(body: bytes) -> bytes:
     if out is None:
         return body
     return base64.b64encode(out.encode("utf-8"))
+
+
+def _is_browser_request(request: web.Request) -> bool:
+    """Браузер (а не VPN-приложение): просит HTML и представляется Mozilla. Приложения так не делают."""
+    ua = request.headers.get("User-Agent", "") or ""
+    return ua.startswith("Mozilla") and "text/html" in (request.headers.get("Accept", "") or "")
+
+
+def _parse_sub_configs(body: bytes, strip_emails=()) -> list:
+    """Подключения из тела подписки (base64 или текст): [{proto, net, sec, port, name, link}] — как метки в 3x-ui."""
+    import urllib.parse as _up
+    raw = body.decode("utf-8", "ignore").strip() if isinstance(body, (bytes, bytearray)) else str(body or "")
+    if "://" not in raw:
+        try:
+            raw = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode("utf-8", "ignore")
+        except Exception:
+            return []
+
+    def _b64(s):
+        s = s.replace("-", "+").replace("_", "/")
+        return base64.b64decode(s + "=" * (-len(s) % 4)).decode("utf-8", "ignore")
+
+    out = []
+    for ln in raw.splitlines():
+        ln = ln.strip()
+        if "://" not in ln:
+            continue
+        proto = ln.split("://", 1)[0].lower()
+        name = net = sec = port = ""
+        try:
+            if proto == "vmess":
+                j = json.loads(_b64(ln.split("://", 1)[1].split("#")[0]))
+                name, net, sec, port = j.get("ps", ""), j.get("net", ""), j.get("tls", ""), str(j.get("port", "") or "")
+            elif proto == "vpn":  # AmneziaWG: base64url текста .conf, название — строка «# …»
+                conf = _b64(ln.split("://", 1)[1])
+                m = re.search(r"^#\s?(.*)$", conf, re.M)
+                name = m.group(1).strip() if m else ""
+                m = re.search(r"^Endpoint\s*=\s*.+:(\d+)\s*$", conf, re.M)
+                port = m.group(1) if m else ""
+            else:
+                u = _up.urlsplit(ln)
+                q = _up.parse_qs(u.query)
+                net, sec = (q.get("type") or [""])[0], (q.get("security") or [""])[0]
+                port = str(u.port or (q.get("port") or [""])[0] or "")
+                name = _up.unquote(u.fragment)
+                if proto == "tuic":
+                    net, sec = "quic", "tls"
+                elif proto == "tg":
+                    sec = "faketls"
+        except Exception:
+            pass
+        if sec == "none":
+            sec = ""
+        # хвост «-<email клиента>»: у AmneziaWG он внутри конфига, общая очистка его не видит
+        for e in strip_emails:
+            if e and name.lower().endswith("-" + e.lower()):
+                name = name[: -len(e) - 1].rstrip()
+        out.append({"proto": proto, "net": net.upper()[:12], "sec": sec.upper()[:12], "port": port[:6],
+                    "name": name[:120], "link": ln})
+    return out[:200]
+
+
+def _site_ai_support_url(request: web.Request, webapp_url) -> str:
+    """«Поддержка» на странице подписки: AI-помощник сайта, если он сейчас показался бы этому посетителю
+    на /shop (те же проверки, что у виджета); иначе пусто — тогда ссылка ведёт к живому админу в бота."""
+    if not webapp_url:
+        return ""
+    try:
+        from bot.services import site_ai
+        mode, _tg = _site_ai_identity(request)
+        if site_ai.public_config(mode == "client", "shop").get("enabled"):
+            return f"{webapp_url.rstrip('/')}/shop#ai"
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"sub page: AI-помощник недоступен: {e}")
+    return ""
+
+
+def _subscription_page(key: dict, body: bytes, sub_url: str, bot_username, is_expired: bool, days_left,
+                       headers=None, renew_url=None, strip_emails=(), ai_url=None) -> web.Response:
+    """Страница подписки для браузера: срок, трафик, ссылка (копия, QR, импорт), список подключений.
+    Видна тому же, кто знает ссылку, — что и сама подписка; поисковикам закрыта."""
+    from database.requests import get_effective_brand_name, is_cabinet_import_app_enabled
+    from bot.services.license import is_feature_available
+    imp = is_feature_available("app_import")
+    headers = headers or {}
+    # скачано/отдано — из subscription-userinfo панели (как в 3x-ui); нет — весь трафик считаем скачанным
+    info = dict(kv.split("=", 1) for kv in str(headers.get("subscription-userinfo", "")).replace(" ", "").split(";") if "=" in kv)
+    def _int(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return 0
+    used = int((key or {}).get("traffic_used") or 0)
+    up = _int(info.get("upload"))
+    down = _int(info.get("download")) or max(used - up, 0)
+    data = {
+        "brand": get_effective_brand_name(),
+        "bot": bot_username or "",
+        "sub_url": sub_url,
+        "key_name": (key or {}).get("custom_name") or "",
+        "expires_at": (key or {}).get("expires_at") or "",
+        "days_left": days_left,
+        "expired": bool(is_expired),
+        "traffic_used": int((key or {}).get("traffic_used") or 0),
+        "traffic_limit": int((key or {}).get("traffic_limit") or 0),
+        "upload": up,
+        "download": down,
+        "update_hours": _int(headers.get("profile-update-interval")),
+        "support_url": ai_url or headers.get("support-url") or "",
+        "support_ai": bool(ai_url),
+        "renew_url": renew_url or "",
+        "configs": _parse_sub_configs(body, strip_emails),
+        "import": {"happ": imp and is_cabinet_import_app_enabled("happ"),
+                   "incy": imp and is_cabinet_import_app_enabled("incy")},
+    }
+    with open(os.path.join(_TEMPLATES_DIR, "subscription.html"), encoding="utf-8") as f:
+        page = f.read()
+    # JSON внутрь <script>: «<» экранируем, чтобы название ключа не закрыло тег
+    page = page.replace("/*__DATA__*/null", json.dumps(data, ensure_ascii=False).replace("<", "\\u003c"))
+    resp = web.Response(text=page, content_type="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    return resp
 
 
 def _strip_email_suffix(body: bytes, emails) -> bytes:
@@ -3243,6 +3374,25 @@ def _zv_consume_call(call_id) -> None:
     _ZV_CALL_BINDINGS.pop(str(call_id), None)
 
 
+def _phone_calls_hour_limit() -> int:
+    """Сколько звонков подтверждения в час на весь сайт (настройка phone_calls_hour_limit, по умолчанию 100)."""
+    try:
+        from database.requests import get_setting
+        return max(1, int(get_setting("phone_calls_hour_limit", "100") or 100))
+    except Exception:
+        return 100
+
+
+async def _alert_phone_cap(cap: int) -> None:
+    from bot.services.anonymous_purchase import _alert_admins
+    await _alert_admins(
+        "⚠️ <b>Достигнут лимит звонков подтверждения на сайте</b>\n\n"
+        f"За последний час заказано {cap} звонков — новые временно отклоняются. "
+        "Если это не наплыв клиентов, кто-то пытается заказывать звонки на чужие номера. "
+        "Лимит — настройка phone_calls_hour_limit."
+    )
+
+
 async def handle_public_auth_phone_request(request: web.Request) -> web.Response:
     # v1.157: лимиты — каждый звонок стоит денег и беспокоит владельца номера
     _ip = _get_client_ip(request)
@@ -3255,6 +3405,17 @@ async def handle_public_auth_phone_request(request: web.Request) -> web.Response
         return web.json_response(
             {"error": "rate_limited", "message": "Слишком много запросов. Попробуйте позже."}, status=429
         )
+    # Общий потолок звонков на весь сайт: с множества адресов нельзя заказать сотни звонков на чужие номера
+    _cap = _phone_calls_hour_limit()
+    if not _rl_allowed("phreq-all", _cap, 3600):
+        if _rl_allowed("phreq-all-alert", 1, 3600):
+            _rl_record("phreq-all-alert")
+            asyncio.create_task(_alert_phone_cap(_cap))
+        return web.json_response(
+            {"error": "rate_limited", "message": "Подтверждение по звонку временно недоступно. Попробуйте позже или войдите другим способом."},
+            status=429,
+        )
+    _rl_record("phreq-all")
     _rl_record(f"phreq-ip:{_ip}")
     if _ph:
         _rl_record(f"phreq-ph:{_ph}")
@@ -5436,6 +5597,25 @@ async def license_gate_middleware(request: web.Request, handler):
     return await handler(request)
 
 
+# Заголовки безопасности для всех ответов сайта (setdefault — свои заголовки обработчиков сохраняются):
+# HSTS — только HTTPS (браузеры учитывают его лишь на HTTPS-ответах); nosniff — не угадывать тип файлов;
+# Referrer-Policy — коды и токены из адресной строки не уходят на чужие сайты;
+# frame-ancestors — сайт нельзя встроить в чужую страницу (кроме Telegram Web, где открывается Mini App);
+# Permissions-Policy — камера, микрофон, местоположение, USB странице не нужны.
+_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "frame-ancestors 'self' https://telegram.org https://*.telegram.org",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=()",
+}
+
+
+async def _security_headers(request: web.Request, response: web.StreamResponse):
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+
+
 async def _static_js_css_revalidate(request: web.Request, response: web.StreamResponse):
     """JS и CSS сайта меняются при обновлении бота, а без Cache-Control мобильные браузеры
     держат их в кэше по своему усмотрению (после правки клиент видит старый вид).
@@ -5448,6 +5628,7 @@ def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
     app = web.Application(middlewares=[cors_middleware, license_gate_middleware, bad_input_middleware], client_max_size=12 * 1024 * 1024)
     app.on_response_prepare.append(_static_js_css_revalidate)
+    app.on_response_prepare.append(_security_headers)
     app.on_cleanup.append(_close_upstream_session)
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")

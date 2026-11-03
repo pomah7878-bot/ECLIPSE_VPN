@@ -430,6 +430,27 @@ async def build_panel_to_db_plan(
     return plan
 
 
+def _audit_panel_import(before: Dict[int, Dict[str, Any]]) -> None:
+    """Журнал изменений срока: импорт «Панель → БД» переписывает сроки значениями из панели."""
+    from database.requests import get_vpn_key_by_id, record_key_operation
+    for key_id, old in before.items():
+        try:
+            new = get_vpn_key_by_id(key_id) or {}
+            delta = 0
+            try:
+                delta = (datetime.fromisoformat(str(new.get("expires_at"))) - datetime.fromisoformat(str(old.get("expires_at")))).days
+            except (TypeError, ValueError):
+                pass
+            record_key_operation(
+                key_id=key_id, user_id=int(new.get("user_id") or old.get("user_id") or 0),
+                operation_type="panel_import", delta_days=delta, source="panel_import",
+                reason="Срок обновлён из панели", reference_type="expiry_change",
+                expires_before=old.get("expires_at"), expires_after=new.get("expires_at"),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Журнал срока ключа %s (импорт из панели) не записан: %s", key_id, e)
+
+
 async def apply_panel_to_db_plan(plan: PanelSyncPlan) -> PanelSyncPlan:
     """Apply a freshly rebuilt Panel -> DB plan atomically per server."""
     from database.requests import apply_panel_import_batch
@@ -439,10 +460,13 @@ async def apply_panel_to_db_plan(plan: PanelSyncPlan) -> PanelSyncPlan:
         if not changes or report.error:
             continue
         try:
+            from database.requests import get_vpn_key_by_id
+            before = {c.key_id: (get_vpn_key_by_id(c.key_id) or {}) for c in changes if c.expiry_changed}
             applied = apply_panel_import_batch(
                 [change.as_database_update() for change in changes]
             )
             report.stats["applied"] = applied
+            _audit_panel_import(before)
         except Exception as exc:
             report.error = str(exc)
             logger.exception(

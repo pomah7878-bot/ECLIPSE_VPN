@@ -1992,3 +1992,136 @@ class ThemesExclusiveTest(unittest.TestCase):
         set_webapp_cosmic(True)
         set_cabinet_theme_id("classic")  # классическая тема космическую не выключает
         self.assertTrue(webapp_cosmic_enabled())
+
+
+class SubscriptionPageTest(unittest.TestCase):
+    """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_browser_page_and_apps(self):
+        import base64 as b64
+        from unittest.mock import MagicMock, patch
+        import bot.webapp.server as srv
+        req = lambda ua, acc: MagicMock(headers={"User-Agent": ua, "Accept": acc})
+        self.assertTrue(srv._is_browser_request(req("Mozilla/5.0 (iPhone)", "text/html,*/*")))
+        self.assertFalse(srv._is_browser_request(req("Happ/4.3.0", "*/*")))
+        self.assertFalse(srv._is_browser_request(req("Mozilla/5.0", "*/*")))  # v2rayN и т.п. HTML не просят
+        vm = b64.b64encode(json.dumps({"ps": "DE"}).encode()).decode()
+        body = b64.b64encode(("vless://u@h:443#NL%20%3C%2Fscript%3E\nvmess://" + vm).encode())
+        cfgs = srv._parse_sub_configs(body)
+        self.assertEqual([(c["proto"], c["name"]) for c in cfgs], [("vless", "NL </script>"), ("vmess", "DE")])
+        awg = b64.urlsafe_b64encode(b"[Interface]\n# RU AWG\n[Peer]\nEndpoint = 1.2.3.4:51820\n").decode().rstrip("=")
+        c = srv._parse_sub_configs(("vless://u@h:8443?type=xhttp&security=reality#R\ntuic://u@h:443#T\nvpn://" + awg).encode())
+        self.assertEqual([(x["proto"], x["net"], x["sec"], x["port"], x["name"]) for x in c],
+                         [("vless", "XHTTP", "REALITY", "8443", "R"), ("tuic", "QUIC", "TLS", "443", "T"), ("vpn", "", "", "51820", "RU AWG")])
+        awg2 = b64.urlsafe_b64encode(b"# RU AWG FI-user_ab12\n").decode().rstrip("=")
+        self.assertEqual(srv._parse_sub_configs(("vpn://" + awg2).encode(), ["user_ab12"])[0]["name"], "RU AWG FI")
+        with patch("bot.services.license.is_feature_available", return_value=False):
+            resp = srv._subscription_page({"custom_name": "</script><b>", "expires_at": "2099-01-01 00:00:00"}, body,
+                                          "https://s.example/happ-sub/X", "bot", False, None,
+                                          {"subscription-userinfo": "upload=5; download=7; total=0"}, None)
+        html = resp.text
+        self.assertEqual(html.count("</script>"), 1)  # данные не закрывают тег скрипта
+        data = json.loads(html.split("const D = ", 1)[1].split(";\n", 1)[0])
+        self.assertEqual((data["upload"], data["download"]), (5, 7))
+        self.assertEqual(data["import"], {"happ": False, "incy": False})
+        self.assertEqual(resp.headers["X-Robots-Tag"], "noindex, nofollow")
+
+    def test_support_link_prefers_site_ai(self):
+        from unittest.mock import MagicMock, patch
+        import bot.webapp.server as srv
+        req = MagicMock(cookies={})
+        with patch("bot.services.site_ai.public_config", return_value={"enabled": True}):
+            self.assertEqual(srv._site_ai_support_url(req, "https://s.example/"), "https://s.example/shop#ai")
+        with patch("bot.services.site_ai.public_config", return_value={"enabled": False}):
+            self.assertEqual(srv._site_ai_support_url(req, "https://s.example"), "")  # тогда — живой админ в боте
+        self.assertEqual(srv._site_ai_support_url(req, ""), "")
+
+
+class SecurityHardeningTest(unittest.IsolatedAsyncioTestCase):
+    """Защита сайта и данных: лимит звонков, заголовки, данные для ИИ, журнал сроков."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_phone_calls_global_cap_and_headers(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+        from aiohttp import web
+        from aiohttp.test_utils import TestClient, TestServer
+        import bot.webapp.server as srv
+        from bot.webapp import ratelimit
+        from database.requests import set_setting
+        ratelimit._BUCKETS.clear()
+        set_setting("phone_calls_hour_limit", "2")
+        ok = AsyncMock(side_effect=lambda request: web.json_response({"status": "ok"}))  # новый ответ на каждый запрос
+        alert = AsyncMock()
+        with patch.object(srv, "_handle_public_auth_phone_request_impl", ok), \
+                patch.object(srv, "_alert_phone_cap", alert), \
+                patch("bot.services.license.is_feature_available", return_value=True):
+            client = TestClient(TestServer(srv.create_web_app()))
+            await client.start_server()
+            try:
+                codes = []
+                for i in range(4):  # разные адреса и номера — лимиты на адрес и номер не срабатывают
+                    with patch.object(srv, "_get_client_ip", return_value=f"10.0.0.{i}"):
+                        r = await client.post("/api/public/auth/phone/request", json={"phone": f"7999000000{i}"})
+                        codes.append(r.status)
+                self.assertEqual(codes, [200, 200, 429, 429])
+                await asyncio.sleep(0)
+                self.assertEqual(alert.await_count, 1)  # одно уведомление админу, не на каждый отказ
+                r = await client.get("/")
+                for h in ("Strict-Transport-Security", "X-Content-Type-Options", "Referrer-Policy",
+                          "Content-Security-Policy", "Permissions-Policy"):
+                    self.assertIn(h, r.headers)
+                self.assertIn("frame-ancestors", r.headers["Content-Security-Policy"])
+            finally:
+                await client.close()
+        ratelimit._BUCKETS.clear()
+        set_setting("phone_calls_hour_limit", "100")
+
+    def test_ai_profile_hides_link_and_pii(self):
+        import openai
+        from unittest.mock import patch
+        with patch.object(openai, "AsyncOpenAI", lambda *a, **k: None):
+            import ai_support_main as a
+        p = {"found": True, "user": {"first_name": "Иван", "last_name": "Петров", "username": "ivan_p", "referred_by": 5},
+             "referred_by_username": "friend",
+             "keys": [{"id": 22, "sub_url": "https://site/happ-sub/SECRET123", "expires_at": "2031-01-01"}], "payments": []}
+        text = a._format_customer_profile(p)
+        for secret in ("SECRET123", "Петров", "ivan_p", "friend"):
+            self.assertNotIn(secret, text)
+        self.assertIn("Иван", text)
+        self.assertEqual(a._restore_links("ссылка: [[ССЫЛКА_КЛЮЧА_22]]", p), "ссылка: https://site/happ-sub/SECRET123")
+        # ИИ оформляет ссылку по-разному: в href, Markdown — после фильтра HTML ссылка должна остаться рабочей
+        for raw in ('<a href="[[ССЫЛКА_КЛЮЧА_22]]">ключ</a>', '[ключ]([[ССЫЛКА_КЛЮЧА_22]])'):
+            self.assertEqual(a._restore_links(a._sanitize_reply(raw), p), '<a href="https://site/happ-sub/SECRET123">ключ</a>')
+        self.assertNotIn("javascript", a._sanitize_reply('<a href="javascript:alert(1)">x</a>'))
+
+    async def test_expiry_audit_log(self):
+        from unittest.mock import AsyncMock, patch
+        from database.requests import get_or_create_user
+        from database.db_business_operations import get_key_operation_history
+        import bot.services.key_lifecycle as kl
+        user, _ = get_or_create_user(777000888, username="audit_user")
+        with get_db() as c:
+            key_id = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+100 days'))",
+                               (user["id"],)).lastrowid
+        with patch("bot.services.vpn_api.sync_key_to_panel_state", AsyncMock(return_value={"ok": 1, "errors": 0})), \
+                patch("bot.services.vpn_api.restore_traffic_limit_in_db", return_value=True):
+            await kl.renew_key_access(key_id, -30, source="admin", reference_id="111")
+            await kl.renew_key_access(key_id, 365, source="payment", reference_id="ord1")
+        hist = get_key_operation_history(key_id)
+        self.assertEqual(len(hist), 1)  # продление после оплаты в истории — как сама оплата, без дубля
+        op = hist[0]
+        self.assertEqual((op["operation_source"], op["delta_days"]), ("admin", -30))
+        self.assertEqual(op["reason"], "Изменение срока администратором")  # id админа клиенту не показываем
+        self.assertNotIn("111", op["reason"])
+        self.assertTrue(op["expires_before"] > op["expires_after"])
+        with get_db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM key_operation_log WHERE vpn_key_id = ? AND source = 'payment'",
+                                       (key_id,)).fetchone()[0], 1)  # в базе запись об оплате есть

@@ -1212,7 +1212,7 @@
             // Единый личный кабинет — это «/». Здесь, в #account, остаются только способы входа.
             if (window.location.hash !== '#account') {
                 await tryAutoClaimPendingCode();
-                location.replace('/');
+                location.replace(window.location.hash === '#ai' ? '/#ai' : '/');  // #ai — открыть AI-помощника в кабинете
                 return;
             }
             document.getElementById('authGate').classList.add('hidden');

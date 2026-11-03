@@ -159,7 +159,8 @@ class _TelegramHTMLSanitizer(HTMLParser):
             self.out.append('\n'); return
         if tag == 'a':
             href = dict(attrs).get('href', '')
-            if re.match(r'^(https?://|tg://)', href):
+            # метка ссылки подписки ([[ССЫЛКА_КЛЮЧА_N]]) — настоящий адрес подставит _restore_links
+            if re.match(r'^(https?://|tg://)', href) or re.fullmatch(r'\[\[ССЫЛКА_КЛЮЧА_\d+\]\]', href):
                 self.out.append(f'<a href="{html.escape(href, quote=True)}">')
                 self.open_stack.append('a')
             return
@@ -204,6 +205,8 @@ def _convert_markdown_to_telegram(text: str) -> str:
     text = re.sub(r'^\s*-{3,}\s*$', '', text, flags=re.MULTILINE)  # markdown-разделитель ---
     text = re.sub(r'^#{1,6}\s+(.+)$', r'<b>\1</b>', text, flags=re.MULTILINE)
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    # [текст](ссылка) → <a>: Telegram Markdown-ссылки не понимает (метку ссылки подписки — тоже)
+    text = re.sub(r'\[([^\]\n]+)\]\(((?:https?://|tg://)[^)\s]+|\[\[ССЫЛКА_КЛЮЧА_\d+\]\])\)', r'<a href="\2">\1</a>', text)
     text = re.sub(r'^[*-]\s+', '• ', text, flags=re.MULTILINE)  # markdown-буллеты * / - -> •
 
     lines = text.split('\n')
@@ -1988,6 +1991,14 @@ async def query_full_customer_profile(telegram_id: int) -> dict:
         logger.error(f"DB error: {e}")
         return {"error": str(e)}
 
+def _restore_links(text: str, profile) -> str:
+    """Подставляет в ответ ИИ настоящие ссылки подписки вместо меток [[ССЫЛКА_КЛЮЧА_N]].
+    В историю диалога сохраняется версия с метками — она снова уходит во внешний ИИ."""
+    for token, url in ((profile or {}).get("_links") or {}).items():
+        text = text.replace(token, html.escape(url, quote=True))  # ответ — Telegram HTML, ссылка бывает и в href
+    return text
+
+
 def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
     """Форматирует полный профиль клиента в компактный текстовый блок для system prompt."""
     if not profile or profile.get("found") is False:
@@ -1998,9 +2009,8 @@ def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
     u = profile.get("user", {})
     parts = []
 
-    name_bits = [b for b in (u.get("first_name"), u.get("last_name")) if b]
-    display_name = " ".join(name_bits) if name_bits else "—"
-    parts.append(f"Клиент: @{u.get('username') or '—'} ({display_name})")
+    # Внешнему ИИ — минимум личных данных: только имя для обращения, без фамилии и юзернейма
+    parts.append(f"Клиент: {u.get('first_name') or '—'}")
     parts.append(f"Зарегистрирован: {u.get('created_at', 'N/A')}")
 
     if u.get("is_banned"):
@@ -2012,8 +2022,8 @@ def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
     parts.append(f"Баланс: {balance_rub:.2f} ₽")
     parts.append(f"Пробный период использован: {'да' if u.get('used_trial') else 'нет'}")
 
-    if profile.get("referred_by_username"):
-        parts.append(f"Приглашён пользователем: @{profile['referred_by_username']}")
+    if profile.get("referred_by_username") is not None or u.get("referred_by"):
+        parts.append("Приглашён другим клиентом: да")
     if u.get("referral_code"):
         parts.append(f"Свой реферальный код: {u['referral_code']}")
 
@@ -2041,7 +2051,11 @@ def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
             elif (profile.get("cdn") or {}).get("active"):
                 parts.append("    CDN-пакет: не подключён")
             if k.get("sub_url"):
-                parts.append(f"    Ссылка VPN-конфигурации для импорта в приложение (Happ/INCY и т.п.), НЕ ссылка на оплату: {k['sub_url']}")
+                # Сама ссылка — доступ к VPN клиента: внешнему ИИ её не отдаём, только метку (см. _restore_links)
+                token = f"[[ССЫЛКА_КЛЮЧА_{k.get('id')}]]"
+                profile.setdefault("_links", {})[token] = k["sub_url"]
+                parts.append(f"    Ссылка VPN-конфигурации для импорта в приложение (Happ/INCY и т.п.), НЕ ссылка на оплату: {token} "
+                             "(это метка: чтобы дать клиенту ссылку, вставь метку в ответ как есть — бот заменит её настоящей ссылкой)")
             else:
                 parts.append("    Ссылка VPN-конфигурации: недоступна (ключ истёк либо ошибка получения — НЕ придумывай ссылку сам, направь в раздел «Мои ключи» в боте)")
 
@@ -2267,7 +2281,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
         async with _lock:
             _save_history_row(req.user_id, "user", req.message or "[прислал скриншот]")
             _save_history_row(req.user_id, "assistant", reply_text, response_id=response_id, escalate=escalate)
-        return ConsultResponse(reply=reply_text, escalate=escalate, response_id=response_id)
+        return ConsultResponse(reply=_restore_links(reply_text, customer_profile), escalate=escalate, response_id=response_id)
 
     messages = [{"role": "system", "content": full_system}] + history_messages
 
@@ -2518,7 +2532,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
         _save_history_row(req.user_id, "user", req.message)
         _save_history_row(req.user_id, "assistant", reply_text, response_id=response_id, escalate=escalate)
 
-    return ConsultResponse(reply=reply_text, escalate=escalate, response_id=response_id)
+    return ConsultResponse(reply=_restore_links(reply_text, customer_profile), escalate=escalate, response_id=response_id)
 
 # ===== v1.322: AI-помощник на сайте (гость и клиент) =====
 
@@ -2783,7 +2797,7 @@ async def consult_site(req: SiteConsultRequest, token: str = Depends(verify_toke
     async with _lock:
         _save_history_row(history_uid, "user", message)
         _save_history_row(history_uid, "assistant", reply, response_id=response_id, escalate=escalate)
-    return SiteConsultResponse(reply=reply, escalate=escalate, response_id=response_id, guard=guard, violations=violations)
+    return SiteConsultResponse(reply=_restore_links(reply, profile), escalate=escalate, response_id=response_id, guard=guard, violations=violations)
 
 
 class OutreachRequest(BaseModel):
@@ -2837,7 +2851,7 @@ async def generate_outreach(req: OutreachRequest, token: str = Depends(verify_to
         logger.error(f"Outreach generation error for user {req.user_id}: {e}")
         return OutreachResponse(text="")
 
-    return OutreachResponse(text=text)
+    return OutreachResponse(text=_restore_links(text, customer_profile))
 
 
 @app.post("/feedback")

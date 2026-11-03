@@ -210,7 +210,7 @@
   function start() {
     fetch('/api/public/site-ai/config?page=' + page, { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : { enabled: false }; })
-      .then(function (c) { if (c && c.enabled) { cfg = c; build(); } })
+      .then(function (c) { if (c && c.enabled) { cfg = c; build(); if (location.hash === '#ai') open(); } })
       .catch(function () { /* без помощника страница работает как обычно */ });
   }
 

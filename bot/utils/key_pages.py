@@ -83,7 +83,7 @@ def build_key_history_block(payments: Iterable[Mapping[str, Any]]) -> str:
             if delta_days > 0:
                 lines.append(f"   • {_safe(date)}: {_safe(reason)} (+{_safe(delta_days)} дн.)")
             else:
-                lines.append(f"   • {_safe(date)}: {_safe(reason)}")
+                lines.append(f"   • {_safe(date)}: {_safe(reason)}" + (f" (−{_safe(-delta_days)} дн.)" if delta_days < 0 else ""))
             continue
         tariff = payment.get('tariff_name') or 'Тариф'
         ptype = payment.get('payment_type')

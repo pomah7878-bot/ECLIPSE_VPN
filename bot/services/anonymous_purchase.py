@@ -191,7 +191,8 @@ async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str
         return {"ok": True, "message": _cdn.paid_message_short()}
 
     days = tariff.get("duration_days") or 30
-    result = await renew_key_access(key_id, days, reset_traffic=True, tariff_id=tariff_id)
+    result = await renew_key_access(key_id, days, reset_traffic=True, tariff_id=tariff_id,
+                                    source='site_payment', reference_id=payment_type)
 
     if not result.get("db_updated"):
         return {"ok": False, "message": "Не удалось продлить ключ. Обратитесь в поддержку."}
