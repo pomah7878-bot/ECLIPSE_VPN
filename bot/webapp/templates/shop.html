@@ -575,7 +575,7 @@
         </div>
 
         <div id="mainApp" class="hidden">
-        <div class="flex gap-1 bg-panel-2 rounded-2xl p-1 mb-5 max-w-md mx-auto">
+        <div id="mainTabs" class="flex gap-1 bg-panel-2 rounded-2xl p-1 mb-5 max-w-md mx-auto">
             <button id="tabBuyBtn" onclick="switchTab('buy')" class="tab-btn active flex-1 py-2.5 rounded-xl text-sm font-semibold">🛒 Купить</button>
             <button id="tabAccountBtn" onclick="switchTab('account')" class="tab-btn flex-1 py-2.5 rounded-xl text-sm font-semibold">👤 Личный кабинет</button>
         </div>
@@ -667,6 +667,8 @@
             "Выберите «Добавить подписку» — приложение само распознает скопированную ссылку из буфера обмена": "Choose \"Add subscription\" — the app will automatically detect the copied link from your clipboard",
             "Выберите «Импорт из буфера обмена» — ссылка подставится автоматически": "Choose \"Import from clipboard\" — the link will be filled in automatically",
             "Выйти": "Sign out",
+            "🔐 Способы входа": "🔐 Sign-in methods",
+            "⬅️ В личный кабинет": "⬅️ Back to account",
             "Высокая скорость": "High speed",
             "ГБ": "GB",
             "Готово!": "Done!",
@@ -1328,6 +1330,8 @@
             loadAndRenderReferralBlock();
             if (window.location.hash === '#account') {
                 switchTab('account');
+                // Покупка и ключи — в кабинете «/», здесь только способы входа: вкладки не нужны
+                document.getElementById('mainTabs').classList.add('hidden');
             }
             tryAutoClaimPendingCode();
         }
@@ -1741,7 +1745,8 @@
 
             _sessionBalanceCents = session.balance_cents || 0;
 
-            const cabinetBtn = `<a href="/" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-4 text-center">Открыть личный кабинет</a>`;
+            const cabinetBtn = `<h2 class="font-display text-lg font-bold text-center mb-4">🔐 Способы входа</h2>
+                <a href="/" class="block w-full py-3 btn-primary rounded-xl font-bold text-sm transition mb-4 text-center">⬅️ В личный кабинет</a>`;
             let linkCodeBlock = '';
             if (session.account_type !== 'telegram') {
                 linkCodeBlock = `

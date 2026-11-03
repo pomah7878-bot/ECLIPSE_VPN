@@ -576,7 +576,7 @@
             <a id="newsChannelLink" href="#" target="_blank" rel="noopener noreferrer" title="Новости канала"
                 class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2 py-1 rounded-full transition hover:bg-[color:var(--panel-2)]"
                 style="text-decoration:none;display:none;">📰</a>
-            <button onclick="openPersonalCabinet()" title="Личный кабинет"
+            <button id="openSiteBtn" onclick="openPersonalCabinet()" title="Открыть кабинет в браузере"
                 class="text-mist-dim hover:text-gold transition text-base leading-none px-1"
                 style="background:none;border:none;cursor:pointer;">🌐</button>
             <span class="bg-panel border border-[color:var(--hairline)] text-teal text-[11px] px-2.5 py-1 rounded-full flex items-center gap-1.5 font-mono">
@@ -654,6 +654,8 @@
         }
 
         const initData = tg?.initData || '';
+        // В браузере мы уже в кабинете: 🌐 вела бы на «Способы входа», а для них есть ссылка внизу
+        if (!initData) document.getElementById('openSiteBtn').style.display = 'none';
         const container = document.getElementById('app');
         let _cachedKeys = [];
         let _cachedPings = {};

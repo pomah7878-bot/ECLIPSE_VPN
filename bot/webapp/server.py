@@ -3359,7 +3359,8 @@ async def handle_oauth_callback(request: web.Request) -> web.Response:
         return resp
 
     session_value = _sign_session(account_id)
-    resp = web.HTTPFound("/shop#account")
+    # Вход — сразу в кабинет («/shop» сам переведёт туда); привязка — обратно на «Способы входа»
+    resp = web.HTTPFound("/shop#account" if link_account_id else "/shop")
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
     resp.del_cookie("oauth_state")
     resp.del_cookie("oauth_link_account_id")
