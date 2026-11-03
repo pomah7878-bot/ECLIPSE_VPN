@@ -853,7 +853,7 @@ async def edit_logo_save(message: Message, state: FSMContext):
         return
 
     from bot.utils.web_logo import build_favicons
-    build_favicons(static_dir)  # круглая иконка вкладки из нового логотипа
+    build_favicons(static_dir, force=True)  # иконка вкладки из нового логотипа
 
     from database.db_pages import update_page_custom
     update_page_custom('main', image=photo.file_id, media_type='photo')

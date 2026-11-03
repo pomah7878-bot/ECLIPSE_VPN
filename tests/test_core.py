@@ -339,17 +339,35 @@ if __name__ == "__main__":
 class WebLogoTest(unittest.TestCase):
 
     def test_round_favicon(self):
+        import time
         from PIL import Image
         from bot.utils.web_logo import build_favicons
         d = tempfile.mkdtemp()
+        ico = lambda: Image.open(os.path.join(d, "favicon-32x32.png")).convert("RGBA")
         self.assertFalse(build_favicons(d))  # логотипа нет — иконку не трогаем
-        Image.new("RGB", (300, 200), (0, 0, 0)).save(os.path.join(d, "logo.png"))
+        # квадратный логотип — круглая иконка
+        Image.new("RGB", (300, 300), (200, 30, 30)).save(os.path.join(d, "logo.png"))
         self.assertTrue(build_favicons(d))
-        with Image.open(os.path.join(d, "favicon-32x32.png")) as ico:
-            self.assertEqual(ico.size, (32, 32))
-            self.assertEqual(ico.getpixel((0, 0))[3], 0)      # угол прозрачный — иконка круглая
-            self.assertEqual(ico.getpixel((16, 16))[3], 255)  # центр непрозрачный
-        self.assertTrue(os.path.exists(os.path.join(d, "favicon.ico")))
+        self.assertEqual(ico().getpixel((0, 0))[3], 0)      # угол прозрачный
+        self.assertEqual(ico().getpixel((16, 16))[3], 255)  # центр непрозрачный
+        # вытянутая надпись — вписана целиком, края по ширине не срезаны кругом
+        os.remove(os.path.join(d, ".favicon-round2"))
+        Image.new("RGB", (600, 150), (30, 30, 200)).save(os.path.join(d, "logo.png"))
+        self.assertTrue(build_favicons(d, force=True))
+        self.assertGreater(ico().getpixel((3, 16))[3], 200)   # левый край надписи на месте (круг его срезал бы)
+        # своя иконка админа: при запуске не трогаем, при загрузке логотипа в боте — пересобираем
+        e = tempfile.mkdtemp()
+        Image.new("RGB", (300, 300), (0, 200, 0)).save(os.path.join(e, "logo.png"))
+        own = os.path.join(e, "favicon.ico")
+        Image.new("RGB", (32, 32), (1, 2, 3)).save(own, format="ICO")
+        old = time.time() - 86400
+        os.utime(own, (old, old))
+        before = open(own, "rb").read()
+        self.assertTrue(build_favicons(e))
+        self.assertEqual(open(own, "rb").read(), before)
+        self.assertTrue(build_favicons(e, force=True))
+        self.assertNotEqual(open(own, "rb").read(), before)
+
     def test_web_logo_is_small_and_rebuilt_only_when_source_newer(self):
         import tempfile
         from PIL import Image
