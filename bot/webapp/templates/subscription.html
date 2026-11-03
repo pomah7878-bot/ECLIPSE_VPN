@@ -70,6 +70,10 @@
   .appgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); column-gap:20px; }
   .amark { width:32px; height:32px; border-radius:9px; background:var(--panel2); border:1px solid var(--line); display:flex;
            align-items:center; justify-content:center; font-weight:700; color:var(--accent); flex-shrink:0; }
+  .amark img { width:100%; height:100%; border-radius:8px; object-fit:cover; }
+  .amark.tint { background:var(--panel2); }
+  .amark .glyph { width:22px; height:22px; background:var(--accent); -webkit-mask:var(--m) center/contain no-repeat; mask:var(--m) center/contain no-repeat; }
+  .amark.full { border:none; background:none; }
   .bar { padding:12px 0 4px; }
   .foot { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; padding-top:16px; margin-top:8px; border-top:1px solid var(--line); }
   .foot a { color:var(--accent); text-decoration:none; }
@@ -132,6 +136,16 @@ function apps() {
     android: [happ, incy, v2box, ['v2rayNG', 'v2rayng://install-config?url=' + enc], ['sing-box', 'sing-box://import-remote-profile?url=' + enc + '#' + name], v2raytun],
     ios: [happ, incy, ['Shadowrocket', 'shadowrocket://add/sub://' + b64 + '?remark=' + name], v2box, ['Streisand', 'streisand://import/' + enc], v2raytun],
   };
+}
+
+// иконки как в 3x-ui: у части приложений — линейные (красим в цвет темы), у остальных — родные
+const ICONS = { 'Happ': ['happ.svg', 1], 'v2rayNG': ['v2rayng.svg', 1], 'sing-box': ['sing-box.svg', 1], 'V2RayTun': ['v2raytun.svg', 1],
+                'INCY': ['incy.webp', 0], 'V2Box': ['v2box.webp', 0], 'Shadowrocket': ['shadowrocket.webp', 0], 'Streisand': ['streisand.webp', 0] };
+function appIcon(name) {
+  const ic = ICONS[name], src = ic && '/static/app-icons/' + ic[0];
+  if (!ic) return $('span', 'amark', name.charAt(0).toUpperCase());
+  if (ic[1]) { const m = $('span', 'amark tint'), g = $('span', 'glyph'); g.style.setProperty('--m', 'url("' + src + '")'); m.append(g); return m; }
+  const m = $('span', 'amark full'), img = $('img'); img.src = src; img.alt = ''; img.width = 32; img.height = 32; m.append(img); return m;
 }
 
 function render() {
@@ -222,7 +236,7 @@ function render() {
   let plat = /iphone|ipad|ipod|macintosh/i.test(navigator.userAgent) ? 'ios' : 'android';
   const drawApps = () => { grid.replaceChildren(); seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.p === plat));
     list[plat].forEach(([n, url]) => { const row = $('div', 'row'); const add = $('a', 'btn pri sm', 'Добавить'); add.href = url;
-      row.append($('span', 'amark', n.charAt(0).toUpperCase()), $('span', 'rmain rtitle', n), add); grid.append(row); }); };
+      row.append(appIcon(n), $('span', 'rmain rtitle', n), add); grid.append(row); }); };
   [['android', 'Android'], ['ios', 'iOS']].forEach(([p, l]) => { const b = $('button', '', l); b.dataset.p = p; b.onclick = () => { plat = p; drawApps(); }; seg.append(b); });
   pA.append(seg, grid, $('div', 'muted', 'Если приложение не открылось — установите его и нажмите «Добавить» ещё раз, или скопируйте ссылку подписки на вкладке «Ссылки».'));
   drawApps();
