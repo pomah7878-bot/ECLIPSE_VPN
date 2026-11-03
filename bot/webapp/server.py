@@ -3753,7 +3753,7 @@ async def handle_license_check(request: web.Request) -> web.Response:
     result = check_license_validity(license_key)
     if not result.get("valid"):
         _rl_record(f"lic-fail:{_lip}")
-        return web.json_response(result)
+        return web.json_response(_attach_license_notice(result, license_key))
 
     import re
     # v1.166: учёт установок. Бот версии 1.166+ присылает instance_id и nonce.
@@ -3781,7 +3781,23 @@ async def handle_license_check(request: web.Request) -> web.Response:
             result["signed"] = sign_license_response(result, license_key, instance_id, nonce)
         except Exception as e:
             logger.error(f"Лицензия: не удалось подписать ответ ({e}) — отправляю без подписи")
-    return web.json_response(result)
+    return web.json_response(_attach_license_notice(result, license_key))
+
+
+def _attach_license_notice(result: dict, license_key: str) -> dict:
+    """Сообщение владельца для партнёра, который не запускал бота владельца (взял пробную
+    в своём боте): уходит один раз вместе с ответом проверки лицензии, бот партнёра покажет его админам."""
+    from database.requests import get_setting, set_setting
+    note = get_setting(f"license_notice:{license_key}", "") or ""
+    if not note:
+        return result
+    set_setting(f"license_notice:{license_key}", "")
+    try:
+        from database.db_licenses import log_license_event
+        log_license_event(license_key, "offer_delivered", "через проверку лицензии")
+    except Exception:
+        pass
+    return {**result, "notice": note[:2000]}
 
 
 async def handle_license_report(request: web.Request) -> web.Response:
