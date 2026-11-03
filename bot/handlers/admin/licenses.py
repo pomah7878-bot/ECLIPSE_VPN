@@ -117,6 +117,8 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
     kb = license_detail_kb(lic["license_key"], bool(lic["is_active"]), lic["tier"])
     kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
         text="♻️ Сбросить установки", callback_data=f"license_reset_inst:{lic['license_key']}")])
+    kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
+        text="📨 Предложить купить лицензию", callback_data=f"license_offer:{lic['license_key']}")])
     _pb_on = "hide_powered_by" in enabled
     kb.inline_keyboard.insert(-1, [InlineKeyboardButton(
         text=("🏷 Право отключать метку: ✅ ЕСТЬ (нажми — забрать)" if _pb_on else "🏷 Право отключать метку: ⬜️ НЕТ (нажми — выдать)"),
@@ -126,6 +128,63 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
         await callback.answer()
     except Exception:
         pass  # на callback уже ответили в вызывающем обработчике
+
+
+def _license_offer_text(lic) -> str:
+    """Сообщение партнёру: как у автоматических напоминаний, но по выбору владельца."""
+    from database.db_licenses import is_license_expired
+    trial = str(lic.get("partner_name") or "").endswith("(пробный)")
+    date = (lic.get("expires_at") or "")[:10]
+    date = ".".join(reversed(date.split("-"))) if date else ""
+    if is_license_expired(lic):
+        return (("⛔ <b>Пробный период закончился</b>" if trial else "⛔ <b>Лицензия закончилась</b>")
+                + (f" ({date})" if date else "") + "\n\n"
+                "Платные функции в вашем боте отключены, бот работает на бесплатных. "
+                "Чтобы вернуть их, выберите тариф (кнопка ниже) и введите новый код в своём боте: "
+                "«💳 Моя лицензия» → «🔑 Ввести код лицензии».")
+    return (("⏰ <b>Пробный период заканчивается</b>" if trial else "⏰ <b>Лицензия заканчивается</b>")
+            + (f" {date}" if date else "") + "\n\n"
+            "Чтобы платные функции не отключились, выберите тариф (кнопка ниже) и введите новый код "
+            "в своём боте: «💳 Моя лицензия» → «🔑 Ввести код лицензии».")
+
+
+@router.callback_query(F.data.startswith("license_offer:") | F.data.startswith("license_offer_send:"))
+async def license_offer(callback: CallbackQuery):
+    """Владелец сам отправляет партнёру предложение купить: сначала показ, потом «Отправить»."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from database.db_licenses import get_partner_license, get_license_recipient, log_license_event
+    action, license_key = callback.data.split(":", 1)
+    lic = get_partner_license(license_key)
+    rcp = get_license_recipient(license_key) if lic else None
+    if not rcp:
+        await callback.answer("Неизвестно, кому писать: лицензия выдана вручную, а не через бота.", show_alert=True)
+        return
+    text = _license_offer_text(lic)
+    if action == "license_offer":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Отправить", callback_data=f"license_offer_send:{license_key}")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data=f"license_view:{license_key}")],
+        ])
+        await safe_edit_or_send(callback.message,
+                                f"📨 <b>Отправить {lic['partner_name']}</b> (Telegram ID {rcp['telegram_id']}):\n\n"
+                                "━━━━━━━━━━\n" + text + "\n━━━━━━━━━━\n\nПод сообщением — кнопка «💳 Купить лицензию».",
+                                reply_markup=kb)
+        await callback.answer()
+        return
+    from bot.utils.notify_kb import with_home
+    buy = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💳 Купить лицензию", callback_data="buy_license_open")]])
+    try:
+        await callback.bot.send_message(rcp["telegram_id"], text, parse_mode="HTML", reply_markup=with_home(buy))
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Предложение купить лицензию не доставлено: {e}")
+        await callback.answer("❌ Не доставлено: партнёр заблокировал бота или ни разу его не запускал.", show_alert=True)
+        return
+    log_license_event(license_key, "offer_sent", f"admin={callback.from_user.id}")
+    await callback.answer("✅ Отправлено", show_alert=True)
+    await show_license_detail(callback, None, license_key)
 
 
 @router.callback_query(F.data.startswith("license_extend:"))

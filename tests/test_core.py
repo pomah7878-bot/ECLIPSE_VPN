@@ -2051,6 +2051,41 @@ class LicenseEndNoticeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(flat[1].callback_data, "my_license_enter_code")
 
 
+class LicenseOfferTest(unittest.IsolatedAsyncioTestCase):
+    """Владелец отправляет партнёру предложение купить лицензию — показ, потом отправка."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_preview_then_send(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        import bot.handlers.admin.licenses as h
+        from database.db_licenses import issue_trial_license, create_partner_license
+        key = issue_trial_license(424242, "tg424242", 3, {"ai_assistant"})["license_key"]
+        with get_db() as c:
+            c.execute("UPDATE partner_licenses SET expires_at = '2020-01-02 00:00:00' WHERE license_key = ?", (key,))
+        cb = MagicMock(); cb.from_user.id = 1; cb.answer = AsyncMock(); cb.bot.send_message = AsyncMock()
+        with patch.object(h, "is_admin", return_value=True), \
+                patch.object(h, "safe_edit_or_send", AsyncMock()) as edit, \
+                patch.object(h, "show_license_detail", AsyncMock()):
+            cb.data = f"license_offer:{key}"
+            await h.license_offer(cb)
+            self.assertIn("Пробный период закончился", edit.call_args.args[1])
+            cb.bot.send_message.assert_not_called()  # сначала только показ
+            cb.data = f"license_offer_send:{key}"
+            await h.license_offer(cb)
+            args, kw = cb.bot.send_message.call_args
+            self.assertEqual(args[0], 424242)
+            self.assertIn("02.01.2020", args[1])
+            self.assertEqual(kw["reply_markup"].inline_keyboard[0][0].callback_data, "buy_license_open")
+            manual = create_partner_license("Ручная", {"ai_assistant"}, 30)
+            cb.bot.send_message.reset_mock()
+            cb.data = f"license_offer_send:{manual}"
+            await h.license_offer(cb)
+            cb.bot.send_message.assert_not_called()  # кому писать — неизвестно
+
+
 class SubscriptionPageTest(unittest.TestCase):
     """Ссылка подписки в браузере — страница как в 3x-ui; приложениям — прежний список."""
 

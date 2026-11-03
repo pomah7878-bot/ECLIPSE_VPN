@@ -496,6 +496,17 @@ def get_expiring_licenses_with_buyers(within_days: int = 7) -> List[Dict[str, An
         return [dict(r) for r in rows]
 
 
+def get_license_recipient(license_key: str) -> Optional[Dict[str, Any]]:
+    """Кому писать о лицензии: покупатель (через бота) или получивший пробную. None — выдана вручную."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT telegram_id, 0 AS is_trial FROM license_purchases WHERE license_key = ? "
+            "UNION ALL SELECT telegram_id, 1 AS is_trial FROM license_trials WHERE license_key = ? LIMIT 1",
+            (license_key, license_key),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 # ============================================================================
 # ПРОБНАЯ ЛИЦЕНЗИЯ (v1.179)
 # ============================================================================
