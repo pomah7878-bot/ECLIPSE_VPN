@@ -1673,7 +1673,8 @@ async def _process_payment_order_inner(
             from bot.services.key_lifecycle import renew_key_access
             _renew = None
             try:
-                _renew = await renew_key_access(vpn_key_id, days, reset_traffic=True, tariff_id=tariff_id)
+                _renew = await renew_key_access(vpn_key_id, days, reset_traffic=True, tariff_id=tariff_id,
+                                                source='payment', reference_id=str(order.get('order_id') or ''))
             except Exception as e:
                 logger.error(f"Не удалось продлить ключ {vpn_key_id} для заказа {order_id}: {e}")
             if not (_renew or {}).get('db_updated'):

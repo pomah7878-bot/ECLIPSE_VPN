@@ -3243,6 +3243,25 @@ def _zv_consume_call(call_id) -> None:
     _ZV_CALL_BINDINGS.pop(str(call_id), None)
 
 
+def _phone_calls_hour_limit() -> int:
+    """Сколько звонков подтверждения в час на весь сайт (настройка phone_calls_hour_limit, по умолчанию 100)."""
+    try:
+        from database.requests import get_setting
+        return max(1, int(get_setting("phone_calls_hour_limit", "100") or 100))
+    except Exception:
+        return 100
+
+
+async def _alert_phone_cap(cap: int) -> None:
+    from bot.services.anonymous_purchase import _alert_admins
+    await _alert_admins(
+        "⚠️ <b>Достигнут лимит звонков подтверждения на сайте</b>\n\n"
+        f"За последний час заказано {cap} звонков — новые временно отклоняются. "
+        "Если это не наплыв клиентов, кто-то пытается заказывать звонки на чужие номера. "
+        "Лимит — настройка phone_calls_hour_limit."
+    )
+
+
 async def handle_public_auth_phone_request(request: web.Request) -> web.Response:
     # v1.157: лимиты — каждый звонок стоит денег и беспокоит владельца номера
     _ip = _get_client_ip(request)
@@ -3255,6 +3274,17 @@ async def handle_public_auth_phone_request(request: web.Request) -> web.Response
         return web.json_response(
             {"error": "rate_limited", "message": "Слишком много запросов. Попробуйте позже."}, status=429
         )
+    # Общий потолок звонков на весь сайт: с множества адресов нельзя заказать сотни звонков на чужие номера
+    _cap = _phone_calls_hour_limit()
+    if not _rl_allowed("phreq-all", _cap, 3600):
+        if _rl_allowed("phreq-all-alert", 1, 3600):
+            _rl_record("phreq-all-alert")
+            asyncio.create_task(_alert_phone_cap(_cap))
+        return web.json_response(
+            {"error": "rate_limited", "message": "Подтверждение по звонку временно недоступно. Попробуйте позже или войдите другим способом."},
+            status=429,
+        )
+    _rl_record("phreq-all")
     _rl_record(f"phreq-ip:{_ip}")
     if _ph:
         _rl_record(f"phreq-ph:{_ph}")
@@ -5436,6 +5466,25 @@ async def license_gate_middleware(request: web.Request, handler):
     return await handler(request)
 
 
+# Заголовки безопасности для всех ответов сайта (setdefault — свои заголовки обработчиков сохраняются):
+# HSTS — только HTTPS (браузеры учитывают его лишь на HTTPS-ответах); nosniff — не угадывать тип файлов;
+# Referrer-Policy — коды и токены из адресной строки не уходят на чужие сайты;
+# frame-ancestors — сайт нельзя встроить в чужую страницу (кроме Telegram Web, где открывается Mini App);
+# Permissions-Policy — камера, микрофон, местоположение, USB странице не нужны.
+_SECURITY_HEADERS = {
+    "Strict-Transport-Security": "max-age=31536000",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Content-Security-Policy": "frame-ancestors 'self' https://telegram.org https://*.telegram.org",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=()",
+}
+
+
+async def _security_headers(request: web.Request, response: web.StreamResponse):
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+
+
 async def _static_js_css_revalidate(request: web.Request, response: web.StreamResponse):
     """JS и CSS сайта меняются при обновлении бота, а без Cache-Control мобильные браузеры
     держат их в кэше по своему усмотрению (после правки клиент видит старый вид).
@@ -5448,6 +5497,7 @@ def create_web_app() -> web.Application:
     """Создаёт aiohttp приложение с маршрутами WebApp."""
     app = web.Application(middlewares=[cors_middleware, license_gate_middleware, bad_input_middleware], client_max_size=12 * 1024 * 1024)
     app.on_response_prepare.append(_static_js_css_revalidate)
+    app.on_response_prepare.append(_security_headers)
     app.on_cleanup.append(_close_upstream_session)
     app.router.add_get("/api/weblink", handle_weblink)
     app.router.add_static("/static/", path=_STATIC_DIR, name="static")

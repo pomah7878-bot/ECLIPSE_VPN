@@ -9,12 +9,41 @@ from bot.services.panel_sync_coordinator import regular_panel_operation
 logger = logging.getLogger(__name__)
 
 
+# Подписи для «Истории операций» (её видит и клиент) — без внутренних id
+_AUDIT_REASONS = {
+    'payment': 'Продление после оплаты',
+    'site_payment': 'Продление после оплаты на сайте',
+    'auto_renew': 'Автопродление',
+    'admin': 'Изменение срока администратором',
+}
+
+
+def _audit_expiry(key_id: int, before: Dict[str, Any], days: int, source: str,
+                  reason: Optional[str], reference_id: Optional[str]) -> None:
+    """Пишет изменение срока ключа в key_operation_log. Ошибка записи не мешает продлению."""
+    try:
+        from database.requests import get_vpn_key_by_id, record_key_operation
+        after = get_vpn_key_by_id(key_id) or {}
+        record_key_operation(
+            key_id=key_id, user_id=int(after.get('user_id') or before.get('user_id') or 0),
+            operation_type='extend' if days > 0 else 'reduce', delta_days=days, source=source,
+            reason=reason or _AUDIT_REASONS.get(source, source), reference_type='expiry_change',
+            reference_id=reference_id,
+            expires_before=before.get('expires_at'), expires_after=after.get('expires_at'),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Журнал срока ключа {key_id} не записан: {e}")
+
+
 @regular_panel_operation
 async def renew_key_access(
     key_id: int,
     days: int,
     reset_traffic: bool = True,
     tariff_id: Optional[int] = None,
+    source: Optional[str] = None,
+    reason: Optional[str] = None,
+    reference_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Universally extends or reduces the key term and synchronizes the panel.
@@ -47,11 +76,15 @@ async def renew_key_access(
 
         paid_traffic_limit = (tariff.get('traffic_limit_gb', 0) or 0) * (1024 ** 3)
 
+    from database.requests import get_vpn_key_by_id
+    _before = get_vpn_key_by_id(key_id) or {}
     if not extend_vpn_key(key_id, days):
         logger.error(f"renew_key_access: не удалось обновить срок ключа {key_id}")
         return result
 
     result['db_updated'] = True
+    if source:  # журнал изменений срока: кто/что, на сколько, было → стало (награды пишут свой — без source)
+        _audit_expiry(key_id, _before, days, source, reason, reference_id)
 
     # Срок уже сохранён: ошибка дальше не должна всплывать, иначе заказ откроется заново и ключ продлится второй раз
     try:

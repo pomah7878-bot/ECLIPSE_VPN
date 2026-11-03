@@ -142,7 +142,7 @@ async def show_key_view(callback: CallbackQuery, state: FSMContext):
                 if delta_days > 0:
                     text += f'• <code>{dt}</code>: {reason_safe} (+{delta_days} дн.)\n'
                 else:
-                    text += f'• <code>{dt}</code>: {reason_safe}\n'
+                    text += f'• <code>{dt}</code>: {reason_safe}' + (f' (−{-delta_days} дн.)' if delta_days < 0 else '') + '\n'
                 continue
             amount = ''
             if p.get('payment_type') == 'crypto':
@@ -195,7 +195,8 @@ async def process_key_extend(message: Message, state: FSMContext):
     data = await state.get_data()
     key_id = data.get('current_key_id')
     from bot.services.key_lifecycle import renew_key_access
-    result = await renew_key_access(key_id, days, reset_traffic=True)
+    result = await renew_key_access(key_id, days, reset_traffic=True, source='admin',
+                                    reference_id=str(message.from_user.id))  # кто из админов — не показывается клиенту
     if result['db_updated']:
         action_text = f'уменьшен на {abs(days)}' if days < 0 else f'продлён на {days}'
         result_text = f'✅ Срок действия ключа {action_text} дней!'
