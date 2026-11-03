@@ -30,6 +30,8 @@ __all__ = [
     'get_latest_purchase_for_account',
     'create_oauth_exchange_code',
     'consume_oauth_exchange_code',
+    'create_email_login_code',
+    'consume_email_login_code',
     'get_or_create_placeholder_user_for_site_account',
     'get_site_account_by_placeholder_user_id',
 ]
@@ -477,6 +479,47 @@ def consume_oauth_exchange_code(code: str, code_verifier: Optional[str] = None) 
                 return None
         conn.execute("UPDATE oauth_exchange_codes SET used = 1 WHERE code = ?", (code.strip().upper(),))
         return row["account_id"]
+
+
+def create_email_login_code(email: str, ttl_minutes: int = 10) -> str:
+    """Новый 6-значный код входа по Email. Предыдущий код этого адреса перестаёт
+    действовать, счётчик попыток начинается заново."""
+    import secrets as _secrets
+    import datetime as _dt
+
+    code = f"{_secrets.randbelow(1_000_000):06d}"
+    expires_at = (_dt.datetime.utcnow() + _dt.timedelta(minutes=ttl_minutes)).strftime("%Y-%m-%d %H:%M:%S")
+    code_hash = _sign_short(f"emailcode:{email}:{code}")  # до транзакции: секрет при первом вызове пишется в базу
+    with get_db() as conn:
+        conn.execute("DELETE FROM email_login_codes WHERE expires_at <= datetime('now')")
+        conn.execute(
+            "INSERT OR REPLACE INTO email_login_codes (email, code_hash, attempts, expires_at) VALUES (?, ?, 0, ?)",
+            (email, code_hash, expires_at),
+        )
+    return code
+
+
+def consume_email_login_code(email: str, code: str, max_attempts: int = 5) -> bool:
+    """Проверяет код и «сжигает» его при успехе. После max_attempts неверных
+    вводов код удаляется — нужен новый."""
+    import hmac as _hmac
+
+    code_hash = _sign_short(f"emailcode:{email}:{code}")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT code_hash, attempts FROM email_login_codes WHERE email = ? AND expires_at > datetime('now')",
+            (email,),
+        ).fetchone()
+        if not row:
+            return False
+        if _hmac.compare_digest(row["code_hash"], code_hash):
+            conn.execute("DELETE FROM email_login_codes WHERE email = ?", (email,))
+            return True
+        if row["attempts"] + 1 >= max_attempts:
+            conn.execute("DELETE FROM email_login_codes WHERE email = ?", (email,))
+        else:
+            conn.execute("UPDATE email_login_codes SET attempts = attempts + 1 WHERE email = ?", (email,))
+        return False
 
 
 def get_or_create_placeholder_user_for_site_account(account_id: int) -> int:

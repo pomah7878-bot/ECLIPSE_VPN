@@ -588,6 +588,12 @@
                     </button>
                     <div id="phoneLoginBody" class="hidden mt-2"></div>
                 </div>
+                <div id="emailLoginSection" class="hidden">
+                    <button onclick="showEmailLoginStep()" id="emailLoginToggleBtn" class="w-full py-3 btn-secondary rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2">
+                        <span>📧</span> Продолжить по Email
+                    </button>
+                    <div id="emailLoginBody" class="hidden mt-2"></div>
+                </div>
                 <div class="flex items-center gap-3 my-3">
                     <div class="flex-1 h-px bg-[color:var(--hairline)]"></div>
                     <span class="text-[11px] text-mist-dim">или</span>
@@ -690,6 +696,10 @@
             "Войти через": "Sign in with",
             "Войти через Яндекс": "Sign in with Yandex",
             "Войти по номеру телефона": "Sign in with phone number",
+            "Продолжить по Email": "Continue with Email",
+            "Получить код": "Get code",
+            "Другая почта": "Use another email",
+            "Введите адрес почты.": "Enter your email address.",
             "Позвоните СО СВОЕГО номера на любой из указанных ниже — звонок можно сразу сбросить, он бесплатный.": "Call FROM your own number to any of the numbers below — you can hang up immediately, it's free.",
             "Ожидаем звонок…": "Waiting for the call…",
             "Все подключения": "All connections",
@@ -880,6 +890,10 @@
                 if (site.phone_login_enabled === true) {
                     const phoneSection = document.getElementById('phoneLoginSection');
                     if (phoneSection) phoneSection.classList.remove('hidden');
+                    document.getElementById('oauthButtons').classList.remove('hidden');
+                }
+                if (site.email_login_enabled === true) {
+                    document.getElementById('emailLoginSection').classList.remove('hidden');
                     document.getElementById('oauthButtons').classList.remove('hidden');
                 }
             } catch (e) { /* оставляем дефолтный текст из HTML, не критично */ }
@@ -1534,6 +1548,57 @@
             window._loginPhone = phone;
             window._loginCallId = res.call_id;
             renderPhoneVerificationUI(res, body, pollPhoneLoginVerification, '_phoneLoginPollInterval', 'checkVoiceCodeLogin');
+        }
+
+        function showEmailLoginStep() {
+            document.getElementById('emailLoginToggleBtn').classList.add('hidden');
+            const body = document.getElementById('emailLoginBody');
+            body.classList.remove('hidden');
+            body.innerHTML = `
+                <input id="emailLoginInput" type="email" placeholder="you@example.com" autocomplete="email"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2"
+                    style="outline:none;">
+                <button onclick="requestEmailLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Получить код</button>
+                <div id="emailLoginError" class="text-xs text-alert mt-2 text-center"></div>
+            `;
+        }
+
+        async function requestEmailLogin() {
+            const email = (document.getElementById('emailLoginInput').value || '').trim();
+            const errBox = document.getElementById('emailLoginError');
+            errBox.textContent = '';
+            if (!email) { errBox.textContent = 'Введите адрес почты.'; return; }
+
+            const res = await postAPISafe('account/email/start', { email });
+            if (!res.ok) {
+                errBox.textContent = res.message || 'Не удалось отправить письмо. Попробуйте позже.';
+                return;
+            }
+            window._loginEmail = email;
+            document.getElementById('emailLoginBody').innerHTML = `
+                <div class="text-xs text-mist mb-2 text-center">Код отправлен на ${escapeHtml(email)}. Он действует 10 минут.</div>
+                <input id="emailCodeInput" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2 text-center"
+                    style="outline:none;">
+                <button onclick="verifyEmailLogin()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Войти</button>
+                <button onclick="showEmailLoginStep()" class="w-full py-2 mt-1 text-xs text-mist">Другая почта</button>
+                <div id="emailCodeError" class="text-xs text-alert mt-2 text-center"></div>
+            `;
+        }
+
+        async function verifyEmailLogin() {
+            const code = (document.getElementById('emailCodeInput').value || '').trim();
+            const errBox = document.getElementById('emailCodeError');
+            errBox.textContent = '';
+            if (!code) { errBox.textContent = 'Введите код.'; return; }
+
+            const res = await postAPISafe('account/email/verify', { email: window._loginEmail, code });
+            if (res.ok) {
+                const sessionRes = await fetchAPI('account/session');
+                revealApp(sessionRes);
+            } else {
+                errBox.textContent = res.message || 'Код неверный или истёк.';
+            }
         }
 
         function renderPhoneVerificationUI(res, body, pollFn, intervalVarName, voiceCheckFnName) {

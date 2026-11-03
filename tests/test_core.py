@@ -427,6 +427,149 @@ class WebAuthAndLimiterTests(unittest.TestCase):
         self.assertIn("day:1", rl._BUCKETS)                            # суточный лимит не потерян
 
 
+class EmailLoginTests(unittest.TestCase):
+    def setUp(self):
+        from unittest import mock
+        from bot.webapp import ratelimit
+        run_migrations()
+        st.set_site_auth_method_enabled("email", True)
+        ratelimit._BUCKETS.clear()
+        with get_db() as conn:
+            conn.execute("DELETE FROM email_login_codes")
+            conn.execute("DELETE FROM site_accounts WHERE provider = 'email'")
+        self.sent = []
+        env = mock.patch.dict(os.environ, {
+            "SMTP_HOST": "smtp.example.com", "SMTP_USER": "u", "SMTP_PASSWORD": "p", "SMTP_FROM": "noreply@example.com",
+        })
+        env.start()
+        self.addCleanup(env.stop)
+        self.real_send = __import__("bot.services.email_sender", fromlist=["x"]).send_login_code
+        sender = mock.patch("bot.services.email_sender.send_login_code", lambda to, code, brand: self.sent.append((to, code)))
+        sender.start()
+        self.addCleanup(sender.stop)
+
+    def _post(self, handler, body, ip="203.0.113.7"):
+        import asyncio
+        from aiohttp.test_utils import make_mocked_request
+
+        async def run():
+            req = make_mocked_request("POST", "/", headers={"X-Forwarded-For": ip, "Content-Type": "application/json"})
+            req._read_bytes = json.dumps(body).encode()
+            return await handler(req)
+        return asyncio.run(run())
+
+    def _start(self, email="Ivan@Example.com", ip="203.0.113.7"):
+        from bot.webapp import server as sv
+        return self._post(sv.handle_public_account_email_start, {"email": email}, ip)
+
+    def _verify(self, code, **extra):
+        from bot.webapp import server as sv
+        return self._post(sv.handle_public_account_email_verify, {"email": "ivan@example.com", "code": code, **extra})
+
+    def test_normalize_email(self):
+        from bot.services.email_sender import normalize_email as n
+        self.assertEqual(n("  Ivan@Example.COM "), "ivan@example.com")
+        for bad in ("", "ivan", "a@b", "a b@example.com", "a@example.com\nBcc: x@example.com", "иван@example.com", None, 5, ["a"]):
+            self.assertIsNone(n(bad), bad)
+
+    def test_web_login_sets_session_and_burns_code(self):
+        from bot.webapp import server as sv
+        self.assertEqual(self._start().status, 200)
+        to, code = self.sent[-1]
+        self.assertEqual(to, "ivan@example.com")
+        self.assertRegex(code, r"^\d{6}$")
+        resp = self._verify(code)
+        self.assertEqual(json.loads(resp.text), {"ok": True})
+        with get_db() as conn:
+            row = conn.execute("SELECT * FROM site_accounts WHERE provider = 'email'").fetchone()
+        self.assertEqual((row["provider_user_id"], row["email"]), ("ivan@example.com", "ivan@example.com"))
+        self.assertEqual(sv._verify_session(resp.cookies["site_session"].value), row["id"])
+        self.assertEqual(self._verify(code).status, 400)  # код одноразовый
+
+    def test_same_email_on_oauth_account_is_not_merged(self):
+        from database.requests import get_or_create_site_account
+        from bot.webapp import server as sv
+        google = get_or_create_site_account("google", "g-email-test", email="ivan@example.com")
+        self._start()
+        resp = self._verify(self.sent[-1][1])
+        self.assertNotEqual(sv._verify_session(resp.cookies["site_session"].value), google["id"])
+
+    def test_app_client_gets_exchange_code_with_pkce(self):
+        import base64, hashlib
+        from bot.webapp import server as sv
+        verifier = "v" * 43
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+        self._start()
+        code = self.sent[-1][1]
+        self.assertEqual(self._verify(code, client="app").status, 400)  # без PKCE код не тратится
+        resp = self._verify(code, client="app", code_challenge=challenge)
+        self.assertNotIn("site_session", resp.cookies)
+        exchange_code = json.loads(resp.text)["exchange_code"]
+        handler = sv.handle_public_account_oauth_exchange
+        self.assertEqual(self._post(handler, {"code": exchange_code, "code_verifier": "x" * 43}).status, 400)
+        exchanged = self._post(handler, {"code": exchange_code, "code_verifier": verifier})
+        self.assertEqual(json.loads(exchanged.text), {"ok": True})
+        self.assertIn("site_session", exchanged.cookies)
+
+    def test_code_dies_after_five_wrong_attempts_and_on_expiry(self):
+        from database.requests import consume_email_login_code, create_email_login_code
+        code = create_email_login_code("a@example.com")
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(5):
+            self.assertFalse(consume_email_login_code("a@example.com", wrong))
+        self.assertFalse(consume_email_login_code("a@example.com", code))
+        code = create_email_login_code("a@example.com", ttl_minutes=-1)
+        self.assertFalse(consume_email_login_code("a@example.com", code))
+
+    def test_new_code_replaces_previous(self):
+        from database.requests import consume_email_login_code, create_email_login_code
+        old = create_email_login_code("a@example.com")
+        new = create_email_login_code("a@example.com")
+        if old != new:
+            self.assertFalse(consume_email_login_code("a@example.com", old))
+        self.assertTrue(consume_email_login_code("a@example.com", new))
+
+    def test_rate_limits_by_address_and_ip(self):
+        statuses = [self._start(ip=f"203.0.113.{i}").status for i in range(4)]
+        self.assertEqual(statuses, [200, 200, 200, 429])     # одна почта с разных IP
+        self.assertEqual(len(self.sent), 3)
+        statuses = [self._start(f"user{i}@example.com", ip="203.0.113.99").status for i in range(11)]
+        self.assertEqual(statuses, [200] * 10 + [429])       # один IP на разные почты
+        for _ in range(10):
+            self._verify("bad")
+        self.assertEqual(self._verify("bad").status, 429)    # подбор кодов с одного IP
+
+    def test_disabled_without_smtp_or_by_admin(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"SMTP_HOST": ""}):
+            self.assertEqual(self._start().status, 503)
+        st.set_site_auth_method_enabled("email", False)
+        self.addCleanup(st.set_site_auth_method_enabled, "email", True)
+        self.assertEqual(self._start().status, 503)
+        self.assertEqual(self.sent, [])
+
+    def test_send_failure_is_reported(self):
+        from unittest import mock
+        with mock.patch("bot.services.email_sender.send_login_code", side_effect=OSError("down")):
+            self.assertEqual(self._start().status, 502)
+
+    def test_smtp_message_and_tls_choice(self):
+        from unittest import mock
+        from bot.services import email_sender as es
+        with mock.patch.object(es.smtplib, "SMTP_SSL") as ssl_cls, mock.patch.object(es.smtplib, "SMTP") as plain_cls:
+            self.real_send("a@example.com", "123456", "Бренд")
+            ssl_cls.assert_called_once()
+            plain_cls.assert_not_called()
+            smtp = ssl_cls.return_value
+            smtp.login.assert_called_once_with("u", "p")
+            msg = smtp.send_message.call_args[0][0]
+            self.assertEqual(msg["To"], "a@example.com")
+            self.assertIn("123456", msg.get_content())
+            with mock.patch.dict(os.environ, {"SMTP_PORT": "587"}):
+                self.real_send("a@example.com", "123456", "Бренд")
+            plain_cls.return_value.starttls.assert_called_once()
+
+
 class CustomWebhookAmountTests(unittest.TestCase):
     def _run(self, webhook_result, order):
         import asyncio
@@ -1818,6 +1961,23 @@ class UnifiedCabinetTest(unittest.TestCase):
         self.assertEqual(owners[k1], owner_id)       # ключ со служебной личности перешёл к владельцу аккаунта
         self.assertEqual(owners[k2], real["id"])     # забранный в бот ключ не тронут
         self.assertEqual(adopt_account_purchase_keys(account["id"], owner_id), 0)  # повторно ничего не меняет
+
+    def test_key_bought_in_cabinet_belongs_to_site_account(self):
+        from database.requests import get_or_create_user
+        from database.db_accounts import get_or_create_site_account_by_phone
+        import bot.webapp.server as srv
+
+        account = get_or_create_site_account_by_phone("79990009911")
+        other = get_or_create_site_account_by_phone("79990009922")
+        stranger, _ = get_or_create_user(777000991, username="stranger")
+        owner_id = srv._resolve_site_account_internal_user_id(account)
+        with get_db() as c:
+            own = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (owner_id,)).lastrowid
+            foreign = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))", (stranger["id"],)).lastrowid
+
+        self.assertTrue(srv._verify_key_belongs_to_account(own, account))      # куплен в кабинете, без anonymous_purchases
+        self.assertFalse(srv._verify_key_belongs_to_account(foreign, account))  # чужой ключ не принимаем
+        self.assertFalse(srv._verify_key_belongs_to_account(own, other))        # другой сайт-аккаунт — тоже
 
 
 class TariffGroupsTest(unittest.TestCase):

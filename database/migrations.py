@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 169
+LATEST_VERSION = 170
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3868,6 +3868,19 @@ def migration_169(conn: sqlite3.Connection) -> None:
     logger.info("Migration v169 applied: галочки AmneziaWG на тарифах")
 
 
+def migration_170(conn: sqlite3.Connection) -> None:
+    """Вход по Email: на адрес действует один последний код, в базе — только его подпись."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS email_login_codes (
+            email TEXT PRIMARY KEY,
+            code_hash TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            expires_at TIMESTAMP NOT NULL
+        )
+    """)
+    logger.info("Migration v170 applied: email_login_codes table")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3964,6 +3977,7 @@ MIGRATIONS = {
     167: migration_167,
     168: migration_168,
     169: migration_169,
+    170: migration_170,
 }
 
 

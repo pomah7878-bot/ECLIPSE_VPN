@@ -1487,6 +1487,7 @@ SITE_AUTH_METHODS = {
     'vk': '🔷 VK OAuth',
     'code': '🔑 Вход по коду из бота',
     'phone': '📱 Вход по номеру телефона',
+    'email': '📧 Вход по Email',
 }
 
 

@@ -295,7 +295,7 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
 
 
 def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
-    """Подменю «Способы входа на сайт» — все 5 способов с переключателями."""
+    """Подменю «Способы входа на сайт» — все 6 способов с переключателями."""
     from database.requests import is_site_auth_method_enabled
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -331,6 +331,13 @@ def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text='✅ Вкл' if is_site_auth_method_enabled('phone') else '❌ Выкл',
             callback_data='admin_toggle_auth_method:phone',
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(text='📧 Вход по Email', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('email') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:email',
         ),
     )
     builder.row(back_button('admin_integrations'), home_button())

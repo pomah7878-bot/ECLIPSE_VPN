@@ -1620,6 +1620,8 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
     channel_id = get_marketing_channel_id()
     channel_url = f"https://t.me/{channel_id.lstrip('@')}" if channel_id else None
 
+    from bot.services.email_sender import is_email_configured
+
     phone_login_enabled = (
         is_site_auth_method_enabled('phone')
         and bool(get_zvonok_public_key())
@@ -1635,6 +1637,7 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "news_channel_url": channel_url,
         "code_login_enabled": is_site_auth_method_enabled('code'),
         "phone_login_enabled": phone_login_enabled,
+        "email_login_enabled": is_site_auth_method_enabled('email') and is_email_configured(),
         # Кнопки импорта в Happ/INCY/Karing — платная функция (см.
         # bot/services/license.py, GATED_FEATURES["app_import"]). Раньше
         # веб-кабинет (/ и /shop) показывал эти кнопки ВСЕГДА, когда у ключа
@@ -3254,6 +3257,10 @@ async def handle_oauth_providers(request: web.Request) -> web.Response:
     return web.json_response({"providers": get_configured_providers()})
 
 
+def _is_valid_pkce_challenge(challenge: str) -> bool:
+    return 32 <= len(challenge) <= 128 and all(ch.isalnum() or ch in "-_" for ch in challenge)
+
+
 async def handle_oauth_start(request: web.Request) -> web.Response:
     """GET /auth/{provider}/start — редирект на страницу авторизации провайдера."""
     provider = request.match_info.get("provider", "")
@@ -3284,7 +3291,7 @@ async def handle_oauth_start(request: web.Request) -> web.Response:
         resp.set_cookie("oauth_client", "app", max_age=600, httponly=True, secure=True, samesite="Lax")
         # v1.162: PKCE — приложение передаёт code_challenge (base64url от SHA-256 verifier)
         _challenge = (request.query.get("code_challenge") or "").strip()
-        if 32 <= len(_challenge) <= 128 and all(ch.isalnum() or ch in "-_" for ch in _challenge):
+        if _is_valid_pkce_challenge(_challenge):
             resp.set_cookie("oauth_challenge", _challenge, max_age=600, httponly=True, secure=True, samesite="Lax")
 
     return resp
@@ -3705,6 +3712,95 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
     session_value = _sign_session(site_account_id)
     resp = web.json_response({"ok": True, "account_type": "guest"})
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
+    return resp
+
+
+async def handle_public_account_email_start(request: web.Request) -> web.Response:
+    """POST /api/public/account/email/start — отправляет 6-значный код входа на почту.
+    Body JSON: {"email": "..."}"""
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+
+    from bot.services import email_sender
+    from database.requests import create_email_login_code, get_effective_brand_name, is_site_auth_method_enabled
+
+    if not is_site_auth_method_enabled('email') or not email_sender.is_email_configured():
+        return web.json_response(
+            {"ok": False, "error": "email_disabled", "message": "Вход по Email сейчас недоступен."}, status=503
+        )
+    email = email_sender.normalize_email(data.get("email")) if isinstance(data, dict) else None
+    if not email:
+        return web.json_response({"ok": False, "error": "invalid_email", "message": "Проверьте адрес почты."}, status=400)
+
+    # Лимит за сутки ограничивает и подбор: каждый новый код даёт ещё 5 попыток ввода
+    _ip = _get_client_ip(request)
+    if (not _rl_allowed(f"email-ip:{_ip}", 10, 3600)
+            or not _rl_allowed(f"email-to:{email}", 3, 600)
+            or not _rl_allowed(f"email-to-day:{email}", 10, 86400)):
+        return web.json_response(
+            {"ok": False, "error": "rate_limited", "message": "Слишком много запросов. Попробуйте позже."}, status=429
+        )
+    _rl_record(f"email-ip:{_ip}")
+    _rl_record(f"email-to:{email}")
+    _rl_record(f"email-to-day:{email}")
+
+    code = create_email_login_code(email)
+    try:
+        await asyncio.to_thread(email_sender.send_login_code, email, code, get_effective_brand_name())
+    except Exception as e:
+        logger.error(f"Не удалось отправить код входа на почту: {e}")
+        return web.json_response(
+            {"ok": False, "error": "send_failed", "message": "Не удалось отправить письмо. Попробуйте позже."}, status=502
+        )
+    return web.json_response({"ok": True, "expires_in": 600})
+
+
+async def handle_public_account_email_verify(request: web.Request) -> web.Response:
+    """POST /api/public/account/email/verify — вход по коду с почты. Аккаунт всегда
+    свой (provider='email'): с аккаунтами Google/Яндекс/VK и Telegram с той же почтой
+    не объединяется, привязка — обычными способами из кабинета.
+    Body JSON: {"email": "...", "code": "123456"}; приложение добавляет
+    "client": "app" и "code_challenge" (PKCE) и получает exchange_code вместо cookie."""
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"ok": False, "error": "invalid_json"}, status=400)
+
+    from bot.services.email_sender import normalize_email
+    from database.requests import (
+        consume_email_login_code, create_oauth_exchange_code, get_or_create_site_account, is_site_auth_method_enabled,
+    )
+
+    is_app_client = data.get("client") == "app"
+    code_challenge = str(data.get("code_challenge") or "").strip()
+    if is_app_client and not _is_valid_pkce_challenge(code_challenge):
+        return web.json_response({"ok": False, "error": "invalid_challenge", "message": "Обновите приложение."}, status=400)
+
+    _ip = _get_client_ip(request)
+    if not _rl_allowed(f"email-fail:{_ip}", 10, 600):
+        return web.json_response(
+            {"ok": False, "error": "rate_limited", "message": "Слишком много неудачных попыток. Попробуйте через 10 минут."},
+            status=429,
+        )
+    email = normalize_email(data.get("email"))
+    code = str(data.get("code") or "").strip()
+    if not is_site_auth_method_enabled('email') or not email or not consume_email_login_code(email, code):
+        _rl_record(f"email-fail:{_ip}")
+        return web.json_response({"ok": False, "error": "invalid_code", "message": "Код неверный или истёк."}, status=400)
+
+    account = get_or_create_site_account(
+        "email", email, email=email, referred_by_code=request.cookies.get("site_ref_code"),
+    )
+    if is_app_client:
+        return web.json_response({
+            "ok": True, "exchange_code": create_oauth_exchange_code(account["id"], code_challenge=code_challenge),
+        })
+    resp = web.json_response({"ok": True})
+    resp.set_cookie("site_session", _sign_session(account["id"]), max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
     return resp
 
 
@@ -4341,18 +4437,25 @@ async def handle_public_account_logout(request: web.Request) -> web.Response:
 
 def _verify_key_belongs_to_account(key_id: int, account: dict) -> bool:
     """Проверяет, что ключ реально принадлежит этому аккаунту личного
-    кабинета — либо через telegram_id (существующие клиенты бота), либо
-    через anonymous_purchases (OAuth/гостевые покупки с сайта)."""
+    кабинета — через telegram_id (существующие клиенты бота), через
+    anonymous_purchases (OAuth/гостевые покупки с сайта) или через служебную
+    личность сайт-аккаунта (ключи, купленные в кабинете через /api/pay/create)."""
     if account.get("telegram_id"):
         from database.requests import get_key_details_by_id
         key = get_key_details_by_id(key_id)
         return bool(key and key.get("telegram_id") == account["telegram_id"])
 
     from database.connection import get_db
+    owner_user_id = _resolve_site_account_internal_user_id(account)
     with get_db() as conn:
         row = conn.execute(
             "SELECT 1 FROM anonymous_purchases WHERE site_account_id = ? AND vpn_key_id = ? LIMIT 1",
             (account["id"], key_id),
+        ).fetchone()
+        if row is not None:
+            return True
+        row = conn.execute(
+            "SELECT 1 FROM vpn_keys WHERE id = ? AND user_id = ? LIMIT 1", (key_id, owner_user_id)
         ).fetchone()
         return row is not None
 
@@ -5773,6 +5876,8 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/link-phone-check", handle_public_account_link_phone_check)
     app.router.add_post("/api/public/account/session-login", handle_public_account_session_login)
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
+    app.router.add_post("/api/public/account/email/start", handle_public_account_email_start)
+    app.router.add_post("/api/public/account/email/verify", handle_public_account_email_verify)
     app.router.add_post("/api/license/check", handle_license_check)
     app.router.add_post("/api/license/report", handle_license_report)
     app.router.add_post("/api/license/trial", handle_license_trial)
