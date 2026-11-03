@@ -215,6 +215,112 @@
             }
             body[data-theme="aurora"] #tariffList > :last-child:nth-child(odd) { grid-column: 1 / -1; }
         }
+
+        /* ---------- Тема "pop" → POP CANDY (сочные цвета, плавные анимации) ---------- */
+        body[data-theme="pop"] {
+            --void: #120A24;
+            --panel: #1E1238;
+            --panel-2: #2A1A4D;
+            --hairline: rgba(255,120,220,0.18);
+            --gold: #FF4FB8;
+            --gold-bright: #FFD23F;
+            --teal: #3DF5E0;
+            --alert: #FF5A5F;
+            --amber: #FFB020;
+            --ink: #FFF6FD;
+            --mist: #C3B2E6;
+            --mist-dim: #8470AE;
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(55% 35% at 10% 0%, rgba(255,79,184,0.32), transparent 70%),
+                        radial-gradient(50% 35% at 95% 10%, rgba(61,245,224,0.22), transparent 70%),
+                        radial-gradient(60% 40% at 50% 100%, rgba(255,210,63,0.16), transparent 70%),
+                        var(--void);
+            background-attachment: fixed;
+        }
+        /* Плавающее пятно вместо короны */
+        body[data-theme="pop"] .corona-glow {
+            width: 320px; height: 320px; top: -90px;
+            background: radial-gradient(circle, rgba(255,79,184,0.35), rgba(124,92,255,0.18) 45%, transparent 70%);
+            animation: popFloat 9s ease-in-out infinite;
+        }
+        body[data-theme="pop"] .card, body[data-theme="pop"] .feature-chip {
+            background: linear-gradient(160deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01)), var(--panel);
+            border: 1px solid var(--hairline);
+            box-shadow: 0 14px 34px -18px rgba(255,79,184,0.45);
+            transition: transform 0.35s cubic-bezier(.34,1.56,.64,1), box-shadow 0.35s ease, border-color 0.35s ease;
+        }
+        body[data-theme="pop"] .card { animation: popIn 0.6s cubic-bezier(.34,1.56,.64,1) backwards; }
+        body[data-theme="pop"] .feature-chip { animation: popIn 0.5s cubic-bezier(.34,1.56,.64,1) backwards; }
+        body[data-theme="pop"] .feature-chip:nth-child(2) { animation-delay: 0.08s; }
+        body[data-theme="pop"] .feature-chip:nth-child(3) { animation-delay: 0.16s; }
+        body[data-theme="pop"] .feature-chip:hover { transform: translateY(-2px) rotate(-1.5deg); border-color: rgba(255,210,63,0.6); }
+        body[data-theme="pop"] .btn-primary {
+            background: linear-gradient(120deg, #FF4FB8, #FF8A3D, #FFD23F, #FF4FB8);
+            background-size: 300% 100%;
+            color: #2A0A1F;
+            font-weight: 800;
+            border-radius: 999px;
+            box-shadow: 0 10px 26px -10px rgba(255,79,184,0.8);
+            animation: popIn 0.5s cubic-bezier(.34,1.56,.64,1) backwards, popShine 6s ease-in-out infinite;
+            transition: transform 0.3s cubic-bezier(.34,1.56,.64,1), box-shadow 0.3s ease, filter 0.2s ease;
+        }
+        body[data-theme="pop"] .btn-primary:hover { filter: none; transform: translateY(-2px) scale(1.03); box-shadow: 0 16px 32px -12px rgba(255,138,61,0.9); }
+        body[data-theme="pop"] .btn-primary:active { transform: scale(0.96); }
+        body[data-theme="pop"] .btn-secondary {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--hairline);
+            border-radius: 999px;
+            transition: transform 0.3s cubic-bezier(.34,1.56,.64,1), background 0.25s ease, border-color 0.25s ease;
+        }
+        body[data-theme="pop"] .btn-secondary:hover { background: rgba(61,245,224,0.1); border-color: rgba(61,245,224,0.55); transform: translateY(-1px); }
+        body[data-theme="pop"] .tariff-card {
+            border-radius: 22px !important;
+            animation: popIn 0.6s cubic-bezier(.34,1.56,.64,1) backwards;
+        }
+        body[data-theme="pop"] #tariffList > :nth-child(2) { animation-delay: 0.07s; }
+        body[data-theme="pop"] #tariffList > :nth-child(3) { animation-delay: 0.14s; }
+        body[data-theme="pop"] #tariffList > :nth-child(4) { animation-delay: 0.21s; }
+        body[data-theme="pop"] #tariffList > :nth-child(n+5) { animation-delay: 0.28s; }
+        body[data-theme="pop"] .tariff-card:hover {
+            border-color: rgba(255,210,63,0.7);
+            transform: translateY(-4px) scale(1.015);
+            box-shadow: 0 18px 36px -16px rgba(255,79,184,0.6);
+        }
+        body[data-theme="pop"] .tariff-card:active { transform: scale(0.97); }
+        body[data-theme="pop"] .rounded-xl { border-radius: 18px; }
+        body[data-theme="pop"] .rounded-2xl { border-radius: 24px; }
+        body[data-theme="pop"] .rounded-3xl, body[data-theme="pop"] .rounded-t-3xl { border-radius: 30px; }
+        body[data-theme="pop"] #brandHeader {
+            font-weight: 800;
+            background: linear-gradient(90deg, #FF4FB8, #FFD23F, #3DF5E0, #FF4FB8);
+            background-size: 300% 100%;
+            -webkit-background-clip: text; background-clip: text;
+            color: transparent;
+            animation: popShine 8s linear infinite;
+        }
+        body[data-theme="pop"] .traffic-fill { background: linear-gradient(90deg, #FF4FB8, #FFD23F); }
+        body[data-theme="pop"] .tab-btn.active { background: linear-gradient(120deg, rgba(255,79,184,0.25), rgba(255,210,63,0.2)); color: var(--gold-bright); }
+        body[data-theme="pop"] .sub-url-box:hover { border-color: rgba(255,79,184,0.55); background: var(--panel-2); }
+        body[data-theme="pop"] #toast { background: rgba(30,18,56,0.97); border-radius: 999px; border-color: rgba(255,79,184,0.4); }
+        @keyframes popIn {
+            0% { opacity: 0; transform: translateY(14px) scale(0.94); }
+            100% { opacity: 1; transform: none; }
+        }
+        @keyframes popShine { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        @keyframes popFloat {
+            0%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+            50% { transform: translateX(-46%) translateY(18px) scale(1.08); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            body[data-theme="pop"] .corona-glow, body[data-theme="pop"] .card, body[data-theme="pop"] .feature-chip,
+            body[data-theme="pop"] .btn-primary, body[data-theme="pop"] .btn-secondary,
+            body[data-theme="pop"] .tariff-card, body[data-theme="pop"] #brandHeader {
+                animation: none;
+                transition: none;
+            }
+            body[data-theme="pop"] .feature-chip:hover, body[data-theme="pop"] .tariff-card:hover,
+            body[data-theme="pop"] .btn-primary:hover, body[data-theme="pop"] .btn-secondary:hover { transform: none; }
+        }
         * { box-sizing: border-box; }
         body {
             background-color: var(--void);
