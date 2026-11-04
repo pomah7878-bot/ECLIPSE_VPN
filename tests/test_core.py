@@ -2013,6 +2013,10 @@ class ConsultClientRuleTest(unittest.TestCase):
         from unittest.mock import patch
         with patch.object(openai, "AsyncOpenAI", lambda *a, **k: None):
             import ai_support_main as a
+        history = [{"role": "user", "content": "вопрос"}]
+        self.assertIs(a._with_client_rule(history, None), history)
+        self.assertIn("НЕ отправляй", a._with_client_rule(history, "app")[-1]["content"])
+        self.assertEqual(history[-1]["content"], "вопрос")  # в историю приписка не попадает
         self.assertEqual(a._kb_tool_text("статья", None), "статья")
         self.assertTrue(a._kb_tool_text("статья", "app").endswith(a.APP_CLIENT_PROMPT))
 
