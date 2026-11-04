@@ -114,7 +114,7 @@ def get_license_bot_username() -> str:
     команда /buy_license. Используется для диплинков "Купить/продлить"
     в панели партнёра, чтобы отправить его оформлять покупку именно
     туда, а не в его собственный бот (там нет тарифов на лицензии)."""
-    return os.environ.get("LICENSE_BOT_USERNAME", "eclipse_unlimited_bot").lstrip("@")
+    return os.environ.get("LICENSE_BOT_USERNAME", "vless_keysvpn_bot").lstrip("@")
 
 
 def features_to_str(features) -> str:
