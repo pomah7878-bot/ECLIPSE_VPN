@@ -2165,6 +2165,12 @@ class ConsultClientRuleTest(unittest.TestCase):
         self.assertEqual(history[-1]["content"], "вопрос")  # в историю приписка не попадает
         self.assertEqual(a._kb_tool_text("статья", None), "статья")
         self.assertTrue(a._kb_tool_text("статья", "app").endswith(a.APP_CLIENT_PROMPT))
+        # сборка для Google Play: без покупок и баланса, остальные правила те же
+        play = a._kb_tool_text("статья", "app_play")
+        self.assertTrue(play.endswith(a.APP_PLAY_PROMPT))
+        self.assertIn("НЕ отправляй", play)
+        for sold in ("оплата с баланса", "Мой баланс", "История платежей", "Мои ключи", "большим числом устройств"):
+            self.assertNotIn(sold, play)
 
 
 class OAuthChooseAccountTest(unittest.TestCase):
