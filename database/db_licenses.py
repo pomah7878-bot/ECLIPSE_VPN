@@ -61,7 +61,10 @@ def find_partner_license_key_by_order(order_id: str) -> Optional[str]:
 
 def list_partner_licenses() -> List[Dict[str, Any]]:
     with get_db() as conn:
-        rows = conn.execute("SELECT * FROM partner_licenses ORDER BY created_at DESC").fetchall()
+        # новые установки сверху, ещё не установленные после них
+        rows = conn.execute(
+            "SELECT * FROM partner_licenses ORDER BY install_no IS NULL, install_no DESC, created_at DESC"
+        ).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -438,6 +441,13 @@ def register_activation(license_key: str, instance_id: str, ip: str = "", stale_
             "INSERT INTO license_activations (license_key, instance_id, last_ip) VALUES (?, ?, ?)",
             (key, instance_id, ip),
         )
+        if not instance_id.startswith("legacy-"):
+            # номер остаётся и после сброса установок или переезда партнёра
+            conn.execute(
+                "UPDATE partner_licenses SET install_no = "
+                "(SELECT COALESCE(MAX(install_no), 0) + 1 FROM partner_licenses) "
+                "WHERE license_key = ? AND install_no IS NULL", (key,),
+            )
         conn.commit()
         return True, busy + 1
 

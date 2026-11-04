@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 172
+LATEST_VERSION = 173
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3896,6 +3896,18 @@ def migration_172(conn: sqlite3.Connection) -> None:
     logger.info("Migration v172 applied: license_activations.bot_*, owner_*, clients, active_keys")
 
 
+def migration_173(conn: sqlite3.Connection) -> None:
+    """Постоянный номер лицензии по дате первой установки."""
+    conn.execute("ALTER TABLE partner_licenses ADD COLUMN install_no INTEGER")
+    rows = conn.execute(
+        "SELECT license_key FROM license_activations WHERE instance_id NOT LIKE 'legacy-%' "
+        "GROUP BY license_key ORDER BY MIN(first_seen), license_key"
+    ).fetchall()
+    for number, row in enumerate(rows, 1):
+        conn.execute("UPDATE partner_licenses SET install_no = ? WHERE license_key = ?", (number, row[0]))
+    logger.info("Migration v173 applied: partner_licenses.install_no")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3995,6 +4007,7 @@ MIGRATIONS = {
     170: migration_170,
     171: migration_171,
     172: migration_172,
+    173: migration_173,
 }
 
 

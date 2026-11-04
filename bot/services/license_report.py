@@ -176,7 +176,8 @@ def license_list_title(lic: dict, activations: List[dict]) -> str:
     if str(lic.get("partner_name") or "").endswith("(пробный)") and install.get("bot_username"):
         name += " (пробный)"
     clients = f" · {install['clients']} кл." if install.get("clients") is not None else ""
-    return f"{install_mark(activations)} {name}{clients}"
+    number = f"№{lic['install_no']} " if lic.get("install_no") else ""
+    return f"{number}{install_mark(activations)} {name}{clients}"
 
 
 def format_install_block(lic: dict, activations: List[dict]) -> str:
@@ -187,7 +188,9 @@ def format_install_block(lic: dict, activations: List[dict]) -> str:
     if not install:
         return "⚪ <b>Не установлена:</b> ключ ещё не вводили ни в одном боте"
     state = "🟢 <b>Работает</b>" if _is_live(install) else "🔴 <b>Молчит</b>"
-    lines = [f"{state}, последняя связь {escape(str(install.get('last_seen')))} UTC"]
+    number = f"Установка №{lic['install_no']}, " if lic.get("install_no") else "Установлена "
+    lines = [f"{number}{escape(str(install.get('first_seen')))} UTC",
+             f"{state}, последняя связь {escape(str(install.get('last_seen')))} UTC"]
     if install.get("bot_username"):
         title = f" ({escape(str(install['bot_name']))})" if install.get("bot_name") else ""
         lines.append(f"🤖 Бот: @{escape(str(install['bot_username']))}{title}")

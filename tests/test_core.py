@@ -1028,6 +1028,9 @@ class LicenseInstallTest(unittest.IsolatedAsyncioTestCase):
         acts = list_activations(key)
         title = lr.license_list_title(lic, acts)
         self.assertIn("🟢 @partner_vpn_bot (пробный)", title)
+        lic["install_no"] = 7
+        self.assertTrue(lr.license_list_title(lic, acts).startswith("№7 🟢"))
+        self.assertIn("Установка №7", lr.format_install_block(lic, acts))
         card = lr.format_install_block(lic, acts)
         self.assertIn("🟢 <b>Работает</b>", card)
         self.assertIn("Партнёр &lt;VPN&gt;", card)  # имя бота партнёра не ломает разметку
@@ -1045,6 +1048,39 @@ class LicenseInstallTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("🔴", lr.license_list_title(lic, list_activations(key)))
 
         self.assertFalse(lr.record_report(key, "unknown-inst", "", info=info))  # чужая установка не записывается
+
+
+class LicenseNumberTest(unittest.TestCase):
+    """Номер даётся один раз при первой установке и не меняется."""
+
+    def test_number_follows_first_install(self):
+        from database.db_licenses import (
+            create_partner_license, list_partner_licenses, register_activation, reset_activations,
+        )
+
+        run_migrations()
+
+        def number(key):
+            return next(l["install_no"] for l in list_partner_licenses() if l["license_key"] == key)
+
+        first, second, unused = (create_partner_license(n, set(), 30) for n in ("A", "B", "C"))
+        register_activation(second, "legacy-203.0.113.9", "203.0.113.9")
+        self.assertIsNone(number(second))  # старая версия бота номер не получает
+
+        register_activation(first, "num-inst-0001", "203.0.113.1")
+        one = number(first)
+        register_activation(second, "num-inst-0002", "203.0.113.2")
+        self.assertEqual(number(second), one + 1)
+
+        register_activation(first, "num-inst-0003", "203.0.113.3")
+        reset_activations(first)
+        register_activation(first, "num-inst-0004", "203.0.113.4")
+        self.assertEqual(number(first), one)
+
+        order = [l["license_key"] for l in list_partner_licenses()]
+        self.assertLess(order.index(second), order.index(first))
+        self.assertLess(order.index(first), order.index(unused))
+        self.assertIsNone(number(unused))
 
 
 class LicenseExtendTest(unittest.TestCase):
