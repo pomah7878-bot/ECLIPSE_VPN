@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 170
+LATEST_VERSION = 171
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3881,6 +3881,13 @@ def migration_170(conn: sqlite3.Connection) -> None:
     logger.info("Migration v170 applied: email_login_codes table")
 
 
+def migration_171(conn: sqlite3.Connection) -> None:
+    """Метка источника: клиент и платёж из приложения."""
+    conn.execute("ALTER TABLE users ADD COLUMN from_app INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE payments ADD COLUMN from_app INTEGER NOT NULL DEFAULT 0")
+    logger.info("Migration v171 applied: users.from_app, payments.from_app")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3978,6 +3985,7 @@ MIGRATIONS = {
     168: migration_168,
     169: migration_169,
     170: migration_170,
+    171: migration_171,
 }
 
 

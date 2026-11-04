@@ -966,6 +966,13 @@ async def _guarded_purchase(guard_key, coro) -> web.Response:
         end_purchase(guard_key, done)
 
 
+def _mark_app_client(request: web.Request, user_id: int, order_id: Optional[str] = None) -> None:
+    """Метка для админа, не проверка доступа: поддельный заголовок даст только лишнюю метку."""
+    if request.headers.get("X-Eclipse-App") == "1":
+        from database.db_payments import mark_app_client
+        mark_app_client(user_id, order_id)
+
+
 async def _handle_pay_create_impl(request: web.Request) -> web.Response:
     """POST /api/pay/create — создаёт заказ на покупку нового ключа или
     продление существующего. По умолчанию — QR-платёж YooKassa; если
@@ -1023,6 +1030,7 @@ async def _handle_pay_create_impl(request: web.Request) -> web.Response:
                 user_id=user_id, tariff_id=tariff["id"], payment_type="balance",
                 vpn_key_id=int(vpn_key_id) if vpn_key_id else None,
             )
+            _mark_app_client(request, user_id, order_id)
 
             quote = prepare_order_pricing(
                 order_id=order_id, user_id=user_id, tariff=tariff,
@@ -1100,6 +1108,7 @@ async def _handle_pay_create_impl(request: web.Request) -> web.Response:
             user_id=user_id, tariff_id=tariff["id"], payment_type="yookassa_qr",
             vpn_key_id=int(vpn_key_id) if vpn_key_id else None,
         )
+        _mark_app_client(request, user_id, order_id)
 
         quote = prepare_order_pricing(
             order_id=order_id, user_id=user_id, tariff=tariff,
@@ -1284,6 +1293,7 @@ async def handle_balance_topup(request: web.Request) -> web.Response:
     if not user_id:
         return web.json_response({"error": "user_not_found"}, status=404)
     _, order_id = create_pending_order(user_id=user_id, tariff_id=None, payment_type="yookassa_qr", vpn_key_id=None)
+    _mark_app_client(request, user_id, order_id)
     with get_db() as conn:
         conn.execute("UPDATE payments SET final_amount_cents = ? WHERE order_id = ?", (amount_rub * 100, order_id))
 
@@ -3270,6 +3280,7 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
         result = await provision_anonymous_vpn_key(trial_tariff_id, order_id, site_account_id=account_id)
         save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
         mark_anonymous_purchase_paid(order_id, "trial")  # без реального платежа, просто маркер завершения
+        _mark_app_client(request, result["placeholder_user_id"])
         _trial_rate_limit_record(client_ip)  # v1.157: считаем и успешные выдачи (раньше — только провалы капчи)
 
         if account.get("telegram_id"):
@@ -3296,6 +3307,7 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
                 "order_id": order_id,
                 "user_id": None,
                 "_site_buyer_label": buyer_label,
+                "from_app": request.headers.get("X-Eclipse-App") == "1",
                 "_payment_action": "trial",
                 "tariff_id": trial_tariff_id,
                 "tariff_name": trial_tariff.get("name") if trial_tariff else "—",

@@ -644,6 +644,14 @@ def create_paid_order_external(
         logger.error(f"Ошибка создания external order {order_id}: {e}")
         return False
 
+def mark_app_client(user_id: int, order_id: Optional[str] = None) -> None:
+    """Запоминает, что клиент (и этот платёж) пришёл из приложения."""
+    with get_db() as conn:
+        conn.execute("UPDATE users SET from_app = 1 WHERE id = ?", (user_id,))
+        if order_id:
+            conn.execute("UPDATE payments SET from_app = 1 WHERE order_id = ?", (order_id,))
+
+
 def find_order_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
     """
     Finds payment by order_id.

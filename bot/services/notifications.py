@@ -426,6 +426,8 @@ async def notify_admins_payment(bot: Bot, order: Dict[str, Any]) -> None:
             lines.append(f'👤 Покупатель: {escape_html(str(order.get("_site_buyer_label")))}')
         else:
             lines.append(f'👤 Пользователь: ID {user_id_internal or "?"}')
+        if order.get('from_app'):
+            lines.append('📲 Источник: приложение')
 
         # We show the host only for a real renewal of an existing key.
         if action == 'renewal' and server_name != 'Не выбран':

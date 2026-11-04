@@ -167,6 +167,8 @@ def _format_user_card(user: dict) -> tuple[str, any]:
         else:
             lines.append('👤 Username: _не указан_')
         lines.append(f'📱 Telegram ID: <code>{telegram_id}</code>')
+    if user.get('from_app'):
+        lines.append('📲 Клиент приложения')
     if int(telegram_id) < 0:
         lines.append('📵 Статус доставки: <b>нет Telegram — сообщения не доставляются</b>')
     elif is_bot_blocked:

@@ -2005,6 +2005,27 @@ class TrialNewClientsTest(unittest.TestCase):
         self.assertFalse(srv._site_account_is_new_client(bought))
 
 
+class AppClientLabelTest(unittest.TestCase):
+    """Метка стоит и на клиенте, и на платеже, остальных не касается."""
+
+    def test_label_reaches_order_and_card(self):
+        from database.requests import get_or_create_user, get_user_by_id, create_pending_order, find_order_by_order_id
+        from database.db_payments import mark_app_client
+        from bot.handlers.admin.users_manage import _format_user_card
+
+        run_migrations()
+        ours = get_or_create_user(990071)[0]["id"]
+        other = get_or_create_user(990072)[0]["id"]
+        _, marked = create_pending_order(user_id=ours, tariff_id=None, payment_type="yookassa_qr")
+        _, plain = create_pending_order(user_id=ours, tariff_id=None, payment_type="yookassa_qr")
+        mark_app_client(ours, marked)
+
+        self.assertEqual(find_order_by_order_id(marked)["from_app"], 1)
+        self.assertEqual(find_order_by_order_id(plain)["from_app"], 0)  # старый платёж из бота остаётся без метки
+        self.assertIn("Клиент приложения", _format_user_card(get_user_by_id(ours))[0])
+        self.assertNotIn("Клиент приложения", _format_user_card(get_user_by_id(other))[0])
+
+
 class ConsultClientRuleTest(unittest.TestCase):
     """Статья из поиска не должна перекрывать правило клиента, остальным она приходит как есть."""
 
