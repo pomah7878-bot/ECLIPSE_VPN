@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Вход в приложение</title>
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<style>
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+       background: #0b0b0f; color: #e8e6e3; margin: 0; padding: 24px 16px;
+       display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.card { max-width: 420px; width: 100%; text-align: center; }
+.logo { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 18px; display: block; }
+h1 { font-size: 22px; margin: 0 0 8px; }
+p { color: #a8a8b4; font-size: 15px; line-height: 1.5; margin: 0 0 22px; }
+.btn { display: block; padding: 16px; border-radius: 14px; font-size: 16px; font-weight: 600;
+       margin: 10px 0; text-decoration: none; }
+.gold { background: linear-gradient(135deg, #d69e4a, #b8802f); color: #16141a; }
+.ghost { background: #1a1a22; color: #cfcdd6; border: 1px solid #2a2a34; }
+code { color: #d69e4a; font-size: 18px; }
+</style>
+</head>
+<body>
+<div class="card">
+    <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="" class="logo">
+    <h1 id="title">Вход в приложение</h1>
+    <p id="text">Если приложение не открылось, нажмите кнопку ниже.</p>
+    <a class="btn gold" id="open" href="#">Открыть приложение</a>
+    <a class="btn ghost" href="/app">Скачать приложение</a>
+    <p id="hint"></p>
+</div>
+<script>
+(function () {
+    // код передаётся после # и не уходит на сервер
+    var code = decodeURIComponent(location.hash.slice(1));
+    if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) {
+        document.getElementById('title').textContent = 'Ссылка устарела';
+        document.getElementById('text').textContent = 'Откройте бота и получите новую ссылку командой /app.';
+        document.getElementById('open').style.display = 'none';
+        return;
+    }
+    var link = 'eclipsevpn://bot-login?code=' + encodeURIComponent(code);
+    document.getElementById('open').href = link;
+    document.getElementById('hint').innerHTML = 'Или введите в приложении код: <code></code>';
+    document.querySelector('#hint code').textContent = code;
+    setTimeout(function () { location.href = link; }, 300);
+})();
+</script>
+</body>
+</html>

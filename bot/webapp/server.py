@@ -5819,6 +5819,15 @@ async def handle_app_page(request: web.Request) -> web.Response:
     )
 
 
+async def handle_app_login_page(request: web.Request) -> web.Response:
+    """GET /app/login — мост из кнопки бота в приложение: Telegram не открывает
+    свои схемы ссылок напрямую. Код лежит после # и на сервер не приходит."""
+    from database.requests import get_effective_own_app_url
+    if not get_effective_own_app_url():
+        return web.Response(text="404: Not Found", status=404)
+    return web.FileResponse(os.path.join(_TEMPLATES_DIR, "app_login.html"))
+
+
 # ============================================================
 # CORS: разрешаем запросы с собственного домена WebApp
 # ============================================================
@@ -5972,6 +5981,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/", handle_index)
     app.router.add_get("/import", handle_import)
     app.router.add_get("/app", handle_app_page)
+    app.router.add_get("/app/login", handle_app_login_page)
     app.router.add_get("/api/keys", handle_keys)
     app.router.add_get("/api/key/{key_id}/inbounds", handle_key_inbounds)
     app.router.add_post("/api/key/{key_id}/cdn/buy", handle_key_cdn_buy)

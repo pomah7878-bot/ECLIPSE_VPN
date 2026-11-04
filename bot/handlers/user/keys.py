@@ -65,6 +65,9 @@ async def _render_my_keys_page(target, telegram_id: int, force_new: bool = False
     if bonus_days:
         my_keys_append_buttons.append([InlineKeyboardButton(
             text=f'📱 Подтвердить номер · +{bonus_days} дн. к подписке', callback_data='phone_bonus')])
+    from bot.handlers.user.client_app import app_site_url
+    if app_site_url():
+        my_keys_append_buttons.append([InlineKeyboardButton(text='📱 Перейти в приложение', callback_data='client_app')])
     if get_effective_webapp_url():
         my_keys_append_buttons.append([InlineKeyboardButton(text='🌐 Управлять на сайте', callback_data='site_login_code')])
     my_keys_append_buttons.append([InlineKeyboardButton(text='🈴 На главную', callback_data='start')])

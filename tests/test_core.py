@@ -1050,6 +1050,25 @@ class LicenseInstallTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(lr.record_report(key, "unknown-inst", "", info=info))  # чужая установка не записывается
 
 
+class ClientAppScreenTest(unittest.TestCase):
+    """Раздел приложения есть только там, где оно настроено, и не шлёт код на сервер."""
+
+    def test_only_with_own_app_and_code_after_hash(self):
+        from unittest.mock import patch
+        from bot.handlers.user import client_app as ca
+
+        with patch("database.requests.get_effective_webapp_url", return_value="https://example.com/"):
+            with patch("database.requests.get_effective_own_app_url", return_value=""):
+                self.assertIsNone(ca.app_site_url())
+            with patch("database.requests.get_effective_own_app_url", return_value="https://example.com/x"):
+                self.assertEqual(ca.app_site_url(), "https://example.com")
+
+        text, kb = ca.app_screen("https://example.com", "ABCD-EFGH")
+        self.assertIn("<code>ABCD-EFGH</code>", text)
+        urls = [b.url for row in kb.inline_keyboard for b in row if b.url]
+        self.assertEqual(urls, ["https://example.com/app", "https://example.com/app/login#ABCD-EFGH"])
+
+
 class LicenseNumberTest(unittest.TestCase):
     """Номер даётся один раз при первой установке и не меняется."""
 
