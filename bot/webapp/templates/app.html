@@ -9,8 +9,8 @@
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
        background: #0b0b0f; color: #e8e6e3; margin: 0; padding: 24px 16px;
-       display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-.card { max-width: 420px; width: 100%; text-align: center; }
+       display: flex; justify-content: center; min-height: 100vh; }
+.card { max-width: 460px; width: 100%; text-align: center; min-width: 0; }
 .logo { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 18px; display: block; }
 h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; }
 h1 .gold { color: #d69e4a; }
@@ -32,6 +32,19 @@ h1 .gold { color: #d69e4a; }
 .more a { display: block; color: #9a9aa8; font-size: 13px; padding: 8px 0; text-decoration: none; }
 .more a:hover { color: #d69e4a; }
 .err { color: #e0705a; font-size: 13px; }
+.lead { font-size: 17px; line-height: 1.45; color: #e8e6e3; margin: 0 0 22px; }
+.shots { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 26px -16px 0;
+         padding: 4px 16px 14px; scrollbar-width: none; }
+.shots::-webkit-scrollbar { display: none; }
+.shot { flex: 0 0 62%; max-width: 240px; scroll-snap-align: center; margin: 0; }
+.shot img { width: 100%; display: block; border-radius: 22px; border: 1px solid #3a3020; }
+.shot figcaption { color: #a8a8b4; font-size: 13px; margin-top: 10px; }
+.section-title { font-size: 20px; font-weight: 700; margin: 30px 0 14px; }
+.perks { display: grid; gap: 10px; text-align: left; }
+.perk { background: #14141b; border: 1px solid #23232d; border-radius: 14px; padding: 14px 16px; }
+.perk b { display: block; font-size: 15px; color: #d69e4a; margin-bottom: 4px; }
+.perk span { font-size: 13px; line-height: 1.5; color: #a8a8b4; }
+.again { margin-top: 24px; }
 </style>
 </head>
 <body>
@@ -39,19 +52,41 @@ h1 .gold { color: #d69e4a; }
     <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="logo" class="logo">
     <h1 id="brandHeader">ECLIPSE <span class="gold">Unlimited</span></h1>
     <p class="tagline">VPN-приложение для Android</p>
+    <p class="lead">Одна кнопка и никаких настроек. Нажали, и интернет снова работает: приложение само находит лучший сервер.</p>
 
     <a class="btn btn-primary" id="mainBtn" href="#">Загрузка…</a>
     <p class="hint" id="hint"></p>
+
+    <div class="shots" aria-label="Как выглядит приложение">
+        <figure class="shot"><img src="/static/app-preview/connected.jpg" alt="Экран подключённого VPN" loading="lazy"><figcaption>Включается одной кнопкой</figcaption></figure>
+        <figure class="shot"><img src="/static/app-preview/home.jpg" alt="Главный экран приложения" loading="lazy"><figcaption>Скорость и пинг всегда на виду</figcaption></figure>
+        <figure class="shot"><img src="/static/app-preview/modes.jpg" alt="Выбор режима работы" loading="lazy"><figcaption>Режим под вашу сеть</figcaption></figure>
+        <figure class="shot"><img src="/static/app-preview/login.jpg" alt="Вход в приложение" loading="lazy"><figcaption>Вход через Google, Яндекс или телефон</figcaption></figure>
+    </div>
+
+    <h2 class="section-title">Почему с ним проще</h2>
+    <div class="perks">
+        <div class="perk"><b>⚡ Подключение за секунды</b><span>Приложение само проверяет серверы и выбирает самый быстрый. Ничего не нужно копировать и настраивать.</span></div>
+        <div class="perk"><b>🛡 Работает, даже если сервер упал</b><span>Если сервер перестал отвечать, VPN сам перейдёт на следующий, даже когда приложение закрыто.</span></div>
+        <div class="perk"><b>🧠 Умный режим</b><span>Российские сайты открываются напрямую, остальное идёт через VPN. Банки и сервисы работают как обычно.</span></div>
+        <div class="perk"><b>💳 Всё внутри приложения</b><span>Покупка, продление, баланс и история платежей без переходов на сайт. Оплата картой, через СБП или с баланса.</span></div>
+        <div class="perk"><b>💬 Помощник рядом</b><span>AI-поддержка прямо в приложении: задайте вопрос или приложите скриншот.</span></div>
+        <div class="perk"><b>🔐 Только для вас</b><span>Вход по лицу, отпечатку или коду телефона. Включается по желанию.</span></div>
+        <div class="perk"><b>🌘 Кнопка в шторке</b><span>Включайте и выключайте VPN из панели управления, не открывая приложение.</span></div>
+        <div class="perk"><b>🔄 Всегда свежая версия</b><span>Приложение обновляется само, скачивать файлы вручную больше не нужно.</span></div>
+    </div>
 
     <div class="steps">
         <h2>Как установить</h2>
         <ol>
             <li>Скачайте файл кнопкой выше</li>
             <li>Откройте его — Android спросит разрешение на установку из неизвестных источников, разрешите</li>
-            <li>Откройте приложение и импортируйте подписку кнопкой из бота</li>
-            <li>Выберите сервер и нажмите кнопку подключения</li>
+            <li>Откройте приложение и войдите в аккаунт: подписка появится сама</li>
+            <li>Нажмите большую кнопку подключения</li>
         </ol>
     </div>
+
+    <a class="btn btn-primary again" href="#mainBtn">Скачать приложение</a>
 
     <details class="more">
         <summary>Другие версии</summary>
