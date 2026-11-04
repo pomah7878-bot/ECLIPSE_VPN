@@ -1700,6 +1700,29 @@ async def handle_public_status(request: web.Request) -> web.Response:
     return resp
 
 
+def _client_update_dir() -> str:
+    """Папка не в git: файлы загружаются на сервер отдельно и переживают обновления бота."""
+    from bot.utils.git_utils import get_project_root
+    return os.path.join(get_project_root(), "client_update")
+
+
+async def handle_client_update_info(request: web.Request) -> web.Response:
+    """GET /api/public/client-update — последняя версия клиента; 404, если раздача не настроена."""
+    try:
+        with open(os.path.join(_client_update_dir(), "latest.json"), encoding="utf-8") as f:
+            return web.json_response(json.load(f))
+    except (OSError, ValueError):
+        return web.json_response({"error": "not_configured"}, status=404)
+
+
+async def handle_client_update_file(request: web.Request) -> web.StreamResponse:
+    """GET /client-update/client.apk — файл обновления."""
+    path = os.path.join(_client_update_dir(), "client.apk")
+    if not os.path.isfile(path):
+        return web.json_response({"error": "not_configured"}, status=404)
+    return web.FileResponse(path, headers={"Content-Type": "application/vnd.android.package-archive"})
+
+
 async def handle_public_site_info(request: web.Request) -> web.Response:
     """GET /api/public/site-info — базовая информация о сервисе, полностью
     без авторизации: название бренда, юзернейм бота, ссылка на новостной
@@ -5969,6 +5992,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
     app.router.add_get("/api/public/site-info", handle_public_site_info)
+    app.router.add_get("/api/public/client-update", handle_client_update_info)
+    app.router.add_get("/client-update/client.apk", handle_client_update_file)
     app.router.add_get("/status", handle_status_page)
     app.router.add_get("/api/public/status", handle_public_status)
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)

@@ -11,6 +11,7 @@ results.md
 AGENTS.md
 .agents/
 tmp/
+client_update/
 custom_extensions/
 **/__pycache__/
 .vscode

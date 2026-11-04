@@ -2005,6 +2005,28 @@ class TrialNewClientsTest(unittest.TestCase):
         self.assertFalse(srv._site_account_is_new_client(bought))
 
 
+class ClientUpdateTest(unittest.IsolatedAsyncioTestCase):
+    """Без файлов раздача честно отвечает 404, с файлами отдаёт версию и файл."""
+
+    async def test_info_and_file(self):
+        from unittest.mock import patch
+        from aiohttp.test_utils import make_mocked_request
+        import bot.webapp.server as srv
+
+        d = tempfile.mkdtemp()
+        req = make_mocked_request("GET", "/")
+        with patch.object(srv, "_client_update_dir", return_value=d):
+            self.assertEqual((await srv.handle_client_update_info(req)).status, 404)
+            self.assertEqual((await srv.handle_client_update_file(req)).status, 404)
+            with open(os.path.join(d, "latest.json"), "w", encoding="utf-8") as f:
+                json.dump({"version_code": 2, "sha256": "ab"}, f)
+            with open(os.path.join(d, "client.apk"), "wb") as f:
+                f.write(b"x")
+            info = await srv.handle_client_update_info(req)
+            self.assertEqual(json.loads(info.text)["version_code"], 2)
+            self.assertIsInstance(await srv.handle_client_update_file(req), srv.web.FileResponse)
+
+
 class AppClientLabelTest(unittest.TestCase):
     """Метка стоит и на клиенте, и на платеже, остальных не касается."""
 
