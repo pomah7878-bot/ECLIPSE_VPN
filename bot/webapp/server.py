@@ -613,7 +613,8 @@ async def handle_ai_consult(request: web.Request) -> web.Response:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 "http://127.0.0.1:8086/consult",
-                json={"user_id": telegram_id, "message": message, "image_base64": image_base64},
+                json={"user_id": telegram_id, "message": message, "image_base64": image_base64,
+                      "client": "app" if data.get("client") == "app" else None},
                 headers={"X-Support-Token": SUPPORT_API_TOKEN},
                 timeout=aiohttp.ClientTimeout(total=40),
             ) as resp:

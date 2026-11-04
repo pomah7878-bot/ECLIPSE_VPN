@@ -2129,6 +2129,7 @@ def _format_customer_profile(profile: dict, bot_username: str = "") -> str:
 class ConsultRequest(BaseModel):
     user_id: int
     message: str
+    client: str | None = None  # "app": вопрос из мобильного приложения, а не из бота
     image_base64: str | None = None  # data URL скриншота, если клиент прислал фото
     voice_base64: str | None = None  # raw base64 содержимого голосового сообщения (OGG/Opus)
 
@@ -2201,6 +2202,17 @@ async def _notify_admins_escalation(user_id: int, question: str, history_message
         logger.error(f"Escalation notify outer error: {e}")
 
 
+APP_CLIENT_PROMPT = """
+
+СЕЙЧАС КЛИЕНТ ПИШЕТ ИЗ МОБИЛЬНОГО ПРИЛОЖЕНИЯ ECLIPSE. Это важнее карты разделов бота выше:
+- НЕ отправляй его в бота, на сайт и в сторонние приложения (Happ, INCY): всё делается здесь.
+- Подключение: большая кнопка на вкладке «Главная», сервер выбирается автоматически.
+- Покупка, продление и смена тарифа: вкладка «Тариф», оплата с баланса, картой или через СБП.
+- Пополнение баланса и история платежей: значок профиля вверху → «Мой баланс» или «История платежей».
+- Ключи: вкладка «Тариф» → «Мои ключи». Устройства: вкладка «Устройства».
+- Режим работы VPN («Умный», «БС», «Как у всех»): строка «Режим» на главной."""
+
+
 @app.post("/consult", response_model=ConsultResponse)
 @limiter.limit("10/minute")
 async def consult(req: ConsultRequest, request: Request, token: str = Depends(verify_token)):
@@ -2244,6 +2256,8 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     from database.requests import get_effective_brand_name
     brand_name = get_effective_brand_name()
     full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username).replace("%BRAND_NAME%", brand_name).replace("%APP_RECOMMENDATION%", _build_app_recommendation()) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
+    if req.client == "app":
+        full_system += APP_CLIENT_PROMPT
     if setup_instructions:
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
