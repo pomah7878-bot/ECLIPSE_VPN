@@ -396,6 +396,10 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     if renew_rows:
         prepend_buttons = renew_rows + list(prepend_buttons or [])
 
+    from bot.handlers.user.client_app import app_site_url
+    if app_site_url():
+        append_buttons = [[InlineKeyboardButton(text='📱 Приложение', callback_data='client_app')]] + list(append_buttons or [])
+
     sent_menu = await render_page(
         target,
         page_key='main',
