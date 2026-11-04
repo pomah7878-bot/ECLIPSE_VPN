@@ -184,23 +184,10 @@ p { font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 6px 0; }
             window.location.href = 'https://karing.app/en/download';
         };
 
-    // --- ECLIPSE VPN: eclipsevpn://install-sub?url=<sub_url>#<name> — формат v2rayNG ---
+    // --- ECLIPSE VPN: импорта по ссылке нет, подписка приходит после входа в аккаунт ---
     } else if (scheme === 'eclipse') {
-        var eclipseLink = 'eclipsevpn://install-sub?url=' + encodeURIComponent(subUrl) + '#ECLIPSE';
-
-        msgEl.innerHTML = 'Ссылка подписки скопирована в буфер.<br>' +
-            'Сейчас откроется <b>ECLIPSE VPN</b> с импортом подписки.';
-
-        setTimeout(function () {
-            window.location.href = eclipseLink;
-        }, 1000);
-
-        openBtn.className = 'btn btn-emerald';
-        openBtn.textContent = '🌘 Открыть ECLIPSE VPN';
-        openBtn.style.display = 'block';
-        openBtn.onclick = function () {
-            window.location.href = eclipseLink;
-        };
+        msgEl.innerHTML = 'Откройте приложение <b>ECLIPSE VPN</b> и войдите в тот же аккаунт: ' +
+            'подписка появится сама. Ссылка не нужна.';
 
         storeBtn.textContent = '📲 Скачать ECLIPSE VPN';
         storeBtn.style.display = 'block';
