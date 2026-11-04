@@ -2206,11 +2206,17 @@ APP_CLIENT_PROMPT = """
 
 СЕЙЧАС КЛИЕНТ ПИШЕТ ИЗ МОБИЛЬНОГО ПРИЛОЖЕНИЯ ECLIPSE. Это правило главнее карты разделов бота, статей базы знаний и твоих прошлых ответов:
 - НЕ отправляй его в бота, на сайт и в сторонние приложения (Happ, INCY): всё делается здесь.
+- Если статья базы знаний, результат поиска или твой прошлый ответ в этом диалоге говорит про бота, сайт или Happ, не повторяй это: перескажи тот же шаг через разделы ниже.
 - Подключение: большая кнопка на вкладке «Главная», сервер выбирается автоматически.
 - Покупка, продление и смена тарифа: вкладка «Тариф», оплата с баланса, картой или через СБП.
 - Пополнение баланса и история платежей: значок профиля вверху → «Мой баланс» или «История платежей».
 - Ключи: вкладка «Тариф» → «Мои ключи». Устройства: вкладка «Устройства».
 - Режим работы VPN («Умный», «БС», «Как у всех»): строка «Режим» на главной."""
+
+
+def _kb_tool_text(text: str, client) -> str:
+    """Статья из поиска приходит после системного правила и иначе перекрывает его."""
+    return text + APP_CLIENT_PROMPT if client == "app" else text
 
 
 @app.post("/consult", response_model=ConsultResponse)
@@ -2256,7 +2262,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     from database.requests import get_effective_brand_name
     brand_name = get_effective_brand_name()
     full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username).replace("%BRAND_NAME%", brand_name).replace("%APP_RECOMMENDATION%", _build_app_recommendation()) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
-    if setup_instructions:
+    if setup_instructions and req.client != "app":
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
     # Автоматический RAG-поиск по базе знаний ДО обращения к модели — надёжнее,
@@ -2345,7 +2351,7 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "content": kb_result_text,
+                        "content": _kb_tool_text(kb_result_text, req.client),
                     })
                 elif tool_call.function.name == "web_search":
                     try:

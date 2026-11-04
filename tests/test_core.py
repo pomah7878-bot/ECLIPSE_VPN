@@ -2005,6 +2005,18 @@ class TrialNewClientsTest(unittest.TestCase):
         self.assertFalse(srv._site_account_is_new_client(bought))
 
 
+class ConsultClientRuleTest(unittest.TestCase):
+    """Статья из поиска не должна перекрывать правило клиента, остальным она приходит как есть."""
+
+    def test_rule_follows_found_article(self):
+        import openai
+        from unittest.mock import patch
+        with patch.object(openai, "AsyncOpenAI", lambda *a, **k: None):
+            import ai_support_main as a
+        self.assertEqual(a._kb_tool_text("статья", None), "статья")
+        self.assertTrue(a._kb_tool_text("статья", "app").endswith(a.APP_CLIENT_PROMPT))
+
+
 class OAuthChooseAccountTest(unittest.TestCase):
     """После выхода в приложении можно войти другим аккаунтом, сайт работает как раньше."""
 
