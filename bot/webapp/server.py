@@ -1132,6 +1132,12 @@ async def _handle_pay_create_impl(request: web.Request) -> web.Response:
             await pay_bot.session.close()
 
         save_yookassa_payment_id(order_id, yk_result["yookassa_payment_id"])
+        # клиент мог закрыть приложение до оплаты: заказ всё равно завершится фоновой проверкой
+        try:
+            from database.requests import schedule_payment_auto_check
+            schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=30)
+        except Exception as e:
+            logger.error(f"Не удалось поставить заказ в очередь автопроверки {order_id}: {e}")
 
         qr_image_b64 = base64.b64encode(yk_result["qr_image_data"]).decode("ascii")
         qr_image_data_url = f"data:image/png;base64,{qr_image_b64}"
