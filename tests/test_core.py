@@ -2005,6 +2005,84 @@ class TrialNewClientsTest(unittest.TestCase):
         self.assertFalse(srv._site_account_is_new_client(bought))
 
 
+class OAuthChooseAccountTest(unittest.TestCase):
+    """После выхода в приложении можно войти другим аккаунтом, сайт работает как раньше."""
+
+    def test_choice_only_when_requested(self):
+        from unittest.mock import patch
+        from bot.services.oauth import build_authorize_url
+
+        with patch("database.requests.get_effective_oauth_credentials", return_value=("id", "secret")):
+            self.assertIn("prompt=select_account", build_authorize_url("google", "https://example.com/cb", "s", choose_account=True))
+            self.assertIn("force_confirm=yes", build_authorize_url("yandex", "https://example.com/cb", "s", choose_account=True))
+            self.assertNotIn("prompt=", build_authorize_url("google", "https://example.com/cb", "s"))
+            self.assertNotIn("force_confirm", build_authorize_url("yandex", "https://example.com/cb", "s"))
+
+
+class TrialVirtualClientTest(unittest.IsolatedAsyncioTestCase):
+    """Виртуальный клиент проходит пробный период по настоящим обработчикам приложения."""
+
+    async def asyncSetUp(self):
+        run_migrations()
+        st.set_setting("trial_enabled", "1")
+        self.addCleanup(st.set_setting, "trial_enabled", "0")
+
+    def _req(self, method, account, ip):
+        from aiohttp.test_utils import make_mocked_request
+        import bot.webapp.server as srv
+        return make_mocked_request(method, "/", headers={
+            "Cookie": f"site_session={srv._sign_session(account['id'])}",
+            "X-Eclipse-App": "1",
+            "X-Forwarded-For": ip,
+        })
+
+    async def _offered(self, account, ip):
+        import bot.webapp.server as srv
+        resp = await srv.handle_public_tariffs(self._req("GET", account, ip))
+        return json.loads(resp.text)["trial_available"]
+
+    async def _activate(self, account, ip):
+        import bot.webapp.server as srv
+        resp = await srv.handle_public_trial_create(self._req("POST", account, ip))
+        return resp.status, json.loads(resp.text)
+
+    async def test_new_client_gets_trial_once(self):
+        from unittest.mock import AsyncMock, patch
+        import bot.webapp.server as srv
+        from database.db_accounts import get_or_create_site_account_by_phone
+
+        client = get_or_create_site_account_by_phone("79990008811")
+        ip = "203.0.113.81"
+
+        async def provision(tariff_id, order_id, site_account_id=None):
+            owner = srv._resolve_site_account_internal_user_id(client)
+            with get_db() as c:
+                key_id = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at)"
+                                   " VALUES (?, ?, datetime('now', '+3 days'))", (owner, tariff_id)).lastrowid
+            return {"key_id": key_id, "sub_url": "https://example.com/sub/t", "placeholder_user_id": owner}
+
+        with patch("database.requests.get_trial_tariff_id", return_value=1),                 patch("bot.services.license.is_feature_available", return_value=True),                 patch("bot.services.anonymous_purchase.provision_anonymous_vpn_key", AsyncMock(side_effect=provision)) as issued:
+            self.assertTrue(await self._offered(client, ip))
+
+            status, body = await self._activate(client, ip)
+            self.assertEqual((status, body["status"]), (200, "paid"))
+
+            self.assertFalse(await self._offered(client, ip))
+            status, body = await self._activate(client, "203.0.113.82")
+            self.assertEqual((status, body["error"]), (400, "trial_already_used"))
+
+            buyer = get_or_create_site_account_by_phone("79990008822")
+            owner = srv._resolve_site_account_internal_user_id(buyer)
+            with get_db() as c:
+                c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at)"
+                          " VALUES (?, 1, datetime('now', '+30 days'))", (owner,))
+            self.assertFalse(await self._offered(buyer, "203.0.113.83"))
+            status, body = await self._activate(buyer, "203.0.113.83")
+            self.assertEqual((status, body["error"]), (400, "trial_new_clients_only"))
+
+        issued.assert_awaited_once()
+
+
 class PaymentHistoryTest(unittest.TestCase):
     """История в приложении: деньги не задваиваются и не смешиваются между клиентами."""
 

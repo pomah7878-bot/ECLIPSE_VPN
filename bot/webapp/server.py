@@ -3378,7 +3378,8 @@ async def handle_oauth_start(request: web.Request) -> web.Response:
 
     state = _secrets_mod.token_urlsafe(24)
     redirect_uri = f"{_get_site_base_url(request)}/auth/{provider}/callback"
-    url = build_authorize_url(provider, redirect_uri, state)
+    # В приложении браузер помнит прошлый вход: без выбора после «Выйти» вернётся тот же аккаунт.
+    url = build_authorize_url(provider, redirect_uri, state, choose_account=request.query.get("client") == "app")
 
     resp = web.HTTPFound(url)
     resp.set_cookie("oauth_state", state, max_age=600, httponly=True, secure=True, samesite="Lax")

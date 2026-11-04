@@ -22,6 +22,7 @@ OAUTH_PROVIDERS = {
         "scope": "openid email profile",
         "client_id_env": "GOOGLE_OAUTH_CLIENT_ID",
         "client_secret_env": "GOOGLE_OAUTH_CLIENT_SECRET",
+        "choose_account_params": {"prompt": "select_account"},
     },
     "yandex": {
         "authorize_url": "https://oauth.yandex.ru/authorize",
@@ -30,6 +31,7 @@ OAUTH_PROVIDERS = {
         "scope": "login:email login:info",
         "client_id_env": "YANDEX_OAUTH_CLIENT_ID",
         "client_secret_env": "YANDEX_OAUTH_CLIENT_SECRET",
+        "choose_account_params": {"force_confirm": "yes"},
     },
     "vk": {
         "authorize_url": "https://oauth.vk.com/authorize",
@@ -59,7 +61,7 @@ def get_configured_providers() -> list[str]:
     return [p for p in OAUTH_PROVIDERS if is_provider_configured(p)]
 
 
-def build_authorize_url(provider: str, redirect_uri: str, state: str) -> str:
+def build_authorize_url(provider: str, redirect_uri: str, state: str, choose_account: bool = False) -> str:
     cfg = OAUTH_PROVIDERS[provider]
     from database.requests import get_effective_oauth_credentials
     client_id, _ = get_effective_oauth_credentials(provider)
@@ -74,6 +76,8 @@ def build_authorize_url(provider: str, redirect_uri: str, state: str) -> str:
         "state": state,
     }
     params.update(cfg.get("extra_authorize_params", {}))
+    if choose_account:
+        params.update(cfg.get("choose_account_params", {}))
     return f"{cfg['authorize_url']}?{urlencode(params)}"
 
 
