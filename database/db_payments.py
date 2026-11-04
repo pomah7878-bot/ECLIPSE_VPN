@@ -1249,6 +1249,45 @@ def get_anonymous_purchase_by_order_id(order_id: str) -> Optional[Dict[str, Any]
         return dict(row) if row else None
 
 
+def get_user_payment_history(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+    """История денег клиента для приложения, новые сверху: движения баланса плюс оплаты
+    картой/СБП. Оплаты с баланса берутся только из balance_operations, иначе задвоятся;
+    пополнение — тоже: в payments у него нет ни тарифа, ни ключа."""
+    with get_db() as conn:
+        paid = conn.execute(
+            """
+            SELECT p.paid_at AS at, p.final_amount_cents AS cents, t.name AS tariff_name
+            FROM payments p LEFT JOIN tariffs t ON t.id = p.tariff_id
+            WHERE p.user_id = ? AND p.status = 'paid' AND p.payment_type != 'balance'
+              AND (p.tariff_id IS NOT NULL OR p.vpn_key_id IS NOT NULL)
+            ORDER BY p.paid_at DESC LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+        operations = conn.execute(
+            """
+            SELECT created_at AS at, delta_cents, source, reason
+            FROM balance_operations WHERE user_id = ?
+            ORDER BY created_at DESC LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+    items = [
+        {"at": str(r["at"] or ""), "cents": -int(r["cents"] or 0),
+         "title": f"Оплата тарифа «{r['tariff_name']}»" if r["tariff_name"] else "Оплата подписки"}
+        for r in paid
+    ]
+    for r in operations:
+        delta = int(r["delta_cents"] or 0)
+        if r["source"] == "topup":
+            title = "Пополнение баланса"
+        else:
+            title = r["reason"] or ("Зачисление на баланс" if delta > 0 else "Оплата с баланса")
+        items.append({"at": str(r["at"] or ""), "cents": delta, "title": title})
+    items.sort(key=lambda i: i["at"], reverse=True)
+    return items[:limit]
+
+
 def get_abandoned_anonymous_purchases(min_age_seconds: int = 90, max_age_seconds: int = 7200, limit: int = 20) -> list:
     """Сайтовые заказы, которые остались 'pending' спустя какое-то время
     после создания — клиент мог закрыть вкладку браузера ДО того, как

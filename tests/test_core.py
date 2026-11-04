@@ -1980,6 +1980,37 @@ class UnifiedCabinetTest(unittest.TestCase):
         self.assertFalse(srv._verify_key_belongs_to_account(own, other))        # другой сайт-аккаунт — тоже
 
 
+class PaymentHistoryTest(unittest.TestCase):
+    """История в приложении: деньги не задваиваются и не смешиваются между клиентами."""
+
+    def test_history_merges_without_duplicates(self):
+        from database.requests import get_or_create_user
+        from database.db_payments import get_user_payment_history
+
+        user, _ = get_or_create_user(777000444, username="hist")
+        other, _ = get_or_create_user(777000555, username="hist2")
+        with get_db() as c:
+            c.execute("INSERT INTO payments (user_id, tariff_id, order_id, payment_type, final_amount_cents, status, paid_at)"
+                      " VALUES (?, 1, 'h-card', 'yookassa_qr', 35900, 'paid', '2026-11-01 10:00:00')", (user["id"],))
+            c.execute("INSERT INTO payments (user_id, tariff_id, order_id, payment_type, final_amount_cents, status, paid_at)"
+                      " VALUES (?, 1, 'h-bal', 'balance', 12500, 'paid', '2026-11-02 10:00:00')", (user["id"],))
+            c.execute("INSERT INTO payments (user_id, order_id, payment_type, final_amount_cents, status, paid_at)"
+                      " VALUES (?, 'h-top', 'yookassa_qr', 50000, 'paid', '2026-11-03 09:00:00')", (user["id"],))
+            c.execute("INSERT INTO payments (user_id, tariff_id, order_id, payment_type, final_amount_cents, status)"
+                      " VALUES (?, 1, 'h-wait', 'yookassa_qr', 100, 'pending')", (user["id"],))
+            c.execute("INSERT INTO payments (user_id, tariff_id, order_id, payment_type, final_amount_cents, status)"
+                      " VALUES (?, 1, 'h-other', 'yookassa_qr', 999, 'paid')", (other["id"],))
+            for delta, source, at in ((50000, "topup", "2026-11-03 09:00:01"), (-12500, "purchase", "2026-11-02 10:00:01")):
+                c.execute("INSERT INTO balance_operations (user_id, operation_type, delta_cents, balance_before,"
+                          " balance_after, source, created_at) VALUES (?, 'x', ?, 0, 0, ?, ?)", (user["id"], delta, source, at))
+
+        items = get_user_payment_history(user["id"])
+        self.assertEqual([i["cents"] for i in items], [50000, -12500, -35900])  # новые сверху
+        self.assertEqual(items[0]["title"], "Пополнение баланса")
+        self.assertEqual(items[1]["title"], "Оплата с баланса")
+        self.assertEqual(get_user_payment_history(user["id"], limit=1)[0]["cents"], 50000)
+
+
 class TariffGroupsTest(unittest.TestCase):
     """Витрина и кабинет делят тарифы на группы, как бот."""
 

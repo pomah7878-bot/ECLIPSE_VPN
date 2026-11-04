@@ -1245,6 +1245,87 @@ async def _yookassa_check_now(payment_id: str) -> None:
         logger.error("ЮKassa: проверка платежа по уведомлению не удалась: %s", e, exc_info=True)
 
 
+async def handle_balance_topup(request: web.Request) -> web.Response:
+    """POST /api/balance/topup — заказ на пополнение личного баланса и QR ЮKassa.
+    Та же схема, что в боте: заказ без тарифа и ключа, деньги зачисляет process_payment_order,
+    статус проверяется обычным /api/pay/check. Body JSON: {"amount_rub": int}"""
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    if not _rl_allowed(f"topup:{telegram_id}", 20, 3600):
+        return web.json_response({"error": "rate_limited", "message": "Слишком много попыток. Попробуйте позже."}, status=429)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    from bot.handlers.user.payments.balance import MAX_TOPUP_AMOUNT_RUB, MIN_TOPUP_AMOUNT_RUB
+    amount_rub = data.get("amount_rub") if isinstance(data, dict) else None
+    if not isinstance(amount_rub, int) or isinstance(amount_rub, bool) or not MIN_TOPUP_AMOUNT_RUB <= amount_rub <= MAX_TOPUP_AMOUNT_RUB:
+        return web.json_response({
+            "error": "invalid_amount",
+            "message": f"Сумма пополнения: от {MIN_TOPUP_AMOUNT_RUB} до {MAX_TOPUP_AMOUNT_RUB} ₽.",
+        }, status=400)
+    _rl_record(f"topup:{telegram_id}")
+
+    from database.requests import create_pending_order, get_user_internal_id, save_yookassa_payment_id, schedule_payment_auto_check
+    from database.connection import get_db
+    from bot.services.billing import create_yookassa_qr_payment
+    from bot.utils.payment_text import topup_description
+
+    user_id = get_user_internal_id(telegram_id)
+    if not user_id:
+        return web.json_response({"error": "user_not_found"}, status=404)
+    _, order_id = create_pending_order(user_id=user_id, tariff_id=None, payment_type="yookassa_qr", vpn_key_id=None)
+    with get_db() as conn:
+        conn.execute("UPDATE payments SET final_amount_cents = ? WHERE order_id = ?", (amount_rub * 100, order_id))
+
+    from aiogram import Bot
+    from config import BOT_TOKEN
+    pay_bot = Bot(token=BOT_TOKEN)
+    try:
+        bot_info = await pay_bot.get_me()
+        result = await create_yookassa_qr_payment(
+            amount_rub=amount_rub, order_id=order_id, description=topup_description(), bot_name=bot_info.username,
+        )
+    except Exception as e:
+        logger.error(f"Не удалось создать платёж на пополнение баланса: {e}")
+        return web.json_response({"error": "payment_creation_failed", "message": "Не удалось создать платёж."}, status=502)
+    finally:
+        await pay_bot.session.close()
+
+    save_yookassa_payment_id(order_id, result["yookassa_payment_id"])
+    # клиент мог закрыть приложение до оплаты: баланс всё равно зачислится фоновой проверкой
+    try:
+        schedule_payment_auto_check(order_id, "yookassa_qr", first_delay_seconds=30)
+    except Exception as e:
+        logger.error(f"Не удалось поставить пополнение в очередь автопроверки {order_id}: {e}")
+
+    qr_b64 = base64.b64encode(result["qr_image_data"]).decode("ascii")
+    return web.json_response({
+        "order_id": order_id, "qr_url": result["qr_url"],
+        "qr_image_url": f"data:image/png;base64,{qr_b64}", "amount_rub": amount_rub,
+    })
+
+
+async def handle_history(request: web.Request) -> web.Response:
+    """GET /api/history — история платежей и движений баланса текущего клиента."""
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    from database.requests import get_user_internal_id
+    from database.db_payments import get_user_payment_history
+    from bot.utils.ru_format import format_rub
+
+    user_id = get_user_internal_id(telegram_id)
+    items = get_user_payment_history(user_id) if user_id else []
+    for item in items:
+        cents = item.pop("cents")
+        item["amount_human"] = ("+" if cents > 0 else "−") + format_rub(abs(cents), cents=True)
+        item["income"] = cents > 0
+    return web.json_response({"items": items})
+
+
 async def handle_pay_check(request: web.Request) -> web.Response:
     """POST /api/pay/check — проверяет статус YooKassa QR-платежа и завершает
     заказ (выдача/продление ключа), если оплата прошла.
@@ -5845,6 +5926,8 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/tariffs", handle_tariffs_list)
     app.router.add_post("/api/pay/create", handle_pay_create)
     app.router.add_post("/api/pay/check", handle_pay_check)
+    app.router.add_post("/api/balance/topup", handle_balance_topup)
+    app.router.add_get("/api/history", handle_history)
     app.router.add_post("/api/yookassa/notify", handle_yookassa_notify)
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
