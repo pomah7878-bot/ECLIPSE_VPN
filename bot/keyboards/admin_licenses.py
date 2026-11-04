@@ -10,11 +10,12 @@ def licenses_menu_kb(licenses: list) -> InlineKeyboardMarkup:
     """Главный экран раздела — сводка + список партнёров кнопками."""
     builder = InlineKeyboardBuilder()
     for lic in licenses[:20]:  # не более 20 в одном экране, чтобы не раздувать сообщение
-        from database.db_licenses import is_license_expired
+        from database.db_licenses import is_license_expired, list_activations
+        from bot.services.license_report import license_list_title
         status_icon = "🚫" if not lic["is_active"] else ("⌛" if is_license_expired(lic) else "✅")
         tier_icon = {"full": "💎", "basic": "🔹", "custom": "🔧"}.get(lic["tier"], "🔹")
         builder.row(InlineKeyboardButton(
-            text=f"{status_icon} {tier_icon} {lic['partner_name']}",
+            text=f"{status_icon} {tier_icon} {license_list_title(lic, list_activations(lic['license_key']))}",
             callback_data=f"license_view:{lic['license_key']}",
         ))
     builder.row(InlineKeyboardButton(text="➕ Выдать новую лицензию", callback_data="license_create_start"))

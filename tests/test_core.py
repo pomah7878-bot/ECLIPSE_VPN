@@ -999,6 +999,54 @@ class UpdateNoticeTest(unittest.TestCase):
         self.assertNotIn("&am</pre>", text)
 
 
+class LicenseInstallTest(unittest.IsolatedAsyncioTestCase):
+    """В лицензии видно, чей это бот и работает ли он прямо сейчас."""
+
+    async def test_report_shows_who_installed(self):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from bot.services import license_report as lr
+        from database.db_licenses import create_partner_license, list_activations, register_activation
+
+        run_migrations()
+        key = create_partner_license("tg4242 (пробный)", set(), 30)
+        lic = {"license_key": key, "partner_name": "tg4242 (пробный)"}
+        self.assertTrue(lr.license_list_title(lic, []).startswith("⚪ tg4242"))
+        self.assertIn("Не установлена", lr.format_install_block(lic, []))
+
+        register_activation(key, "inst-12345678", "203.0.113.5")
+        bot = MagicMock()
+        bot.get_me = AsyncMock(return_value=MagicMock(username="partner_vpn_bot", full_name="Партнёр <VPN>"))
+        with get_db() as c:
+            c.execute("INSERT OR IGNORE INTO users (telegram_id, username) VALUES (4242, 'owner_nick')")
+        with patch("bot.utils.runtime_state.get_bot_instance", return_value=bot), patch("config.ADMIN_IDS", [4242]):
+            info = await lr.build_install_info()
+        self.assertEqual(info["bot_username"], "partner_vpn_bot")
+        self.assertEqual(info["owner_name"], "owner_nick")
+        self.assertGreaterEqual(info["clients"], 1)
+
+        self.assertTrue(lr.record_report(key, "inst-12345678", "", "", "1.540", info=info))
+        acts = list_activations(key)
+        title = lr.license_list_title(lic, acts)
+        self.assertIn("🟢 @partner_vpn_bot (пробный)", title)
+        card = lr.format_install_block(lic, acts)
+        self.assertIn("🟢 <b>Работает</b>", card)
+        self.assertIn("Партнёр &lt;VPN&gt;", card)  # имя бота партнёра не ломает разметку
+        self.assertIn("tg://user?id=4242", card)
+
+        # отчёт старой версии без новых полей ничего не стирает
+        lr.record_report(key, "inst-12345678", "", "", "1.500")
+        self.assertEqual(list_activations(key)[0]["bot_username"], "partner_vpn_bot")
+
+        lr.record_report(key, "inst-12345678", "", "", "", info={"bot_username": "bad name!", "clients": -5})
+        self.assertEqual(list_activations(key)[0]["bot_username"], "partner_vpn_bot")
+
+        with get_db() as c:
+            c.execute("UPDATE license_activations SET last_seen = datetime('now', '-3 days') WHERE license_key = ?", (key,))
+        self.assertIn("🔴", lr.license_list_title(lic, list_activations(key)))
+
+        self.assertFalse(lr.record_report(key, "unknown-inst", "", info=info))  # чужая установка не записывается
+
+
 class LicenseExtendTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

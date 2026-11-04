@@ -4075,6 +4075,7 @@ async def handle_license_report(request: web.Request) -> web.Response:
     ok = record_report(
         license_key, instance_id,
         str(data.get("features") or "")[:600], str(data.get("checked_at") or ""), str(data.get("release") or ""),
+        info=data,
     )
     return web.json_response({"ok": bool(ok)})
 

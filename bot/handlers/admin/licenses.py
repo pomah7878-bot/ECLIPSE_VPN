@@ -35,6 +35,7 @@ def _format_license_summary(licenses: list) -> str:
         f"🔑 <b>Лицензии партнёров</b>\n\n"
         f"Всего: {total} · 💎 Полных: {active_full} · 🔹 Базовых: {active_basic} · "
         f"⌛ Истекших: {expired} · 🚫 Неактивных: {inactive}\n\n"
+        f"🟢 работает · 🔴 молчит больше суток · ⚪ ключ не установлен\n\n"
         f"Выберите партнёра, чтобы посмотреть детали:"
     )
 
@@ -86,7 +87,7 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
 
     enabled = features_from_str(lic.get("features"))
     from database.db_licenses import list_activations as _list_acts
-    from bot.services.license_report import format_feature_block
+    from bot.services.license_report import format_feature_block, format_install_block
     _all_acts = _list_acts(lic["license_key"])
     _license_alive = bool(lic["is_active"]) and not is_license_expired(lic)
     features_list = format_feature_block(enabled, _license_alive, _all_acts)
@@ -97,6 +98,7 @@ async def show_license_detail(callback: CallbackQuery, state: FSMContext = None,
         f"Действует до: {expires_text}\n"
         f"Ключ: <code>{lic['license_key']}</code>\n"
         f"Создана: {lic['created_at']}\n\n"
+        f"{format_install_block(lic, _all_acts)}\n\n"
         f"{features_list}"
     )
     if lic.get("notes"):

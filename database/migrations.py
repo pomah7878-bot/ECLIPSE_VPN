@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 171
+LATEST_VERSION = 172
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3888,6 +3888,14 @@ def migration_171(conn: sqlite3.Connection) -> None:
     logger.info("Migration v171 applied: users.from_app, payments.from_app")
 
 
+def migration_172(conn: sqlite3.Connection) -> None:
+    """Кто и где поставил лицензию: данные из отчёта бота партнёра."""
+    for name, kind in (("bot_username", "TEXT"), ("bot_name", "TEXT"), ("owner_id", "INTEGER"), ("owner_name", "TEXT"),
+                       ("clients", "INTEGER"), ("active_keys", "INTEGER")):
+        conn.execute(f"ALTER TABLE license_activations ADD COLUMN {name} {kind}")
+    logger.info("Migration v172 applied: license_activations.bot_*, owner_*, clients, active_keys")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -3986,6 +3994,7 @@ MIGRATIONS = {
     169: migration_169,
     170: migration_170,
     171: migration_171,
+    172: migration_172,
 }
 
 
