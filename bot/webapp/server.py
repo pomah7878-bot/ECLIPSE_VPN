@@ -2779,7 +2779,7 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
         if trial_tariff_id:
             account = get_site_account_by_id(account_id)
             already_used = _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id") if account else None)
-            trial_available = not already_used
+            trial_available = not already_used and bool(account) and _site_account_is_new_client(account)
 
     current_tariff_id = None
     vpn_key_id_raw = request.query.get("vpn_key_id")
@@ -2818,6 +2818,21 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
         "tariffs": _with_groups([_site_tariff_row(t) for t in tariffs], tariffs),
         "trial_available": trial_available,
     })
+
+
+def _site_account_is_new_client(account: dict) -> bool:
+    """Пробный период — только для новых клиентов: ни одного ключа за всё время,
+    ни на служебной личности аккаунта, ни в покупках с сайта."""
+    from database.connection import get_db
+
+    owner_user_id = _resolve_site_account_internal_user_id(account)
+    with get_db() as conn:
+        has_key = conn.execute("SELECT 1 FROM vpn_keys WHERE user_id = ? LIMIT 1", (owner_user_id,)).fetchone()
+        has_purchase = conn.execute(
+            "SELECT 1 FROM anonymous_purchases WHERE site_account_id = ? AND vpn_key_id IS NOT NULL LIMIT 1",
+            (account["id"],),
+        ).fetchone()
+    return not has_key and not has_purchase
 
 
 def _site_account_used_trial(account_id: int, trial_tariff_id: int, telegram_id) -> bool:
@@ -3243,6 +3258,8 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
 
     if _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id")):
         return web.json_response({"error": "trial_already_used", "message": "Вы уже использовали пробный период."}, status=400)
+    if not _site_account_is_new_client(account):
+        return web.json_response({"error": "trial_new_clients_only", "message": "Пробный период доступен только новым клиентам."}, status=400)
 
     order_id = _generate_public_order_id()
     try:

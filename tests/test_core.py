@@ -1980,6 +1980,31 @@ class UnifiedCabinetTest(unittest.TestCase):
         self.assertFalse(srv._verify_key_belongs_to_account(own, other))        # другой сайт-аккаунт — тоже
 
 
+class TrialNewClientsTest(unittest.TestCase):
+    """Пробный период: только клиент без единого ключа."""
+
+    def test_only_client_without_keys_is_new(self):
+        import bot.webapp.server as srv
+        from database.db_accounts import get_or_create_site_account_by_phone
+
+        fresh = get_or_create_site_account_by_phone("79990007711")
+        self.assertTrue(srv._site_account_is_new_client(fresh))
+
+        with_key = get_or_create_site_account_by_phone("79990007722")
+        owner = srv._resolve_site_account_internal_user_id(with_key)
+        with get_db() as c:
+            c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '-30 days'))", (owner,))
+        self.assertFalse(srv._site_account_is_new_client(with_key))  # и истёкший ключ — уже не новый
+
+        bought = get_or_create_site_account_by_phone("79990007733")
+        anon = srv._resolve_site_account_internal_user_id(get_or_create_site_account_by_phone("79990007744"))
+        with get_db() as c:
+            k = c.execute("INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+1 days'))", (anon,)).lastrowid
+            c.execute("INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, vpn_key_id, site_account_id)"
+                      " VALUES ('tnew1', 1, 'TN1', 'paid', ?, ?)", (k, bought["id"]))
+        self.assertFalse(srv._site_account_is_new_client(bought))
+
+
 class PaymentHistoryTest(unittest.TestCase):
     """История в приложении: деньги не задваиваются и не смешиваются между клиентами."""
 
