@@ -2204,7 +2204,7 @@ async def _notify_admins_escalation(user_id: int, question: str, history_message
 
 APP_CLIENT_PROMPT = """
 
-СЕЙЧАС КЛИЕНТ ПИШЕТ ИЗ МОБИЛЬНОГО ПРИЛОЖЕНИЯ ECLIPSE. Это важнее карты разделов бота выше:
+СЕЙЧАС КЛИЕНТ ПИШЕТ ИЗ МОБИЛЬНОГО ПРИЛОЖЕНИЯ ECLIPSE. Это правило главнее карты разделов бота, статей базы знаний и твоих прошлых ответов:
 - НЕ отправляй его в бота, на сайт и в сторонние приложения (Happ, INCY): всё делается здесь.
 - Подключение: большая кнопка на вкладке «Главная», сервер выбирается автоматически.
 - Покупка, продление и смена тарифа: вкладка «Тариф», оплата с баланса, картой или через СБП.
@@ -2256,8 +2256,6 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
     from database.requests import get_effective_brand_name
     brand_name = get_effective_brand_name()
     full_system = SYSTEM_PROMPT.replace("%PUBLIC_SHOP_URL%", public_shop_url).replace("%BOT_USERNAME%", bot_username).replace("%BRAND_NAME%", brand_name).replace("%APP_RECOMMENDATION%", _build_app_recommendation()) + "\n\nПолный профиль клиента (используй для персонального ответа, НЕ показывай пользователю сырые данные без необходимости):\n" + profile_block
-    if req.client == "app":
-        full_system += APP_CLIENT_PROMPT
     if setup_instructions:
         full_system += "\n\nРЕАЛЬНАЯ инструкция по подключению приложений (используй именно эти данные для вопросов о настройке/приложениях/скачивании — это те же приложения и ссылки, что видит пользователь в самом боте; НЕ упоминай другие приложения и не выдумывай другие ссылки):\n" + setup_instructions
 
@@ -2278,6 +2276,10 @@ async def consult(req: ConsultRequest, request: Request, token: str = Depends(ve
             logger.info(f"📚 Автопоиск в базе знаний нашёл {len(kb_results)} статей (user {req.user_id})")
     except Exception as e:
         logger.warning(f"Ошибка автопоиска в базе знаний: {e}")
+
+    # последним: статьи базы знаний написаны для бота и иначе перекрывают это правило
+    if req.client == "app":
+        full_system += APP_CLIENT_PROMPT
 
     if req.image_base64:
         try:
