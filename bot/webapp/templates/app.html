@@ -6,58 +6,263 @@
 <title id="pageTitle">ECLIPSE Unlimited — приложение для Android</title>
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <style>
+:root {
+    --gold: #d69e4a;
+    --gold-bright: #efbd6b;
+    --bg: #0b0b0f;
+    --surface: #14141b;
+    --border: #23232d;
+    --text: #e8e6e3;
+    --muted: #a8a8b4;
+    --ease-reveal: cubic-bezier(.22, 1, .36, 1);
+}
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-       background: #0b0b0f; color: #e8e6e3; margin: 0; padding: 24px 16px;
-       display: flex; justify-content: center; min-height: 100vh; }
-.card { max-width: 460px; width: 100%; text-align: center; min-width: 0; }
-.logo { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 18px; display: block; }
+html { color-scheme: dark; scroll-behavior: smooth; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px 16px;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    position: relative;
+}
+body::before,
+body::after {
+    content: '';
+    position: fixed;
+    pointer-events: none;
+    z-index: 0;
+}
+body::before {
+    inset: 0;
+    background:
+        radial-gradient(circle at 50% 4%, rgba(214, 158, 74, .12), transparent 32%),
+        radial-gradient(circle at 12% 72%, rgba(214, 158, 74, .045), transparent 30%);
+    animation: ambient-glow 8s ease-in-out infinite;
+}
+body::after {
+    inset: -64px;
+    background-image:
+        linear-gradient(rgba(214, 158, 74, .045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(214, 158, 74, .045) 1px, transparent 1px);
+    background-size: 64px 64px;
+    opacity: .32;
+    animation: grid-pan 38s linear infinite;
+}
+.scroll-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: var(--gold-bright);
+    transform: scaleX(0);
+    transform-origin: left center;
+    z-index: 10;
+    pointer-events: none;
+}
+.card {
+    max-width: 460px;
+    width: 100%;
+    min-width: 0;
+    text-align: center;
+    position: relative;
+    z-index: 1;
+}
+.brand-mark {
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 12px;
+    position: relative;
+    display: grid;
+    place-items: center;
+    animation: float-y 7s ease-in-out infinite;
+}
+.brand-mark::before,
+.brand-mark::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+}
+.brand-mark::before {
+    inset: 0;
+    border: 1px solid rgba(214, 158, 74, .38);
+    border-top-color: transparent;
+    animation: orbit-spin 14s linear infinite;
+}
+.brand-mark::after {
+    inset: 7px;
+    border: 1px solid rgba(239, 189, 107, .2);
+    border-bottom-color: transparent;
+    animation: orbit-spin-reverse 20s linear infinite;
+}
+.logo {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    margin: 0;
+    display: block;
+    box-shadow: 0 0 36px rgba(214, 158, 74, .14);
+}
 h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; }
-h1 .gold { color: #d69e4a; }
+h1 .gold { color: var(--gold); }
 .tagline { color: #8b8b96; font-size: 14px; margin: 0 0 28px; }
-.btn { display: block; width: 100%; padding: 16px; border: none; border-radius: 14px;
-       font-size: 16px; font-weight: 600; margin: 10px 0; cursor: pointer;
-       text-decoration: none; transition: opacity .15s; }
-.btn:active { opacity: .85; }
-.btn-primary { background: linear-gradient(135deg, #d69e4a, #b8802f); color: #16141a; }
+.btn {
+    display: block;
+    width: 100%;
+    min-height: 54px;
+    padding: 16px;
+    border: none;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 10px 0;
+    cursor: pointer;
+    text-decoration: none;
+    position: relative;
+    transition: transform .2s ease-out, opacity .15s ease-out;
+}
+.btn-primary {
+    background: linear-gradient(135deg, var(--gold), #b8802f);
+    color: #16141a;
+    isolation: isolate;
+}
+.btn-primary::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: 0 0 34px 7px rgba(214, 158, 74, .38);
+    opacity: .18;
+    pointer-events: none;
+    z-index: -1;
+    animation: cta-glow 3.4s ease-in-out infinite;
+}
 .btn-ghost { background: #1a1a22; color: #cfcdd6; border: 1px solid #2a2a34; }
-.hint { color: #6f6f7c; font-size: 12px; margin: 6px 0 22px; }
-.steps { text-align: left; background: #14141b; border: 1px solid #23232d;
-         border-radius: 14px; padding: 18px 20px; margin-top: 26px; }
-.steps h2 { font-size: 14px; margin: 0 0 12px; color: #d69e4a; font-weight: 600; }
+.btn:hover { transform: translateY(-2px); }
+.btn:active { opacity: .88; transform: translateY(0) scale(.99); }
+a:focus-visible,
+summary:focus-visible {
+    outline: 2px solid var(--gold-bright);
+    outline-offset: 4px;
+}
+.hint { color: #6f6f7c; font-size: 12px; margin: 6px 0 22px; min-height: 18px; }
+.steps {
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-top: 26px;
+}
+.steps h2 { font-size: 14px; margin: 0 0 12px; color: var(--gold); font-weight: 600; }
 .steps ol { margin: 0; padding-left: 20px; }
-.steps li { font-size: 13px; color: #a8a8b4; line-height: 1.7; margin-bottom: 6px; }
+.steps li { font-size: 13px; color: var(--muted); line-height: 1.7; margin-bottom: 6px; }
 .more { margin-top: 18px; }
-.more summary { color: #7a7a88; font-size: 13px; cursor: pointer; }
+.more summary { color: #7a7a88; font-size: 13px; cursor: pointer; min-height: 44px; }
 .more a { display: block; color: #9a9aa8; font-size: 13px; padding: 8px 0; text-decoration: none; }
-.more a:hover { color: #d69e4a; }
+.more a:hover { color: var(--gold); }
 .err { color: #e0705a; font-size: 13px; }
-.lead { font-size: 17px; line-height: 1.45; color: #e8e6e3; margin: 0 0 22px; }
-.shots { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 26px -16px 0;
-         padding: 4px 16px 14px; scrollbar-width: none; }
+.lead { font-size: 17px; line-height: 1.55; color: var(--text); margin: 0 0 22px; }
+.shots {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    margin: 26px -16px 0;
+    padding: 4px 16px 14px;
+    scrollbar-width: none;
+}
 .shots::-webkit-scrollbar { display: none; }
-.shot { flex: 0 0 62%; max-width: 240px; scroll-snap-align: center; margin: 0; }
-.shot img { width: 100%; display: block; border-radius: 22px; border: 1px solid #3a3020; }
-.shot figcaption { color: #a8a8b4; font-size: 13px; margin-top: 10px; }
+.shot {
+    flex: 0 0 62%;
+    max-width: 240px;
+    scroll-snap-align: center;
+    margin: 0;
+    transition: transform .24s ease-out;
+}
+.shot:hover { transform: translateY(-4px); }
+.shot img {
+    width: 100%;
+    display: block;
+    border-radius: 22px;
+    border: 1px solid #3a3020;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, .22);
+}
+.shot figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; }
 .section-title { font-size: 20px; font-weight: 700; margin: 30px 0 14px; }
 .perks { display: grid; gap: 10px; text-align: left; }
-.perk { background: #14141b; border: 1px solid #23232d; border-radius: 14px; padding: 14px 16px; }
-.perk b { display: block; font-size: 15px; color: #d69e4a; margin-bottom: 4px; }
-.perk span { font-size: 13px; line-height: 1.5; color: #a8a8b4; }
+.perk {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    transition: transform .22s ease-out;
+}
+.perk:hover { transform: translateY(-3px); }
+.perk b { display: block; font-size: 15px; color: var(--gold); margin-bottom: 4px; }
+.perk span { font-size: 13px; line-height: 1.55; color: var(--muted); }
 .again { margin-top: 24px; }
+.reveal.is-visible {
+    animation: reveal-in .56s var(--ease-reveal) both;
+    animation-delay: calc(var(--i, 0) * 70ms);
+}
+@keyframes reveal-in {
+    from { opacity: 0; transform: translateY(16px) scale(.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes orbit-spin { to { transform: rotate(360deg); } }
+@keyframes orbit-spin-reverse { to { transform: rotate(-360deg); } }
+@keyframes float-y {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+@keyframes ambient-glow {
+    0%, 100% { opacity: .72; }
+    50% { opacity: 1; }
+}
+@keyframes grid-pan { to { transform: translate3d(64px, 64px, 0); } }
+@keyframes cta-glow {
+    0%, 100% { opacity: .14; }
+    50% { opacity: .48; }
+}
+@media (max-width: 374px) {
+    body { padding: 18px 12px; }
+    .shots { margin-left: -12px; margin-right: -12px; padding-left: 12px; padding-right: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+    .scroll-progress { display: none; }
+    .reveal.is-visible { opacity: 1; transform: none; }
+}
 </style>
 </head>
 <body>
+<div class="scroll-progress" aria-hidden="true"></div>
 <div class="card">
-    <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="logo" class="logo">
-    <h1 id="brandHeader">ECLIPSE <span class="gold">Unlimited</span></h1>
-    <p class="tagline">VPN-приложение для Android</p>
-    <p class="lead">Одна кнопка и никаких настроек. Нажали, и интернет снова работает: приложение само находит лучший сервер.</p>
+    <div class="brand-mark">
+        <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="ECLIPSE Unlimited" class="logo">
+    </div>
+    <h1 id="brandHeader" class="reveal is-visible" style="--i: 0">ECLIPSE <span class="gold">Unlimited</span></h1>
+    <p class="tagline reveal is-visible" style="--i: 1">VPN-приложение для Android</p>
+    <p class="lead reveal is-visible" style="--i: 2">Одна кнопка и никаких настроек. Нажали, и интернет снова работает: приложение само находит лучший сервер.</p>
 
-    <a class="btn btn-primary" id="mainBtn" href="#" download="Eclipse VPN.apk">Загрузка…</a>
-    <p class="hint" id="hint"></p>
+    <div class="reveal is-visible" style="--i: 3">
+        <a class="btn btn-primary" id="mainBtn" href="/client-update/client.apk" download="Eclipse VPN.apk">Скачать приложение</a>
+        <p class="hint" id="hint">Проверяем актуальную версию…</p>
+    </div>
 
-    <div class="shots" aria-label="Как выглядит приложение">
+    <div class="shots reveal" aria-label="Как выглядит приложение">
         <figure class="shot"><img src="/static/app-preview/connected.jpg" alt="Экран подключённого VPN" loading="lazy"><figcaption>Включается одной кнопкой</figcaption></figure>
         <figure class="shot"><img src="/static/app-preview/home.jpg" alt="Главный экран приложения" loading="lazy"><figcaption>Скорость и пинг всегда на виду</figcaption></figure>
         <figure class="shot"><img src="/static/app-preview/modes.jpg" alt="Выбор маршрутизации" loading="lazy"><figcaption>Маршрутизация под вашу сеть</figcaption></figure>
@@ -65,20 +270,20 @@ h1 .gold { color: #d69e4a; }
         <figure class="shot"><img src="/static/app-preview/login.jpg" alt="Вход в приложение" loading="lazy"><figcaption>Вход через Google, Яндекс или телефон</figcaption></figure>
     </div>
 
-    <h2 class="section-title">Почему с ним проще</h2>
+    <h2 class="section-title reveal">Почему с ним проще</h2>
     <div class="perks">
-        <div class="perk"><b>⚡ Подключение за секунды</b><span>Приложение само проверяет серверы и выбирает самый быстрый. Ничего не нужно копировать и настраивать.</span></div>
-        <div class="perk"><b>🛡 Работает, даже если сервер упал</b><span>Если сервер перестал отвечать, VPN сам перейдёт на следующий, даже когда приложение закрыто.</span></div>
-        <div class="perk"><b>🧠 Умная маршрутизация</b><span>Российские сайты открываются напрямую, остальное идёт через VPN. Есть режим «Белые списки» для сетей с ограничениями.</span></div>
-        <div class="perk"><b>💳 Всё внутри приложения</b><span>Покупка, продление, баланс и история платежей без переходов на сайт. Оплата картой, через СБП или с баланса.</span></div>
-        <div class="perk"><b>💬 Помощник рядом</b><span>AI-поддержка прямо в приложении: задайте вопрос или приложите скриншот.</span></div>
-        <div class="perk"><b>🔐 Только для вас</b><span>Вход по лицу, отпечатку или коду телефона. Включается по желанию.</span></div>
-        <div class="perk"><b>🌘 Кнопка в шторке</b><span>Включайте и выключайте VPN из панели управления, не открывая приложение.</span></div>
-        <div class="perk"><b>🌗 Тема под настроение</b><span>Светлая, тёмная, как на телефоне или по времени суток.</span></div>
-        <div class="perk"><b>🔄 Всегда свежая версия</b><span>Приложение обновляется само, скачивать файлы вручную больше не нужно.</span></div>
+        <div class="perk reveal"><b>Подключение за секунды</b><span>Приложение само проверяет серверы и выбирает самый быстрый. Ничего не нужно копировать и настраивать.</span></div>
+        <div class="perk reveal"><b>Работает, даже если сервер упал</b><span>Если сервер перестал отвечать, VPN сам перейдёт на следующий, даже когда приложение закрыто.</span></div>
+        <div class="perk reveal"><b>Умная маршрутизация</b><span>Российские сайты открываются напрямую, остальное идёт через VPN. Есть режим «Белые списки» для сетей с ограничениями.</span></div>
+        <div class="perk reveal"><b>Всё внутри приложения</b><span>Покупка, продление, баланс и история платежей без переходов на сайт. Оплата картой, через СБП или с баланса.</span></div>
+        <div class="perk reveal"><b>Помощник рядом</b><span>AI-поддержка прямо в приложении: задайте вопрос или приложите скриншот.</span></div>
+        <div class="perk reveal"><b>Только для вас</b><span>Вход по лицу, отпечатку или коду телефона. Включается по желанию.</span></div>
+        <div class="perk reveal"><b>Кнопка в шторке</b><span>Включайте и выключайте VPN из панели управления, не открывая приложение.</span></div>
+        <div class="perk reveal"><b>Тема под настроение</b><span>Светлая, тёмная, как на телефоне или по времени суток.</span></div>
+        <div class="perk reveal"><b>Всегда свежая версия</b><span>Приложение обновляется само, скачивать файлы вручную больше не нужно.</span></div>
     </div>
 
-    <div class="steps">
+    <div class="steps reveal">
         <h2>Как установить</h2>
         <ol>
             <li>Скачайте файл кнопкой выше</li>
@@ -88,12 +293,51 @@ h1 .gold { color: #d69e4a; }
         </ol>
     </div>
 
-    <a class="btn btn-primary again" href="#mainBtn">Скачать приложение</a>
+    <a class="btn btn-primary again reveal" href="#mainBtn">Скачать приложение</a>
 </div>
 
 <script>
 (function () {
-    fetch('/api/public/site-info').then(r => r.json()).then(site => {
+    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    var perks = document.querySelectorAll('.perks .perk');
+    perks.forEach(function (perk, index) {
+        perk.style.setProperty('--i', index % 3);
+    });
+
+    var revealItems = document.querySelectorAll('.reveal:not(.is-visible)');
+    if ('IntersectionObserver' in window && !reduceMotion.matches) {
+        var observer = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('is-visible');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: .12, rootMargin: '0px 0px -24px' });
+        revealItems.forEach(function (item) { observer.observe(item); });
+    } else {
+        revealItems.forEach(function (item) { item.classList.add('is-visible'); });
+    }
+
+    var progress = document.querySelector('.scroll-progress');
+    var progressPending = false;
+    function updateProgress() {
+        var available = document.documentElement.scrollHeight - window.innerHeight;
+        var value = available > 0 ? Math.min(1, Math.max(0, window.scrollY / available)) : 0;
+        progress.style.transform = 'scaleX(' + value + ')';
+        progressPending = false;
+    }
+    function requestProgress() {
+        if (!progressPending) {
+            progressPending = true;
+            window.requestAnimationFrame(updateProgress);
+        }
+    }
+    window.addEventListener('scroll', requestProgress, { passive: true });
+    window.addEventListener('resize', requestProgress);
+    updateProgress();
+
+    fetch('/api/public/site-info').then(function (r) { return r.json(); }).then(function (site) {
         if (site.brand_name) {
             document.getElementById('pageTitle').textContent = site.brand_name + ' — приложение для Android';
             document.getElementById('brandHeader').textContent = site.brand_name;
@@ -105,7 +349,7 @@ h1 .gold { color: #d69e4a; }
 
     // The site release is the same signed package installed clients receive through self-update.
     // Do not use the unrelated GitHub repository: Android treats its different package as another app.
-    mainBtn.textContent = '⬇ Скачать приложение';
+    mainBtn.textContent = 'Скачать приложение';
     mainBtn.href = '/client-update/client.apk';
 
     fetch('/api/public/client-update')
