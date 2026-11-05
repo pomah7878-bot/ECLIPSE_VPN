@@ -180,11 +180,6 @@ summary:focus-visible {
     scrollbar-width: none;
 }
 .shots::-webkit-scrollbar { display: none; }
-.shots:focus-visible {
-    outline: 2px solid var(--gold-bright);
-    outline-offset: 3px;
-    border-radius: 22px;
-}
 .shot {
     flex: 0 0 62%;
     max-width: 240px;
@@ -267,7 +262,7 @@ summary:focus-visible {
         <p class="hint" id="hint">Проверяем актуальную версию…</p>
     </div>
 
-    <div class="shots reveal" role="region" aria-roledescription="карусель" aria-label="Как выглядит приложение" tabindex="0">
+    <div class="shots reveal" aria-label="Как выглядит приложение">
         <figure class="shot"><img src="/static/app-preview/connected.jpg" alt="Экран подключённого VPN" loading="lazy"><figcaption>Включается одной кнопкой</figcaption></figure>
         <figure class="shot"><img src="/static/app-preview/home.jpg" alt="Главный экран приложения" loading="lazy"><figcaption>Скорость и пинг всегда на виду</figcaption></figure>
         <figure class="shot"><img src="/static/app-preview/modes.jpg" alt="Выбор маршрутизации" loading="lazy"><figcaption>Маршрутизация под вашу сеть</figcaption></figure>
@@ -341,115 +336,6 @@ summary:focus-visible {
     window.addEventListener('scroll', requestProgress, { passive: true });
     window.addEventListener('resize', requestProgress);
     updateProgress();
-
-    var shots = document.querySelector('.shots');
-    if (shots) {
-        var shotItems = Array.prototype.slice.call(shots.querySelectorAll('.shot'));
-        var autoTimer = 0;
-        var resumeTimer = 0;
-        var pointerDown = false;
-        var hovered = false;
-        var focused = false;
-        var shotsVisible = true;
-        var autoDelay = 4200;
-        var resumeDelay = 6000;
-
-        function stopAutoplay() {
-            window.clearTimeout(autoTimer);
-            autoTimer = 0;
-        }
-
-        function nearestShot() {
-            var center = shots.scrollLeft + shots.clientWidth / 2;
-            var nearest = 0;
-            var distance = Infinity;
-            shotItems.forEach(function (shot, index) {
-                var shotCenter = shot.offsetLeft + shot.offsetWidth / 2;
-                var currentDistance = Math.abs(shotCenter - center);
-                if (currentDistance < distance) {
-                    distance = currentDistance;
-                    nearest = index;
-                }
-            });
-            return nearest;
-        }
-
-        function scheduleAutoplay() {
-            stopAutoplay();
-            if (reduceMotion.matches || document.hidden || pointerDown || hovered || focused ||
-                    !shotsVisible || shotItems.length < 2 || shots.scrollWidth <= shots.clientWidth + 2) return;
-            autoTimer = window.setTimeout(function () {
-                var next = (nearestShot() + 1) % shotItems.length;
-                var shot = shotItems[next];
-                var left = shot.offsetLeft - (shots.clientWidth - shot.offsetWidth) / 2;
-                shots.scrollTo({
-                    left: Math.max(0, Math.min(left, shots.scrollWidth - shots.clientWidth)),
-                    behavior: 'smooth'
-                });
-                scheduleAutoplay();
-            }, autoDelay);
-        }
-
-        function resumeLater() {
-            stopAutoplay();
-            window.clearTimeout(resumeTimer);
-            resumeTimer = window.setTimeout(scheduleAutoplay, resumeDelay);
-        }
-
-        shots.addEventListener('pointerenter', function (event) {
-            if (event.pointerType !== 'mouse') return;
-            hovered = true;
-            stopAutoplay();
-        });
-        shots.addEventListener('pointerleave', function (event) {
-            if (event.pointerType !== 'mouse') return;
-            hovered = false;
-            scheduleAutoplay();
-        });
-        shots.addEventListener('pointerdown', function () {
-            pointerDown = true;
-            stopAutoplay();
-            window.clearTimeout(resumeTimer);
-        });
-        function finishPointerInteraction() {
-            if (!pointerDown) return;
-            pointerDown = false;
-            resumeLater();
-        }
-        window.addEventListener('pointerup', finishPointerInteraction);
-        window.addEventListener('pointercancel', finishPointerInteraction);
-        shots.addEventListener('wheel', resumeLater, { passive: true });
-        shots.addEventListener('keydown', resumeLater);
-        shots.addEventListener('focusin', function () {
-            focused = true;
-            stopAutoplay();
-            window.clearTimeout(resumeTimer);
-        });
-        shots.addEventListener('focusout', function () {
-            focused = false;
-            scheduleAutoplay();
-        });
-        document.addEventListener('visibilitychange', function () {
-            if (document.hidden) stopAutoplay();
-            else scheduleAutoplay();
-        });
-        if ('IntersectionObserver' in window) {
-            var shotsObserver = new IntersectionObserver(function (entries) {
-                shotsVisible = entries[0].isIntersecting;
-                if (shotsVisible) scheduleAutoplay();
-                else stopAutoplay();
-            }, { threshold: .2 });
-            shotsObserver.observe(shots);
-        }
-        function motionPreferenceChanged() {
-            window.clearTimeout(resumeTimer);
-            scheduleAutoplay();
-        }
-        if (reduceMotion.addEventListener) reduceMotion.addEventListener('change', motionPreferenceChanged);
-        else reduceMotion.addListener(motionPreferenceChanged);
-        window.addEventListener('resize', scheduleAutoplay);
-        scheduleAutoplay();
-    }
 
     fetch('/api/public/site-info').then(function (r) { return r.json(); }).then(function (site) {
         if (site.brand_name) {
