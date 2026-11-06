@@ -4396,11 +4396,18 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         from bot.utils.ru_format import format_rub
         balance_human = format_rub(balance_cents, cents=True)
 
+        # The photo is returned only inside this account's authenticated session.
+        # Telegram credentials stay on the server; failures leave the avatar optional.
+        from bot.services.telegram_avatars import get_profile_photo
+        from bot.utils.runtime_state import get_bot_instance
+        avatar = await get_profile_photo(get_bot_instance(), int(account["telegram_id"]))
+
         return web.json_response({
             "ok": True, "logged_in": True, "account_type": "telegram",
             "can_link_oauth": account.get("provider") in (None, "telegram"),
             "phone": site_account_phone(account),
             "email": account.get("email"),
+            "avatar_base64": base64.b64encode(avatar).decode("ascii") if avatar else None,
             "keys": keys_with_urls,
             "balance_cents": balance_cents,
             "balance_human": balance_human,
