@@ -440,10 +440,30 @@ def get_payments_stats(days: int = 1) -> Dict[str, Any]:
         """, period)
         site_row = cursor.fetchone()
 
-        # Разбивка по каналу продажи — бот отдельно от сайта
-        # (запрошено Романом для суточной статистики).
-        site_count = site_row['count'] if site_row else 0
-        site_total_rub = site_row['total_rub'] if site_row else 0
+        # Из покупок выше отдельно выделяем те, что пришли из мобильного
+        # приложения (ap.from_app, см. миграцию v174) — раньше все
+        # anonymous_purchases молча считались "сайтом", хотя значимая
+        # часть из них шла из приложения (заголовок X-Eclipse-App).
+        cursor = conn.execute("""
+            SELECT
+                COUNT(*) as count,
+                COALESCE(SUM(COALESCE(t.price_rub, 0)), 0) as total_rub
+            FROM anonymous_purchases ap
+            LEFT JOIN tariffs t ON ap.tariff_id = t.id
+            WHERE ap.status = 'paid'
+            AND COALESCE(ap.yookassa_payment_id, '') != 'trial'
+            AND ap.from_app = 1
+            AND ap.created_at >= datetime('now', ?)
+        """, period)
+        app_row = cursor.fetchone()
+
+        # Разбивка по каналу продажи — бот / сайт / приложение
+        # (запрошено Романом для суточной статистики; приложение
+        # добавлено отдельно от сайта в v174, см. выше).
+        app_count = app_row['count'] if app_row else 0
+        app_total_rub = app_row['total_rub'] if app_row else 0
+        site_count = (site_row['count'] if site_row else 0) - app_count
+        site_total_rub = (site_row['total_rub'] if site_row else 0) - app_total_rub
 
         paid_count = (crypto_row['count'] if crypto_row else 0) + \
                      (stars_row['count'] if stars_row else 0) + \
@@ -466,8 +486,12 @@ def get_payments_stats(days: int = 1) -> Dict[str, Any]:
             (row['count'] if row else 0)
             for row in (cards_row, qr_row, wata_row, platega_row, cardlink_row, site_row)
         )
-        bot_count = paid_count - site_count
-        bot_total_rub = total_rub - site_total_rub
+        # site_row уже включал заказы приложения, а paid_count/total_rub
+        # считаются от site_row целиком — значит, их трогать не нужно,
+        # а вот bot_count/bot_total_rub ("всё, что не сайт") до сих пор
+        # неявно включали приложение, раз его вычли только из site_count.
+        bot_count = paid_count - site_count - app_count
+        bot_total_rub = total_rub - site_total_rub - app_total_rub
         
         return {
             'paid_count': paid_count,
@@ -481,6 +505,8 @@ def get_payments_stats(days: int = 1) -> Dict[str, Any]:
             'bot_rub': bot_total_rub,
             'site_count': site_count,
             'site_rub': site_total_rub,
+            'app_count': app_count,
+            'app_rub': app_total_rub,
             'rub_count': rub_count,
         }
 
@@ -1164,19 +1190,22 @@ def _generate_claim_code() -> str:
     return f"{part1}-{part2}"
 
 
-def create_anonymous_purchase(order_id: str, tariff_id: int, renewal_of_key_id: Optional[int] = None) -> str:
+def create_anonymous_purchase(order_id: str, tariff_id: int, renewal_of_key_id: Optional[int] = None, from_app: bool = False) -> str:
     """Создаёт запись анонимной покупки и возвращает сгенерированный код
     привязки. Если renewal_of_key_id указан — это продление существующего
-    ключа (личный кабинет), а не выпуск нового."""
+    ключа (личный кабинет), а не выпуск нового. from_app — заказ пришёл из
+    мобильного приложения (заголовок X-Eclipse-App на запросе, который
+    СОЗДАЛ заказ); сохраняем это сразу, потому что оплата может
+    завершиться позже, фоновой проверкой, без доступа к запросу."""
     claim_code = _generate_claim_code()
     with get_db() as conn:
         # На случай крайне маловероятного совпадения — пробуем несколько раз
         for _ in range(5):
             try:
                 conn.execute(
-                    """INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, renewal_of_key_id)
-                       VALUES (?, ?, ?, 'pending', ?)""",
-                    (order_id, tariff_id, claim_code, renewal_of_key_id),
+                    """INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, renewal_of_key_id, from_app)
+                       VALUES (?, ?, ?, 'pending', ?, ?)""",
+                    (order_id, tariff_id, claim_code, renewal_of_key_id, int(bool(from_app))),
                 )
                 return claim_code
             except sqlite3.IntegrityError:

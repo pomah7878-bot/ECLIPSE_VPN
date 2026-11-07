@@ -259,6 +259,8 @@ async def collect_daily_stats() -> str:
     )
     site_count = payments.get('site_count', 0)
     site_sum = _fmt_payment_sum(0, payments.get('site_rub', 0), 0)
+    app_count = payments.get('app_count', 0)
+    app_sum = _fmt_payment_sum(0, payments.get('app_rub', 0), 0)
     
     divider = "━━━━━━━━━━━━━━━━━━━━"
 
@@ -275,6 +277,7 @@ async def collect_daily_stats() -> str:
 💳 <b>Платежи за сутки</b>
 🤖 Бот: <b>{bot_count}</b> · {bot_sum}
 🌐 Сайт: <b>{site_count}</b> · {site_sum}
+📱 Приложение: <b>{app_count}</b> · {app_sum}
 ➤ Итого: <b>{payments_total}</b> · {payments_sum} <i>(ожидают: {payments_pending})</i>
 {divider}
 🖥️ <b>Серверы</b>

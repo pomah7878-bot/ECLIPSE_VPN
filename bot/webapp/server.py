@@ -2940,7 +2940,7 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
     order_id = _generate_public_order_id()
 
     try:
-        claim_code = create_anonymous_purchase(order_id, tariff["id"])
+        claim_code = create_anonymous_purchase(order_id, tariff["id"], from_app=request.headers.get("X-Eclipse-App") == "1")
         _sp.tag_purchase(order_id, promo_quote)
 
         # Если покупатель авторизован (Google/Яндекс/код) — сразу связываем
@@ -3296,7 +3296,7 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
 
     order_id = _generate_public_order_id()
     try:
-        create_anonymous_purchase(order_id, trial_tariff_id)
+        create_anonymous_purchase(order_id, trial_tariff_id, from_app=request.headers.get("X-Eclipse-App") == "1")
         link_purchase_to_account(order_id, account_id)
 
         from bot.services.anonymous_purchase import provision_anonymous_vpn_key
@@ -4832,7 +4832,7 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
     order_id = _generate_public_order_id()
 
     try:
-        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=int(key_id))
+        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=int(key_id), from_app=request.headers.get("X-Eclipse-App") == "1")
 
         from aiogram import Bot
         from config import BOT_TOKEN
@@ -5018,7 +5018,7 @@ async def _handle_public_account_key_renew_balance_impl(request: web.Request) ->
 
     from bot.services.anonymous_purchase import renew_anonymous_vpn_key
     try:
-        result = await renew_anonymous_vpn_key(int(key_id), int(tariff_id), payment_type="balance")
+        result = await renew_anonymous_vpn_key(int(key_id), int(tariff_id), payment_type="balance", from_app=request.headers.get("X-Eclipse-App") == "1")
     except Exception as e:
         result = {"ok": False, "message": str(e)}
 
@@ -5163,6 +5163,7 @@ async def handle_public_account_buy_balance(request: web.Request) -> web.Respons
     try:
         result = await complete_anonymous_purchase_via_balance(
             account_id, int(tariff_id), promo_code=request.cookies.get("site_promo_code"),
+            from_app=request.headers.get("X-Eclipse-App") == "1",
         )
         _done = bool(result.get("ok"))
     except Exception as e:
@@ -5260,7 +5261,7 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
     order_id = _generate_public_order_id()
 
     try:
-        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=account["key_id"])
+        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=account["key_id"], from_app=request.headers.get("X-Eclipse-App") == "1")
 
         from aiogram import Bot
         from config import BOT_TOKEN

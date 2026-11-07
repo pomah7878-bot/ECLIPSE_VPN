@@ -163,7 +163,7 @@ async def get_account_info_by_claim_code(claim_code: str) -> dict:
     }
 
 
-async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str = "yookassa_qr") -> dict:
+async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str = "yookassa_qr", from_app: bool = False) -> dict:
     """
     Продлевает уже существующий ключ (личный кабинет на сайте) — без
     выпуска нового, без затрагивания панели напрямую (используется тот же
@@ -228,6 +228,7 @@ async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str
             "payment_type": payment_type,
             "price_rub": tariff.get("price_rub") or 0,
             "final_amount_cents": int(round(float(tariff.get("price_rub") or 0) * 100)),
+            "from_app": from_app,
         }
         if is_real_telegram_user:
             notify_order["user_id"] = key["user_id"]
@@ -334,7 +335,7 @@ async def complete_renewal_purchase(purchase: dict) -> dict:
     from database.db_payments import reopen_anonymous_purchase
     order_id = purchase["order_id"]
     try:
-        result = await renew_anonymous_vpn_key(purchase["renewal_of_key_id"], purchase["tariff_id"])
+        result = await renew_anonymous_vpn_key(purchase["renewal_of_key_id"], purchase["tariff_id"], from_app=bool(purchase.get("from_app")))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Продление по заказу {order_id} не оформлено: {e}")
         result = {"ok": False, "message": "Не удалось оформить продление. Попробуйте ещё раз через минуту."}
@@ -486,6 +487,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
             "payment_type": "yookassa_qr",
             "final_amount_cents": amount_cents,
             "price_rub": price_rub_value,
+            "from_app": bool(purchase.get("from_app")),
         }
         bot_instance = get_bot_instance()
         if bot_instance:
@@ -497,7 +499,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
     return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
 
 
-async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int, promo_code: str | None = None) -> dict:
+async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int, promo_code: str | None = None, from_app: bool = False) -> dict:
     """Оформляет НОВУЮ покупку с сайта (личный кабинет, залогинен) сразу за
     счёт личного баланса — без ЮKassa/QR, синхронно в один вызов.
 
@@ -571,7 +573,7 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
         return {"ok": False, "message": "Не удалось списать баланс."}
 
     order_id = f"SITEBAL{int(_time.time() * 1000)}{account_id}"
-    claim_code = create_anonymous_purchase(order_id, tariff_id)
+    claim_code = create_anonymous_purchase(order_id, tariff_id, from_app=from_app)
     _sp.tag_purchase(order_id, promo_quote)
     link_purchase_to_account(order_id, account_id)
     # yookassa_payment_id тут не платёж ЮKassa, а просто метка источника —
@@ -629,6 +631,7 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
             "tariff_id": tariff_id, "tariff_name": tariff.get("name") or "—",
             "vpn_key_id": provisioned_key_id, "payment_type": "balance",
             "final_amount_cents": price_cents, "price_rub": price_cents / 100,
+            "from_app": from_app,
         }
         bot_instance = get_bot_instance()
         if bot_instance:

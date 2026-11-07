@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 173
+LATEST_VERSION = 175
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3908,6 +3908,16 @@ def migration_173(conn: sqlite3.Connection) -> None:
     logger.info("Migration v173 applied: partner_licenses.install_no")
 
 
+
+def migration_174(conn: sqlite3.Connection) -> None:
+    """Метка источника для анонимных (сайт/приложение) заказов: та же идея,
+    что и payments.from_app в v171, но для anonymous_purchases — туда
+    v171 не попала колонка, хотя именно через эту таблицу идут все
+    сайтовые/приложенские QR- и балансовые покупки и продления."""
+    conn.execute("ALTER TABLE anonymous_purchases ADD COLUMN from_app INTEGER NOT NULL DEFAULT 0")
+    logger.info("Migration v174 applied: anonymous_purchases.from_app")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -4008,6 +4018,7 @@ MIGRATIONS = {
     171: migration_171,
     172: migration_172,
     173: migration_173,
+    174: migration_174,
 }
 
 
