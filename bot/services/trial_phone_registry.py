@@ -80,6 +80,26 @@ def unmark_phone_trial_used(raw_phone: str) -> None:
         conn.commit()
 
 
+def unlink_phone_from_telegram(raw_phone: str, telegram_id: int) -> bool:
+    """Отвязывает номер от Telegram-аккаунта (кнопка «Это не я» в
+    уведомлении о входе чужим номером) — убирает только привязку к
+    telegram_id, не трогая site_account_id, если он тоже есть. Проверяет
+    telegram_id, чтобы отвязать мог только владелец аккаунта, в который
+    вела привязка, а не кто угодно, кто знает номер."""
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return False
+    from database.connection import get_db
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE trial_verified_phones SET telegram_id = NULL "
+            "WHERE phone_normalized = ? AND telegram_id = ?",
+            (phone, telegram_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
 def get_telegram_id_for_verified_phone(raw_phone: str) -> Optional[int]:
     """Если этот номер телефона уже был подтверждён РАНЕЕ через бота
     (клиент делился контактом при получении пробного периода) — вход по

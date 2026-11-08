@@ -3794,6 +3794,15 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
         from database.db_accounts import _get_or_create_telegram_site_account
         account = _get_or_create_telegram_site_account(existing_telegram_id, referred_by_code=request.cookies.get("site_ref_code"))
         account_type = "telegram"
+        # Номер телефона со временем может перейти к другому человеку у
+        # оператора связи — звонок подтвердит ЕГО, а не прежнего
+        # владельца, поэтому предупреждаем владельца аккаунта на каждый
+        # такой вход, чтобы он мог отвязать номер кнопкой «Это не я».
+        try:
+            from bot.handlers.user.keys import notify_phone_login_by_telegram_id
+            asyncio.create_task(notify_phone_login_by_telegram_id(existing_telegram_id, normalized))
+        except Exception as notify_err:
+            logger.warning(f"Не удалось запланировать уведомление о входе по телефону: {notify_err}")
     else:
         from database.db_accounts import get_or_create_site_account_by_phone
         account = get_or_create_site_account_by_phone(normalized, referred_by_code=request.cookies.get("site_ref_code"))

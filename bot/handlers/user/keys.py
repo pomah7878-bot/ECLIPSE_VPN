@@ -131,6 +131,59 @@ async def show_my_keys(telegram_id: int, target, is_callback: bool = True):
 _KEY_BACK_TO_MAIN: dict = {}
 
 
+async def notify_phone_login_by_telegram_id(telegram_id: int, raw_phone: str) -> None:
+    """Уведомляет владельца Telegram-аккаунта, что кто-то вошёл в его
+    аккаунт на сайте/в приложении по номеру телефона, привязанному через
+    бота. Номер телефона переходит к новым людям у оператора связи, и
+    голосовое подтверждение на сайте реально дозванивается до ТЕКУЩЕГО
+    владельца SIM-карты — без этого уведомления новый владелец номера
+    тихо получал бы доступ к чужому аккаунту, ключам и балансу."""
+    from bot.services.trial_phone_registry import normalize_phone
+    from bot.utils.runtime_state import get_bot_instance
+
+    bot = get_bot_instance()
+    if not bot:
+        return
+    phone_normalized = normalize_phone(raw_phone)
+    if not phone_normalized:
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='❌ Это не я — отвязать номер', callback_data=f'phone_login_deny:{phone_normalized}')],
+    ])
+    try:
+        await bot.send_message(
+            telegram_id,
+            '🔐 <b>Вход по номеру телефона</b>\n\n'
+            'Кто-то только что вошёл в этот аккаунт на сайте или в приложении, '
+            'подтвердив ваш номер телефона звонком. Если это были вы — ничего делать не нужно.\n\n'
+            'Если это не вы — например, номер сменил владельца — нажмите кнопку ниже, '
+            'чтобы отвязать номер и закрыть этот способ входа в ваш аккаунт.',
+            reply_markup=kb, parse_mode='HTML',
+        )
+    except TelegramForbiddenError:
+        pass
+    except Exception as e:
+        logger.warning(f"Не удалось уведомить {telegram_id} о входе по телефону: {e}")
+
+
+@router.callback_query(F.data.startswith('phone_login_deny:'))
+async def handle_phone_login_deny(callback: CallbackQuery):
+    """Отвязывает номер телефона от аккаунта по кнопке «Это не я» —
+    закрывает доступ по номеру для того, кто им сейчас пользуется."""
+    phone_normalized = callback.data.split(':', 1)[1]
+    from bot.services.trial_phone_registry import unlink_phone_from_telegram
+
+    ok = unlink_phone_from_telegram(phone_normalized, callback.from_user.id)
+    if ok:
+        await callback.message.edit_text(
+            '✅ Номер телефона отвязан от вашего аккаунта. Вход по нему больше недоступен.'
+        )
+    else:
+        await callback.answer('Номер уже был отвязан или не найден.', show_alert=True)
+        return
+    await callback.answer()
+
+
 @router.callback_query(F.data == 'my_keys')
 async def my_keys_handler(callback: CallbackQuery):
     """List of user VPN keys."""
