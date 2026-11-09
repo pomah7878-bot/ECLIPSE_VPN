@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 175
+LATEST_VERSION = 174
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
