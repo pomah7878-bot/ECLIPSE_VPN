@@ -1673,6 +1673,148 @@ async def handle_welcome_page(request: web.Request) -> web.Response:
     return web.Response(text="<h1>Welcome template not found</h1>", status=404)
 
 
+# ============================================================================
+# Демо-страница всех тем и шаблонов (/themes) — только для админа, по токену.
+# Токен хранится в настройках (themes_demo_token) и показывается в админке
+# бота: Настройки → Интеграции → Сайт и витрина → «Демо всех тем».
+# ============================================================================
+
+def _themes_demo_token_ok(token: Optional[str]) -> bool:
+    """Проверяет токен демо-страницы /themes. Пустой токен в настройках =
+    страница ещё не активирована из админки — доступ закрыт всем."""
+    if not token:
+        return False
+    from database.requests import get_themes_demo_token
+    expected = get_themes_demo_token()
+    return bool(expected) and hmac.compare_digest(expected, token)
+
+
+async def handle_themes_demo_page(request: web.Request) -> web.Response:
+    """GET /themes?token=… — демо-страница: живой предпросмотр всех тем
+    витрины, кабинета, шаблонов /welcome и готовых стилей сайта с возможностью
+    применить любой из них. Без действительного токена притворяется 404."""
+    token = request.query.get("token", "")
+    if not _themes_demo_token_ok(token):
+        return web.Response(text="404: Not Found", status=404)
+
+    from database.requests import (
+        SHOP_THEMES, CABINET_THEMES, WELCOME_TEMPLATES, SITE_STYLES,
+        get_shop_theme_id, get_cabinet_theme_id, get_welcome_template_id,
+        get_site_style_id, get_effective_brand_name,
+    )
+    payload = {
+        "brand": get_effective_brand_name() or "VPN",
+        "token": token,
+        "shop_themes": [{"id": tid, "label": t["label"], "description": t["description"]} for tid, t in SHOP_THEMES.items()],
+        "cabinet_themes": [{"id": tid, "label": t["label"], "description": t["description"]} for tid, t in CABINET_THEMES.items()],
+        "welcome_templates": [{"id": tid, "label": t["label"], "description": t["description"]} for tid, t in WELCOME_TEMPLATES.items()],
+        "site_styles": [{"id": sid, "label": s["label"], "description": s["description"],
+                         "shop": s["shop"], "cabinet": s["cabinet"], "cosmic": bool(s.get("cosmic"))}
+                        for sid, s in SITE_STYLES.items()],
+        "current": {
+            "shop": get_shop_theme_id(),
+            "cabinet": get_cabinet_theme_id(),
+            "welcome": get_welcome_template_id(),
+            "style": get_site_style_id(),
+            "cosmic": _webapp_cosmic(),
+        },
+    }
+    path = os.path.join(_TEMPLATES_DIR, "themes.html")
+    if not os.path.exists(path):
+        return web.Response(text="<h1>Themes template not found</h1>", status=404)
+    with open(path, encoding="utf-8") as f:
+        page = f.read()
+    page = page.replace("/*__DATA__*/null", json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c"), 1)
+    resp = web.Response(text=page, content_type="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
+async def handle_themes_welcome_preview(request: web.Request) -> web.Response:
+    """GET /themes/welcome/{tpl_id}?token=… — предпросмотр конкретного шаблона
+    /welcome независимо от того, какой шаблон выбран и включена ли страница."""
+    if not _themes_demo_token_ok(request.query.get("token", "")):
+        return web.Response(text="404: Not Found", status=404)
+    from database.requests import WELCOME_TEMPLATES, get_effective_brand_name
+    tpl_id = request.match_info.get("tpl_id", "")
+    if tpl_id not in WELCOME_TEMPLATES:
+        return web.Response(text="404: Not Found", status=404)
+    path = os.path.join(_TEMPLATES_DIR, WELCOME_TEMPLATES[tpl_id]["file"])
+    if not os.path.exists(path):
+        return web.Response(text="404: Not Found", status=404)
+    with open(path, encoding="utf-8") as f:
+        page = f.read()
+    title = f"{get_effective_brand_name() or 'VPN'} — быстрый и надёжный VPN"
+    page = page.replace("<title>Загрузка…</title>", f"<title>{_html_module.escape(title)}</title>", 1)
+    resp = web.Response(text=page, content_type="text/html")
+    resp.headers["Cache-Control"] = "no-store"
+    resp.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return resp
+
+
+async def handle_themes_apply(request: web.Request) -> web.Response:
+    """POST /api/admin/themes/apply — применяет тему/шаблон/готовый стиль
+    с демо-страницы /themes. Авторизация — тот же токен демо-страницы.
+    Body: {"token": …, "site_style_id": …} ИЛИ {"token": …, "shop_theme_id": …,
+    "cabinet_theme_id": …, "cosmic": true/false, "welcome_template_id": …}
+    (пустые поля не меняются)."""
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+    except Exception:
+        return web.json_response({"error": "bad_request"}, status=400)
+    if not _themes_demo_token_ok(str(data.get("token", ""))):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    from database.requests import (
+        SHOP_THEMES, CABINET_THEMES, WELCOME_TEMPLATES, SITE_STYLES,
+        set_shop_theme_id, set_cabinet_theme_id, set_welcome_template_id,
+        set_site_style, set_setting,
+        get_shop_theme_id, get_cabinet_theme_id, get_welcome_template_id,
+        get_site_style_id,
+    )
+    try:
+        style_id = str(data.get("site_style_id") or "")
+        if style_id:
+            if style_id not in SITE_STYLES:
+                raise ValueError(f"Неизвестный стиль: {style_id}")
+            set_site_style(style_id)
+        else:
+            shop = str(data.get("shop_theme_id") or "")
+            cabinet = str(data.get("cabinet_theme_id") or "")
+            welcome = str(data.get("welcome_template_id") or "")
+            cosmic = data.get("cosmic")
+            if shop:
+                if shop not in SHOP_THEMES:
+                    raise ValueError(f"Неизвестная тема витрины: {shop}")
+                set_shop_theme_id(shop)
+            if cabinet:
+                if cabinet not in CABINET_THEMES:
+                    raise ValueError(f"Неизвестная тема кабинета: {cabinet}")
+                set_cabinet_theme_id(cabinet)
+            if cosmic is not None:
+                set_setting("webapp_cosmic", "1" if cosmic else "0")
+            if welcome:
+                if welcome not in WELCOME_TEMPLATES:
+                    raise ValueError(f"Неизвестный шаблон витрины: {welcome}")
+                set_welcome_template_id(welcome)
+    except ValueError as e:
+        return web.json_response({"error": "unknown_id", "message": str(e)}, status=400)
+
+    return web.json_response({
+        "ok": True,
+        "current": {
+            "shop": get_shop_theme_id(),
+            "cabinet": get_cabinet_theme_id(),
+            "welcome": get_welcome_template_id(),
+            "style": get_site_style_id(),
+            "cosmic": _webapp_cosmic(),
+        },
+    })
+
+
 async def handle_status_page(request: web.Request) -> web.Response:
     """GET /status — публичная страница статуса серверов (без адресов серверов).
     Выключена по умолчанию: пока админ не включит, отдаёт 404."""
@@ -6019,6 +6161,9 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/yookassa/notify", handle_yookassa_notify)
     app.router.add_get("/shop", handle_shop_page)
     app.router.add_get("/welcome", handle_welcome_page)
+    app.router.add_get("/themes", handle_themes_demo_page)
+    app.router.add_get("/themes/welcome/{tpl_id}", handle_themes_welcome_preview)
+    app.router.add_post("/api/admin/themes/apply", handle_themes_apply)
     app.router.add_get("/api/public/site-info", handle_public_site_info)
     app.router.add_get("/api/public/client-update", handle_client_update_info)
     app.router.add_get("/client-update/client.apk", handle_client_update_file)

@@ -1529,6 +1529,41 @@ async def show_site_style_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
+@router.callback_query(F.data == "admin_themes_demo")
+async def show_themes_demo_page_link(callback: CallbackQuery):
+    """Ссылка на демо-страницу /themes — живой предпросмотр всех тем витрины,
+    кабинета, шаблонов /welcome и готовых стилей с применением в один клик.
+    Доступ к странице — только по одноразовому токену из этой ссылки."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+
+    from database.requests import get_themes_demo_token, get_effective_webapp_url
+    base = (get_effective_webapp_url() or "").rstrip("/")
+    if not base:
+        await callback.answer("Сначала укажите домен сайта", show_alert=True)
+        return
+    token = get_themes_demo_token(create=True)
+    url = f"{base}/themes?token={token}"
+
+    text = ("🖼 <b>Демо всех тем и шаблонов</b>\n\n"
+            "Страница с живым предпросмотром всего оформления:\n"
+            "• темы витрины /shop (включая «Космос»)\n"
+            "• темы личного кабинета\n"
+            "• шаблоны страницы /welcome\n"
+            "• готовые стили сайта\n\n"
+            "Любую тему можно применить прямо со страницы — изменения сразу "
+            "вступят в силу для всех посетителей.\n\n"
+            f"🔗 Ссылка (доступ только по ней, никому не передавайте):\n<code>{url}</code>")
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🖼 Открыть демо-страницу", url=url))
+    from bot.keyboards.admin_misc import back_button, home_button
+    builder.row(back_button("admin_integrations_site"), home_button())
+    await safe_edit_or_send(callback.message, text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("admin_set_site_style:"))
 async def set_site_style_handler(callback: CallbackQuery, state: FSMContext):
     """Применяет готовый стиль сайта и возвращает в это же меню."""

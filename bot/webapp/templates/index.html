@@ -578,7 +578,53 @@
         @media (prefers-reduced-motion: reduce) {
             body[data-theme="pop"] .btn-primary:hover, body[data-theme="pop"] .btn-secondary:hover { transform: none; }
         }
-    </style>
+    
+        /* ============ LC: рестайл кабинета 2026-11-10 (только CSS, JS не тронут) ============ */
+        body:not(.cosmic):not([data-theme])::before {
+            content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+            background:
+                radial-gradient(56% 40% at 50% -6%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 70%),
+                radial-gradient(40% 30% at 4% 46%, color-mix(in srgb, var(--gold) 4%, transparent), transparent 70%),
+                radial-gradient(44% 34% at 96% 68%, color-mix(in srgb, var(--teal) 4%, transparent), transparent 70%);
+        }
+        body > header {
+            position: sticky; top: 0; z-index: 40;
+            margin: -16px auto 20px;
+            padding: 12px 16px;
+            background: color-mix(in srgb, var(--void) 82%, transparent);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--hairline);
+            border-radius: 0 0 18px 18px;
+        }
+        .rounded-xl { border-radius: 14px; }
+        .rounded-2xl { border-radius: 20px; }
+        .rounded-3xl { border-radius: 26px; }
+        .card { transition: border-color .25s ease, box-shadow .25s ease; position: relative; }
+        #app .card:hover {
+            border-color: color-mix(in srgb, var(--gold) 24%, transparent);
+            box-shadow: 0 10px 30px -18px color-mix(in srgb, var(--gold) 35%, transparent);
+        }
+        #app .card::before {
+            content: ''; position: absolute; top: 0; left: 14%; right: 14%; height: 1px; pointer-events: none;
+            background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--gold-bright) 40%, transparent), transparent);
+            opacity: .45;
+        }
+        .btn-primary { box-shadow: 0 6px 22px -6px color-mix(in srgb, var(--gold) 45%, transparent); }
+        .traffic-fill { box-shadow: 0 0 10px color-mix(in srgb, var(--teal) 30%, transparent); }
+        .ai-fab {
+            border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+            box-shadow: 0 12px 32px -8px color-mix(in srgb, var(--gold) 45%, transparent);
+        }
+        #payOverlay, #qrOverlay, #protoOverlay, #sheetOverlay, #aiChatOverlay {
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+        }
+        a:focus-visible, button:focus-visible, input:focus-visible {
+            outline: 2px solid var(--gold-bright); outline-offset: 2px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .card, #app .card:hover { transition: none; box-shadow: none; }
+        }
+</style>
     <link rel="stylesheet" href="/static/motion.css">
 </head>
 <body class="p-4 min-h-screen pb-8">

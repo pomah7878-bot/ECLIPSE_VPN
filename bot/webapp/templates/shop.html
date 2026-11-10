@@ -526,45 +526,199 @@
             body.cosmic::before, body.cosmic .app-eclipse::after { animation: none; }
         }
 
+    
+        /* ==================== LP: лендинг-редизайн /shop (2026-11-10) ====================
+           Только добавления: базовые классы (.card, .btn-*, .tariff-card, темы, cosmic)
+           определены выше и не переопределяются. ==================== */
+        html { scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+        body { overflow-x: hidden; }
+
+        .lp-bg {
+            position: fixed; inset: 0; z-index: -2; pointer-events: none;
+            background:
+                radial-gradient(58% 42% at 50% -8%, color-mix(in srgb, var(--gold) 13%, transparent), transparent 70%),
+                radial-gradient(40% 32% at 6% 42%, color-mix(in srgb, var(--gold) 5%, transparent), transparent 70%),
+                radial-gradient(46% 36% at 94% 64%, color-mix(in srgb, var(--teal) 5%, transparent), transparent 70%);
+        }
+        body.cosmic .lp-bg, body[data-theme] .lp-bg { display: none; }
+
+        .lp-header {
+            position: sticky; top: 0; z-index: 50;
+            background: color-mix(in srgb, var(--void) 80%, transparent);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--hairline);
+        }
+        .lp-header-inner {
+            max-width: 1024px; margin: 0 auto; padding: 10px 16px;
+            display: flex; align-items: center; gap: 12px;
+        }
+        .lp-brand-text { font-weight: 700; font-size: 15px; letter-spacing: .02em; color: var(--ink); white-space: nowrap; }
+        .lp-nav { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+        .lp-nav a { color: var(--mist); text-decoration: none; font-size: 13.5px; transition: color .2s; }
+        .lp-nav a:hover { color: var(--gold-bright); }
+        .lp-header-tools { display: flex; align-items: center; gap: 8px; margin-left: 16px; }
+        @media (max-width: 720px) {
+            .lp-nav { display: none; }
+            .lp-header-tools { margin-left: auto; }
+        }
+
+        .lp-hero { position: relative; overflow: hidden; text-align: center; max-width: 760px; margin: 0 auto; padding: 64px 16px 40px; }
+        .lp-hero .corona-glow { top: -110px; width: 520px; height: 520px; }
+        .lp-pill {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 7px 16px; border-radius: 999px;
+            border: 1px solid color-mix(in srgb, var(--gold) 35%, transparent);
+            background: color-mix(in srgb, var(--gold) 8%, transparent);
+            color: var(--gold-bright); font-size: 13px; font-weight: 600;
+            margin-bottom: 22px;
+        }
+        .lp-title {
+            font-size: clamp(34px, 6vw, 58px);
+            font-weight: 700; letter-spacing: -.01em; line-height: 1.08;
+            margin: 0 auto 16px; max-width: 820px;
+            text-shadow: 0 0 44px color-mix(in srgb, var(--gold) 22%, transparent);
+        }
+        .lp-lead { font-size: 16.5px; line-height: 1.62; max-width: 580px; margin: 0 auto 30px; }
+        .lp-hero-cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-bottom: 26px; }
+        .lp-btn-xl { padding: 15px 32px; border-radius: 14px; font-size: 15.5px; font-weight: 700; text-decoration: none; display: inline-block; }
+        .lp-chips { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+
+        #shopSection { scroll-margin-top: 70px; padding-top: 26px; }
+        .lp-section { max-width: 1024px; margin: 0 auto; padding: 64px 16px 0; scroll-margin-top: 70px; }
+        .lp-h2 { font-size: clamp(24px, 3.6vw, 34px); font-weight: 700; text-align: center; margin: 0 0 12px; letter-spacing: -.01em; }
+        .lp-section-sub { text-align: center; color: var(--mist); font-size: 15px; max-width: 540px; margin: 0 auto; }
+        .lp-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 36px; }
+        .lp-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 36px; }
+        @media (max-width: 900px) {
+            .lp-grid-3 { grid-template-columns: repeat(2, 1fr); }
+            .lp-grid-4 { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 560px) {
+            .lp-grid-3, .lp-grid-4 { grid-template-columns: 1fr; }
+        }
+        .lp-benefit-icon {
+            width: 44px; height: 44px; border-radius: 12px;
+            display: grid; place-items: center; font-size: 21px;
+            background: color-mix(in srgb, var(--gold) 12%, transparent);
+            border: 1px solid color-mix(in srgb, var(--gold) 24%, transparent);
+            margin-bottom: 14px;
+        }
+        .benefit h3, .spec h3 { font-size: 15.5px; font-weight: 700; margin: 0 0 7px; }
+        .benefit p, .spec p { font-size: 13.5px; color: var(--mist); margin: 0; line-height: 1.62; }
+        .lp-step-num {
+            width: 38px; height: 38px; border-radius: 50%;
+            display: grid; place-items: center;
+            font-weight: 700; font-size: 15px; color: #1A1305;
+            background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+            margin-bottom: 14px;
+            box-shadow: 0 4px 16px color-mix(in srgb, var(--gold) 35%, transparent);
+        }
+        body.cosmic .lp-step-num { color: #05061A; }
+        body[data-theme="platinum"] .lp-step-num { color: #06070A; border-radius: 3px; }
+
+        .lp-faq { max-width: 660px; margin: 36px auto 0; display: grid; gap: 10px; }
+        .faq-item summary {
+            list-style: none; cursor: pointer;
+            padding: 16px 20px; font-size: 14.5px; font-weight: 700;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        .faq-item summary::-webkit-details-marker { display: none; }
+        .faq-item summary::after {
+            content: '+'; color: var(--gold); font-size: 21px; font-weight: 400; line-height: 1;
+            transition: transform .25s;
+        }
+        .faq-item[open] summary::after { transform: rotate(45deg); }
+        .lp-faq-a { padding: 0 20px 16px; font-size: 13.5px; color: var(--mist); margin: 0; line-height: 1.65; }
+
+        .lp-final {
+            position: relative; text-align: center;
+            border-radius: 26px; padding: 58px 24px;
+            border: 1px solid color-mix(in srgb, var(--gold) 28%, transparent);
+            background:
+                radial-gradient(ellipse at 50% -20%, color-mix(in srgb, var(--gold) 14%, transparent), transparent 60%),
+                var(--panel);
+            overflow: hidden;
+        }
+        .lp-final .lp-section-sub { margin-bottom: 30px; }
+        .lp-bottom-space { height: 56px; }
+
+        /* Нейтральная статус-пилюля в шапке возле логотипа (без красной тревоги и IP) */
+        #connStatusBar {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 6px 14px; border-radius: 999px;
+            font-size: 12.5px; font-weight: 600; line-height: 1.3;
+            max-width: 360px;
+        }
+        #connStatusDot { width: 8px; height: 8px; }
+        #connStatusTitle {
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            font-size: 12.5px; font-weight: 600;
+        }
+        .lp-header #connStatusSub { display: none; }
+        #connStatusBar.neutral {
+            border-color: color-mix(in srgb, var(--gold) 30%, transparent);
+            background: color-mix(in srgb, var(--gold) 6%, var(--panel));
+        }
+        #connStatusBar.neutral #connStatusDot { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+        #connStatusBar.neutral #connStatusTitle { color: var(--gold-bright); }
+        @media (max-width: 900px) { .lp-header #connStatusWidget { display: none !important; } }
+
+        /* Гармонизация форм: единые радиусы скруглений по всей странице */
+        .rounded-xl { border-radius: 14px; }
+        .rounded-2xl { border-radius: 20px; }
+        .rounded-3xl { border-radius: 26px; }
+
     </style>
     <link rel="stylesheet" href="/static/motion.css">
 </head>
 <body>
-    <div class="relative overflow-hidden">
-        <div class="corona-glow"></div>
-
-        <div id="connStatusWidget" class="max-w-md md:max-w-2xl mx-auto px-4 pt-3" style="display:none;">
-            <div id="connStatusBar" class="rounded-2xl px-4 py-3 flex items-center gap-3">
-                <span id="connStatusDot"></span>
-                <div style="flex:1;min-width:0;">
-                    <div id="connStatusTitle" class="font-display text-sm font-bold"></div>
-                    <div id="connStatusSub" class="text-mist-dim" style="font-size:12px;"></div>
+    <div class="lp-bg" aria-hidden="true"></div>
+    <header class="lp-header">
+        <div class="lp-header-inner">
+            <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="logo" width="34" height="34" class="rounded-full" style="object-fit:cover;">
+            <span class="lp-brand-text font-display">ECLIPSE <span class="text-gold">Unlimited</span></span>
+            <div id="connStatusWidget" style="display:none;">
+                <div id="connStatusBar">
+                    <span id="connStatusDot"></span>
+                    <div id="connStatusTitle"></div>
+                    <div id="connStatusSub"></div>
                 </div>
             </div>
-        </div>
-
-        <div class="max-w-md md:max-w-5xl mx-auto px-4 pt-8 pb-4 relative">
-            <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
-                class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
-                style="text-decoration:none;position:absolute;top:12px;right:16px;display:none;">📰</a>
-            <button onclick="toggleShopLang()" id="langToggleBtn" title="Switch language"
-                class="bg-panel border border-[color:var(--hairline)] text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
-                style="position:absolute;top:12px;right:60px;">🇷🇺</button>
-            <div class="flex flex-col items-center text-center">
-                <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="logo" width="52" height="52" class="mb-3 rounded-full" style="object-fit:cover;">
-                <h1 id="brandHeader" class="font-display text-2xl font-bold tracking-wide">ECLIPSE <span class="text-gold">Unlimited</span></h1>
-                <p class="text-sm text-mist mt-2 max-w-xs">Быстрый, надёжный VPN без ограничений. Оплатите прямо здесь — ключ будет готов мгновенно, Telegram не нужен.</p>
-            </div>
-
-            <div class="flex justify-center gap-2 mt-5">
-                <span class="feature-chip rounded-full px-3 py-1.5 text-[11px] text-mist">🔒 Без логов</span>
-                <span class="feature-chip rounded-full px-3 py-1.5 text-[11px] text-mist">⚡ Высокая скорость</span>
-                <span class="feature-chip rounded-full px-3 py-1.5 text-[11px] text-mist">🌍 Global Auto</span>
+            <nav class="lp-nav" aria-label="Навигация">
+                <a href="#shopSection">Тарифы</a>
+                <a href="#benefits">Преимущества</a>
+                <a href="#faq">Вопросы</a>
+            </nav>
+            <div class="lp-header-tools">
+                <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
+                    class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
+                    style="text-decoration:none;display:none;">📰</a>
+                <button onclick="toggleShopLang()" id="langToggleBtn" title="Switch language"
+                    class="bg-panel border border-[color:var(--hairline)] text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]">🇷🇺</button>
             </div>
         </div>
-    </div>
+    </header>
 
-    <div class="max-w-md md:max-w-5xl mx-auto px-4">
+    <main>
+    <section class="hero lp-hero">
+        <div class="corona-glow"></div>
+        <div class="lp-pill">⚡ Ключ сразу после оплаты</div>
+        <h1 id="brandHeader" class="font-display lp-title">ECLIPSE <span class="text-gold">Unlimited</span></h1>
+        <p class="lp-lead text-mist">Быстрый, надёжный VPN без ограничений. Оплатите прямо здесь — ключ будет готов мгновенно, Telegram не нужен.</p>
+        <div class="lp-hero-cta">
+            <a href="#shopSection" class="btn-primary lp-btn-xl font-display">Купить ключ</a>
+            <a href="#benefits" class="btn-secondary lp-btn-xl">Узнать больше</a>
+        </div>
+        <div class="lp-chips">
+            <span class="feature-chip rounded-full px-3.5 py-1.5 text-[11px] text-mist">🔒 Без логов</span>
+            <span class="feature-chip rounded-full px-3.5 py-1.5 text-[11px] text-mist">⚡ Высокая скорость</span>
+            <span class="feature-chip rounded-full px-3.5 py-1.5 text-[11px] text-mist">🌍 Global Auto</span>
+        </div>
+    </section>
+
+        <section id="shopSection">
+        <div class="max-w-md md:max-w-5xl mx-auto px-4">
         <div id="promoBanner" class="max-w-md mx-auto"></div>
         <div id="authGate" class="card rounded-2xl p-5 mb-6 max-w-md mx-auto">
             <div class="text-xs text-mist mb-4 text-center leading-relaxed">
@@ -658,6 +812,107 @@
             💳 Карта · СБП <img src='/static/sbp.svg' class='inline-block h-3 align-text-bottom' alt='СБП'> · Безопасно и быстро
         </div>
     </div>
+        </section>
+
+        <section id="benefits" class="lp-section">
+            <h2 class="section-title font-display lp-h2">Почему выбирают нас</h2>
+            <p class="lp-section-sub">Премиальный сервис без сложных настроек — просто работает.</p>
+            <div class="benefits lp-grid-3">
+                <div class="benefit card rounded-2xl p-5">
+                    <div class="lp-benefit-icon">🚀</div>
+                    <h3 class="font-display">🚀 Скорость без компромиссов</h3>
+                    <p>Серверы в десятках стран — приложение само выбирает самый быстрый. Видео в 4K и звонки без зависаний.</p>
+                </div>
+                <div class="benefit card rounded-2xl p-5">
+                    <div class="lp-benefit-icon">🔒</div>
+                    <h3 class="font-display">🔒 Приватность прежде всего</h3>
+                    <p>Мы не ведём журналы вашей активности. Трафик шифруется современными протоколами.</p>
+                </div>
+                <div class="benefit card rounded-2xl p-5">
+                    <div class="lp-benefit-icon">📱</div>
+                    <h3 class="font-display">📱 Все устройства</h3>
+                    <p>Телефон, компьютер, планшет и роутер — одна подписка работает везде.</p>
+                </div>
+                <div class="benefit card rounded-2xl p-5">
+                    <div class="lp-benefit-icon">💳</div>
+                    <h3 class="font-display">💳 Удобная оплата</h3>
+                    <p>Карта, СБП или баланс личного кабинета — оплата занимает меньше минуты.</p>
+                </div>
+                <div class="benefit card rounded-2xl p-5">
+                    <div class="lp-benefit-icon">🎁</div>
+                    <h3 class="font-display">🎁 Пробный период</h3>
+                    <p>Попробуйте сервис бесплатно перед покупкой и убедитесь в качестве сами.</p>
+                </div>
+                <div class="benefit card rounded-2xl p-5">
+                    <div class="lp-benefit-icon">🤝</div>
+                    <h3 class="font-display">🤝 Поддержка 24/7</h3>
+                    <p>Живая поддержка и AI-помощник ответят в любое время суток.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="howto" class="lp-section">
+            <h2 class="section-title font-display lp-h2">Как начать пользоваться</h2>
+            <p class="lp-section-sub">От оплаты до работающего VPN — меньше минуты.</p>
+            <div class="spec-grid lp-grid-4">
+                <div class="spec card rounded-2xl p-5">
+                    <div class="lp-step-num font-display">1</div>
+                    <h3 class="font-display">Оплатите тариф</h3>
+                    <p>Выберите план и оплатите картой, СБП или с баланса.</p>
+                </div>
+                <div class="spec card rounded-2xl p-5">
+                    <div class="lp-step-num font-display">2</div>
+                    <h3 class="font-display">Получите ключ</h3>
+                    <p>Ссылка-подписка появится сразу на этой странице.</p>
+                </div>
+                <div class="spec card rounded-2xl p-5">
+                    <div class="lp-step-num font-display">3</div>
+                    <h3 class="font-display">Подключите приложение</h3>
+                    <p>Вставьте ссылку в приложение одним тапом.</p>
+                </div>
+                <div class="spec card rounded-2xl p-5">
+                    <div class="lp-step-num font-display">4</div>
+                    <h3 class="font-display">Пользуйтесь интернетом</h3>
+                    <p>VPN работает автоматически на всех ваших устройствах.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="faq" class="lp-section">
+            <h2 class="section-title font-display lp-h2">Частые вопросы</h2>
+            <div class="faq lp-faq">
+                <details class="faq-item card rounded-2xl">
+                    <summary class="font-display">Это безопасно?</summary>
+                    <p class="lp-faq-a">Да. Мы не храним журналы активности, а оплата проходит через защищённые платёжные системы.</p>
+                </details>
+                <details class="faq-item card rounded-2xl">
+                    <summary class="font-display">Какие способы оплаты доступны?</summary>
+                    <p class="lp-faq-a">Банковская карта, СБП и баланс личного кабинета.</p>
+                </details>
+                <details class="faq-item card rounded-2xl">
+                    <summary class="font-display">Можно ли попробовать бесплатно?</summary>
+                    <p class="lp-faq-a">Да — когда доступен пробный период, над списком тарифов появляется кнопка «Пробный период бесплатно».</p>
+                </details>
+                <details class="faq-item card rounded-2xl">
+                    <summary class="font-display">На скольких устройствах работает?</summary>
+                    <p class="lp-faq-a">Одна подписка подходит для телефона, компьютера, планшета и роутера.</p>
+                </details>
+                <details class="faq-item card rounded-2xl">
+                    <summary class="font-display">Где взять ключ после оплаты?</summary>
+                    <p class="lp-faq-a">Ключ появится сразу на этой странице и сохранится в личном кабинете.</p>
+                </details>
+            </div>
+        </section>
+
+        <section class="lp-section">
+            <div class="cta lp-final">
+                <h2 class="font-display lp-h2">Готовы вернуть свободный интернет?</h2>
+                <p class="lp-section-sub">Оплатите подписку сейчас — и ключ будет готов мгновенно.</p>
+                <a href="#shopSection" class="btn-primary lp-btn-xl font-display">Купить ключ</a>
+            </div>
+            <div class="lp-bottom-space"></div>
+        </section>
+    </main>
 
     <div id="payOverlay" class="overlay" onclick="if(event.target===this)closePay()">
         <div class="modal-box bg-panel border border-[color:var(--hairline)] rounded-3xl p-6 text-center shadow-2xl" id="payContent"></div>
@@ -811,6 +1066,46 @@
             "сервис, вы подтверждаете, что действуете самостоятельно и на свой страх и риск, и несёте ответственность за соблюдение законодательства своей страны.": "the service, you confirm that you are acting independently and at your own risk, and are responsible for complying with the laws of your country.",
             "текущий": "current",
             "уже работает": "already working",
+            "⚡ Ключ сразу после оплаты": "⚡ Key instantly after payment",
+            "Тарифы": "Plans",
+            "Преимущества": "Benefits",
+            "Вопросы": "Questions",
+            "Узнать больше": "Learn more",
+            "Почему выбирают нас": "Why choose us",
+            "🚀 Скорость без компромиссов": "🚀 Speed without compromise",
+            "Серверы в десятках стран — приложение само выбирает самый быстрый. Видео в 4K и звонки без зависаний.": "Servers in dozens of countries — the app picks the fastest one automatically. 4K video and calls without freezing.",
+            "🔒 Приватность прежде всего": "🔒 Privacy first",
+            "Мы не ведём журналы вашей активности. Трафик шифруется современными протоколами.": "We keep no logs of your activity. Traffic is encrypted with modern protocols.",
+            "📱 Все устройства": "📱 All devices",
+            "Телефон, компьютер, планшет и роутер — одна подписка работает везде.": "Phone, computer, tablet and router — one subscription works everywhere.",
+            "💳 Удобная оплата": "💳 Easy payment",
+            "Карта, СБП или баланс личного кабинета — оплата занимает меньше минуты.": "Card, SBP or account balance — payment takes less than a minute.",
+            "🎁 Пробный период": "🎁 Free trial",
+            "Попробуйте сервис бесплатно перед покупкой и убедитесь в качестве сами.": "Try the service for free before buying and see the quality yourself.",
+            "🤝 Поддержка 24/7": "🤝 24/7 support",
+            "Живая поддержка и AI-помощник ответят в любое время суток.": "Live support and an AI assistant answer at any time of day.",
+            "Как начать пользоваться": "How to get started",
+            "Оплатите тариф": "Pay for a plan",
+            "Выберите план и оплатите картой, СБП или с баланса.": "Choose a plan and pay by card, SBP or from your balance.",
+            "Получите ключ": "Get your key",
+            "Ссылка-подписка появится сразу на этой странице.": "The subscription link appears right on this page.",
+            "Подключите приложение": "Connect the app",
+            "Вставьте ссылку в приложение одним тапом.": "Paste the link into the app in one tap.",
+            "Пользуйтесь интернетом": "Enjoy the internet",
+            "VPN работает автоматически на всех ваших устройствах.": "The VPN works automatically on all your devices.",
+            "Частые вопросы": "Frequently asked questions",
+            "Это безопасно?": "Is it safe?",
+            "Да. Мы не храним журналы активности, а оплата проходит через защищённые платёжные системы.": "Yes. We store no activity logs, and payments go through secure payment systems.",
+            "Какие способы оплаты доступны?": "What payment methods are available?",
+            "Банковская карта, СБП и баланс личного кабинета.": "Bank card, SBP and account balance.",
+            "Можно ли попробовать бесплатно?": "Can I try it for free?",
+            "Да — когда доступен пробный период, над списком тарифов появляется кнопка «Пробный период бесплатно».": "Yes — when a trial is available, a \"Free trial period\" button appears above the plan list.",
+            "На скольких устройствах работает?": "How many devices does it work on?",
+            "Одна подписка подходит для телефона, компьютера, планшета и роутера.": "One subscription covers phone, computer, tablet and router.",
+            "Где взять ключ после оплаты?": "Where do I get the key after payment?",
+            "Ключ появится сразу на этой странице и сохранится в личном кабинете.": "The key appears right on this page and is saved in your account.",
+            "Готовы вернуть свободный интернет?": "Ready to get unrestricted internet back?",
+            "Оплатите подписку сейчас — и ключ будет готов мгновенно.": "Pay for your subscription now — and the key will be ready instantly.",
         };
 
         function translateShopHtml(html) {
@@ -914,10 +1209,9 @@
                     title.textContent = '✅ Вы защищены';
                     sub.textContent = 'Соединение зашифровано';
                 } else {
-                    bar.classList.add('unprotected');
-                    title.textContent = '⚠️ Вы не защищены';
-                    const loc = [data.city, data.country].filter(Boolean).join(', ');
-                    sub.textContent = (data.ip || '') + (loc ? ' · ' + loc : '');
+                    bar.classList.add('neutral');
+                    title.textContent = '🔒 Скройте свой IP — подключите VPN';
+                    sub.textContent = 'Сейчас ваш адрес виден сайтам и провайдеру';
                 }
                 widget.style.display = 'block';
             } catch (e) { /* виджет не критичен — молча пропускаем */ }
@@ -1916,7 +2210,7 @@
             }
         })();
         applyShopTranslation();
-    </script>
+</script>
 {{POWERED_BY}}
 <script src="/static/site-ai.js" defer></script>
 </body>

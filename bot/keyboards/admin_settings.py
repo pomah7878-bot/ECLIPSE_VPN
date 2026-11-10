@@ -290,6 +290,10 @@ def integrations_site_menu_kb() -> InlineKeyboardMarkup:
         text=f"🎨 Оформление сайта: {SITE_STYLES[style_id]['label'] if style_id else 'свой набор'}",
         callback_data='admin_site_style_menu',
     ))
+    builder.row(InlineKeyboardButton(
+        text='🖼 Демо всех тем (страница /themes)',
+        callback_data='admin_themes_demo',
+    ))
     builder.row(back_button('admin_integrations'), home_button())
     return builder.as_markup()
 

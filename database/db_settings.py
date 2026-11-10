@@ -122,6 +122,7 @@ __all__ = [
     'SITE_STYLES',
     'get_site_style_id',
     'set_site_style',
+    'get_themes_demo_token',
     'delete_setting',
     'get_site_session_secret',
     'get_zvonok_postback_token',
@@ -669,6 +670,17 @@ def set_site_style(style_id: str) -> None:
     set_shop_theme_id(style['shop'])
     set_cabinet_theme_id(style['cabinet'])
     set_setting('webapp_cosmic', '1' if style.get('cosmic') else '0')
+
+
+def get_themes_demo_token(create: bool = False) -> str:
+    """Токен доступа к демо-странице всех тем /themes. Генерируется один раз,
+    когда админ открывает «Демо всех тем» в настройках бота (create=True);
+    сервер проверяет его при каждом запросе /themes (create=False)."""
+    value = get_setting('themes_demo_token') or ''
+    if not value and create:
+        value = secrets.token_urlsafe(24)
+        set_setting('themes_demo_token', value)
+    return value
 
 
 def get_shop_theme_id() -> str:

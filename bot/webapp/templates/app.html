@@ -4,242 +4,590 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="pageTitle">ECLIPSE Unlimited — приложение для Android</title>
+<meta name="description" content="ECLIPSE Unlimited — VPN-приложение для Android. Одна кнопка, умная маршрутизация, оплата внутри приложения. Скачайте APK.">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <style>
 :root {
     --gold: #d69e4a;
     --gold-bright: #efbd6b;
-    --bg: #0b0b0f;
-    --surface: #14141b;
-    --border: #23232d;
-    --text: #e8e6e3;
-    --muted: #a8a8b4;
-    --ease-reveal: cubic-bezier(.22, 1, .36, 1);
+    --gold-deep: #b8802f;
+    --bg: #08080c;
+    --bg-soft: #0d0d13;
+    --surface: rgba(22, 22, 30, .72);
+    --surface-solid: #14141b;
+    --border: rgba(214, 158, 74, .14);
+    --border-soft: #23232d;
+    --text: #ece9e4;
+    --muted: #9c9aa6;
+    --dim: #6f6d7a;
+    --ease-out: cubic-bezier(.22, 1, .36, 1);
+    --header-h: 64px;
 }
 * { box-sizing: border-box; }
 html { color-scheme: dark; scroll-behavior: smooth; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
     margin: 0;
-    padding: 24px 16px;
-    display: flex;
-    justify-content: center;
-    min-height: 100vh;
-    min-height: 100dvh;
+    line-height: 1.5;
     overflow-x: hidden;
-    position: relative;
+    -webkit-font-smoothing: antialiased;
 }
-body::before,
-body::after {
-    content: '';
+img { max-width: 100%; }
+a { color: var(--gold); }
+::selection { background: rgba(214, 158, 74, .32); }
+
+/* ---------- фоновые свечения ---------- */
+.aurora {
     position: fixed;
+    inset: 0;
     pointer-events: none;
     z-index: 0;
+    overflow: hidden;
 }
-body::before {
-    inset: 0;
-    background:
-        radial-gradient(circle at 50% 4%, rgba(214, 158, 74, .12), transparent 32%),
-        radial-gradient(circle at 12% 72%, rgba(214, 158, 74, .045), transparent 30%);
-    animation: ambient-glow 8s ease-in-out infinite;
+.aurora::before, .aurora::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
 }
-body::after {
-    inset: -64px;
-    background-image:
-        linear-gradient(rgba(214, 158, 74, .045) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(214, 158, 74, .045) 1px, transparent 1px);
-    background-size: 64px 64px;
-    opacity: .32;
-    animation: grid-pan 38s linear infinite;
+.aurora::before {
+    width: 62vw; height: 62vw;
+    left: 50%; top: -28vw;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(214, 158, 74, .16), transparent 65%);
+    animation: aurora-breathe 9s ease-in-out infinite;
 }
+.aurora::after {
+    width: 46vw; height: 46vw;
+    right: -16vw; bottom: -14vw;
+    background: radial-gradient(circle, rgba(214, 158, 74, .07), transparent 65%);
+    animation: aurora-breathe 12s ease-in-out infinite reverse;
+}
+@keyframes aurora-breathe {
+    0%, 100% { opacity: .7; }
+    50% { opacity: 1; }
+}
+
 .scroll-progress {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 2px;
-    background: var(--gold-bright);
+    top: 0; left: 0;
+    width: 100%; height: 2px;
+    background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright));
     transform: scaleX(0);
     transform-origin: left center;
-    z-index: 10;
+    z-index: 60;
     pointer-events: none;
 }
-.card {
-    max-width: 460px;
+
+/* ---------- шапка ---------- */
+.site-header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    background: rgba(8, 8, 12, .68);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid transparent;
+    transition: border-color .3s;
+}
+.site-header.scrolled { border-bottom-color: var(--border); }
+.header-inner {
+    max-width: 1120px;
     width: 100%;
-    min-width: 0;
-    text-align: center;
-    position: relative;
-    z-index: 1;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
 }
-.brand-mark {
-    width: 120px;
-    height: 120px;
-    margin: 0 auto 12px;
-    position: relative;
-    display: grid;
-    place-items: center;
-    animation: float-y 7s ease-in-out infinite;
-}
-.brand-mark::before,
-.brand-mark::after {
-    content: '';
-    position: absolute;
+.header-logo {
+    width: 34px; height: 34px;
     border-radius: 50%;
-    pointer-events: none;
-}
-.brand-mark::before {
-    inset: 0;
-    border: 1px solid rgba(214, 158, 74, .38);
-    border-top-color: transparent;
-    animation: orbit-spin 14s linear infinite;
-}
-.brand-mark::after {
-    inset: 7px;
-    border: 1px solid rgba(239, 189, 107, .2);
-    border-bottom-color: transparent;
-    animation: orbit-spin-reverse 20s linear infinite;
-}
-.logo {
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    margin: 0;
     display: block;
-    box-shadow: 0 0 36px rgba(214, 158, 74, .14);
+    box-shadow: 0 0 18px rgba(214, 158, 74, .25);
 }
-h1 { font-size: 24px; margin: 0 0 6px; font-weight: 700; }
-h1 .gold { color: var(--gold); }
-.tagline { color: #8b8b96; font-size: 14px; margin: 0 0 28px; }
+.header-brand {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: .04em;
+    color: var(--text);
+    text-decoration: none;
+    white-space: nowrap;
+}
+.header-brand .gold { color: var(--gold); }
+.header-nav {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+}
+.header-nav a.nav-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 14px;
+    transition: color .2s;
+}
+.header-nav a.nav-link:hover { color: var(--gold-bright); }
 .btn {
-    display: block;
-    width: 100%;
-    min-height: 54px;
-    padding: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     border: none;
-    border-radius: 14px;
-    font-size: 16px;
+    border-radius: 12px;
     font-weight: 600;
-    margin: 10px 0;
     cursor: pointer;
     text-decoration: none;
-    position: relative;
-    transition: transform .2s ease-out, opacity .15s ease-out;
+    transition: transform .2s var(--ease-out), box-shadow .2s, opacity .15s;
 }
+.btn:active { transform: scale(.98); opacity: .9; }
 .btn-primary {
-    background: linear-gradient(135deg, var(--gold), #b8802f);
-    color: #16141a;
-    isolation: isolate;
+    background: linear-gradient(135deg, var(--gold-bright), var(--gold-deep));
+    color: #17130a;
+    box-shadow: 0 4px 24px rgba(214, 158, 74, .28);
 }
-.btn-primary::before {
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(214, 158, 74, .4); }
+.btn-ghost {
+    background: rgba(255, 255, 255, .04);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+}
+.btn-ghost:hover { transform: translateY(-2px); border-color: rgba(214, 158, 74, .4); }
+.btn-sm { padding: 9px 18px; font-size: 13.5px; }
+.btn-lg { padding: 17px 34px; font-size: 16px; border-radius: 14px; }
+a:focus-visible, summary:focus-visible, button:focus-visible {
+    outline: 2px solid var(--gold-bright);
+    outline-offset: 3px;
+}
+
+/* ---------- секции ---------- */
+.section {
+    position: relative;
+    z-index: 1;
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+.section-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 14px;
+}
+.section-tag::before {
+    content: '';
+    width: 22px; height: 1px;
+    background: var(--gold);
+}
+.section-title {
+    font-size: clamp(26px, 4vw, 38px);
+    font-weight: 800;
+    letter-spacing: -.01em;
+    margin: 0 0 14px;
+    line-height: 1.18;
+}
+.section-sub { color: var(--muted); font-size: 16px; max-width: 560px; margin: 0; }
+
+/* ---------- hero ---------- */
+.hero {
+    padding-top: calc(var(--header-h) + 56px);
+    padding-bottom: 72px;
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    gap: 48px;
+    align-items: center;
+}
+.hero-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: rgba(214, 158, 74, .06);
+    color: var(--gold-bright);
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 22px;
+}
+.hero-pill .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #57d364;
+    box-shadow: 0 0 8px #57d364;
+    animation: dot-pulse 2.2s ease-in-out infinite;
+}
+@keyframes dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.hero h1 {
+    font-size: clamp(34px, 5.4vw, 56px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    margin: 0 0 20px;
+}
+.hero h1 .shine {
+    background: linear-gradient(100deg, var(--gold-bright) 10%, #f6dca8 45%, var(--gold) 80%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shine-slide 5s linear infinite;
+}
+@keyframes shine-slide { to { background-position: 200% center; } }
+.hero-lead {
+    color: var(--muted);
+    font-size: 17.5px;
+    line-height: 1.65;
+    max-width: 520px;
+    margin: 0 0 32px;
+}
+.hero-cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.hero-hint {
+    color: var(--dim);
+    font-size: 13px;
+    margin: 16px 0 0;
+    min-height: 18px;
+}
+.hero-trust {
+    display: flex;
+    gap: 26px;
+    margin-top: 34px;
+    flex-wrap: wrap;
+}
+.trust-item b { display: block; font-size: 19px; color: var(--gold-bright); font-weight: 700; }
+.trust-item span { font-size: 12.5px; color: var(--dim); }
+
+/* ---------- телефон ---------- */
+.hero-visual {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 520px;
+}
+.phone {
+    position: relative;
+    width: 272px;
+    border-radius: 42px;
+    padding: 11px;
+    background: linear-gradient(160deg, #2a2a33, #101016 55%, #23202a);
+    box-shadow:
+        0 40px 90px rgba(0, 0, 0, .55),
+        0 0 80px rgba(214, 158, 74, .12),
+        inset 0 0 0 1px rgba(255, 255, 255, .07);
+    animation: phone-float 7s ease-in-out infinite;
+    z-index: 2;
+}
+@keyframes phone-float {
+    0%, 100% { transform: translateY(0) rotate(.6deg); }
+    50% { transform: translateY(-16px) rotate(-.6deg); }
+}
+.phone img {
+    display: block;
+    width: 100%;
+    border-radius: 32px;
+}
+.phone::after {
     content: '';
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    box-shadow: 0 0 34px 7px rgba(214, 158, 74, .38);
-    opacity: .18;
-    pointer-events: none;
-    z-index: -1;
-    animation: cta-glow 3.4s ease-in-out infinite;
+    top: 20px; left: 50%;
+    transform: translateX(-50%);
+    width: 84px; height: 22px;
+    border-radius: 999px;
+    background: #0a0a0e;
+    z-index: 3;
 }
-.btn-ghost { background: #1a1a22; color: #cfcdd6; border: 1px solid #2a2a34; }
-.btn:hover { transform: translateY(-2px); }
-.btn:active { opacity: .88; transform: translateY(0) scale(.99); }
-a:focus-visible,
-summary:focus-visible {
-    outline: 2px solid var(--gold-bright);
-    outline-offset: 4px;
+.hero-glow-ring {
+    position: absolute;
+    width: 440px; height: 440px;
+    border-radius: 50%;
+    border: 1px solid rgba(214, 158, 74, .16);
+    animation: ring-spin 26s linear infinite;
+    z-index: 1;
 }
-.hint { color: #6f6f7c; font-size: 12px; margin: 6px 0 22px; min-height: 18px; }
-.steps {
-    text-align: left;
-    background: var(--surface);
-    border: 1px solid var(--border);
+.hero-glow-ring::before {
+    content: '';
+    position: absolute;
+    top: -4px; left: 50%;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--gold-bright);
+    box-shadow: 0 0 14px var(--gold);
+}
+.hero-glow-ring.ring2 {
+    width: 540px; height: 540px;
+    border-color: rgba(214, 158, 74, .07);
+    animation-duration: 40s;
+    animation-direction: reverse;
+}
+@keyframes ring-spin { to { transform: rotate(360deg); } }
+.float-chip {
+    position: absolute;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 15px;
     border-radius: 14px;
-    padding: 18px 20px;
-    margin-top: 26px;
+    background: rgba(18, 18, 25, .88);
+    border: 1px solid var(--border-soft);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .4);
+    font-size: 12.5px;
+    color: var(--text);
+    white-space: nowrap;
 }
-.steps h2 { font-size: 14px; margin: 0 0 12px; color: var(--gold); font-weight: 600; }
-.steps ol { margin: 0; padding-left: 20px; }
-.steps li { font-size: 13px; color: var(--muted); line-height: 1.7; margin-bottom: 6px; }
-.more { margin-top: 18px; }
-.more summary { color: #7a7a88; font-size: 13px; cursor: pointer; min-height: 44px; }
-.more a { display: block; color: #9a9aa8; font-size: 13px; padding: 8px 0; text-decoration: none; }
-.more a:hover { color: var(--gold); }
-.err { color: #e0705a; font-size: 13px; }
-.lead { font-size: 17px; line-height: 1.55; color: var(--text); margin: 0 0 22px; }
+.float-chip b { color: var(--gold-bright); font-size: 13px; }
+.float-chip svg { flex: none; }
+.chip-1 { top: 9%; left: 0; animation: chip-bob 6s ease-in-out infinite; }
+.chip-2 { bottom: 12%; right: 0; animation: chip-bob 6s ease-in-out 1.4s infinite; }
+.chip-3 { top: 44%; right: 2%; animation: chip-bob 6s ease-in-out 2.8s infinite; }
+@keyframes chip-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-9px); }
+}
+
+/* ---------- возможности ---------- */
+.features { padding: 76px 20px; }
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 40px;
+}
+.feature-card {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 26px 24px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: transform .25s var(--ease-out), border-color .25s, box-shadow .25s;
+    position: relative;
+    overflow: hidden;
+}
+.feature-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(239, 189, 107, .55), transparent);
+    opacity: 0;
+    transition: opacity .3s;
+}
+.feature-card:hover {
+    transform: translateY(-5px);
+    border-color: rgba(214, 158, 74, .32);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .35), 0 0 30px rgba(214, 158, 74, .06);
+}
+.feature-card:hover::before { opacity: 1; }
+.feature-icon {
+    width: 46px; height: 46px;
+    border-radius: 13px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(140deg, rgba(214, 158, 74, .18), rgba(214, 158, 74, .05));
+    border: 1px solid rgba(214, 158, 74, .22);
+    margin-bottom: 18px;
+    color: var(--gold-bright);
+}
+.feature-card h3 { font-size: 16.5px; margin: 0 0 8px; font-weight: 700; }
+.feature-card p { font-size: 13.8px; color: var(--muted); margin: 0; line-height: 1.6; }
+
+/* ---------- скриншоты ---------- */
+.shots-section { padding: 30px 0 76px; }
+.shots-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+.shots-nav { display: flex; gap: 10px; }
+.shots-nav button {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border-soft);
+    background: rgba(255, 255, 255, .03);
+    color: var(--gold);
+    font-size: 18px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: border-color .2s, background .2s, transform .15s;
+}
+.shots-nav button:hover { border-color: var(--gold); background: rgba(214, 158, 74, .1); }
+.shots-nav button:active { transform: scale(.94); }
 .shots {
     display: flex;
-    gap: 12px;
+    gap: 18px;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
-    margin: 26px -16px 0;
-    padding: 4px 16px 14px;
+    margin-top: 34px;
+    padding: 8px 4px 20px;
     scrollbar-width: none;
 }
 .shots::-webkit-scrollbar { display: none; }
-.shots:focus-visible {
-    outline: 2px solid var(--gold-bright);
-    outline-offset: 3px;
-    border-radius: 22px;
-}
 .shot {
-    flex: 0 0 62%;
-    max-width: 240px;
+    flex: 0 0 240px;
     scroll-snap-align: center;
     margin: 0;
-    transition: transform .24s ease-out;
+    transition: transform .28s var(--ease-out);
 }
-.shot:hover { transform: translateY(-4px); }
+.shot:hover { transform: translateY(-7px); }
 .shot img {
     width: 100%;
     display: block;
-    border-radius: 22px;
-    border: 1px solid #3a3020;
-    box-shadow: 0 16px 36px rgba(0, 0, 0, .22);
+    border-radius: 26px;
+    border: 1px solid rgba(214, 158, 74, .16);
+    box-shadow: 0 22px 50px rgba(0, 0, 0, .45);
 }
-.shot figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; }
-.section-title { font-size: 20px; font-weight: 700; margin: 30px 0 14px; }
-.perks { display: grid; gap: 10px; text-align: left; }
-.perk {
+.shot figcaption {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin-top: 12px;
+    text-align: center;
+}
+
+/* ---------- шаги ---------- */
+.steps-section { padding: 20px 0 80px; }
+.steps-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 40px;
+    counter-reset: step;
+}
+.step-card {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 14px 16px;
-    transition: transform .22s ease-out;
+    border: 1px solid var(--border-soft);
+    border-radius: 18px;
+    padding: 26px 22px;
+    position: relative;
+    transition: transform .25s var(--ease-out), border-color .25s;
 }
-.perk:hover { transform: translateY(-3px); }
-.perk b { display: block; font-size: 15px; color: var(--gold); margin-bottom: 4px; }
-.perk span { font-size: 13px; line-height: 1.55; color: var(--muted); }
-.again { margin-top: 24px; }
+.step-card:hover { transform: translateY(-4px); border-color: rgba(214, 158, 74, .3); }
+.step-num {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    font-size: 16px;
+    color: #17130a;
+    background: linear-gradient(135deg, var(--gold-bright), var(--gold-deep));
+    margin-bottom: 16px;
+    box-shadow: 0 4px 18px rgba(214, 158, 74, .3);
+}
+.step-card h3 { font-size: 15.5px; margin: 0 0 8px; font-weight: 700; }
+.step-card p { font-size: 13.5px; color: var(--muted); margin: 0; line-height: 1.6; }
+
+/* ---------- финальный CTA ---------- */
+.final-cta {
+    padding: 40px 0 90px;
+}
+.cta-panel {
+    position: relative;
+    border-radius: 26px;
+    border: 1px solid rgba(214, 158, 74, .24);
+    background:
+        radial-gradient(ellipse at 50% -20%, rgba(214, 158, 74, .16), transparent 60%),
+        linear-gradient(160deg, #16141d, #0e0e14);
+    padding: 64px 32px;
+    text-align: center;
+    overflow: hidden;
+}
+.cta-panel::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(140deg, rgba(239, 189, 107, .5), transparent 40%, transparent 60%, rgba(239, 189, 107, .25));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+.cta-panel h2 {
+    font-size: clamp(26px, 4vw, 40px);
+    font-weight: 800;
+    margin: 0 0 14px;
+    letter-spacing: -.01em;
+}
+.cta-panel p { color: var(--muted); font-size: 16px; margin: 0 auto 34px; max-width: 460px; }
+.cta-buttons { display: flex; justify-content: center; flex-wrap: wrap; gap: 14px; }
+
+/* ---------- подвал ---------- */
+.site-footer {
+    position: relative;
+    z-index: 1;
+    border-top: 1px solid var(--border-soft);
+    padding: 30px 20px 40px;
+    text-align: center;
+    color: var(--dim);
+    font-size: 13px;
+}
+.site-footer a { color: var(--muted); text-decoration: none; }
+.site-footer a:hover { color: var(--gold-bright); }
+.footer-brand { font-weight: 700; color: var(--text); letter-spacing: .04em; }
+.footer-links { display: flex; justify-content: center; gap: 20px; margin-top: 10px; flex-wrap: wrap; }
+
+/* ---------- reveal-анимации ---------- */
+.reveal { opacity: 0; transform: translateY(22px); }
 .reveal.is-visible {
-    animation: reveal-in .56s var(--ease-reveal) both;
-    animation-delay: calc(var(--i, 0) * 70ms);
+    animation: reveal-in .7s var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 80ms);
 }
 @keyframes reveal-in {
-    from { opacity: 0; transform: translateY(16px) scale(.98); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from { opacity: 0; transform: translateY(22px); }
+    to { opacity: 1; transform: translateY(0); }
 }
-@keyframes orbit-spin { to { transform: rotate(360deg); } }
-@keyframes orbit-spin-reverse { to { transform: rotate(-360deg); } }
-@keyframes float-y {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
+.hero .reveal { opacity: 0; }
+.hero .reveal.is-visible { animation: reveal-in .7s var(--ease-out) both; }
+
+/* ---------- адаптив ---------- */
+@media (max-width: 960px) {
+    .hero {
+        grid-template-columns: 1fr;
+        padding-top: calc(var(--header-h) + 36px);
+        padding-bottom: 48px;
+        gap: 20px;
+        text-align: center;
+    }
+    .hero-lead { margin-left: auto; margin-right: auto; }
+    .hero-cta, .hero-trust { justify-content: center; }
+    .hero-visual { min-height: 460px; order: 2; }
+    .features-grid { grid-template-columns: repeat(2, 1fr); }
+    .steps-grid { grid-template-columns: repeat(2, 1fr); }
+    .header-nav .nav-link { display: none; }
+    .chip-1 { left: -4px; }
+    .chip-2 { right: -4px; }
 }
-@keyframes ambient-glow {
-    0%, 100% { opacity: .72; }
-    50% { opacity: 1; }
-}
-@keyframes grid-pan { to { transform: translate3d(64px, 64px, 0); } }
-@keyframes cta-glow {
-    0%, 100% { opacity: .14; }
-    50% { opacity: .48; }
+@media (max-width: 620px) {
+    .features-grid, .steps-grid { grid-template-columns: 1fr; }
+    .hero-visual { min-height: 420px; }
+    .phone { width: 232px; }
+    .hero-glow-ring { width: 340px; height: 340px; }
+    .hero-glow-ring.ring2 { width: 420px; height: 420px; }
+    .float-chip { padding: 8px 12px; font-size: 11.5px; }
+    .cta-panel { padding: 48px 20px; }
+    .btn-lg { width: 100%; }
+    .cta-buttons .btn-lg { width: auto; }
 }
 @media (max-width: 374px) {
-    body { padding: 18px 12px; }
-    .shots { margin-left: -12px; margin-right: -12px; padding-left: 12px; padding-right: 12px; }
+    .header-brand { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
@@ -248,68 +596,220 @@ summary:focus-visible {
         transition: none !important;
     }
     .scroll-progress { display: none; }
-    .reveal.is-visible { opacity: 1; transform: none; }
+    .reveal { opacity: 1; transform: none; }
 }
 </style>
 </head>
 <body>
+<div class="aurora" aria-hidden="true"></div>
 <div class="scroll-progress" aria-hidden="true"></div>
-<div class="card">
-    <div class="brand-mark">
-        <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="ECLIPSE Unlimited" class="logo">
-    </div>
-    <h1 id="brandHeader" class="reveal is-visible" style="--i: 0">ECLIPSE <span class="gold">Unlimited</span></h1>
-    <p class="tagline reveal is-visible" style="--i: 1">VPN-приложение для Android</p>
-    <p class="lead reveal is-visible" style="--i: 2">Одна кнопка и никаких настроек. Нажали, и интернет снова работает: приложение само находит лучший сервер.</p>
 
-    <div class="reveal is-visible" style="--i: 3">
-        <a class="btn btn-primary" id="mainBtn" href="/client-update/client.apk" download="Eclipse VPN.apk">Скачать приложение</a>
-        <p class="hint" id="hint">Проверяем актуальную версию…</p>
+<header class="site-header" id="siteHeader">
+    <div class="header-inner">
+        <img src="/static/logo-web.png" onerror="this.onerror=null;this.src='/static/logo.png'" alt="ECLIPSE Unlimited" class="header-logo">
+        <a class="header-brand" href="#top" id="headerBrand">ECLIPSE <span class="gold">Unlimited</span></a>
+        <nav class="header-nav" aria-label="Навигация">
+            <a class="nav-link" href="#features">Возможности</a>
+            <a class="nav-link" href="#screens">Экраны</a>
+            <a class="nav-link" href="#install">Установка</a>
+            <a class="btn btn-primary btn-sm" id="headerBtn" href="/client-update/client.apk" download="Eclipse VPN.apk">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                Скачать
+            </a>
+        </nav>
     </div>
+</header>
 
-    <div class="shots reveal" role="region" aria-roledescription="карусель" aria-label="Как выглядит приложение" tabindex="0">
-        <figure class="shot"><img src="/static/app-preview/connected.jpg" alt="Экран подключённого VPN" loading="lazy"><figcaption>Включается одной кнопкой</figcaption></figure>
-        <figure class="shot"><img src="/static/app-preview/home.jpg" alt="Главный экран приложения" loading="lazy"><figcaption>Скорость и пинг всегда на виду</figcaption></figure>
-        <figure class="shot"><img src="/static/app-preview/modes.jpg" alt="Выбор маршрутизации" loading="lazy"><figcaption>Маршрутизация под вашу сеть</figcaption></figure>
-        <figure class="shot"><img src="/static/app-preview/light.jpg" alt="Светлая тема приложения" loading="lazy"><figcaption>Светлая и тёмная тема</figcaption></figure>
-        <figure class="shot"><img src="/static/app-preview/login.jpg" alt="Вход в приложение" loading="lazy"><figcaption>Вход через Google, Яндекс или телефон</figcaption></figure>
+<main id="top">
+    <!-- HERO -->
+    <section class="section hero">
+        <div class="hero-text">
+            <div class="hero-pill reveal is-visible" style="--i:0"><span class="dot" aria-hidden="true"></span>Серверы работают · Android 6.0+</div>
+            <h1 class="reveal is-visible" style="--i:1">Свободный интернет <span class="shine">в одно касание</span></h1>
+            <p class="hero-lead reveal is-visible" style="--i:2">ECLIPSE Unlimited — VPN-приложение, которое всё делает само: находит лучший сервер, обходит блокировки и работает даже тогда, когда другие падают. Никаких настроек.</p>
+            <div class="hero-cta reveal is-visible" style="--i:3">
+                <a class="btn btn-primary btn-lg" id="mainBtn" href="/client-update/client.apk" download="Eclipse VPN.apk">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                    Скачать приложение
+                </a>
+                <a class="btn btn-ghost btn-lg" href="#features">Как это работает</a>
+            </div>
+            <p class="hero-hint reveal is-visible" style="--i:4" id="hint">Проверяем актуальную версию…</p>
+            <div class="hero-trust reveal is-visible" style="--i:5">
+                <div class="trust-item"><b>1 касание</b><span>для подключения</span></div>
+                <div class="trust-item"><b>24/7</b><span>автопереключение серверов</span></div>
+                <div class="trust-item"><b>0</b><span>настроек и конфигов</span></div>
+            </div>
+        </div>
+        <div class="hero-visual reveal is-visible" style="--i:3" aria-hidden="false">
+            <div class="hero-glow-ring" aria-hidden="true"></div>
+            <div class="hero-glow-ring ring2" aria-hidden="true"></div>
+            <div class="phone">
+                <img src="/static/app-preview/connected.jpg" alt="Экран приложения ECLIPSE Unlimited с активным VPN-подключением">
+            </div>
+            <div class="float-chip chip-1">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#57d364" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg>
+                <span><b>Подключено</b> за 2 секунды</span>
+            </div>
+            <div class="float-chip chip-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#efbd6b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                <span>Трафик <b>под защитой</b></span>
+            </div>
+            <div class="float-chip chip-3">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#efbd6b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span>Серверы <b>по всему миру</b></span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ВОЗМОЖНОСТИ -->
+    <section class="section features" id="features">
+        <div class="section-tag reveal">Возможности</div>
+        <h2 class="section-title reveal">Всё продумано за вас</h2>
+        <p class="section-sub reveal">Приложение берёт на себя выбор сервера, переподключение и обновления. Вам остаётся одна кнопка.</p>
+        <div class="features-grid">
+            <div class="feature-card reveal">
+                <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></div>
+                <h3>Подключение за секунды</h3>
+                <p>Приложение само измеряет пинг и выбирает самый быстрый сервер. Ничего не нужно копировать и настраивать.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/></svg></div>
+                <h3>Работает, даже если сервер упал</h3>
+                <p>VPN автоматически перейдёт на следующий доступный сервер — даже когда приложение закрыто.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+                <h3>Умная маршрутизация</h3>
+                <p>Российские сайты открываются напрямую, остальное — через VPN. Есть режим «Белые списки» для сетей с ограничениями.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></div>
+                <h3>Оплата внутри приложения</h3>
+                <p>Покупка, продление, баланс и история платежей — без переходов на сайт. Картой, через СБП или с баланса.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></div>
+                <h3>AI-помощник рядом</h3>
+                <p>Поддержка прямо в приложении: задайте вопрос текстом или приложите скриншот — помощник ответит мгновенно.</p>
+            </div>
+            <div class="feature-card reveal">
+                <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
+                <h3>Только для вас</h3>
+                <p>Вход по лицу, отпечатку или коду из телефона. Приложение обновляется само — всегда свежая версия.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ЭКРАНЫ -->
+    <section class="section shots-section" id="screens">
+        <div class="shots-head">
+            <div>
+                <div class="section-tag reveal">Приложение</div>
+                <h2 class="section-title reveal">Посмотрите, как оно выглядит</h2>
+            </div>
+            <div class="shots-nav reveal">
+                <button type="button" id="shotsPrev" aria-label="Предыдущий скриншот">‹</button>
+                <button type="button" id="shotsNext" aria-label="Следующий скриншот">›</button>
+            </div>
+        </div>
+        <div class="shots reveal" role="region" aria-roledescription="карусель" aria-label="Скриншоты приложения" tabindex="0">
+            <figure class="shot"><img src="/static/app-preview/home.jpg" alt="Главный экран приложения" loading="lazy"><figcaption>Скорость и пинг всегда на виду</figcaption></figure>
+            <figure class="shot"><img src="/static/app-preview/connected.jpg" alt="Экран подключённого VPN" loading="lazy"><figcaption>Включается одной кнопкой</figcaption></figure>
+            <figure class="shot"><img src="/static/app-preview/modes.jpg" alt="Выбор маршрутизации" loading="lazy"><figcaption>Маршрутизация под вашу сеть</figcaption></figure>
+            <figure class="shot"><img src="/static/app-preview/light.jpg" alt="Светлая тема приложения" loading="lazy"><figcaption>Светлая и тёмная тема</figcaption></figure>
+            <figure class="shot"><img src="/static/app-preview/login.jpg" alt="Вход в приложение" loading="lazy"><figcaption>Вход через Google, Яндекс или телефон</figcaption></figure>
+        </div>
+    </section>
+
+    <!-- УСТАНОВКА -->
+    <section class="section steps-section" id="install">
+        <div class="section-tag reveal">Установка</div>
+        <h2 class="section-title reveal">Четыре шага — и интернет снова ваш</h2>
+        <p class="section-sub reveal">Установка занимает меньше минуты. Никаких конфигов и ключей — подписка подтянется сама после входа.</p>
+        <div class="steps-grid">
+            <div class="step-card reveal">
+                <div class="step-num">1</div>
+                <h3>Скачайте APK</h3>
+                <p>Нажмите кнопку «Скачать приложение» — файл загрузится автоматически.</p>
+            </div>
+            <div class="step-card reveal">
+                <div class="step-num">2</div>
+                <h3>Разрешите установку</h3>
+                <p>Откройте файл — Android спросит разрешение на установку из неизвестных источников, разрешите.</p>
+            </div>
+            <div class="step-card reveal">
+                <div class="step-num">3</div>
+                <h3>Войдите в аккаунт</h3>
+                <p>Через Google, Яндекс или телефон — подписка появится в приложении сама.</p>
+            </div>
+            <div class="step-card reveal">
+                <div class="step-num">4</div>
+                <h3>Нажмите кнопку</h3>
+                <p>Одно касание — и VPN подключён к лучшему серверу. Готово.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ФИНАЛЬНЫЙ CTA -->
+    <section class="section final-cta">
+        <div class="cta-panel reveal">
+            <h2>Попробуйте прямо сейчас</h2>
+            <p>Скачайте приложение ECLIPSE Unlimited и верните себе свободный интернет уже через минуту.</p>
+            <div class="cta-buttons">
+                <a class="btn btn-primary btn-lg" href="/client-update/client.apk" download="Eclipse VPN.apk">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+                    Скачать приложение
+                </a>
+                <a class="btn btn-ghost btn-lg" id="newsLink" href="#" hidden>Новости в Telegram</a>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div class="footer-brand" id="footerBrand">ECLIPSE <span style="color:var(--gold)">Unlimited</span></div>
+    <div class="footer-links">
+        <a href="#features">Возможности</a>
+        <a href="#install">Установка</a>
+        <a href="/shop">Магазин</a>
     </div>
-
-    <h2 class="section-title reveal">Почему с ним проще</h2>
-    <div class="perks">
-        <div class="perk reveal"><b>Подключение за секунды</b><span>Приложение само проверяет серверы и выбирает самый быстрый. Ничего не нужно копировать и настраивать.</span></div>
-        <div class="perk reveal"><b>Работает, даже если сервер упал</b><span>Если сервер перестал отвечать, VPN сам перейдёт на следующий, даже когда приложение закрыто.</span></div>
-        <div class="perk reveal"><b>Умная маршрутизация</b><span>Российские сайты открываются напрямую, остальное идёт через VPN. Есть режим «Белые списки» для сетей с ограничениями.</span></div>
-        <div class="perk reveal"><b>Всё внутри приложения</b><span>Покупка, продление, баланс и история платежей без переходов на сайт. Оплата картой, через СБП или с баланса.</span></div>
-        <div class="perk reveal"><b>Помощник рядом</b><span>AI-поддержка прямо в приложении: задайте вопрос или приложите скриншот.</span></div>
-        <div class="perk reveal"><b>Только для вас</b><span>Вход по лицу, отпечатку или коду телефона. Включается по желанию.</span></div>
-        <div class="perk reveal"><b>Кнопка в шторке</b><span>Включайте и выключайте VPN из панели управления, не открывая приложение.</span></div>
-        <div class="perk reveal"><b>Тема под настроение</b><span>Светлая, тёмная, как на телефоне или по времени суток.</span></div>
-        <div class="perk reveal"><b>Всегда свежая версия</b><span>Приложение обновляется само, скачивать файлы вручную больше не нужно.</span></div>
-    </div>
-
-    <div class="steps reveal">
-        <h2>Как установить</h2>
-        <ol>
-            <li>Скачайте файл кнопкой выше</li>
-            <li>Откройте его — Android спросит разрешение на установку из неизвестных источников, разрешите</li>
-            <li>Откройте приложение и войдите в аккаунт: подписка появится сама</li>
-            <li>Нажмите большую кнопку подключения</li>
-        </ol>
-    </div>
-
-    <a class="btn btn-primary again reveal" href="#mainBtn">Скачать приложение</a>
-</div>
+    <p style="margin:14px 0 0">© <span id="year">2026</span> ECLIPSE Unlimited · Приложение для Android</p>
+</footer>
 
 <script>
 (function () {
+    'use strict';
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-    var perks = document.querySelectorAll('.perks .perk');
-    perks.forEach(function (perk, index) {
-        perk.style.setProperty('--i', index % 3);
-    });
 
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    /* --- шапка: граница при скролле --- */
+    var header = document.getElementById('siteHeader');
+    var progress = document.querySelector('.scroll-progress');
+    var pending = false;
+    function onScrollFrame() {
+        header.classList.toggle('scrolled', window.scrollY > 8);
+        var available = document.documentElement.scrollHeight - window.innerHeight;
+        var value = available > 0 ? Math.min(1, Math.max(0, window.scrollY / available)) : 0;
+        progress.style.transform = 'scaleX(' + value + ')';
+        pending = false;
+    }
+    function requestScroll() {
+        if (!pending) { pending = true; window.requestAnimationFrame(onScrollFrame); }
+    }
+    window.addEventListener('scroll', requestScroll, { passive: true });
+    window.addEventListener('resize', requestScroll);
+    onScrollFrame();
+
+    /* --- reveal-анимации --- */
     var revealItems = document.querySelectorAll('.reveal:not(.is-visible)');
+    var grids = document.querySelectorAll('.features-grid, .steps-grid');
+    grids.forEach(function (grid) {
+        grid.querySelectorAll('.feature-card, .step-card').forEach(function (card, index) {
+            card.style.setProperty('--i', index % 3);
+        });
+    });
     if ('IntersectionObserver' in window && !reduceMotion.matches) {
         var observer = new IntersectionObserver(function (entries) {
             entries.forEach(function (entry) {
@@ -324,158 +824,117 @@ summary:focus-visible {
         revealItems.forEach(function (item) { item.classList.add('is-visible'); });
     }
 
-    var progress = document.querySelector('.scroll-progress');
-    var progressPending = false;
-    function updateProgress() {
-        var available = document.documentElement.scrollHeight - window.innerHeight;
-        var value = available > 0 ? Math.min(1, Math.max(0, window.scrollY / available)) : 0;
-        progress.style.transform = 'scaleX(' + value + ')';
-        progressPending = false;
-    }
-    function requestProgress() {
-        if (!progressPending) {
-            progressPending = true;
-            window.requestAnimationFrame(updateProgress);
-        }
-    }
-    window.addEventListener('scroll', requestProgress, { passive: true });
-    window.addEventListener('resize', requestProgress);
-    updateProgress();
-
+    /* --- карусель скриншотов --- */
     var shots = document.querySelector('.shots');
     if (shots) {
         var shotItems = Array.prototype.slice.call(shots.querySelectorAll('.shot'));
-        var autoTimer = 0;
-        var resumeTimer = 0;
-        var pointerDown = false;
-        var hovered = false;
-        var focused = false;
-        var shotsVisible = true;
-        var autoDelay = 4200;
-        var resumeDelay = 6000;
+        var autoTimer = 0, resumeTimer = 0;
+        var pointerDown = false, hovered = false, focused = false, visible = true;
+        var autoDelay = 4200, resumeDelay = 6000;
 
-        function stopAutoplay() {
-            window.clearTimeout(autoTimer);
-            autoTimer = 0;
+        function stepWidth() {
+            var first = shotItems[0];
+            return first ? first.offsetWidth + 18 : 258;
         }
-
-        function nearestShot() {
+        function stopAutoplay() { window.clearTimeout(autoTimer); autoTimer = 0; }
+        function nearestIndex() {
             var center = shots.scrollLeft + shots.clientWidth / 2;
-            var nearest = 0;
-            var distance = Infinity;
+            var nearest = 0, distance = Infinity;
             shotItems.forEach(function (shot, index) {
                 var shotCenter = shot.offsetLeft + shot.offsetWidth / 2;
-                var currentDistance = Math.abs(shotCenter - center);
-                if (currentDistance < distance) {
-                    distance = currentDistance;
-                    nearest = index;
-                }
+                var d = Math.abs(shotCenter - center);
+                if (d < distance) { distance = d; nearest = index; }
             });
             return nearest;
         }
-
+        function scrollToIndex(index) {
+            var shot = shotItems[(index + shotItems.length) % shotItems.length];
+            var left = shot.offsetLeft - (shots.clientWidth - shot.offsetWidth) / 2;
+            shots.scrollTo({ left: Math.max(0, Math.min(left, shots.scrollWidth - shots.clientWidth)), behavior: 'smooth' });
+        }
         function scheduleAutoplay() {
             stopAutoplay();
             if (reduceMotion.matches || document.hidden || pointerDown || hovered || focused ||
-                    !shotsVisible || shotItems.length < 2 || shots.scrollWidth <= shots.clientWidth + 2) return;
+                    !visible || shotItems.length < 2 || shots.scrollWidth <= shots.clientWidth + 2) return;
             autoTimer = window.setTimeout(function () {
-                var next = (nearestShot() + 1) % shotItems.length;
-                var shot = shotItems[next];
-                var left = shot.offsetLeft - (shots.clientWidth - shot.offsetWidth) / 2;
-                shots.scrollTo({
-                    left: Math.max(0, Math.min(left, shots.scrollWidth - shots.clientWidth)),
-                    behavior: 'smooth'
-                });
+                scrollToIndex(nearestIndex() + 1);
                 scheduleAutoplay();
             }, autoDelay);
         }
-
         function resumeLater() {
             stopAutoplay();
             window.clearTimeout(resumeTimer);
             resumeTimer = window.setTimeout(scheduleAutoplay, resumeDelay);
         }
-
-        shots.addEventListener('pointerenter', function (event) {
-            if (event.pointerType !== 'mouse') return;
-            hovered = true;
-            stopAutoplay();
-        });
-        shots.addEventListener('pointerleave', function (event) {
-            if (event.pointerType !== 'mouse') return;
-            hovered = false;
-            scheduleAutoplay();
-        });
-        shots.addEventListener('pointerdown', function () {
-            pointerDown = true;
-            stopAutoplay();
-            window.clearTimeout(resumeTimer);
-        });
-        function finishPointerInteraction() {
-            if (!pointerDown) return;
-            pointerDown = false;
-            resumeLater();
-        }
-        window.addEventListener('pointerup', finishPointerInteraction);
-        window.addEventListener('pointercancel', finishPointerInteraction);
+        document.getElementById('shotsPrev').addEventListener('click', function () { scrollToIndex(nearestIndex() - 1); resumeLater(); });
+        document.getElementById('shotsNext').addEventListener('click', function () { scrollToIndex(nearestIndex() + 1); resumeLater(); });
+        shots.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') { hovered = true; stopAutoplay(); } });
+        shots.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') { hovered = false; scheduleAutoplay(); } });
+        shots.addEventListener('pointerdown', function () { pointerDown = true; stopAutoplay(); window.clearTimeout(resumeTimer); });
+        function finishPointer() { if (!pointerDown) return; pointerDown = false; resumeLater(); }
+        window.addEventListener('pointerup', finishPointer);
+        window.addEventListener('pointercancel', finishPointer);
         shots.addEventListener('wheel', resumeLater, { passive: true });
         shots.addEventListener('keydown', resumeLater);
-        shots.addEventListener('focusin', function () {
-            focused = true;
-            stopAutoplay();
-            window.clearTimeout(resumeTimer);
-        });
-        shots.addEventListener('focusout', function () {
-            focused = false;
-            scheduleAutoplay();
-        });
-        document.addEventListener('visibilitychange', function () {
-            if (document.hidden) stopAutoplay();
-            else scheduleAutoplay();
-        });
+        shots.addEventListener('focusin', function () { focused = true; stopAutoplay(); window.clearTimeout(resumeTimer); });
+        shots.addEventListener('focusout', function () { focused = false; scheduleAutoplay(); });
+        document.addEventListener('visibilitychange', function () { if (document.hidden) stopAutoplay(); else scheduleAutoplay(); });
         if ('IntersectionObserver' in window) {
             var shotsObserver = new IntersectionObserver(function (entries) {
-                shotsVisible = entries[0].isIntersecting;
-                if (shotsVisible) scheduleAutoplay();
-                else stopAutoplay();
+                visible = entries[0].isIntersecting;
+                if (visible) scheduleAutoplay(); else stopAutoplay();
             }, { threshold: .2 });
             shotsObserver.observe(shots);
         }
-        function motionPreferenceChanged() {
-            window.clearTimeout(resumeTimer);
-            scheduleAutoplay();
-        }
-        if (reduceMotion.addEventListener) reduceMotion.addEventListener('change', motionPreferenceChanged);
-        else reduceMotion.addListener(motionPreferenceChanged);
+        function motionChanged() { window.clearTimeout(resumeTimer); scheduleAutoplay(); }
+        if (reduceMotion.addEventListener) reduceMotion.addEventListener('change', motionChanged);
+        else reduceMotion.addListener(motionChanged);
         window.addEventListener('resize', scheduleAutoplay);
         scheduleAutoplay();
     }
 
+    /* --- бренд и версия с сервера --- */
     fetch('/api/public/site-info').then(function (r) { return r.json(); }).then(function (site) {
-        if (site.brand_name) {
-            document.getElementById('pageTitle').textContent = site.brand_name + ' — приложение для Android';
-            document.getElementById('brandHeader').textContent = site.brand_name;
+        if (!site.brand_name) return;
+        document.getElementById('pageTitle').textContent = site.brand_name + ' — приложение для Android';
+        var parts = site.brand_name.split(' ');
+        var gold = parts.length > 1 ? ' ' + parts.pop() : '';
+        var base = parts.join(' ');
+        function setBrand(el) {
+            if (!el) return;
+            if (gold) {
+                el.textContent = base + ' ';
+                var span = document.createElement('span');
+                if (el.classList.contains('header-brand')) span.className = 'gold';
+                else span.style.color = 'var(--gold)';
+                span.textContent = gold.trim();
+                el.appendChild(span);
+            } else {
+                el.textContent = site.brand_name;
+            }
         }
-    }).catch(function () { /* оставляем дефолтный текст, не критично */ });
+        setBrand(document.getElementById('headerBrand'));
+        setBrand(document.getElementById('footerBrand'));
+        if (site.news_channel_url) {
+            var newsLink = document.getElementById('newsLink');
+            newsLink.href = site.news_channel_url;
+            newsLink.hidden = false;
+        }
+    }).catch(function () { /* дефолтный текст уже на месте */ });
 
-    var mainBtn = document.getElementById('mainBtn');
     var hint = document.getElementById('hint');
-
     // The site release is the same signed package installed clients receive through self-update.
     // Do not use the unrelated GitHub repository: Android treats its different package as another app.
-    mainBtn.textContent = 'Скачать приложение';
-    mainBtn.href = '/client-update/client.apk';
-
     fetch('/api/public/client-update')
         .then(function (r) {
             if (!r.ok) throw new Error('no update metadata');
             return r.json();
         })
         .then(function (release) {
-            hint.textContent = 'Версия ' + (release.version_name || '') + ' · универсальный APK для Android';
+            hint.textContent = 'Актуальная версия ' + (release.version_name || '') + ' · универсальный APK для Android · бесплатно';
         })
         .catch(function () {
-            hint.textContent = 'Универсальный APK для Android';
+            hint.textContent = 'Универсальный APK для Android · бесплатно';
         });
 })();
 </script>

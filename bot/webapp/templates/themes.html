@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Демо всех тем и шаблонов</title>
+<style>
+:root{
+    --bg:#0e0f13; --bg2:#15171d; --card:#1b1e26; --card2:#22262f;
+    --border:#2c313c; --text:#e8e9ed; --muted:#9aa0ad;
+    --gold:#d4af37; --gold2:#f0d060; --accent:#7aa2f7;
+    --ok:#4caf7d; --err:#e05c5c; --radius:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;line-height:1.5;min-height:100vh}
+a{color:var(--accent)}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 0 18px;border-bottom:1px solid var(--border);margin-bottom:18px}
+h1{font-size:1.35rem;background:linear-gradient(90deg,var(--gold),var(--gold2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--muted);font-size:.85rem;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--border);border-radius:999px;padding:5px 12px;font-size:.78rem;color:var(--muted)}
+.badge b{color:var(--text);font-weight:600}
+.warning{background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.35);border-radius:var(--radius);padding:10px 14px;font-size:.85rem;color:var(--gold2);margin-bottom:18px}
+nav.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+nav.tabs button{background:var(--card);border:1px solid var(--border);color:var(--muted);padding:9px 16px;border-radius:999px;font-size:.88rem;cursor:pointer;transition:.2s}
+nav.tabs button:hover{color:var(--text);border-color:var(--gold)}
+nav.tabs button[aria-selected="true"]{background:linear-gradient(135deg,rgba(212,175,55,.18),rgba(212,175,55,.08));border-color:var(--gold);color:var(--gold2);font-weight:600}
+nav.tabs button:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section.tab{display:none}
+section.tab.active{display:block}
+.preview-box{position:relative;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:16px}
+.preview-box iframe{display:block;width:100%;height:560px;border:0;background:#fff}
+.preview-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--card);border-bottom:1px solid var(--border);font-size:.8rem;color:var(--muted)}
+.preview-bar .cur{color:var(--gold2)}
+button.mini{background:var(--card2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:4px 10px;font-size:.78rem;cursor:pointer}
+button.mini:hover{color:var(--text)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:8px;transition:.2s}
+.card:hover{border-color:#3d4451}
+.card.selected{border-color:var(--gold);background:linear-gradient(160deg,rgba(212,175,55,.10),rgba(212,175,55,.03))}
+.card .label{font-weight:600;font-size:.95rem}
+.card .desc{color:var(--muted);font-size:.8rem;flex:1}
+.card .tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:.7rem;color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:2px 8px}
+.card .current-mark{font-size:.72rem;color:var(--ok);font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+button.apply{background:linear-gradient(135deg,var(--gold),#b8952e);color:#141414;border:0;border-radius:10px;padding:9px 16px;font-size:.85rem;font-weight:700;cursor:pointer;transition:.2s}
+button.apply:hover{filter:brightness(1.12)}
+button.apply:disabled{opacity:.45;cursor:default;filter:none}
+button.ghost{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:10px;padding:9px 16px;font-size:.85rem;cursor:pointer}
+button.ghost:hover{color:var(--text);border-color:var(--gold)}
+.hint{color:var(--muted);font-size:.8rem;margin:10px 0 14px}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:11px 20px;font-size:.88rem;opacity:0;pointer-events:none;transition:.25s;max-width:90vw;z-index:50}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.ok{border-color:var(--ok);color:var(--ok)}
+#toast.err{border-color:var(--err);color:var(--err)}
+@media (max-width:640px){
+    .preview-box iframe{height:420px}
+    h1{font-size:1.1rem}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+    <div>
+        <h1 id="pageTitle">🎨 Демо всех тем и шаблонов</h1>
+        <div class="sub" id="brandLine">Страница администратора</div>
+    </div>
+    <div class="badge" id="currentBadge">текущий стиль: <b>…</b></div>
+</header>
+
+<div class="warning">⚠️ Кнопки «Применить» меняют оформление <b>боевого сайта</b> — изменения сразу увидят все посетители. Предпросмотр в рамках ниже — локальный, он ничего не меняет.</div>
+
+<nav class="tabs" role="tablist" aria-label="Разделы демо">
+    <button role="tab" id="tab-btn-shop" aria-selected="true" aria-controls="tab-shop" data-tab="shop">🛒 Витрина /shop</button>
+    <button role="tab" id="tab-btn-cabinet" aria-selected="false" aria-controls="tab-cabinet" data-tab="cabinet">👤 Кабинет /</button>
+    <button role="tab" id="tab-btn-welcome" aria-selected="false" aria-controls="tab-welcome" data-tab="welcome">🛬 Приветствие /welcome</button>
+    <button role="tab" id="tab-btn-styles" aria-selected="false" aria-controls="tab-styles" data-tab="styles">✨ Готовые стили</button>
+</nav>
+
+<!-- ============ Витрина /shop ============ -->
+<section class="tab active" id="tab-shop" role="tabpanel" aria-labelledby="tab-btn-shop">
+    <div class="preview-box">
+        <div class="preview-bar">
+            <span>Предпросмотр: <span class="cur" id="shopPreviewName">—</span></span>
+            <button class="mini" id="shopReload" type="button">↻ Перезагрузить</button>
+        </div>
+        <iframe id="shopFrame" title="Предпросмотр витрины /shop" loading="lazy" src="about:blank"></iframe>
+    </div>
+    <p class="hint">Выберите тему — предпросмотр выше обновится. «Космос» сочетается только с Classic Gold (темы не смешиваются).</p>
+    <div class="grid" id="shopGrid"></div>
+    <div class="row" style="margin-top:14px">
+        <button class="apply" id="shopApply" type="button" disabled>Применить к сайту</button>
+        <button class="ghost" id="shopReset" type="button">Сбросить выбор</button>
+    </div>
+</section>
+
+<!-- ============ Кабинет / ============ -->
+<section class="tab" id="tab-cabinet" role="tabpanel" aria-labelledby="tab-btn-cabinet">
+    <div class="preview-box">
+        <div class="preview-bar">
+            <span>Предпросмотр: <span class="cur" id="cabPreviewName">—</span></span>
+            <button class="mini" id="cabReload" type="button">↻ Перезагрузить</button>
+        </div>
+        <iframe id="cabFrame" title="Предпросмотр личного кабинета" loading="lazy" src="about:blank"></iframe>
+    </div>
+    <p class="hint">Выберите тему кабинета. «Космос» сочетается только с классической темой.</p>
+    <div class="grid" id="cabGrid"></div>
+    <div class="row" style="margin-top:14px">
+        <button class="apply" id="cabApply" type="button" disabled>Применить к сайту</button>
+        <button class="ghost" id="cabReset" type="button">Сбросить выбор</button>
+    </div>
+</section>
+
+<!-- ============ Welcome ============ -->
+<section class="tab" id="tab-welcome" role="tabpanel" aria-labelledby="tab-btn-welcome">
+    <div class="preview-box">
+        <div class="preview-bar">
+            <span>Предпросмотр: <span class="cur" id="welPreviewName">—</span></span>
+            <button class="mini" id="welReload" type="button">↻ Перезагрузить</button>
+        </div>
+        <iframe id="welFrame" title="Предпросмотр шаблона /welcome" loading="lazy" src="about:blank"></iframe>
+    </div>
+    <p class="hint">Шаблоны страницы /welcome («витрина для новых посетителей»). Предпросмотр работает, даже если страница выключена в настройках.</p>
+    <div class="grid" id="welGrid"></div>
+    <div class="row" style="margin-top:14px">
+        <button class="apply" id="welApply" type="button" disabled>Применить к сайту</button>
+    </div>
+</section>
+
+<!-- ============ Готовые стили ============ -->
+<section class="tab" id="tab-styles" role="tabpanel" aria-labelledby="tab-btn-styles">
+    <p class="hint">Готовый стиль одной кнопкой задаёт пару «тема витрины + тема кабинета» (и космическое оформление, где предусмотрено).</p>
+    <div class="grid" id="styleGrid"></div>
+</section>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+if (!DATA) { document.body.innerHTML = '<p style="padding:40px;text-align:center">Страница доступна только из админки бота.</p>'; }
+
+const $ = (id) => document.getElementById(id);
+const state = {
+    shop: DATA.current.shop, cabinet: DATA.current.cabinet,
+    welcome: DATA.current.welcome, style: DATA.current.style, cosmic: DATA.current.cosmic,
+    selShop: null, selCab: null, selWel: null,
+};
+const loadedTabs = new Set();
+
+/* ---------- тосты ---------- */
+let toastTimer = null;
+function toast(msg, kind) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = 'show' + (kind ? ' ' + kind : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ''; }, 3200);
+}
+
+/* ---------- текущий стиль в шапке ---------- */
+function styleLabel(id) {
+    const s = DATA.site_styles.find(x => x.id === id);
+    return s ? s.label : 'свой набор';
+}
+function renderBadge() {
+    $('currentBadge').innerHTML = 'текущий стиль: <b>' + styleLabel(state.style) + '</b>';
+    $('brandLine').textContent = DATA.brand + ' · страница администратора';
+}
+
+/* ---------- применение ---------- */
+async function applyPayload(payload, okMsg) {
+    try {
+        const r = await fetch('/api/admin/themes/apply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Object.assign({ token: DATA.token }, payload)),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.ok) throw new Error(j.message || j.error || ('HTTP ' + r.status));
+        Object.assign(state, j.current);
+        state.selShop = state.selCab = state.selWel = null;
+        renderBadge(); renderAll();
+        toast(okMsg, 'ok');
+    } catch (e) {
+        toast('Не удалось применить: ' + e.message, 'err');
+    }
+}
+
+/* ---------- предпросмотр в iframe (same-origin, тема ставится из родителя) ---------- */
+function overrideFrame(frame, themeId, cosmic) {
+    const apply = () => {
+        try {
+            const b = frame.contentDocument && frame.contentDocument.body;
+            if (!b) return;
+            if (cosmic) { b.classList.add('cosmic'); b.removeAttribute('data-theme'); }
+            else {
+                b.classList.remove('cosmic');
+                if (themeId && themeId !== 'classic') b.setAttribute('data-theme', themeId);
+                else b.removeAttribute('data-theme');
+            }
+        } catch (e) { /* about:blank или ещё не загрузился */ }
+    };
+    apply();
+    frame.removeEventListener('load', frame._ovLoad);
+    frame._ovLoad = () => {
+        apply();
+        // страница сама ставит тему из site-info после fetch — переустанавливаем несколько раз
+        [200, 600, 1400, 3000].forEach(ms => setTimeout(apply, ms));
+    };
+    frame.addEventListener('load', frame._ovLoad);
+}
+
+function ensureTabLoaded(tab) {
+    if (loadedTabs.has(tab)) return;
+    loadedTabs.add(tab);
+    if (tab === 'shop') { $('shopFrame').src = '/shop'; }
+    if (tab === 'cabinet') { $('cabFrame').src = '/'; }
+    if (tab === 'welcome') { loadWelcomePreview(state.welcome); }
+}
+
+function loadWelcomePreview(id) {
+    const f = $('welFrame');
+    f.src = '/themes/welcome/' + encodeURIComponent(id) + '?token=' + encodeURIComponent(DATA.token) + '&r=' + Date.now();
+    const item = DATA.welcome_templates.find(x => x.id === id);
+    $('welPreviewName').textContent = item ? item.label : id;
+}
+
+/* ---------- вкладки ---------- */
+document.querySelectorAll('nav.tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', 'false'));
+        document.querySelectorAll('section.tab').forEach(s => s.classList.remove('active'));
+        btn.setAttribute('aria-selected', 'true');
+        const tab = btn.dataset.tab;
+        $('tab-' + tab).classList.add('active');
+        ensureTabLoaded(tab);
+        if (tab === 'shop') syncShopPreview();
+        if (tab === 'cabinet') syncCabPreview();
+    });
+});
+
+/* ---------- карточки тем ---------- */
+function makeCard(item, opts) {
+    const d = document.createElement('div');
+    d.className = 'card' + (opts.selected ? ' selected' : '');
+    let html = '<div class="label">' + item.label + '</div>' +
+               '<div class="desc">' + (item.description || '') + '</div>';
+    if (opts.tags && opts.tags.length) html += '<div class="tags">' + opts.tags.map(t => '<span class="tag">' + t + '</span>').join('') + '</div>';
+    if (opts.isCurrent) html += '<div class="current-mark">✓ сейчас на сайте</div>';
+    d.innerHTML = html;
+    d.addEventListener('click', () => opts.onClick());
+    return d;
+}
+
+function renderShop() {
+    const g = $('shopGrid'); g.innerHTML = '';
+    const sel = state.selShop;
+    DATA.shop_themes.forEach(t => {
+        const isCur = state.cosmic ? t.id === 'classic' : state.shop === t.id;
+        g.appendChild(makeCard(t, {
+            selected: sel === t.id, isCurrent: isCur && !sel,
+            onClick: () => { state.selShop = t.id; renderShop(); syncShopPreview(); $('shopApply').disabled = false; },
+        }));
+    });
+    const cosmicItem = { id: 'cosmic', label: '🌌 Космос (поверх Classic)', description: 'Звёздное небо и туманности — космическое оформление витрины.' };
+    g.appendChild(makeCard(cosmicItem, {
+        selected: sel === 'cosmic', isCurrent: state.cosmic && !sel,
+        onClick: () => { state.selShop = 'cosmic'; renderShop(); syncShopPreview(); $('shopApply').disabled = false; },
+    }));
+    if (!sel) { $('shopApply').disabled = true; syncShopPreview(); }
+}
+function syncShopPreview() {
+    const f = $('shopFrame');
+    if (f.src === 'about:blank') return;
+    let theme = state.shop, cosmic = state.cosmic, name = null;
+    if (state.selShop === 'cosmic') { theme = 'classic'; cosmic = true; name = 'Космос'; }
+    else if (state.selShop) { theme = state.selShop; cosmic = false; const it = DATA.shop_themes.find(x => x.id === theme); name = it ? it.label : theme; }
+    else { name = (cosmic ? 'Космос' : (DATA.shop_themes.find(x => x.id === theme) || {}).label) || theme; }
+    $('shopPreviewName').textContent = name;
+    overrideFrame(f, theme, cosmic);
+}
+
+function renderCab() {
+    const g = $('cabGrid'); g.innerHTML = '';
+    const sel = state.selCab;
+    DATA.cabinet_themes.forEach(t => {
+        const isCur = state.cosmic ? t.id === 'classic' : state.cabinet === t.id;
+        g.appendChild(makeCard(t, {
+            selected: sel === t.id, isCurrent: isCur && !sel,
+            onClick: () => { state.selCab = t.id; renderCab(); syncCabPreview(); $('cabApply').disabled = false; },
+        }));
+    });
+    const cosmicItem = { id: 'cosmic', label: '🌌 Космос (поверх классики)', description: 'Звёздное небо и туманности в личном кабинете.' };
+    g.appendChild(makeCard(cosmicItem, {
+        selected: sel === 'cosmic', isCurrent: state.cosmic && !sel,
+        onClick: () => { state.selCab = 'cosmic'; renderCab(); syncCabPreview(); $('cabApply').disabled = false; },
+    }));
+    if (!sel) { $('cabApply').disabled = true; syncCabPreview(); }
+}
+function syncCabPreview() {
+    const f = $('cabFrame');
+    if (f.src === 'about:blank') return;
+    let theme = state.cabinet, cosmic = state.cosmic, name = null;
+    if (state.selCab === 'cosmic') { theme = 'classic'; cosmic = true; name = 'Космос'; }
+    else if (state.selCab) { theme = state.selCab; cosmic = false; const it = DATA.cabinet_themes.find(x => x.id === theme); name = it ? it.label : theme; }
+    else { name = (cosmic ? 'Космос' : (DATA.cabinet_themes.find(x => x.id === theme) || {}).label) || theme; }
+    $('cabPreviewName').textContent = name;
+    overrideFrame(f, theme, cosmic);
+}
+
+function renderWel() {
+    const g = $('welGrid'); g.innerHTML = '';
+    DATA.welcome_templates.forEach(t => {
+        g.appendChild(makeCard(t, {
+            selected: state.selWel === t.id, isCurrent: state.welcome === t.id && !state.selWel,
+            onClick: () => {
+                state.selWel = t.id; renderWel(); loadWelcomePreview(t.id); $('welApply').disabled = false;
+            },
+        }));
+    });
+    if (!state.selWel) { $('welApply').disabled = true; loadWelcomePreview(state.welcome); }
+}
+
+function renderStyles() {
+    const g = $('styleGrid'); g.innerHTML = '';
+    DATA.site_styles.forEach(s => {
+        const shopLabel = (DATA.shop_themes.find(x => x.id === s.shop) || {}).label || s.shop;
+        const cabLabel = (DATA.cabinet_themes.find(x => x.id === s.cabinet) || {}).label || s.cabinet;
+        const d = document.createElement('div');
+        d.className = 'card' + (state.style === s.id ? ' selected' : '');
+        d.innerHTML = '<div class="label">' + s.label + '</div>' +
+            '<div class="desc">' + s.description + '</div>' +
+            '<div class="tags"><span class="tag">витрина: ' + shopLabel + '</span><span class="tag">кабинет: ' + cabLabel + '</span>' +
+            (s.cosmic ? '<span class="tag">🌌 космос</span>' : '') + '</div>' +
+            (state.style === s.id ? '<div class="current-mark">✓ сейчас на сайте</div>' : '<div class="row"><button class="apply" type="button">Применить стиль</button></div>');
+        const btn = d.querySelector('button.apply');
+        if (btn) btn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            applyPayload({ site_style_id: s.id }, 'Стиль «' + s.label + '» применён к сайту');
+        });
+        g.appendChild(d);
+    });
+}
+
+function renderAll() { renderShop(); renderCab(); renderWel(); renderStyles(); }
+
+/* ---------- кнопки применения ---------- */
+$('shopApply').addEventListener('click', () => {
+    if (state.selShop === 'cosmic') applyPayload({ shop_theme_id: 'classic', cosmic: true }, 'Космическая тема витрины применена');
+    else if (state.selShop) applyPayload({ shop_theme_id: state.selShop }, 'Тема витрины применена');
+});
+$('cabApply').addEventListener('click', () => {
+    if (state.selCab === 'cosmic') applyPayload({ cabinet_theme_id: 'classic', cosmic: true }, 'Космическая тема кабинета применена');
+    else if (state.selCab) applyPayload({ cabinet_theme_id: state.selCab }, 'Тема кабинета применена');
+});
+$('welApply').addEventListener('click', () => {
+    if (state.selWel) applyPayload({ welcome_template_id: state.selWel }, 'Шаблон /welcome применён');
+});
+$('shopReset').addEventListener('click', () => { state.selShop = null; renderShop(); });
+$('cabReset').addEventListener('click', () => { state.selCab = null; renderCab(); });
+$('shopReload').addEventListener('click', () => { const f = $('shopFrame'); f.src = '/shop'; setTimeout(syncShopPreview, 100); });
+$('cabReload').addEventListener('click', () => { const f = $('cabFrame'); f.src = '/'; setTimeout(syncCabPreview, 100); });
+$('welReload').addEventListener('click', () => loadWelcomePreview(state.selWel || state.welcome));
+
+renderBadge();
+renderAll();
+ensureTabLoaded('shop');
+</script>
+</body>
+</html>
