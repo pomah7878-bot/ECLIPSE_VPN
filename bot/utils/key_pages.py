@@ -37,6 +37,7 @@ def build_key_details_replacements(
     inbound_name: str,
     protocol: str,
     prepend_html: str = '',
+    phone_masked: str = '',
 ) -> dict[str, str]:
     """Prepares key card placeholders."""
     info_lines: list[str] = []
@@ -57,6 +58,9 @@ def build_key_details_replacements(
         f"<b>Действует до:</b> {_safe(expires)}",
         f"<b>Автопродление:</b> {'✅ включено' if key.get('auto_renew') else '⛔ выключено'}",
     ])
+
+    if phone_masked:
+        info_lines.append(f"<b>📱 Телефон:</b> {phone_masked}")
 
     key_info = '\n'.join(info_lines)
     key_history = build_key_history_block(payments)

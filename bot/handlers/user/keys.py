@@ -533,6 +533,17 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         except Exception as e:
             logger.warning(f'Ошибка получения протокола: {e}')
     payments = get_key_payments_history(key_id)
+    phone_masked = ''
+    try:
+        from database.requests import get_site_account_by_telegram_id as _ga
+        _p = (_ga(telegram_id) or {}).get('phone') or ''
+        if _p.startswith('+7') and len(_p) == 12:
+            phone_masked = '+7 ••• •••-' + _p[-4:-2] + '-' + _p[-2:]
+        elif len(_p) >= 8:
+            phone_masked = '••• ' + _p[-4:]
+    except Exception:
+        pass
+
     replacements = build_key_details_replacements(
         key,
         payments,
@@ -541,6 +552,7 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
         inbound_name=inbound_name,
         protocol=protocol,
         prepend_html=prepend_text,
+        phone_masked=phone_masked,
     )
     back_to_main = _KEY_BACK_TO_MAIN.get(int(telegram_id)) == int(key_id)
     nav_visibility = None
@@ -557,6 +569,8 @@ async def show_key_details(telegram_id: int, key_id: int, message, is_callback: 
             rich_html = key_details_html(key, status, traffic_info, inbound_name, protocol, payments)
     except Exception as e:  # noqa: BLE001
         logger.debug('Новый вид карточки ключа: %s', e)
+    if rich_html and phone_masked:
+        rich_html += "\n<b>📱 Телефон:</b> " + phone_masked
     await render_page(
         message,
         page_key='key_details',
