@@ -385,6 +385,42 @@ async def handle_ping(request: web.Request) -> web.Response:
         return web.json_response({"error": "internal_error"}, status=500)
 
 
+async def handle_traffic_history(request: web.Request) -> web.Response:
+    """GET /api/traffic-history?key_id=N&days=14 — график трафика по дням для приложения.
+
+    Снапшоты в traffic_history накопительные (traffic_used на момент дня), поэтому
+    для графика считаем дельту между соседними днями; сброс трафика при продлении
+    даёт отрицательную дельту — показываем 0. Доступ только к своему ключу."""
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        key_id = int(request.query.get("key_id", "0"))
+        days = max(1, min(90, int(request.query.get("days", "14"))))
+    except ValueError:
+        return web.json_response({"error": "invalid_params"}, status=400)
+    from database.db_keys import get_key_details_for_user, get_key_traffic_history
+    key = get_key_details_for_user(key_id, telegram_id)
+    if not key:
+        return web.json_response({"error": "not_found"}, status=404)
+    try:
+        history = get_key_traffic_history(key_id, days)
+        rows = []
+        prev = None
+        for row in history:
+            total = int(row.get("traffic_used_bytes") or 0)
+            delta = total - prev if prev is not None else 0
+            if delta < 0:
+                delta = 0  # продление сбросило счётчик
+            rows.append({"date": str(row.get("snapshot_date")), "bytes": delta, "total": total})
+            prev = total
+        traffic = _format_traffic(int(key.get("traffic_used") or 0), int(key.get("traffic_limit") or 0))
+        return web.json_response({"ok": True, "key_id": key_id, "days": rows, "traffic": traffic})
+    except Exception as e:
+        logger.error(f"WebApp /api/traffic-history error: {e}", exc_info=True)
+        return web.json_response({"error": "internal_error"}, status=500)
+
+
 async def handle_key_inbounds(request: web.Request) -> web.Response:
     """GET /api/key/{key_id}/inbounds — детальный список отдельных
     подключений (inbound) ключа, сгруппированных по хосту, с реальным
@@ -6142,6 +6178,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/app", handle_app_page)
     app.router.add_get("/app/login", handle_app_login_page)
     app.router.add_get("/api/keys", handle_keys)
+    app.router.add_get("/api/traffic-history", handle_traffic_history)
     app.router.add_get("/api/key/{key_id}/inbounds", handle_key_inbounds)
     app.router.add_post("/api/key/{key_id}/cdn/buy", handle_key_cdn_buy)
     app.router.add_get("/api/public/key/{key_id}/inbounds", handle_public_key_inbounds)
