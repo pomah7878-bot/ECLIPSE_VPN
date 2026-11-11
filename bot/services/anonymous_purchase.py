@@ -58,6 +58,20 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str, site_accoun
         from database.requests import get_user_by_id
         owner_user_id = get_or_create_placeholder_user_for_site_account(site_account_id)
         owner_row = get_user_by_id(owner_user_id)
+        # v1.554: заказ из приложения — помечаем служебную личность клиента
+        try:
+            from database.db_payments import get_anonymous_purchase_by_order_id, mark_app_client
+            _pur = get_anonymous_purchase_by_order_id(order_id)
+            if _pur and _pur.get("from_app") and not owner_row.get("from_app"):
+                mark_app_client(owner_user_id)
+                _un = owner_row.get("username") or ""
+                if _un.startswith("site_"):
+                    from database.connection import get_db
+                    with get_db() as _conn:
+                        _conn.execute("UPDATE users SET username = ? WHERE id = ?", ("app_" + _un[5:], owner_user_id))
+                    owner_row = get_user_by_id(owner_user_id)
+        except Exception as _e:
+            logger.warning(f"app-client mark failed for {order_id}: {_e}")
         placeholder_tg_id = owner_row["telegram_id"]
         placeholder_username = owner_row["username"]
     else:
@@ -235,10 +249,11 @@ async def renew_anonymous_vpn_key(key_id: int, tariff_id: int, payment_type: str
         else:
             buyer_label = "🌐 сайт (личный кабинет)"
             site_account = get_site_account_by_placeholder_user_id(key["user_id"]) if key and key.get("user_id") else None
+            _icon = "📱" if from_app else "🌐"
             if site_account and site_account.get("email"):
-                buyer_label = f"🌐 {site_account['email']}"
+                buyer_label = f"{_icon} {site_account['email']}"
             elif site_account and site_account.get("provider"):
-                buyer_label = f"🌐 сайт ({site_account['provider']})"
+                buyer_label = f"{_icon} сайт ({site_account['provider']})"
             notify_order["user_id"] = None
             notify_order["_site_buyer_label"] = buyer_label
 
@@ -471,10 +486,11 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
         if purchase.get("site_account_id"):
             from database.requests import get_site_account_by_id
             site_account = get_site_account_by_id(purchase["site_account_id"])
+            _icon = "📱" if purchase.get("from_app") else "🌐"
             if site_account and site_account.get("email"):
-                buyer_label = f"🌐 {site_account['email']}"
+                buyer_label = f"{_icon} {site_account['email']}"
             elif site_account and site_account.get("provider"):
-                buyer_label = f"🌐 сайт ({site_account['provider']})"
+                buyer_label = f"{_icon} сайт ({site_account['provider']})"
 
         notify_order = {
             "order_id": order_id,
@@ -619,11 +635,12 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
         from bot.services.notifications import notify_admins_payment
         from bot.utils.runtime_state import get_bot_instance
 
-        buyer_label = f"🌐 сайт ({account_id}, баланс)"
+        _icon = "📱" if from_app else "🌐"
+        buyer_label = f"{_icon} сайт ({account_id}, баланс)"
         if account.get("email"):
-            buyer_label = f"🌐 {account['email']} (баланс)"
+            buyer_label = f"{_icon} {account['email']} (баланс)"
         elif account.get("provider"):
-            buyer_label = f"🌐 сайт ({account['provider']}, баланс)"
+            buyer_label = f"{_icon} сайт ({account['provider']}, баланс)"
 
         notify_order = {
             "order_id": order_id, "user_id": None, "_site_buyer_label": buyer_label,
