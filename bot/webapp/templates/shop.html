@@ -662,7 +662,49 @@
         }
         #connStatusBar.neutral #connStatusDot { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
         #connStatusBar.neutral #connStatusTitle { color: var(--gold-bright); }
-        @media (max-width: 900px) { .lp-header #connStatusWidget { display: none !important; } }
+        @media (max-width: 1100px) { .lp-header #connStatusWidget { display: none !important; } }
+
+        /* v1.555: шапка — бренд | статус по центру | меню и инструменты */
+        .lp-header-inner { position: relative; }
+        .lp-header #connStatusWidget {
+            position: static; transform: none; margin: 0;
+            flex: 1 1 auto; min-width: 0;
+            display: flex !important; justify-content: center;
+        }
+        .lp-header #connStatusBar { max-width: 100%; white-space: nowrap; overflow: hidden; }
+        .lp-header #connStatusTitle { min-width: 0; }
+        .lp-header #connStatusSub { display: none; }
+        .lp-app-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 13px; border-radius: 999px; white-space: nowrap;
+            font-size: 13px; font-weight: 600; text-decoration: none;
+            color: var(--teal);
+            border: 1px solid color-mix(in srgb, var(--teal) 42%, transparent);
+            background: color-mix(in srgb, var(--teal) 10%, transparent);
+            transition: background .2s, border-color .2s, transform .15s, box-shadow .2s;
+        }
+        .lp-app-btn:hover {
+            background: color-mix(in srgb, var(--teal) 18%, transparent);
+            border-color: var(--teal); transform: translateY(-1px);
+            box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--teal) 70%, transparent);
+        }
+        .lp-app-btn:active { transform: translateY(0) scale(.98); }
+        .lp-app-cta {
+            display: inline-flex !important; align-items: center; justify-content: center; gap: 8px;
+            color: var(--teal) !important;
+            border-color: color-mix(in srgb, var(--teal) 42%, transparent) !important;
+            background: color-mix(in srgb, var(--teal) 9%, var(--panel-2)) !important;
+        }
+        .lp-app-cta:hover {
+            border-color: var(--teal) !important;
+            background: color-mix(in srgb, var(--teal) 16%, var(--panel-2)) !important;
+            box-shadow: 0 8px 22px -10px color-mix(in srgb, var(--teal) 65%, transparent);
+        }
+        @media (max-width: 720px) {
+            .lp-app-btn .lp-app-btn-text { display: none; }
+            .lp-app-btn { padding: 6px 10px; }
+            .lp-hero-cta .lp-app-cta { width: 100%; }
+        }
 
         /* Гармонизация форм: единые радиусы скруглений по всей странице */
         .rounded-xl { border-radius: 14px; }
@@ -691,6 +733,7 @@
                 <a href="#faq">Вопросы</a>
             </nav>
             <div class="lp-header-tools">
+                <a href="/app" class="lp-app-btn" title="Приложение для Android и Windows">📱<span class="lp-app-btn-text"> Приложение</span></a>
                 <a id="newsChannelLink" href="#" target="_blank" title="Новости канала"
                     class="news-badge-pulse bg-panel border border-[color:var(--gold)] text-gold text-sm px-2.5 py-1.5 rounded-full transition hover:bg-[color:var(--panel-2)]"
                     style="text-decoration:none;display:none;">📰</a>
@@ -709,6 +752,7 @@
         <div class="lp-hero-cta">
             <a href="#shopSection" class="btn-primary lp-btn-xl font-display">Купить ключ</a>
             <a href="#benefits" class="btn-secondary lp-btn-xl">Узнать больше</a>
+            <a href="/app" class="btn-secondary lp-btn-xl lp-app-cta">📱 Приложение</a>
         </div>
         <div class="lp-chips">
             <span class="feature-chip rounded-full px-3.5 py-1.5 text-[11px] text-mist">🔒 Без логов</span>
@@ -1067,6 +1111,8 @@
             "текущий": "current",
             "уже работает": "already working",
             "⚡ Ключ сразу после оплаты": "⚡ Key instantly after payment",
+            "Приложение для Android и Windows": "App for Android and Windows",
+            "Приложение": "App",
             "Тарифы": "Plans",
             "Преимущества": "Benefits",
             "Вопросы": "Questions",
