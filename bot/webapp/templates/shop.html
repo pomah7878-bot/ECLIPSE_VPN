@@ -705,6 +705,11 @@
             .lp-app-btn { padding: 6px 10px; }
             .lp-hero-cta .lp-app-cta { width: 100%; }
         }
+        /* Скрытие индикатора на узких экранах — после блока раскладки,
+           иначе его display:flex !important перебивает это правило. */
+        @media (max-width: 1100px) {
+            .lp-header #connStatusWidget { display: none !important; }
+        }
 
         /* Гармонизация форм: единые радиусы скруглений по всей странице */
         .rounded-xl { border-radius: 14px; }
