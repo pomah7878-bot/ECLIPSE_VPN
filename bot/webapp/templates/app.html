@@ -1190,14 +1190,18 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
             return r.json();
         })
         .then(function (release) {
-            hint.textContent = 'Актуальная версия ' + (release.version_name || '') + ' · универсальный APK для Android · бесплатно';
+            var sha = release.sha256 ? String(release.sha256).toLowerCase() : '';
+            var shortSha = sha ? sha.slice(0, 10) + '…' + sha.slice(-6) : '';
+            hint.textContent = 'Версия ' + (release.version_name || '') + (shortSha ? ' · SHA-256 ' + shortSha : '') +
+                ' · универсальный APK для Android · бесплатно';
+            if (shortSha) hint.title = 'SHA-256: ' + sha;
             if (verifyVersion) {
                 verifyVersion.textContent = release.version_name
                     ? 'v' + release.version_name + (release.version_code ? ' (код ' + release.version_code + ')' : '')
                     : '—';
             }
             if (verifySha) {
-                verifySha.textContent = release.sha256 ? String(release.sha256).toLowerCase() : '—';
+                verifySha.textContent = sha || '—';
             }
         })
         .catch(function () {
