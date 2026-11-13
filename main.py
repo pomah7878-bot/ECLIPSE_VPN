@@ -296,9 +296,10 @@ async def main():
     from bot.middlewares.menu_width import MenuWidthMiddleware
     bot.session.middleware(MenuWidthMiddleware())
 
-    # Иконки на кнопках (выключено по умолчанию; включается в «Вид главной страницы»)
-    from bot.middlewares.button_icons import ButtonIconsMiddleware
-    bot.session.middleware(ButtonIconsMiddleware())
+    # Иконки на кнопках теперь встроены в menu_style (вместе с фирменными подписями и цветами),
+    # чтобы кастомный emoji-пак не дублировался и работал даже при паузе цветов.
+    # from bot.middlewares.button_icons import ButtonIconsMiddleware
+    # bot.session.middleware(ButtonIconsMiddleware())
 
     # Цвета кнопок «нового вида меню» (лицензия client_cabinet, включается в «Настройки бота → Новый вид меню»)
     from bot.middlewares.button_colors import ButtonColorsMiddleware

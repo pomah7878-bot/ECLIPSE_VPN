@@ -40,8 +40,9 @@ def auto_style(button: InlineKeyboardButton) -> Optional[str]:
 
 
 def colorize(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
-    """Новая клавиатура с единым фирменным стилем ECLIPSE: подпись и цвет."""
-    from bot.services import brand_buttons
+    """Новая клавиатура с единым фирменным стилем ECLIPSE: подпись, иконка и цвет."""
+    from bot.services import brand_buttons, button_icons
+    icons = button_icons.icon_map() if button_icons.is_enabled() else {}
     changed, rows = False, []
     for row in markup.inline_keyboard:
         new_row = []
@@ -51,6 +52,11 @@ def colorize(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
             if text != (b.text or ""):
                 button = b.model_copy(update={"text": text})
                 changed = True
+            if icons:
+                with_icon = button_icons.style_button(button, icons)
+                if with_icon is not button:
+                    button = with_icon
+                    changed = True
             style = auto_style(button)
             if style:
                 button = button.model_copy(update={"style": style})
