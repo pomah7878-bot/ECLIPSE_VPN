@@ -1216,25 +1216,30 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 // clipboard API там, где он есть, и выделение текста как запасной вариант.
 (function () {
     'use strict';
+    function legacyCopy(text) {
+        try {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            var ok = document.execCommand('copy');
+            document.body.removeChild(area);
+            return ok;
+        } catch (e) {
+            return false;
+        }
+    }
     function copyText(text) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
-            return navigator.clipboard.writeText(text);
+            return navigator.clipboard.writeText(text).catch(function () {
+                if (!legacyCopy(text)) throw new Error('copy failed');
+            });
         }
         return new Promise(function (resolve, reject) {
-            try {
-                var area = document.createElement('textarea');
-                area.value = text;
-                area.setAttribute('readonly', '');
-                area.style.position = 'fixed';
-                area.style.opacity = '0';
-                document.body.appendChild(area);
-                area.select();
-                var ok = document.execCommand('copy');
-                document.body.removeChild(area);
-                if (ok) resolve(); else reject(new Error('copy failed'));
-            } catch (e) {
-                reject(e);
-            }
+            if (legacyCopy(text)) resolve(); else reject(new Error('copy failed'));
         });
     }
     document.querySelectorAll('[data-copy-target]').forEach(function (button) {
