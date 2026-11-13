@@ -872,6 +872,7 @@ def get_user_keys_for_display(telegram_id: int) -> List[Dict[str, Any]]:
                 vk.id, vk.client_uuid, vk.custom_name, vk.expires_at, vk.user_id,
                 s.name as server_name, s.id as server_id, vk.panel_email,
                 vk.sub_id, vk.tariff_id,
+                t.name as tariff_name,
                 vk.traffic_used, vk.traffic_limit,
                 CASE
                     WHEN vk.expires_at > datetime('now') THEN 1
@@ -879,6 +880,7 @@ def get_user_keys_for_display(telegram_id: int) -> List[Dict[str, Any]]:
                 END as is_active
             FROM vpn_keys vk
             LEFT JOIN servers s ON vk.server_id = s.id
+            LEFT JOIN tariffs t ON vk.tariff_id = t.id
             JOIN users u ON vk.user_id = u.id
             WHERE u.telegram_id = ?
             ORDER BY vk.expires_at DESC
@@ -900,6 +902,13 @@ def get_user_keys_for_display(telegram_id: int) -> List[Dict[str, Any]]:
                 seq_num = seq_numbers.get(key['id'], key['id'])
                 suffix = ' (Не настроен)' if not key['server_id'] else ''
                 key['display_name'] = f"{prefix} №{seq_num}{suffix}"
+            # The app shows a special badge for keys the admin issued and for premium plans.
+            tariff_name = (key.get('tariff_name') or '').strip()
+            low = tariff_name.lower()
+            key['is_admin_granted'] = low in ('admin tariff', 'admin', 'админский тариф', 'админ')
+            key['is_premium'] = (not key['is_admin_granted']) and any(
+                word in low for word in ('premium', 'премиум', 'vip', 'ultra', 'pro', 'max')
+            )
             keys.append(key)
         
         return keys

@@ -519,6 +519,9 @@ async def handle_keys(request: web.Request) -> web.Response:
                 "expiry": expiry,
                 "is_active": key.get("is_active", 0) == 1,
                 "is_trial": _is_trial_key(key),
+                "is_admin_granted": bool(key.get("is_admin_granted")),
+                "is_premium": bool(key.get("is_premium")),
+                "tariff_name": key.get("tariff_name"),
                 "cdn": _cdn_key_info(key["id"], {"telegram_id": telegram_id}),
             })
 
@@ -4570,6 +4573,9 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
                 "traffic_limit": k["traffic_limit"] or 0, "is_active": bool(k["is_active"]),
                 "server_name": k.get("server_name"), "sub_url": sub_url,
                 "is_trial": _is_trial_key(k),
+                "is_admin_granted": bool(k.get("is_admin_granted")),
+                "is_premium": bool(k.get("is_premium")),
+                "tariff_name": k.get("tariff_name"),
                 "cdn": _cdn_key_info(k["id"], account),
             }
 
