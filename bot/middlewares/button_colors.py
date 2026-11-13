@@ -24,12 +24,12 @@ class ButtonColorsMiddleware(BaseRequestMiddleware):
         branded = None
         try:
             markup = getattr(method, "reply_markup", None)
-            if isinstance(markup, InlineKeyboardMarkup) and time.monotonic() >= _state["paused_until"]:
+            if isinstance(markup, InlineKeyboardMarkup):
                 from bot.services import brand_buttons, client_cabinet, menu_style
                 if client_cabinet.enabled():
                     # Единые подписи ECLIPSE применяются всегда; цвета — сверху, если Telegram их примет.
                     branded = brand_buttons.normalize_markup(markup)
-                    new_markup = menu_style.colorize(branded)
+                    new_markup = branded if time.monotonic() < _state["paused_until"] else menu_style.colorize(branded)
                     if new_markup is not markup:
                         colored = method.model_copy(update={"reply_markup": new_markup})
         except Exception as e:  # noqa: BLE001
