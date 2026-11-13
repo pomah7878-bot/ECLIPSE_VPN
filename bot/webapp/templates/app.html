@@ -557,6 +557,121 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
 .hero .reveal { opacity: 0; }
 .hero .reveal.is-visible { animation: reveal-in .7s var(--ease-out) both; }
 
+/* ---------- доверие и проверка ---------- */
+.trust-panel {
+    margin-top: 34px;
+    border-radius: 22px;
+    border: 1px solid rgba(214, 158, 74, .24);
+    background:
+        radial-gradient(ellipse at 0% 0%, rgba(214, 158, 74, .1), transparent 55%),
+        var(--surface);
+    padding: 30px 28px;
+    text-align: left;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.trust-head { display: flex; gap: 16px; align-items: flex-start; }
+.trust-icon {
+    flex: none;
+    width: 46px; height: 46px;
+    border-radius: 13px;
+    display: grid;
+    place-items: center;
+    color: #57d364;
+    background: rgba(87, 211, 100, .08);
+    border: 1px solid rgba(87, 211, 100, .22);
+}
+.trust-head h3 { font-size: 18px; margin: 0 0 6px; font-weight: 700; }
+.trust-head p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.trust-list { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 12px; }
+.trust-list li {
+    position: relative;
+    padding-left: 30px;
+    font-size: 13.8px;
+    color: var(--muted);
+    line-height: 1.6;
+}
+.trust-list li::before {
+    content: '✓';
+    position: absolute; left: 0; top: 1px;
+    width: 20px; height: 20px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: rgba(87, 211, 100, .12);
+    color: #57d364;
+    font-size: 11px; font-weight: 700;
+}
+.trust-list b { color: var(--text); }
+.trust-note {
+    margin: 20px 0 0;
+    padding-top: 18px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--dim);
+    font-size: 13px;
+}
+.verify { margin-top: 22px; }
+.verify h3 { font-size: 17px; margin: 0 0 6px; font-weight: 700; }
+.verify-sub { color: var(--muted); font-size: 13.5px; margin: 0 0 18px; }
+.verify-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.verify-item {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    padding: 18px;
+    text-align: left;
+    min-width: 0;
+}
+.verify-item-wide { grid-column: 1 / -1; }
+.verify-label {
+    display: block;
+    font-size: 12px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 8px;
+}
+.verify-value {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--gold-bright);
+    word-break: break-all;
+    min-height: 20px;
+    margin-bottom: 12px;
+}
+.verify-hint { color: var(--dim); font-size: 12.5px; line-height: 1.65; margin: 16px 0 0; text-align: left; }
+.verify-hint a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.verify-hint a:hover { color: var(--gold-bright); }
+.copy-btn { padding: 8px 14px; font-size: 12.5px; }
+.install-help { margin-top: 26px; display: grid; gap: 10px; text-align: left; }
+.install-help details {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    transition: border-color .2s;
+}
+.install-help details[open] { border-color: rgba(214, 158, 74, .32); }
+.install-help summary {
+    cursor: pointer;
+    padding: 16px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    list-style-position: inside;
+}
+.install-help summary:hover { color: var(--gold-bright); }
+.install-help .help-body { padding: 0 18px 16px; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
+.install-help .help-body ol,
+.install-help .help-body ul { margin: 0; padding-left: 20px; }
+.install-help .help-body li { margin-bottom: 6px; }
+.install-help .help-body b { color: var(--text); }
+@media (max-width: 620px) {
+    .verify-grid { grid-template-columns: 1fr; }
+    .trust-panel { padding: 24px 20px; }
+    .trust-head { flex-direction: column; gap: 12px; }
+}
+
 /* ---------- адаптив ---------- */
 @media (max-width: 960px) {
     .hero {
@@ -780,7 +895,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
     <section class="section steps-section" id="install">
         <div class="section-tag reveal">Установка</div>
         <h2 class="section-title reveal">Четыре шага — и интернет снова ваш</h2>
-        <p class="section-sub reveal">Установка занимает меньше минуты. Никаких конфигов и ключей — подписка подтянется сама после входа.</p>
+        <p class="section-sub reveal">Установка занимает меньше минуты. Android может показать предупреждение о приложении не из Google Play — это нормально: файл подписан ECLIPSE, его SHA-256 и отпечаток подписи можно проверить ниже. Никаких конфигов и ключей — подписка подтянется сама после входа.</p>
         <div class="steps-grid">
             <div class="step-card reveal">
                 <div class="step-num">1</div>
@@ -790,7 +905,7 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
             <div class="step-card reveal">
                 <div class="step-num">2</div>
                 <h3>Разрешите установку</h3>
-                <p>Откройте файл — Android спросит разрешение на установку из неизвестных источников, разрешите.</p>
+                <p>Откройте файл и разрешите установку из этого источника. Если появится предупреждение Play Protect — нажмите «Подробнее» → «Установить всё равно».</p>
             </div>
             <div class="step-card reveal">
                 <div class="step-num">3</div>
@@ -802,6 +917,94 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
                 <h3>Нажмите кнопку</h3>
                 <p>Одно касание — и VPN подключён к лучшему серверу. Готово.</p>
             </div>
+        </div>
+
+        <div class="trust-panel reveal" id="trust">
+            <div class="trust-head">
+                <div class="trust-icon" aria-hidden="true">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                </div>
+                <div>
+                    <h3>Почему система предупреждает? Это не вирус</h3>
+                    <p>Android предупреждает о любом приложении, которое устанавливается не из Google Play. Для ECLIPSE это ожидаемое и безопасное поведение.</p>
+                </div>
+            </div>
+            <ul class="trust-list">
+                <li><b>APK подписан ключом ECLIPSE.</b> Android при обновлении сверяет подпись с установленной — подменить файл чужой сборкой нельзя.</li>
+                <li><b>Приложение распространяется с официального сайта, а не из Google Play.</b> Поэтому система и называет его «неизвестным» — это не признак заражения.</li>
+                <li><b>Файл можно проверить.</b> SHA-256 скачанного APK и отпечаток подписи опубликованы ниже — сверьте их самостоятельно.</li>
+                <li><b>Никаких лишних доступов.</b> Приложение не запрашивает контакты, SMS, геолокацию, микрофон и доступ ко всем файлам.</li>
+            </ul>
+            <p class="trust-note">Обновления приходят из официального канала ECLIPSE и проверяются по SHA-256 перед установкой.</p>
+        </div>
+
+        <div class="verify reveal" id="verify">
+            <h3>Проверьте файл самостоятельно</h3>
+            <p class="verify-sub">Версия и SHA-256 подтягиваются с сервера. Если значения совпадают — скачан ровно тот файл, который мы собрали.</p>
+            <div class="verify-grid">
+                <div class="verify-item">
+                    <span class="verify-label">Версия на сайте</span>
+                    <code class="verify-value" id="verifyVersion">загружается…</code>
+                </div>
+                <div class="verify-item">
+                    <span class="verify-label">SHA-256 скачанного APK</span>
+                    <code class="verify-value" id="verifySha">загружается с сервера…</code>
+                    <button type="button" class="btn btn-ghost copy-btn" data-copy-target="verifySha">Копировать</button>
+                </div>
+                <div class="verify-item verify-item-wide">
+                    <span class="verify-label">Отпечаток подписи · SHA-256 сертификата</span>
+                    <code class="verify-value" id="verifyFingerprint">cbe9873439bd12ab165a1aea5d141e189316fe5102c0c6947248e5197bd5d78c</code>
+                    <button type="button" class="btn btn-ghost copy-btn" data-copy-target="verifyFingerprint">Копировать</button>
+                </div>
+            </div>
+            <p class="verify-hint">Сверьте SHA-256 скачанного файла с этим значением: Windows — <code>Get-FileHash -Algorithm SHA256 .\Eclipse-VPN.apk</code>, macOS/Linux — <code>sha256sum</code>. Отпечаток подписи проверяется командой <code>apksigner verify --print-certs</code> (Android SDK build-tools). Данные о версии и хэше: <a href="/api/public/client-update" target="_blank" rel="noopener">latest.json — версия и SHA-256</a>.</p>
+        </div>
+
+        <div class="install-help reveal" id="warnings">
+            <details>
+                <summary>Play Protect заблокировал установку — что нажать</summary>
+                <div class="help-body">
+                    <ol>
+                        <li>На экране предупреждения нажмите <b>«Подробнее»</b> (или «Дополнительные сведения»).</li>
+                        <li>Выберите <b>«Установить всё равно»</b> / «Всё равно установить» и подтвердите.</li>
+                        <li>Если кнопки нет: откройте Google Play Маркет → профиль → <b>Play Защита</b> → ⚙ → на время выключите «Сканировать приложения с помощью Play Protect» (или «Улучшенную защиту»).</li>
+                        <li>Установите APK и <b>включите проверку обратно</b> — так безопаснее для вас.</li>
+                    </ol>
+                </div>
+            </details>
+            <details>
+                <summary>Huawei / HONOR — «Выявлена угроза»</summary>
+                <div class="help-body">
+                    <p>AppGallery может показать экран «Выявлена угроза» / «Приложение не прошло проверку».</p>
+                    <ol>
+                        <li>Кнопка <b>«УСТАНОВИТЬ»</b> находится <b>внизу</b> экрана — иногда её нужно прокрутить или подождать несколько секунд.</li>
+                        <li>Если кнопки нет: Настройки → Безопасность → Дополнительные настройки → <b>Установка приложений из внешних источников</b> → разрешите для браузера/файлового менеджера.</li>
+                        <li>На HONOR (MagicOS): Настройки → Безопасность → <b>Проверка приложений</b> — временно отключите для внешних источников.</li>
+                        <li>В «Режиме Pure» установка извне запрещена — отключите Pure Mode на время установки.</li>
+                    </ol>
+                </div>
+            </details>
+            <details>
+                <summary>Xiaomi / Redmi / POCO — проверка приложения</summary>
+                <div class="help-body">
+                    <ol>
+                        <li>При открытии APK приложение «Безопасность» может показать «Проверка приложений»/«Анализ угроз».</li>
+                        <li>Нажмите <b>«Установить без проверки»</b> / «Продолжить установку» / «Всё равно установить» (на MIUI кнопку иногда нужно удерживать ~10 секунд).</li>
+                        <li>Если блокирует наглухо: Настройки → Пароли и безопасность → Конфиденциальность → Особые разрешения → <b>Установка неизвестных приложений</b> — разрешите браузеру. Либо в приложении «Безопасность» → Настройки → <b>Проверка приложений</b> — выключите на время.</li>
+                        <li>HyperOS: Настройки → Безопасность → Проверка приложений.</li>
+                    </ol>
+                </div>
+            </details>
+            <details>
+                <summary>Samsung — Автоблокировщик</summary>
+                <div class="help-body">
+                    <ol>
+                        <li>Обычно достаточно разрешить «Установку неизвестных приложений» для браузера.</li>
+                        <li>Если включён <b>Автоблокировщик</b> (Auto Blocker): Настройки → Безопасность и конфиденциальность → Автоблокировщик — выключите на время установки (или нажмите «Установить всё равно», если предлагает).</li>
+                        <li>После установки верните Автоблокировщик в прежнее состояние.</li>
+                    </ol>
+                </div>
+            </details>
         </div>
     </section>
 
@@ -977,6 +1180,8 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
     }).catch(function () { /* дефолтный текст уже на месте */ });
 
     var hint = document.getElementById('hint');
+    var verifyVersion = document.getElementById('verifyVersion');
+    var verifySha = document.getElementById('verifySha');
     // The site release is the same signed package installed clients receive through self-update.
     // Do not use the unrelated GitHub repository: Android treats its different package as another app.
     fetch('/api/public/client-update')
@@ -986,10 +1191,67 @@ a:focus-visible, summary:focus-visible, button:focus-visible {
         })
         .then(function (release) {
             hint.textContent = 'Актуальная версия ' + (release.version_name || '') + ' · универсальный APK для Android · бесплатно';
+            if (verifyVersion) {
+                verifyVersion.textContent = release.version_name
+                    ? 'v' + release.version_name + (release.version_code ? ' (код ' + release.version_code + ')' : '')
+                    : '—';
+            }
+            if (verifySha) {
+                verifySha.textContent = release.sha256 ? String(release.sha256).toLowerCase() : '—';
+            }
         })
         .catch(function () {
             hint.textContent = 'Универсальный APK для Android · бесплатно';
+            if (verifyVersion) verifyVersion.textContent = '—';
+            if (verifySha) verifySha.textContent = 'нет данных';
         });
+})();
+</script>
+<script>
+// Кнопки «Копировать» у SHA-256 и отпечатка подписи. Без внешних зависимостей:
+// clipboard API там, где он есть, и выделение текста как запасной вариант.
+(function () {
+    'use strict';
+    function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            try {
+                var area = document.createElement('textarea');
+                area.value = text;
+                area.setAttribute('readonly', '');
+                area.style.position = 'fixed';
+                area.style.opacity = '0';
+                document.body.appendChild(area);
+                area.select();
+                var ok = document.execCommand('copy');
+                document.body.removeChild(area);
+                if (ok) resolve(); else reject(new Error('copy failed'));
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+    document.querySelectorAll('[data-copy-target]').forEach(function (button) {
+        button.addEventListener('click', function () {
+            var target = document.getElementById(button.getAttribute('data-copy-target'));
+            if (!target) return;
+            var value = (target.textContent || '').trim();
+            if (!value || value === '—' || value.indexOf('загружается') === 0 || value.indexOf('нет данных') === 0) {
+                button.textContent = 'Данные ещё не загружены';
+                window.setTimeout(function () { button.textContent = 'Копировать'; }, 1800);
+                return;
+            }
+            copyText(value).then(function () {
+                button.textContent = 'Скопировано ✓';
+            }, function () {
+                button.textContent = 'Выделите вручную';
+            }).then(function () {
+                window.setTimeout(function () { button.textContent = 'Копировать'; }, 1800);
+            });
+        });
+    });
 })();
 </script>
 <script>
