@@ -13,7 +13,7 @@ import logging
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.utils.text import safe_edit_or_send
@@ -131,7 +131,7 @@ async def buy_license_tariff_selected(callback: CallbackQuery):
     builder.row(InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"check_license_pay:{order_id}"))
 
     await callback.message.answer_photo(
-        photo=result["qr_image_url"],
+        photo=BufferedInputFile(result["qr_image_data"], filename="qr.png"),
         caption=(
             f"💳 <b>Оплата лицензии «{html_escape(str(tariff['name']))}»</b>\n\n"
             f"Сумма: {tariff_final_price(tariff):.0f} ₽\n\n"

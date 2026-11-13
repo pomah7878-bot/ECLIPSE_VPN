@@ -54,7 +54,7 @@ async def request_phone_confirmation(phone: str) -> Optional[Dict[str, Any]]:
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/confirm/: {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/: {type(e).__name__}: {e}")
         return None
 
     if result.get("status") != "ok":
@@ -97,7 +97,7 @@ async def request_phone_confirmation_pincode(phone: str) -> Optional[Dict[str, A
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (пин-код): {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (пин-код): {type(e).__name__}: {e}")
         return None
 
     if result.get("status") != "ok":
@@ -148,7 +148,7 @@ async def request_phone_confirmation_flashcall_real(phone: str) -> Optional[Dict
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/flashcall/ (Flash Call): {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/flashcall/ (Flash Call): {type(e).__name__}: {e}")
         return None
 
     if result.get("status") != "ok":
@@ -201,7 +201,7 @@ async def request_phone_confirmation_voice_code(phone: str) -> Optional[Dict[str
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/tellcode/ (диктовка кода): {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/tellcode/ (диктовка кода): {type(e).__name__}: {e}")
         return None
 
     if result.get("status") != "ok":
@@ -242,7 +242,7 @@ async def request_phone_confirmation_press_digit(phone: str) -> Optional[Dict[st
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (подтверждение звонком): {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/confirm/ (подтверждение звонком): {type(e).__name__}: {e}")
         return None
 
     if result.get("status") != "ok":
@@ -331,7 +331,7 @@ async def check_phone_confirmation(call_id, trust_postback_cache: bool = True) -
             ) as resp:
                 result = await resp.json()
     except Exception as e:
-        logger.error(f"Zvonok: ошибка запроса phones/call_by_id/: {e}")
+        logger.error(f"Zvonok: ошибка запроса phones/call_by_id/: {type(e).__name__}: {e}")
         return False
 
     if isinstance(result, list):

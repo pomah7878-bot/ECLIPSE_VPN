@@ -216,7 +216,7 @@ async def create_yookassa_qr_payment(
     Returns:
         Dictionary with keys:
             - yookassa_payment_id: Payment ID in the Yookassa system
-            - qr_image_url: QR code image URL (PNG)
+            - qr_image_data: PNG bytes of the QR code (send via BufferedInputFile)
             - qr_url: Raw SBP QR payload (same data encoded in the QR image;
               recognized directly by banking apps when scanned, not just a
               generic webpage link)

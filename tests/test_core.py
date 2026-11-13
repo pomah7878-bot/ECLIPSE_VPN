@@ -999,6 +999,53 @@ class UpdateNoticeTest(unittest.TestCase):
         self.assertNotIn("&am</pre>", text)
 
 
+class UpdateStashConflictRecoveryTest(unittest.TestCase):
+    """Обновление не застревает, если локальные правки не удалось вернуть из stash."""
+
+    def test_conflict_keeps_stash_but_finishes_update(self):
+        from unittest.mock import patch
+        from bot.utils import git_utils as g
+
+        calls = []
+
+        def fake_git(args, timeout=30):
+            calls.append(list(args))
+            if args[:2] == ['status', '--porcelain']:
+                return True, ' M bot/webapp/server.py'
+            if args[0] == 'stash' and args[1] == 'push':
+                return True, 'Saved working directory'
+            if args[0] == 'stash' and args[1] == 'pop':
+                return False, 'Auto-merging bot/webapp/server.py\nCONFLICT (content): Merge conflict'
+            if args[:2] == ['diff', '--name-only']:
+                return True, 'bot/webapp/server.py'
+            if args[0] == 'reset':
+                return True, 'HEAD is now at abc123'
+            if args[0] == 'fetch':
+                return True, ''
+            if args[:2] == ['rev-parse', '--short']:
+                return True, 'abc12'
+            if args[:2] == ['branch', '--show-current']:
+                return True, 'main'
+            if args[0] == 'log':
+                return True, 'abc123 Версия 1.558: тест'
+            return True, ''
+
+        with patch.object(g, 'run_git_command', side_effect=fake_git), \
+                patch.object(g, '_validate_pulled_code', return_value=(True, '')), \
+                patch.object(g, '_remember_point'):
+            ok, message = g.pull_updates()
+
+        self.assertTrue(ok)
+        self.assertIn('Обновление успешно', message)
+        self.assertIn('git stash', message)
+        self.assertIn('bot/webapp/server.py', message)
+        # после конфликта рабочую копию вернули к origin (второй reset --hard),
+        # а не оставили репозиторий с неразрешёнными конфликтами
+        resets = [c for c in calls if c[0] == 'reset' and c[1] == '--hard']
+        self.assertEqual(len(resets), 2)
+        self.assertEqual(resets[1][2], 'origin/main')
+
+
 class LicenseInstallTest(unittest.IsolatedAsyncioTestCase):
     """В лицензии видно, чей это бот и работает ли он прямо сейчас."""
 

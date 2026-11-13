@@ -365,12 +365,28 @@ def pull_updates() -> Tuple[bool, str]:
             return False, "❌ Конфликт слияния. Требуется ручное разрешение."
         return False, f"❌ Ошибка обновления:\n{output}"
 
+    stash_conflict_note = ""
     if has_local_changes:
         pop_success, pop_output = run_git_command(['stash', 'pop'], timeout=30)
         if not pop_success:
-            return False, (
-                "⚠️ Обновление прошло, но не удалось вернуть отложенные локальные "
-                f"изменения (конфликт при stash pop). Разрешите вручную на сервере:\n{pop_output}"
+            # Не оставляем репозиторий в состоянии конфликта: иначе следующее
+            # обновление не сможет ни отложить неразрешённые правки (stash push
+            # на конфликтном индексе падает), ни обновиться — бот навсегда
+            # застрянет на старом коде. Возвращаем рабочую копию к origin, а
+            # сами правки остаются в git stash: их можно разобрать вручную.
+            _diff_ok, conflicted = run_git_command(['diff', '--name-only', '--diff-filter=U'], timeout=30)
+            conflicted_files = ", ".join(conflicted.split()) or "локальные файлы"
+            run_git_command(['reset', '--hard', f'origin/{current_branch}'], timeout=60)
+            logger.warning(
+                "stash pop конфликт (%s) — рабочая копия возвращена к origin, "
+                "локальные правки остались в git stash",
+                conflicted_files,
+            )
+            stash_conflict_note = (
+                "\n\n⚠️ Ваши несохранённые правки не удалось вернуть автоматически "
+                f"(конфликт: {escape_html(conflicted_files)}). Они сохранены в git stash, "
+                "рабочая копия уже соответствует репозиторию. Разберите вручную: "
+                "git stash list, затем git stash pop."
             )
 
     # Проверка безопасности: пробуем реально импортировать основные модули
@@ -389,7 +405,10 @@ def pull_updates() -> Tuple[bool, str]:
 
     _remember_point(pre_pull_commit)
     commit_info = get_last_commit_info('HEAD')
-    return True, f"✅ Обновление успешно!\n\n🔹 Последний коммит:\n<pre>{escape_html(commit_info)}</pre>"
+    return True, (
+        f"✅ Обновление успешно!\n\n🔹 Последний коммит:\n<pre>{escape_html(commit_info)}</pre>"
+        f"{stash_conflict_note}"
+    )
 
 
 IMPORT_CHECK_TIMEOUT = 120  # секунд на один запуск проверки импорта
