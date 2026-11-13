@@ -55,6 +55,24 @@ ICONS = {
     "backup": "💾",
     "logs": "📜",
     "language": "🌐",
+    "history": "🧾",
+    "download": "📥",
+    "clock": "⏱",
+    "star": "⭐",
+    "attach": "📎",
+    "chat": "💬",
+    "more": "❓",
+    "eye": "👁️",
+    "rocket": "🚀",
+    "ticket": "🎫",
+    "edit": "✏️",
+    "plus": "➕",
+    "minus": "➖",
+    "search": "🔍",
+    "folder": "📂",
+    "tools": "🛠️",
+    "logout": "🚪",
+    "generic": "✨",
 }
 
 _STATUS_START = re.compile(r"^[✅❌⚠️🚫🔴🟢🟡⚪⚫✔✖]")
@@ -179,7 +197,47 @@ def _kind(text: str, cb: str) -> Optional[str]:
         return "confirm"
     if re.match(r"^(нет|no)\b", t):
         return "cancel"
-    return None
+
+    # Common submenu actions that otherwise keep their old random emoji.
+    if re.search(r"(history|истори|заказ|orders|receipt|чек|квитанц)", both):
+        return "history"
+    if re.search(r"(download|скач|выгруз|загруз|маршрут|файл)", both):
+        return "download"
+    if re.search(r"(period|срок|период|дней|день|время|таймер|clock)", both):
+        return "clock"
+    if re.search(r"(review|отзыв|рейтинг|star|звезд)", both):
+        return "star"
+    if re.search(r"(attach|скриншот|screenshot|прикреп|фото)", both):
+        return "attach"
+    if re.search(r"(support|help|помощ|поддерж|faq)", both):
+        return "support"
+    if re.search(r"(chat|чат|ответ|reply|написать)", both):
+        return "chat"
+    if re.search(r"(more|ещё|еще|далее|next)", both):
+        return "more"
+    if re.search(r"(preview|превью|посмотреть|eye)", both):
+        return "eye"
+    if re.search(r"(launch|запуск|к запуску|rocket)", both):
+        return "rocket"
+    if re.search(r"(ticket|купон|билет)", both):
+        return "ticket"
+    if re.search(r"(edit|измен|редакт|текст|назван)", both):
+        return "edit"
+    if re.search(r"(add|добав|созда|new)", both):
+        return "plus"
+    if re.search(r"(minus|списать|убав|вычесть)", both):
+        return "minus"
+    if re.search(r"(search|поиск|найти|find|провер)", both):
+        return "search"
+    if re.search(r"(folder|папк|группа|group)", both):
+        return "folder"
+    if re.search(r"(tools|инструмент|диагност|провер)", both):
+        return "tools"
+    if re.search(r"(выйти|выход|logout|отвязать)", both):
+        return "logout"
+
+    # Nothing matched: a neutral ECLIPSE spark keeps every actionable button in one style.
+    return "generic"
 
 
 def normalize_text(text: str, callback_data: Optional[str]) -> str:

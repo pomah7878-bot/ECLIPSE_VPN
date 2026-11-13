@@ -100,7 +100,7 @@ def icon_map() -> Dict[str, str]:
     if raw != _map_cache["raw"]:
         try:
             data = json.loads(raw) if raw else {}
-            parsed = {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+            parsed = {str(k).replace("\ufe0f", ""): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
         except (ValueError, TypeError):
             parsed = {}
         _map_cache["raw"], _map_cache["map"] = raw, parsed
