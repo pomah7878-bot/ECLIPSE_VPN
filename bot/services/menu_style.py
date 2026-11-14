@@ -39,6 +39,39 @@ def auto_style(button: InlineKeyboardButton) -> Optional[str]:
     return "primary"
 
 
+def _pair_bonus_with_app(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
+    """«Бонусные дни» и «Приложение» — в одной строке, в каком бы слое они ни появились.
+
+    Кнопки могут прийти из страницы, append_buttons, расширения или prepend:
+    поэтому склеиваем уже готовую клавиатуру по подписям.
+    """
+    rows = [list(r) for r in markup.inline_keyboard]
+    bonus = next((b for row in rows for b in row if 'бонус' in (b.text or '').lower()), None)
+    app = next((b for row in rows for b in row
+                if b is not bonus and 'прилож' in (b.text or '').lower()), None)
+    if bonus is None or app is None:
+        return markup
+    if any(bonus in row and app in row for row in rows):
+        return markup
+
+    changed = False
+    cleaned = []
+    for row in rows:
+        if bonus in row:
+            row = [b for b in row if b is not bonus]
+            changed = True
+            if not row:
+                continue
+        cleaned.append(row)
+    app_row = next((i for i, row in enumerate(cleaned) if app in row), None)
+    if app_row is None:
+        return markup
+    if len(cleaned[app_row]) != 1:
+        return markup
+    cleaned[app_row].append(bonus)
+    return InlineKeyboardMarkup(inline_keyboard=cleaned) if changed else markup
+
+
 def colorize(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
     """Новая клавиатура с единым фирменным стилем ECLIPSE: подпись, иконка и цвет."""
     from bot.services import brand_buttons, button_icons
@@ -63,4 +96,5 @@ def colorize(markup: InlineKeyboardMarkup) -> InlineKeyboardMarkup:
                 changed = True
             new_row.append(button)
         rows.append(new_row)
-    return InlineKeyboardMarkup(inline_keyboard=rows) if changed else markup
+    result = InlineKeyboardMarkup(inline_keyboard=rows) if changed else markup
+    return _pair_bonus_with_app(result)
