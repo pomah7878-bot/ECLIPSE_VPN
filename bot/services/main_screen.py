@@ -255,10 +255,13 @@ def build_subscription_card(state: Dict[str, Any]) -> str:
 
 
 def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optional[List[str]] = None) -> Optional[str]:
-    """«Новый вид меню»: одна компактная строка приветствия и данных подписки."""
+    """«Новый вид меню»: премиальная карточка-цитата вместо таблицы."""
     audience = state.get('audience')
     balance = int(state.get('balance_cents') or 0)
-    parts: List[str] = []
+    name = (first_name or '').strip()
+    lines = ['✦ <b>ECLIPSE</b>']
+    lines.append(f"👤 <b>{escape_html(name)}, всё работает</b>" if name else "👤 <b>Всё работает</b>")
+
     if audience == AUDIENCE_CLIENT:
         active = state.get('active') or []
         nearest = active[0]
@@ -266,29 +269,29 @@ def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optio
         days = _days_left(nearest.get('expires_at'))
         if len(active) == 1:
             plan = _plan_name(nearest.get('tariff_id'))
-            parts.append(f"🟢 {escape_html(plan) if plan else 'Подписка'} · до {until}")
+            lines.append(f"🟢 <b>{escape_html(plan) if plan else 'Подписка'}</b> · до {until}")
         else:
-            parts.append(f"🟢 Активных ключей: {len(active)} · ближайший до {until}")
+            lines.append(f"🟢 <b>Активных ключей: {len(active)}</b> · ближайший до {until}")
+        details = []
         if days is not None and days >= 0:
-            parts.append(f"⏳ {days} {_plural(days, 'день', 'дня', 'дней')}")
+            details.append(f"⏳ {days} {_plural(days, 'день', 'дня', 'дней')}")
         devices = _max_devices(nearest.get('tariff_id')) if len(active) == 1 else 0
         if devices > 0:
-            parts.append(f"📱 до {devices}")
-        limit = int(nearest.get('traffic_limit') or 0)
-        if len(active) == 1 and limit > 0:
-            from bot.services.vpn_api import format_traffic
-            parts.append(f"📊 {format_traffic(int(nearest.get('traffic_used') or 0))} из {format_traffic(limit)}")
+            details.append(f"📱 до {devices}")
+        if balance >= 100:
+            details.append(f"💰 {_rub(balance)}")
+        if details:
+            lines.append(' · '.join(details))
     elif audience == AUDIENCE_EXPIRED:
         last = max(state.get('keys') or [{}], key=lambda k: str(k.get('expires_at') or ''))
-        parts.append(f"🔴 Подписка закончилась {format_day_month(last.get('expires_at'))}".rstrip())
-        parts.append('продлите — ключи заработают сразу')
+        lines.append(f"🔴 <b>Подписка закончилась</b> {format_day_month(last.get('expires_at'))}".rstrip())
+        lines.append('➡️ Продлите — ключи заработают сразу')
+        if balance >= 100:
+            lines.append(f"💰 {_rub(balance)}")
     else:
         return None
-    if balance >= 100:
-        parts.append(f"💰 {_rub(balance)}")
-    name = (first_name or '').strip()
-    greeting = f"👋 <b>{escape_html(name)}, всё работает</b>" if name else "👋 <b>Всё работает</b>"
-    return greeting + (" · " + " · ".join(parts) if parts else "")
+
+    return '<blockquote>' + '\n'.join(lines) + '</blockquote>'
 
 
 def min_month_price_text() -> str:
