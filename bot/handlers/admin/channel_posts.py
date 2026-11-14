@@ -83,20 +83,49 @@ def _visible_len(html_text: str) -> int:
 # Юзернейм бота и ссылка на магазин НЕ хардкодятся — у каждой инсталляции
 # бота свои значения (bot.get_me() и настраиваемый webapp_url), иначе
 # посты в канале white-label клиента вели бы на чужого бота и чужой сайт.
+DEFAULT_POST_FOOTER_TEMPLATE = (
+    "\n\n━━━━━━━━━━━━━━\n"
+    "🤖 Подключиться в боте: {bot_link}\n"
+    "🛒 Купить на сайте: {shop_link}"
+)
+
+
 async def _build_post_footer(bot) -> str:
-    from database.requests import get_effective_webapp_url
+    from database.requests import get_effective_webapp_url, get_post_footer_text
 
     bot_username = (await bot.get_me()).username
-    footer = (
-        "\n\n━━━━━━━━━━━━━━\n"
-        f"🤖 Подключиться в боте: <a href=\"https://t.me/{bot_username}\">@{bot_username}</a>"
-    )
+    bot_link = f'<a href="https://t.me/{escape_html(bot_username)}">@{escape_html(bot_username)}</a>'
     webapp_url = get_effective_webapp_url()
-    if webapp_url:
-        shop_url = webapp_url.rstrip('/') + '/shop'
-        shop_display = webapp_url.replace('https://', '').replace('http://', '').rstrip('/')
-        footer += f"\n🛒 Купить на сайте: <a href=\"{shop_url}\">{shop_display}</a>"
-    return footer
+    shop_url = webapp_url.rstrip('/') + '/shop' if webapp_url else ''
+    shop_display = webapp_url.replace('https://', '').replace('http://', '').rstrip('/') if webapp_url else ''
+    shop_link = (f'<a href="{escape_html(shop_url)}">{escape_html(shop_display)}</a>'
+                 if shop_url else '')
+
+    custom = get_post_footer_text().strip()
+    template = custom or DEFAULT_POST_FOOTER_TEMPLATE
+    if not shop_url:
+        # Строка про магазин не должна остаться пустой, если сайт не настроен.
+        template = "\n".join(
+            line for line in template.splitlines()
+            if "{shop_link}" not in line and "{shop_url}" not in line and "{shop_display}" not in line
+        )
+    text = (template
+            .replace("{bot_link}", bot_link)
+            .replace("{bot_username}", escape_html(bot_username))
+            .replace("{shop_link}", shop_link)
+            .replace("{shop_url}", escape_html(shop_url))
+            .replace("{shop_display}", escape_html(shop_display)))
+    if not text.startswith("\n"):
+        text = "\n\n" + text
+    return text
+
+
+def _channel_menu_kb():
+    from database.requests import get_post_footer_text, is_post_footer_enabled
+    return channel_posts_menu_kb(
+        footer_enabled=is_post_footer_enabled(),
+        footer_custom=bool(get_post_footer_text().strip()),
+    )
 
 
 async def _step(message: Message, state: FSMContext, text: str, reply_markup=None) -> None:
@@ -148,15 +177,19 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
     from database.requests import get_marketing_channel_id
     channel_id = get_marketing_channel_id()
     channel_text = channel_id if channel_id else '⚠️ не настроен'
-    from database.requests import is_post_footer_enabled
+    from database.requests import is_post_footer_enabled, get_post_footer_text
     footer_enabled = is_post_footer_enabled()
+    footer_custom = bool(get_post_footer_text().strip())
 
     footer_explanation = (
         '📌 <b>Что такое «Реклама бота в подвале»?</b>\n\n'
-        'Если включено, в конец каждого поста из этого раздела автоматически добавляются две строки:\n'
+        'Если включено, в конец каждого поста из этого раздела автоматически добавляются строки подвала:\n'
         '• ссылка на бота — читатель сразу переходит в него из поста\n'
         '• ссылка на сайт-магазин — если он настроен\n\n'
-        'Так не нужно вставлять ссылки вручную в каждый пост.\n\n'
+        'Так не нужно вставлять ссылки вручную в каждый пост. '
+        'Подвал можно изменить кнопкой «✏️ Изменить подвал»: поддерживаются HTML и плейсхолдеры '
+        '<code>{bot_link}</code>, <code>{bot_username}</code>, <code>{shop_link}</code>, '
+        '<code>{shop_url}</code>, <code>{shop_display}</code>.\n\n'
     )
     if footer_enabled:
         footer_preview = await _build_post_footer(callback.message.bot)
@@ -170,7 +203,7 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
         f'Текущий канал: {channel_text}\n\n'
         f'{footer_explanation}'
         'Создать новый пост с датой и временем публикации, или посмотреть очередь уже запланированных.',
-        reply_markup=channel_posts_menu_kb(footer_enabled),
+        reply_markup=channel_posts_menu_kb(footer_enabled, footer_custom),
     )
     await callback.answer()
 
@@ -186,6 +219,59 @@ async def toggle_post_footer(callback: CallbackQuery, state: FSMContext):
     set_post_footer_enabled(not current)
 
     await show_channel_posts_menu(callback, state)
+
+
+@router.callback_query(F.data == 'admin_channel_footer_edit')
+async def start_footer_edit(callback: CallbackQuery, state: FSMContext):
+    """Редактирование подвала постов: HTML + плейсхолдеры ссылок."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    from database.requests import get_post_footer_text
+    template = get_post_footer_text().strip() or DEFAULT_POST_FOOTER_TEMPLATE
+    await state.set_state(AdminStates.channel_footer_input)
+    await state.update_data(cp_msg=callback.message.message_id)
+    await safe_edit_or_send(
+        callback.message,
+        '✏️ <b>Подвал постов</b>\n\n'
+        'Отправьте текст подвала в HTML. Можно использовать готовые ссылки:\n'
+        '• <code>{bot_link}</code> — ссылка на этого бота\n'
+        '• <code>{shop_link}</code> — ссылка на сайт-магазин (если настроен)\n'
+        '• <code>{bot_username}</code> — username бота\n'
+        '• <code>{shop_url}</code>, <code>{shop_display}</code> — URL и домен магазина\n\n'
+        'Сейчас используется:\n'
+        f'<pre>{escape_html(template)}</pre>',
+        reply_markup=channel_post_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == 'admin_channel_footer_reset')
+async def reset_footer(callback: CallbackQuery, state: FSMContext):
+    """Возвращает стандартный подвал ECLIPSE."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    from database.requests import set_post_footer_text
+    set_post_footer_text('')
+    await state.clear()
+    await show_channel_posts_menu(callback, state)
+
+
+@router.message(AdminStates.channel_footer_input, F.text, ~F.text.startswith('/'))
+async def process_footer_input(message: Message, state: FSMContext):
+    """Сохраняет свой HTML-подвал."""
+    if not is_admin(message.from_user.id):
+        return
+    text = (message.text or '').strip()
+    if len(text) > 2000:
+        await message.answer('❌ Подвал слишком длинный: максимум 2000 символов. Сократите и отправьте снова.')
+        return
+    from database.requests import set_post_footer_text
+    set_post_footer_text(text)
+    logger.info(f"Админ {message.from_user.id} изменил подвал постов канала")
+    await _step(message, state, '✅ Подвал сохранён. Он применяется к новым постам и превью.', _channel_menu_kb())
+    await state.clear()
 
 
 @router.callback_query(F.data == 'admin_channel_settings')
@@ -225,7 +311,7 @@ async def process_channel_settings_input(message: Message, state: FSMContext):
     await safe_edit_or_send(
         message,
         f'✅ Канал сохранён: {text}',
-        reply_markup=channel_posts_menu_kb(),
+        reply_markup=_channel_menu_kb(),
         force_new=True,
     )
 
@@ -392,7 +478,7 @@ async def confirm_channel_post(callback: CallbackQuery, state: FSMContext):
     await safe_edit_or_send(
         callback.message,
         f"✅ Пост #{post_id} запланирован на {data['msk_display']} МСК.",
-        reply_markup=channel_posts_menu_kb(),
+        reply_markup=_channel_menu_kb(),
     )
     await callback.answer()
 
@@ -482,9 +568,9 @@ async def confirm_delete_post(callback: CallbackQuery, state: FSMContext):
     deleted = delete_scheduled_post(post_id)
     logger.info(f"Админ {callback.from_user.id} удалил пост #{post_id} из очереди: {deleted}")
     if deleted:
-        await safe_edit_or_send(callback.message, '🗑️ Пост удалён из очереди.', reply_markup=channel_posts_menu_kb())
+        await safe_edit_or_send(callback.message, '🗑️ Пост удалён из очереди.', reply_markup=_channel_menu_kb())
     else:
-        await safe_edit_or_send(callback.message, '⚠️ Не удалось удалить — возможно, пост уже опубликован.', reply_markup=channel_posts_menu_kb())
+        await safe_edit_or_send(callback.message, '⚠️ Не удалось удалить — возможно, пост уже опубликован.', reply_markup=_channel_menu_kb())
     await callback.answer()
 
 
@@ -528,7 +614,7 @@ async def _apply_post_edit(message: Message, state: FSMContext, media_type, medi
         message, state,
         f'✅ Пост #{post_id} заменён.' if updated
         else '⚠️ Не удалось заменить — возможно, пост уже опубликован.',
-        channel_posts_menu_kb(),
+        _channel_menu_kb(),
     )
     await state.clear()
 

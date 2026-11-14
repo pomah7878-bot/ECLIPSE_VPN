@@ -169,6 +169,8 @@ __all__ = [
     'set_oauth_credentials',
     'is_post_footer_enabled',
     'set_post_footer_enabled',
+    'get_post_footer_text',
+    'set_post_footer_text',
     'is_channel_gate_enabled',
     'set_channel_gate_enabled',
     'get_gate_channel_id',
@@ -535,6 +537,20 @@ def is_post_footer_enabled() -> bool:
 def set_post_footer_enabled(enabled: bool) -> None:
     """Включает/выключает автоматический подвал для постов канала."""
     set_setting('post_footer_enabled', '1' if enabled else '0')
+
+
+def get_post_footer_text() -> str:
+    """Пользовательский HTML-шаблон подвала постов канала.
+
+    Плейсхолдеры: {bot_link}, {bot_username}, {shop_link}, {shop_url}, {shop_display}.
+    Пустая строка — используется стандартный подвал.
+    """
+    return get_setting('post_footer_text', '') or ''
+
+
+def set_post_footer_text(text: str) -> None:
+    """Сохраняет пользовательский подвал; пустая строка возвращает стандартный."""
+    set_setting('post_footer_text', (text or '').strip())
 
 
 def is_start_import_buttons_enabled() -> bool:

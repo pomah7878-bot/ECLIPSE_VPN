@@ -173,6 +173,7 @@ class AdminStates(StatesGroup):
     channel_post_time = State()      # Ввод времени публикации
     channel_post_preview = State()   # Экран превью перед подтверждением
     channel_settings_input = State() # Ввод username маркетингового канала
+    channel_footer_input = State()   # Ввод своего HTML-подвала постов канала
 
     # Импорт вручную созданных клиентов панели
     import_orphan_telegram_id = State()  # Ввод Telegram ID/username для привязки
