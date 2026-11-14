@@ -520,7 +520,27 @@ def _build_keyboard(
             'col': col,
         })
 
+    def _pair_bonus_with_app(buttons_: List[Dict]) -> None:
+        """«Бонусные дни» и «Приложение» — в одной строке, независимо от row/col в редакторе."""
+        def txt(b: Dict) -> str:
+            return f"{b.get('label') or ''} {b.get('text') or ''} {b.get('id') or ''}".lower()
+
+        bonus = next((b for b in buttons_ if 'бонус' in txt(b) or 'bonus' in txt(b)), None)
+        app = next((b for b in buttons_
+                    if b is not bonus and ('прилож' in txt(b) or 'app' in str(b.get('id') or '').lower())), None)
+        if bonus is None or app is None:
+            return
+        target_row = app.get('row', 0)
+        occupied = {b.get('col') for b in buttons_
+                    if b is not bonus and b.get('row', 0) == target_row}
+        free = next((c for c in (0, 1) if c not in occupied), None)
+        if free is None:
+            return
+        bonus['row'] = target_row
+        bonus['col'] = free
+
     def _render_grouped_rows(builder_: InlineKeyboardBuilder, buttons_: List[Dict]) -> None:
+        _pair_bonus_with_app(buttons_)
         # Grouping buttons by row
         rows_map: Dict[int, List[Dict]] = {}
         for btn in buttons_:
