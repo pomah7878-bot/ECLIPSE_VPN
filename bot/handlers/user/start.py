@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, WebAppInfo
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, WebAppInfo, BufferedInputFile
 from aiogram.filters import Command, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramForbiddenError
@@ -213,6 +214,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     # v1.340: главная «как приложение» — включается, если на странице есть «⚡ Подключиться»
     app_screen_audience = None
     main_rich_html = None
+    main_card_media = None
 
     def _first_raw(t):
         u = getattr(t, 'from_user', None)
@@ -246,7 +248,18 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
                         if _l.strip() and "%" not in _l
                     ]
                     main_rich_html = _ms.build_subscription_html(_state, _first_raw(target), extra=_extra[:3])
-                    logger.info("Главная: новый вид %s", "включён" if main_rich_html else "не применён (новичок)")
+                    if main_rich_html:
+                        try:
+                            from bot.services.premium_card import build_premium_card
+                            _png = await asyncio.to_thread(
+                                build_premium_card, _state, _first_raw(target)
+                            )
+                            if _png:
+                                main_card_media = BufferedInputFile(_png, filename='eclipse-premium.png')
+                                main_rich_html = None
+                        except Exception as _card_err:  # noqa: BLE001
+                            logger.warning(f"Главная: премиум-карточка не собрана: {_card_err}")
+                    logger.info("Главная: новый вид %s", "включён" if (main_rich_html or main_card_media) else "не применён (новичок)")
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Главная: таблица подписки не собрана: {e}")
             text_replacements.update({
@@ -410,6 +423,10 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         append_buttons=append_buttons,
         force_new=force_new,
         rich_html=main_rich_html,
+        media_policy='runtime' if main_card_media else 'page',
+        runtime_media=main_card_media,
+        runtime_media_type='photo' if main_card_media else None,
+        text_override='<b>ECLIPSE Unlimited</b>' if main_card_media else None,
     )
     try:
         from bot.services.main_menu_tracker import remember_main_menu

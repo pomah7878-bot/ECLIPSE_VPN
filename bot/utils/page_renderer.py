@@ -1003,6 +1003,7 @@ async def render_page(
     rich_html: Optional[str] = None,
     rich_auto: bool = False,
     rich_prefix: Optional[str] = None,
+    text_override: Optional[str] = None,
 ) -> Optional[Message]:
     """
     Retrieves a page from the database and sends/edits a message.
@@ -1064,6 +1065,9 @@ async def render_page(
 
     # 2. Text processing
     text = _apply_text_replacements(page_data["text"], text_replacements, render_context)
+    if text_override is not None:
+        # Подпись к сгенерированной картинке: не дублируем текст страницы.
+        text = text_override
     if rich_html is None and rich_auto:
         rich_html = _auto_rich(text, rich_prefix)
     if text_prefix:
