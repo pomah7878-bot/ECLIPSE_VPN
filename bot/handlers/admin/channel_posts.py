@@ -86,6 +86,7 @@ def _visible_len(html_text: str) -> int:
 DEFAULT_POST_FOOTER_TEMPLATE = (
     "\n\n━━━━━━━━━━━━━━\n"
     "🤖 Подключиться в боте: {bot_link}\n"
+    "📱 Скачать приложение: {app_link}\n"
     "🛒 Купить на сайте: {shop_link}"
 )
 
@@ -97,9 +98,12 @@ async def _build_post_footer(bot) -> str:
     bot_link = f'<a href="https://t.me/{escape_html(bot_username)}">@{escape_html(bot_username)}</a>'
     webapp_url = get_effective_webapp_url()
     shop_url = webapp_url.rstrip('/') + '/shop' if webapp_url else ''
+    app_url = webapp_url.rstrip('/') + '/app' if webapp_url else ''
     shop_display = webapp_url.replace('https://', '').replace('http://', '').rstrip('/') if webapp_url else ''
     shop_link = (f'<a href="{escape_html(shop_url)}">{escape_html(shop_display)}</a>'
                  if shop_url else '')
+    app_link = (f'<a href="{escape_html(app_url)}">Скачать приложение</a>'
+                if app_url else '')
 
     custom = get_post_footer_text().strip()
     template = custom or DEFAULT_POST_FOOTER_TEMPLATE
@@ -109,12 +113,20 @@ async def _build_post_footer(bot) -> str:
             line for line in template.splitlines()
             if "{shop_link}" not in line and "{shop_url}" not in line and "{shop_display}" not in line
         )
+    if not app_url:
+        # То же для ссылки на приложение: сайт не настроен — строку убираем.
+        template = "\n".join(
+            line for line in template.splitlines()
+            if "{app_link}" not in line and "{app_url}" not in line
+        )
     text = (template
             .replace("{bot_link}", bot_link)
             .replace("{bot_username}", escape_html(bot_username))
             .replace("{shop_link}", shop_link)
             .replace("{shop_url}", escape_html(shop_url))
-            .replace("{shop_display}", escape_html(shop_display)))
+            .replace("{shop_display}", escape_html(shop_display))
+            .replace("{app_link}", app_link)
+            .replace("{app_url}", escape_html(app_url)))
     if not text.startswith("\n"):
         text = "\n\n" + text
     return text
@@ -185,11 +197,13 @@ async def show_channel_posts_menu(callback: CallbackQuery, state: FSMContext):
         '📌 <b>Что такое «Реклама бота в подвале»?</b>\n\n'
         'Если включено, в конец каждого поста из этого раздела автоматически добавляются строки подвала:\n'
         '• ссылка на бота — читатель сразу переходит в него из поста\n'
+        '• ссылка на приложение — страница загрузки ECLIPSE\n'
         '• ссылка на сайт-магазин — если он настроен\n\n'
         'Так не нужно вставлять ссылки вручную в каждый пост. '
         'Подвал можно изменить кнопкой «✏️ Изменить подвал»: поддерживаются HTML и плейсхолдеры '
-        '<code>{bot_link}</code>, <code>{bot_username}</code>, <code>{shop_link}</code>, '
-        '<code>{shop_url}</code>, <code>{shop_display}</code>.\n\n'
+        '<code>{bot_link}</code>, <code>{bot_username}</code>, <code>{app_link}</code>, '
+        '<code>{app_url}</code>, <code>{shop_link}</code>, <code>{shop_url}</code>, '
+        '<code>{shop_display}</code>.\n\n'
     )
     if footer_enabled:
         footer_preview = await _build_post_footer(callback.message.bot)
@@ -236,9 +250,10 @@ async def start_footer_edit(callback: CallbackQuery, state: FSMContext):
         '✏️ <b>Подвал постов</b>\n\n'
         'Отправьте текст подвала в HTML. Можно использовать готовые ссылки:\n'
         '• <code>{bot_link}</code> — ссылка на этого бота\n'
+        '• <code>{app_link}</code> — ссылка «Скачать приложение»\n'
         '• <code>{shop_link}</code> — ссылка на сайт-магазин (если настроен)\n'
         '• <code>{bot_username}</code> — username бота\n'
-        '• <code>{shop_url}</code>, <code>{shop_display}</code> — URL и домен магазина\n\n'
+        '• <code>{app_url}</code>, <code>{shop_url}</code>, <code>{shop_display}</code> — URL приложения, URL и домен магазина\n\n'
         'Сейчас используется:\n'
         f'<pre>{escape_html(template)}</pre>',
         reply_markup=channel_post_cancel_kb(),
