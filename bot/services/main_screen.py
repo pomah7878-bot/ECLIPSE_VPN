@@ -254,13 +254,24 @@ def build_subscription_card(state: Dict[str, Any]) -> str:
     return '<blockquote>' + '\n'.join(lines) + '</blockquote>'
 
 
+def _brand_emoji(emoji: str) -> str:
+    """Золотая custom-emoji иконка из пака; если пака нет — обычный emoji."""
+    try:
+        from bot.services import button_icons
+        cid = button_icons.icon_map().get((emoji or '').replace('\ufe0f', ''))
+    except Exception:  # noqa: BLE001
+        cid = None
+    return f'<tg-emoji emoji-id="{cid}">{emoji}</tg-emoji>' if cid else emoji
+
+
 def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optional[List[str]] = None) -> Optional[str]:
     """«Новый вид меню»: премиальная карточка, каждый пункт — отдельной строкой."""
     audience = state.get('audience')
     balance = int(state.get('balance_cents') or 0)
     name = (first_name or '').strip()
-    lines = ['✦ <b>ECLIPSE</b>']
-    lines.append(f"👤 <b>{escape_html(name)}, всё работает</b>" if name else "👤 <b>Всё работает</b>")
+    lines = [f"{_brand_emoji('✨')} <b>ECLIPSE</b>"]
+    lines.append(f"{_brand_emoji('👤')} <b>{escape_html(name)}, всё работает</b>" if name
+                 else f"{_brand_emoji('👤')} <b>Всё работает</b>")
     lines.append('')
 
     if audience == AUDIENCE_CLIENT:
@@ -270,25 +281,26 @@ def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optio
         days = _days_left(nearest.get('expires_at'))
         if len(active) == 1:
             plan = _plan_name(nearest.get('tariff_id'))
-            lines.append(f"🟢 Статус: <b>{escape_html(plan) if plan else 'Подписка'}</b>")
-            lines.append(f"📅 Действует до: <b>{until}</b>")
+            status_icon = _brand_emoji('👑') if plan and 'premium' in plan.lower() else '🟢'
+            lines.append(f"{status_icon} Статус: <b>{escape_html(plan) if plan else 'Подписка'}</b>")
+            lines.append(f"{_brand_emoji('📅')} Действует до: <b>{until}</b>")
         else:
-            lines.append(f"🔑 Активных ключей: <b>{len(active)}</b>")
-            lines.append(f"📅 Ближайший до: <b>{until}</b>")
+            lines.append(f"{_brand_emoji('🔑')} Активных ключей: <b>{len(active)}</b>")
+            lines.append(f"{_brand_emoji('📅')} Ближайший до: <b>{until}</b>")
         if days is not None and days >= 0:
-            lines.append(f"⏳ Осталось: <b>{days} {_plural(days, 'день', 'дня', 'дней')}</b>")
+            lines.append(f"{_brand_emoji('⏳')} Осталось: <b>{days} {_plural(days, 'день', 'дня', 'дней')}</b>")
         devices = _max_devices(nearest.get('tariff_id')) if len(active) == 1 else 0
         if devices > 0:
-            lines.append(f"📱 Устройства: <b>до {devices}</b>")
+            lines.append(f"{_brand_emoji('📱')} Устройства: <b>до {devices}</b>")
         if balance >= 100:
-            lines.append(f"💰 Баланс: <b>{_rub(balance)}</b>")
+            lines.append(f"{_brand_emoji('💰')} Баланс: <b>{_rub(balance)}</b>")
     elif audience == AUDIENCE_EXPIRED:
         last = max(state.get('keys') or [{}], key=lambda k: str(k.get('expires_at') or ''))
         lines.append("🔴 Статус: <b>Подписка закончилась</b>")
-        lines.append(f"📅 Дата: <b>{format_day_month(last.get('expires_at'))}</b>")
+        lines.append(f"{_brand_emoji('📅')} Дата: <b>{format_day_month(last.get('expires_at'))}</b>")
         lines.append("➡️ Продлите — ключи заработают сразу")
         if balance >= 100:
-            lines.append(f"💰 Баланс: <b>{_rub(balance)}</b>")
+            lines.append(f"{_brand_emoji('💰')} Баланс: <b>{_rub(balance)}</b>")
     else:
         return None
 
