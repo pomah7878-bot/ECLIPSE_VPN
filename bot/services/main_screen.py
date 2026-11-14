@@ -446,6 +446,30 @@ def _merged_buttons(page: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [dict(b) for b in _merge_buttons_by_id(page.get('buttons_default') or '[]', page.get('buttons_custom'))]
 
 
+def _pair_bonus_with_app(buttons: List[Dict[str, Any]]) -> None:
+    """«Бонусные дни» и «Приложение» должны стоять в одной строке.
+
+    Кнопки приходят из editor страницы с произвольными row/col. Ищем их по
+    подписи/id и ставим в один ряд; если в ряду уже занято две колонки — не
+    трогаем, чтобы не наложить кнопки.
+    """
+    def text(b):
+        return f"{b.get('label') or ''} {b.get('text') or ''} {b.get('id') or ''}".lower()
+
+    bonus = next((b for b in buttons if 'бонус' in text(b) or 'bonus' in text(b)), None)
+    app = next((b for b in buttons
+                if b is not bonus and ('прилож' in text(b) or 'app' in str(b.get('id') or '').lower())), None)
+    if bonus is None or app is None:
+        return
+    target_row = app.get('row', 0)
+    occupied = {b.get('col') for b in buttons if b is not bonus and b.get('row', 0) == target_row}
+    free = next((c for c in (0, 1) if c not in occupied), None)
+    if free is None:
+        return
+    bonus['row'] = target_row
+    bonus['col'] = free
+
+
 def _build_app_view(page: Dict[str, Any]) -> Dict[str, Any]:
     """Вид «Приложение» из текущей (классической) главной: ваш текст остаётся для новичков."""
     buttons = [b for b in _merged_buttons(page) if b.get('id') != CONNECT_BUTTON_ID]
@@ -466,6 +490,7 @@ def _build_app_view(page: Dict[str, Any]) -> Dict[str, Any]:
         prev = b.get('row', 0)
         b['row'] = next_row
     buttons.sort(key=lambda x: (x.get('row', 0), x.get('col', 0)))
+    _pair_bonus_with_app(buttons)
     classic_text = (page.get('text_custom') or page.get('text_default') or '').strip()
     text = f"[новым]{classic_text}\n%предложение%[/новым]{_APP_TAIL}"
     import json as _json
