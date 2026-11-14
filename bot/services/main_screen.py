@@ -251,7 +251,7 @@ def build_subscription_card(state: Dict[str, Any]) -> str:
 
     if balance >= 100:
         lines.append(f"💰 Баланс {_rub(balance)}")
-    return '<blockquote>' + '\n'.join(lines) + '</blockquote>'
+    return '<blockquote>' + '<br>'.join(lines) + '</blockquote>'
 
 
 def _brand_emoji(emoji: str) -> str:
@@ -304,7 +304,7 @@ def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optio
     else:
         return None
 
-    return '<blockquote>' + '\n'.join(lines) + '</blockquote>'
+    return '<blockquote>' + '<br>'.join(lines) + '</blockquote>'
 
 
 def min_month_price_text() -> str:
