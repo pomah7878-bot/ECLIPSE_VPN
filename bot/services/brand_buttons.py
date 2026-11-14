@@ -31,7 +31,7 @@ ICONS = {
     "connect": "⚡",
     "trial": "🎁",
     "profile": "👤",
-    "referral": "🤝",
+    "referral": "👥",
     "support": "🎧",
     "ai": "🤖",
     "settings": "⚙️",
@@ -143,12 +143,14 @@ def _kind(text: str, cb: str) -> Optional[str]:
     # AI before support: the AI entry point often contains the word „поддержка“ too.
     if re.search(r"(^|[_ ])(ai|ai_support|assistant|нейро)([_ ]|$)|ии-|ai-", both):
         return "ai"
-    if re.search(r"(support|help|помощ|поддерж|faq|чат|chat)", both):
+    if re.search(r"(support|help|помощ|поддерж|faq|чат|chat|инструкц|guide|руководств)", both):
         return "support"
-    if "trial" in c or re.search(r"(пробн|trial|тест-период)", t):
+    if "trial" in c or re.search(r"(пробн|trial|тест-период|бонус|bonus)", t):
         return "trial"
     if re.search(r"(referral|refer|реферал|приглас)", both):
         return "referral"
+    if re.search(r"(news|новост)", both):
+        return "channel"
     if re.search(r"(device|устройств)", both):
         return "devices"
     if re.search(r"(promo|промокод|promocode|промо)", both):
@@ -165,7 +167,7 @@ def _kind(text: str, cb: str) -> Optional[str]:
         return "stats"
     if re.search(r"(settings|setting|настройк|конфиг)", both):
         return "settings"
-    if re.search(r"(profile|account|profile_id|show_id|my_id|профил|аккаунт|мой id)", both):
+    if re.search(r"(profile|account|profile_id|show_id|my_id|профил|аккаунт|кабинет|личный|мой id)", both):
         return "profile"
     if re.search(r"(balance|баланс)", both):
         return "balance"
@@ -175,7 +177,9 @@ def _kind(text: str, cb: str) -> Optional[str]:
         return "pay"
     if re.search(r"(buy|purchase|tariff|тариф|купить|покупк)", both):
         return "buy"
-    if re.search(r"(connect|connection|config|подключ|конфиг|ключ|key|subscription|подписк)", both):
+    if re.search(r"(connect|connection|подключ)", both):
+        return "connect"
+    if re.search(r"(config|конфиг|ключ|key|subscription|подписк)", both):
         return "keys"
     if re.search(r"(broadcast|рассылк)", both):
         return "broadcast"
