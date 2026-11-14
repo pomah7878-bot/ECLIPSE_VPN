@@ -261,6 +261,7 @@ def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optio
     name = (first_name or '').strip()
     lines = ['✦ <b>ECLIPSE</b>']
     lines.append(f"👤 <b>{escape_html(name)}, всё работает</b>" if name else "👤 <b>Всё работает</b>")
+    lines.append('')
 
     if audience == AUDIENCE_CLIENT:
         active = state.get('active') or []
