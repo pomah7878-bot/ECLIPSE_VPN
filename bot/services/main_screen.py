@@ -255,7 +255,7 @@ def build_subscription_card(state: Dict[str, Any]) -> str:
 
 
 def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optional[List[str]] = None) -> Optional[str]:
-    """«Новый вид меню»: премиальная карточка-цитата вместо таблицы."""
+    """«Новый вид меню»: премиальная карточка, каждый пункт — отдельной строкой."""
     audience = state.get('audience')
     balance = int(state.get('balance_cents') or 0)
     name = (first_name or '').strip()
@@ -270,25 +270,25 @@ def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optio
         days = _days_left(nearest.get('expires_at'))
         if len(active) == 1:
             plan = _plan_name(nearest.get('tariff_id'))
-            lines.append(f"🟢 <b>{escape_html(plan) if plan else 'Подписка'}</b> · до {until}")
+            lines.append(f"🟢 Статус: <b>{escape_html(plan) if plan else 'Подписка'}</b>")
+            lines.append(f"📅 Действует до: <b>{until}</b>")
         else:
-            lines.append(f"🟢 <b>Активных ключей: {len(active)}</b> · ближайший до {until}")
-        details = []
+            lines.append(f"🔑 Активных ключей: <b>{len(active)}</b>")
+            lines.append(f"📅 Ближайший до: <b>{until}</b>")
         if days is not None and days >= 0:
-            details.append(f"⏳ {days} {_plural(days, 'день', 'дня', 'дней')}")
+            lines.append(f"⏳ Осталось: <b>{days} {_plural(days, 'день', 'дня', 'дней')}</b>")
         devices = _max_devices(nearest.get('tariff_id')) if len(active) == 1 else 0
         if devices > 0:
-            details.append(f"📱 до {devices}")
+            lines.append(f"📱 Устройства: <b>до {devices}</b>")
         if balance >= 100:
-            details.append(f"💰 {_rub(balance)}")
-        if details:
-            lines.append(' · '.join(details))
+            lines.append(f"💰 Баланс: <b>{_rub(balance)}</b>")
     elif audience == AUDIENCE_EXPIRED:
         last = max(state.get('keys') or [{}], key=lambda k: str(k.get('expires_at') or ''))
-        lines.append(f"🔴 <b>Подписка закончилась</b> {format_day_month(last.get('expires_at'))}".rstrip())
-        lines.append('➡️ Продлите — ключи заработают сразу')
+        lines.append("🔴 Статус: <b>Подписка закончилась</b>")
+        lines.append(f"📅 Дата: <b>{format_day_month(last.get('expires_at'))}</b>")
+        lines.append("➡️ Продлите — ключи заработают сразу")
         if balance >= 100:
-            lines.append(f"💰 {_rub(balance)}")
+            lines.append(f"💰 Баланс: <b>{_rub(balance)}</b>")
     else:
         return None
 
