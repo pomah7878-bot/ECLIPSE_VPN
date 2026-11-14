@@ -264,56 +264,6 @@ def _brand_emoji(emoji: str) -> str:
     return f'<tg-emoji emoji-id="{cid}">{emoji}</tg-emoji>' if cid else emoji
 
 
-def build_scoreboard_text(state: Dict[str, Any], first_name: str) -> Optional[str]:
-    """Текстовое табло для сообщения бота (без картинки и WebApp)."""
-    audience = state.get('audience')
-    balance = int(state.get('balance_cents') or 0)
-    name = (first_name or '').strip()[:18]
-    rows: List[tuple] = []
-    if audience == AUDIENCE_CLIENT:
-        active = state.get('active') or []
-        nearest = active[0]
-        until = format_day_month(nearest.get('expires_at'))
-        days = _days_left(nearest.get('expires_at'))
-        if len(active) == 1:
-            plan = _plan_name(nearest.get('tariff_id')) or 'Подписка'
-            rows.append(('СТАТУС', plan.upper()))
-            rows.append(('ДО', until.upper()))
-        else:
-            rows.append(('КЛЮЧЕЙ', str(len(active))))
-            rows.append(('БЛИЖАЙШИЙ', until.upper()))
-        if days is not None and days >= 0:
-            rows.append(('ОСТАЛОСЬ', f"{days} {_plural(days, 'ДЕНЬ', 'ДНЯ', 'ДНЕЙ')}"))
-        devices = _max_devices(nearest.get('tariff_id')) if len(active) == 1 else 0
-        if devices > 0:
-            rows.append(('УСТРОЙСТВА', f"ДО {devices}"))
-        if balance >= 100:
-            rows.append(('БАЛАНС', _rub(balance)))
-    elif audience == AUDIENCE_EXPIRED:
-        last = max(state.get('keys') or [{}], key=lambda k: str(k.get('expires_at') or ''))
-        rows.append(('СТАТУС', 'ЗАКОНЧИЛАСЬ'))
-        rows.append(('ДАТА', format_day_month(last.get('expires_at')).upper()))
-        rows.append(('ПРОДЛИТЕ', 'КЛЮЧИ ЗАРАБОТАЮТ'))
-        if balance >= 100:
-            rows.append(('БАЛАНС', _rub(balance)))
-    else:
-        return None
-
-    width = 30
-    title = '✦ ECLIPSE · PREMIUM' if any('PREMIUM' in str(v).upper() for _, v in rows) else '✦ ECLIPSE'
-    box = ['┌' + '─' * width + '┐',
-           '│ ' + title.ljust(width - 1)[:width - 1] + '│',
-           '├' + '─' * width + '┤']
-    name_line = f"👤 {name}, всё работает" if name else '👤 Всё работает'
-    box.append('│ ' + name_line.ljust(width - 1)[:width - 1] + '│')
-    box.append('├' + '─' * width + '┤')
-    for label, value in rows:
-        content = f"{label:<13}{value}"
-        box.append('│ ' + content.ljust(width - 1)[:width - 1] + '│')
-    box.append('└' + '─' * width + '┘')
-    return '<pre>' + '\n'.join(escape_html(line) for line in box) + '</pre>'
-
-
 def build_subscription_html(state: Dict[str, Any], first_name: str, extra: Optional[List[str]] = None) -> Optional[str]:
     """«Новый вид меню»: премиальная карточка, каждый пункт — отдельной строкой."""
     audience = state.get('audience')

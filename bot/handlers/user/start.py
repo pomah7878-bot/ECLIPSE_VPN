@@ -215,7 +215,6 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     app_screen_audience = None
     main_rich_html = None
     main_card_media = None
-    main_text_override = None
 
     def _first_raw(t):
         u = getattr(t, 'from_user', None)
@@ -248,9 +247,19 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
                         for _l in _ms.apply_audience_sections(_raw, app_screen_audience).split("\n")
                         if _l.strip() and "%" not in _l
                     ]
-                    main_rich_html = None
-                    main_text_override = _ms.build_scoreboard_text(_state, _first_raw(target))
-                    logger.info("Главная: текстовое табло %s", "включено" if main_text_override else "не применено (новичок)")
+                    main_rich_html = _ms.build_subscription_html(_state, _first_raw(target), extra=_extra[:3])
+                    if main_rich_html:
+                        try:
+                            from bot.services.premium_card import build_premium_card
+                            _png = await asyncio.to_thread(
+                                build_premium_card, _state, _first_raw(target)
+                            )
+                            if _png:
+                                main_card_media = BufferedInputFile(_png, filename='eclipse-premium.png')
+                                main_rich_html = None
+                        except Exception as _card_err:  # noqa: BLE001
+                            logger.warning(f"Главная: премиум-карточка не собрана: {_card_err}")
+                    logger.info("Главная: новый вид %s", "включён" if (main_rich_html or main_card_media) else "не применён (новичок)")
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Главная: таблица подписки не собрана: {e}")
             text_replacements.update({
@@ -414,7 +423,10 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
         append_buttons=append_buttons,
         force_new=force_new,
         rich_html=main_rich_html,
-        text_override=main_text_override,
+        media_policy='runtime' if main_card_media else 'page',
+        runtime_media=main_card_media,
+        runtime_media_type='photo' if main_card_media else None,
+        text_override='<b>ECLIPSE Unlimited</b>' if main_card_media else None,
     )
     try:
         from bot.services.main_menu_tracker import remember_main_menu
