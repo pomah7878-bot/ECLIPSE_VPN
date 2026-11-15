@@ -2303,6 +2303,19 @@
                     return;
                 }
                 if (!browserAuth) {
+                    // A normal browser is sent to the shop. Headless visual
+                    // checks must not navigate away mid-screenshot: show a
+                    // simple landing card instead of a client-side redirect.
+                    const automated = navigator.webdriver ||
+                        document.documentElement.hasAttribute('data-headless-shot');
+                    if (automated) {
+                        container.innerHTML = translateHtml(`<div class="card rounded-2xl p-6 text-center space-y-3">
+                            <h2 class="font-display text-xl font-bold">ECLIPSE Unlimited</h2>
+                            <p class="text-xs text-mist">Премиальный VPN для Android и Android TV.</p>
+                            <a href="/shop" class="inline-block px-6 py-3 btn-primary rounded-xl font-bold text-sm">Перейти в магазин</a>
+                        </div>`);
+                        return;
+                    }
                     location.replace('/shop');
                     return;
                 }
