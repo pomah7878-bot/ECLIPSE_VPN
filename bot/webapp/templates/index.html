@@ -629,25 +629,25 @@
     <script>
       // Automated visual checks run in a headless browser where heavy
       // backdrop-filter/animation compositing can make Page.captureScreenshot
-      // fail. Keep the normal design for people, simplify only for webdriver.
+      // fail. Keep the normal design for people, simplify only for headless.
       try {
         var ua = navigator.userAgent || '';
         if (navigator.webdriver || /HeadlessChrome|Electron/i.test(ua)) {
-          document.documentElement.classList.add('headless-shot');
+          document.documentElement.setAttribute('data-headless-shot', '1');
         }
       } catch (e) {}
     </script>
     <style>
-      html.headless-shot *, html.headless-shot *::before, html.headless-shot *::after {
+      html[data-headless-shot] *, html[data-headless-shot] *::before, html[data-headless-shot] *::after {
         animation: none !important;
         transition: none !important;
       }
-      html.headless-shot * {
+      html[data-headless-shot] * {
         -webkit-backdrop-filter: none !important;
         backdrop-filter: none !important;
       }
-      html.headless-shot body::before,
-      html.headless-shot body::after {
+      html[data-headless-shot] body::before,
+      html[data-headless-shot] body::after {
         display: none !important;
       }
     </style>
