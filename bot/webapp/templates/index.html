@@ -626,6 +626,28 @@
         }
 </style>
     <link rel="stylesheet" href="/static/motion.css">
+    <script>
+      // Automated visual checks run in a headless browser where heavy
+      // backdrop-filter/animation compositing can make Page.captureScreenshot
+      // fail. Keep the normal design for people, simplify only for webdriver.
+      try {
+        if (navigator.webdriver) document.documentElement.classList.add('headless-shot');
+      } catch (e) {}
+    </script>
+    <style>
+      html.headless-shot *, html.headless-shot *::before, html.headless-shot *::after {
+        animation: none !important;
+        transition: none !important;
+      }
+      html.headless-shot * {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+      }
+      html.headless-shot body::before,
+      html.headless-shot body::after {
+        display: none !important;
+      }
+    </style>
 </head>
 <body class="p-4 min-h-screen pb-8">
 
