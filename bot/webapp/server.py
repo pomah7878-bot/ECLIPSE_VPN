@@ -57,7 +57,9 @@ async def handle_tv_pair_create(request: web.Request) -> web.Response:
         code = _secrets_mod.token_hex(4).upper()
         token = _secrets_mod.token_urlsafe(24)
         _TV_PAIRS[code] = {"token": token, "created": now, "body": None}
-    pair_url = f"{str(request.scheme)}://{request.host}/tv-pair?code={code}"
+    scheme = (request.headers.get("X-Forwarded-Proto") or request.scheme or "https").split(",")[0].strip()
+    host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(",")[0].strip()
+    pair_url = f"{scheme}://{host}/tv-pair?code={code}"
     return web.json_response({"ok": True, "code": code, "token": token, "url": pair_url,
                               "expires_in": _TV_PAIR_TTL})
 
