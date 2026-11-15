@@ -1,47 +1,71 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
   <defs>
-    <radialGradient id="disc" cx="44%" cy="36%" r="70%">
-      <stop offset="0" stop-color="#111114"/>
-      <stop offset="0.62" stop-color="#070708"/>
+    <radialGradient id="disc" cx="46%" cy="40%" r="62%">
+      <stop offset="0" stop-color="#0b0b0d"/>
+      <stop offset="0.75" stop-color="#050506"/>
       <stop offset="1" stop-color="#000000"/>
     </radialGradient>
-    <linearGradient id="rim" x1="0.86" y1="0.08" x2="0.16" y2="0.96">
-      <stop offset="0" stop-color="#FFE8A7"/>
-      <stop offset="0.18" stop-color="#E9B35C"/>
-      <stop offset="0.42" stop-color="#9A5C27"/>
-      <stop offset="0.68" stop-color="#3A2010"/>
-      <stop offset="0.88" stop-color="#0C0704"/>
-      <stop offset="1" stop-color="#050302"/>
+    <linearGradient id="rim" x1="0.42" y1="0.02" x2="0.62" y2="0.99">
+      <stop offset="0" stop-color="#8b5a24"/>
+      <stop offset="0.30" stop-color="#d59a45"/>
+      <stop offset="0.50" stop-color="#f6c86b"/>
+      <stop offset="0.66" stop-color="#d48b36"/>
+      <stop offset="0.84" stop-color="#744019"/>
+      <stop offset="1" stop-color="#2a170a"/>
     </linearGradient>
-    <linearGradient id="hot" x1="0.20" y1="0.02" x2="0.82" y2="0.62">
-      <stop offset="0" stop-color="#FFF8DE"/>
-      <stop offset="0.30" stop-color="#FFE08A"/>
-      <stop offset="0.70" stop-color="#FFC14E"/>
-      <stop offset="1" stop-color="#D57A22"/>
+    <linearGradient id="hot" x1="0.18" y1="0.02" x2="0.84" y2="0.62">
+      <stop offset="0" stop-color="#fffdf2"/>
+      <stop offset="0.22" stop-color="#fff2c4"/>
+      <stop offset="0.55" stop-color="#ffd477"/>
+      <stop offset="0.82" stop-color="#f0a83c"/>
+      <stop offset="1" stop-color="#b95f1b"/>
     </linearGradient>
-    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="14"/>
+    <filter id="halo" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="16"/>
     </filter>
-    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
-      <feGaussianBlur stdDeviation="3"/>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.5"/>
+    </filter>
+    <filter id="rayblur" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.2"/>
     </filter>
   </defs>
 
-  <!-- soft warm halo, fully transparent outside the circle -->
-  <circle cx="256" cy="256" r="196" fill="none" stroke="#F6B84C" stroke-width="20" opacity="0.20" filter="url(#glow)"/>
+  <!-- warm halo, fully transparent around the mark -->
+  <circle cx="256" cy="256" r="152" fill="none" stroke="#e0a24d" stroke-width="22" opacity="0.22" filter="url(#halo)"/>
+
+  <!-- gold corona rays, same visual language as the connect button -->
+  <g stroke="#f3c75b" stroke-width="2.2" stroke-linecap="round" opacity="0.58" filter="url(#rayblur)">
+    <line x1="256" y1="72" x2="256" y2="96"/>
+    <line x1="256" y1="416" x2="256" y2="440"/>
+    <line x1="72" y1="256" x2="96" y2="256"/>
+    <line x1="416" y1="256" x2="440" y2="256"/>
+    <line x1="126" y1="126" x2="144" y2="144"/>
+    <line x1="368" y1="368" x2="386" y2="386"/>
+    <line x1="386" y1="126" x2="368" y2="144"/>
+    <line x1="144" y1="368" x2="126" y2="386"/>
+    <line x1="184" y1="90" x2="194" y2="112"/>
+    <line x1="318" y1="400" x2="328" y2="422"/>
+    <line x1="90" y1="184" x2="112" y2="194"/>
+    <line x1="400" y1="318" x2="422" y2="328"/>
+    <line x1="328" y1="90" x2="318" y2="112"/>
+    <line x1="194" y1="400" x2="184" y2="422"/>
+    <line x1="422" y1="184" x2="400" y2="194"/>
+    <line x1="112" y1="318" x2="90" y2="328"/>
+  </g>
 
   <!-- eclipse body -->
-  <circle cx="256" cy="256" r="178" fill="url(#disc)"/>
+  <circle cx="256" cy="256" r="128" fill="url(#disc)"/>
 
-  <!-- metallic rim: bright only at the upper-right -->
-  <circle cx="256" cy="256" r="188" fill="none" stroke="url(#rim)" stroke-width="15"/>
+  <!-- thick premium rim -->
+  <circle cx="256" cy="256" r="136" fill="none" stroke="url(#rim)" stroke-width="17"/>
 
-  <!-- hot crescent -->
-  <path d="M 268 72 A 188 188 0 0 1 441 247" fill="none" stroke="url(#hot)" stroke-width="12" stroke-linecap="round" filter="url(#soft)"/>
-  <path d="M 278 70 A 188 188 0 0 1 441 240" fill="none" stroke="#FFF4CB" stroke-width="5" stroke-linecap="round" opacity="0.95"/>
-  <path d="M 294 80 A 188 188 0 0 1 424 216" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+  <!-- hot solar crescent, upper-right only -->
+  <path d="M 256 120 A 136 136 0 0 1 392 256" fill="none" stroke="url(#hot)" stroke-width="13" stroke-linecap="round" filter="url(#soft)"/>
+  <path d="M 266 119 A 136 136 0 0 1 392 249" fill="none" stroke="#ffe9a8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M 279 124 A 136 136 0 0 1 380 227" fill="none" stroke="#fffdf2" stroke-width="2.2" stroke-linecap="round" opacity="0.9"/>
 
-  <!-- faint bronze reflection on the lower-left -->
-  <path d="M 92 306 A 188 188 0 0 0 202 427" fill="none" stroke="#B88648" stroke-width="3" stroke-linecap="round" opacity="0.28"/>
+  <!-- faint bronze reflection at the lower-left -->
+  <path d="M 137 322 A 136 136 0 0 0 190 388" fill="none" stroke="#d8a05a" stroke-width="3" stroke-linecap="round" opacity="0.22"/>
 </svg>
