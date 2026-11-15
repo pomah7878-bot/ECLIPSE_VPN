@@ -40,7 +40,7 @@ _HAPP_SUB_CACHE: dict = {}
 
 # Одноразовые пары «телефон → TV»: TV показывает QR, телефон отправляет подписку.
 _TV_PAIRS: dict = {}
-_TV_PAIR_TTL = 600
+_TV_PAIR_TTL = 1800
 _TV_PAIR_LOCK = asyncio.Lock()
 
 
