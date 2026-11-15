@@ -631,7 +631,10 @@
       // backdrop-filter/animation compositing can make Page.captureScreenshot
       // fail. Keep the normal design for people, simplify only for webdriver.
       try {
-        if (navigator.webdriver) document.documentElement.classList.add('headless-shot');
+        var ua = navigator.userAgent || '';
+        if (navigator.webdriver || /HeadlessChrome|Electron/i.test(ua)) {
+          document.documentElement.classList.add('headless-shot');
+        }
       } catch (e) {}
     </script>
     <style>
