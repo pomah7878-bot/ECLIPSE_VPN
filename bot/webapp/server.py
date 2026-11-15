@@ -38,6 +38,76 @@ _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 # См. handle_happ_subscription().
 _HAPP_SUB_CACHE: dict = {}
 
+# Одноразовые пары «телефон → TV»: TV показывает QR, телефон отправляет подписку.
+_TV_PAIRS: dict = {}
+_TV_PAIR_TTL = 600
+_TV_PAIR_LOCK = asyncio.Lock()
+
+
+def _tv_pair_cleanup(now: float) -> None:
+    for key in [k for k, v in _TV_PAIRS.items() if now - v.get("created", 0) > _TV_PAIR_TTL]:
+        _TV_PAIRS.pop(key, None)
+
+
+async def handle_tv_pair_create(request: web.Request) -> web.Response:
+    """POST /api/public/tv-pair/create — TV создаёт QR-код для переноса подписки."""
+    now = asyncio.get_running_loop().time()
+    async with _TV_PAIR_LOCK:
+        _tv_pair_cleanup(now)
+        code = _secrets_mod.token_hex(4).upper()
+        token = _secrets_mod.token_urlsafe(24)
+        _TV_PAIRS[code] = {"token": token, "created": now, "body": None}
+    pair_url = f"{str(request.scheme)}://{request.host}/tv-pair?code={code}"
+    return web.json_response({"ok": True, "code": code, "token": token, "url": pair_url,
+                              "expires_in": _TV_PAIR_TTL})
+
+
+async def handle_tv_pair_put(request: web.Request) -> web.Response:
+    """POST /api/public/tv-pair/put — телефон отправляет подписку на TV по коду из QR."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "bad_json"}, status=400)
+    code = str(data.get("code") or "").strip().upper()
+    body = data.get("body")
+    if not code or not isinstance(body, str) or not body.strip():
+        return web.json_response({"ok": False, "error": "empty"}, status=400)
+    if len(body) > 300_000:
+        return web.json_response({"ok": False, "error": "too_large"}, status=413)
+    now = asyncio.get_running_loop().time()
+    async with _TV_PAIR_LOCK:
+        _tv_pair_cleanup(now)
+        pair = _TV_PAIRS.get(code)
+        if not pair:
+            return web.json_response({"ok": False, "error": "expired"}, status=404)
+        pair["body"] = body
+    return web.json_response({"ok": True, "code": code})
+
+
+async def handle_tv_pair_get(request: web.Request) -> web.Response:
+    """GET /api/public/tv-pair/get — TV забирает отправленную подписку."""
+    code = str(request.query.get("code") or "").strip().upper()
+    token = str(request.query.get("token") or "")
+    now = asyncio.get_running_loop().time()
+    async with _TV_PAIR_LOCK:
+        _tv_pair_cleanup(now)
+        pair = _TV_PAIRS.get(code)
+        if not pair or not token or pair.get("token") != token:
+            return web.json_response({"ok": False, "error": "expired"}, status=404)
+        body = pair.get("body")
+    if not body:
+        return web.json_response({"ok": True, "ready": False})
+    return web.json_response({"ok": True, "ready": True, "body": body})
+
+
+async def handle_tv_pair_page(request: web.Request) -> web.Response:
+    """GET /tv-pair?code=... — страница-подсказка, если QR открыли браузером."""
+    return web.Response(text="""<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ECLIPSE TV</title>
+<style>body{background:#07080d;color:#f4f1ea;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}div{max-width:420px;padding:24px}b{color:#f3c75b}</style></head>
+<body><div><h2><b>ECLIPSE TV</b></h2><p>Откройте приложение ECLIPSE на телефоне и отсканируйте QR-код с телевизора.</p><p>Подписка перенесётся на TV автоматически.</p></div></body></html>""",
+                        content_type="text/html")
+
 # v1.188: заголовки, которые понимает только Happ (панель присылает их всем клиентам).
 # В режиме «INCY: только свои заголовки» (/sub_mode incy strict) они убираются из ответа INCY.
 _INCY_STRIP_HEADERS = (
@@ -6219,6 +6289,10 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/client-update", handle_client_update_info)
     app.router.add_get("/client-update/client.apk", handle_client_update_file)
     app.router.add_get("/client-update/tv.apk", handle_tv_update_file)
+    app.router.add_post("/api/public/tv-pair/create", handle_tv_pair_create)
+    app.router.add_post("/api/public/tv-pair/put", handle_tv_pair_put)
+    app.router.add_get("/api/public/tv-pair/get", handle_tv_pair_get)
+    app.router.add_get("/tv-pair", handle_tv_pair_page)
     app.router.add_get("/status", handle_status_page)
     app.router.add_get("/api/public/status", handle_public_status)
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)
