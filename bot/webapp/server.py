@@ -1968,6 +1968,15 @@ async def handle_client_update_info(request: web.Request) -> web.Response:
         return web.json_response({"error": "not_configured"}, status=404)
 
 
+async def handle_tv_update_info(request: web.Request) -> web.Response:
+    """GET /api/public/tv-update — последняя версия Android TV приложения."""
+    try:
+        with open(os.path.join(_client_update_dir(), "tv-latest.json"), encoding="utf-8") as f:
+            return web.json_response(json.load(f))
+    except (OSError, ValueError):
+        return web.json_response({"error": "not_configured"}, status=404)
+
+
 async def handle_client_update_file(request: web.Request) -> web.StreamResponse:
     """GET /client-update/client.apk — файл обновления."""
     path = os.path.join(_client_update_dir(), "client.apk")
@@ -6289,6 +6298,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/admin/themes/apply", handle_themes_apply)
     app.router.add_get("/api/public/site-info", handle_public_site_info)
     app.router.add_get("/api/public/client-update", handle_client_update_info)
+    app.router.add_get("/api/public/tv-update", handle_tv_update_info)
     app.router.add_get("/client-update/client.apk", handle_client_update_file)
     app.router.add_get("/client-update/tv.apk", handle_tv_update_file)
     app.router.add_post("/api/public/tv-pair/create", handle_tv_pair_create)
