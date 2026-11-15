@@ -1904,6 +1904,14 @@ async def handle_client_update_file(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(path, headers={"Content-Type": "application/vnd.android.package-archive"})
 
 
+async def handle_tv_update_file(request: web.Request) -> web.StreamResponse:
+    """GET /client-update/tv.apk — APK отдельного приложения для Android TV."""
+    path = os.path.join(_client_update_dir(), "tv.apk")
+    if not os.path.isfile(path):
+        return web.json_response({"error": "not_configured"}, status=404)
+    return web.FileResponse(path, headers={"Content-Type": "application/vnd.android.package-archive"})
+
+
 async def handle_public_site_info(request: web.Request) -> web.Response:
     """GET /api/public/site-info — базовая информация о сервисе, полностью
     без авторизации: название бренда, юзернейм бота, ссылка на новостной
@@ -6210,6 +6218,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/site-info", handle_public_site_info)
     app.router.add_get("/api/public/client-update", handle_client_update_info)
     app.router.add_get("/client-update/client.apk", handle_client_update_file)
+    app.router.add_get("/client-update/tv.apk", handle_tv_update_file)
     app.router.add_get("/status", handle_status_page)
     app.router.add_get("/api/public/status", handle_public_status)
     app.router.add_get("/api/public/connection-status", handle_public_connection_status)
