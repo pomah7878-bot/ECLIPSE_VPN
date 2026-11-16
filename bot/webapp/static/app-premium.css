@@ -389,7 +389,7 @@ h1 .line { display: block; }
 /* Windows teaser */
 .win-teaser { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); gap: clamp(28px, 5vw, 68px); align-items: center; }
 .win-teaser-shot {
-    width: min(360px, 86%); margin-left: auto; display: block;
+    width: min(360px, 86%); height: auto; margin-left: auto; display: block;
     border-radius: 14px; border: 1px solid rgba(241,213,154,.22);
     box-shadow: 0 35px 80px rgba(0,0,0,.55);
     transform: none;
