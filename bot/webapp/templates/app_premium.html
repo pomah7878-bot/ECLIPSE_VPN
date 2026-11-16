@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECLIPSE Unlimited — свобода интернета в одно касание</title>
+<meta name="description" content="ECLIPSE Unlimited — интеллектуальная система защищённого доступа для Android и Android TV. Автоматический выбор серверов, умная маршрутизация, подключение без сложных настроек.">
+<meta name="theme-color" content="#080a0e">
+<link rel="canonical" href="https://eclipse.unlimited.bot.nu/app">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ECLIPSE Unlimited">
+<meta property="og:title" content="ECLIPSE Unlimited — свобода интернета в одно касание">
+<meta property="og:description" content="Интеллектуальная система защищённого доступа. Android, Android TV и Windows. Подключение без сложных настроек.">
+<meta property="og:url" content="https://eclipse.unlimited.bot.nu/app">
+<meta property="og:image" content="https://eclipse.unlimited.bot.nu/static/app-preview/connected.webp">
+<meta property="og:image:alt" content="ECLIPSE Unlimited на Android">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="preload" as="image" href="/static/app-preview/connected.webp" type="image/webp">
+<link rel="stylesheet" href="/static/app-premium.css">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"ECLIPSE Unlimited","applicationCategory":"SecurityApplication","operatingSystem":"Android 7+, Android TV, Windows 10/11","description":"Интеллектуальная система защищённого доступа с автоматическим выбором серверов и умной маршрутизацией.","url":"https://eclipse.unlimited.bot.nu/app","downloadUrl":"https://eclipse.unlimited.bot.nu/client-update/client.apk"}
+</script>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Чем отличается тариф на 100 ГБ от безлимитного?","acceptedAnswer":{"@type":"Answer","text":"Тариф на 100 ГБ ограничен объёмом трафика, безлимитный — без ограничения по объёму. Актуальные цены и условия показаны в магазине."}},
+{"@type":"Question","name":"Безопасно ли устанавливать APK?","acceptedAnswer":{"@type":"Answer","text":"APK подписан ECLIPSE. Перед установкой можно сверить SHA-256 файла и отпечаток подписи, опубликованные на этой странице."}},
+{"@type":"Question","name":"Работает ли ECLIPSE на Android TV?","acceptedAnswer":{"@type":"Answer","text":"Да, для Android TV есть отдельное приложение ECLIPSE TV с управлением пультом и переносом подписки по QR-коду."}},
+{"@type":"Question","name":"Есть ли приложение для Windows?","acceptedAnswer":{"@type":"Answer","text":"Да, Windows-клиент доступен на отдельной странице: установщик, работа в трее, автозапуск, раздельный туннель и обновления из приложения."}}
+]}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержимому</a>
+<div class="space" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.4 3 7.5 7 9 4-1.5 7-4.6 7-9V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c2.4 2.4 3.8 5.6 3.8 9S14.4 18.6 12 21c-2.4-2.4-3.8-5.6-3.8-9S9.6 5.4 12 3Z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+<symbol id="i-route" viewBox="0 0 24 24"><circle cx="5" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="19" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 6h6a4 4 0 0 1 4 4v6M9 18h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.1 8A7 7 0 0 1 19 9m-1 7a7 7 0 0 1-12.9-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5M3 17l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Zm7 11 .8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-infinity" viewBox="0 0 24 24"><path d="M7 9a3 3 0 1 0 0 6c3 0 5-6 8-6a3 3 0 1 1 0 6c-3 0-5-6-8-6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-tv" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 21h8M12 17v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="14" width="16" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 7h.01M8 17h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="i-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 14h2v2h-2v-2Zm4 0h1v1h-1v-1Zm-2 4h2v2h-2v-2Zm4-2h1v4h-3v-2h2v-2Z" fill="currentColor"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+</defs>
+</svg>
+
+<header class="site-header" id="header">
+    <a class="brand" href="/app" aria-label="ECLIPSE Unlimited — главная">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>ECLIPSE <span>Unlimited</span></span>
+    </a>
+    <nav class="nav" id="nav" aria-label="Основная навигация">
+        <a href="#features">Возможности</a>
+        <a href="#screens">Скриншоты</a>
+        <a href="#tv">Android TV</a>
+        <a href="#pricing">Тарифы</a>
+        <a href="#security">Безопасность</a>
+        <a href="#faq">FAQ</a>
+    </nav>
+    <div class="header-actions">
+        <a class="btn btn-gold btn-sm" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk"><span>Скачать</span> <span class="arrow" aria-hidden="true">↗</span></a>
+        <button class="menu-toggle" id="menuToggle" type="button" aria-label="Открыть меню" aria-controls="nav" aria-expanded="false"><span></span></button>
+    </div>
+</header>
+
+<main id="main">
+    <section class="hero">
+        <div class="wrap hero-grid">
+            <div class="hero-copy">
+                <span class="eyebrow">Premium защищённый доступ</span>
+                <h1><span class="line">Свобода интернета.</span><span class="line gold">В одно касание.</span></h1>
+                <p class="hero-lead">ECLIPSE Unlimited — интеллектуальная система защищённого доступа. Автоматический выбор серверов, умная маршрутизация и подключение без сложных настроек.</p>
+                <div class="hero-actions">
+                    <a class="btn btn-gold btn-lg" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk">Скачать приложение <span class="arrow" aria-hidden="true">↗</span></a>
+                    <a class="btn btn-glass btn-lg" href="#features">Посмотреть возможности</a>
+                </div>
+                <ul class="hero-points">
+                    <li><svg><use href="#i-check"/></svg> Одно касание для подключения</li>
+                    <li><svg><use href="#i-check"/></svg> Автоматический выбор сервера</li>
+                    <li><svg><use href="#i-check"/></svg> Умная маршрутизация</li>
+                    <li><svg><use href="#i-check"/></svg> Android и Android TV</li>
+                </ul>
+                <div class="platforms" aria-label="Платформы">
+                    <a class="platform-pill" href="/app/phone"><span class="dot"></span> Android</a>
+                    <a class="platform-pill" href="/app/tv"><span class="dot"></span> Android TV</a>
+                    <a class="platform-pill" href="/app/windows"><span class="dot"></span> Windows</a>
+                </div>
+            </div>
+
+            <div class="hero-art">
+                <div class="eclipse" aria-hidden="true">
+                    <div class="eclipse-glow"></div>
+                    <div class="eclipse-corona"></div>
+                    <div class="orbit o1"></div>
+                    <div class="orbit o2"></div>
+                    <div class="orbit o3"></div>
+                    <div class="eclipse-disc"></div>
+                    <div class="eclipse-ring"></div>
+                    <div class="eclipse-diamond"></div>
+                </div>
+                <div class="phone-stage">
+                    <div class="phone" id="heroPhone">
+                        <div class="phone-screen">
+                            <img src="/static/app-preview/connected.webp" width="640" height="1351" alt="Экран ECLIPSE Unlimited с активным VPN-подключением" fetchpriority="high">
+                        </div>
+                        <div class="phone-glare" aria-hidden="true"></div>
+                    </div>
+                    <div class="phone-shadow" aria-hidden="true"></div>
+                    <div class="float-card fc-shield" aria-hidden="true">
+                        <span class="fc-icon"><svg width="16" height="16"><use href="#i-shield"/></svg></span>
+                        <span><b>Kill Switch</b><small>Защита при обрыве</small></span>
+                    </div>
+                    <div class="float-card fc-speed" aria-hidden="true">
+                        <span class="fc-icon"><svg width="16" height="16"><use href="#i-zap"/></svg></span>
+                        <span><b>Smart Routing</b><small>Трафик умно распределён</small></span>
+                    </div>
+                    <div class="float-card fc-routing" aria-hidden="true">
+                        <span class="fc-icon"><svg width="16" height="16"><use href="#i-server"/></svg></span>
+                        <span><b>Автовыбор сервера</b><small>Без ручных настроек</small></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="trust">
+        <div class="wrap trust-row">
+            <div class="trust-item"><svg><use href="#i-download"/></svg><span><b>Android 7+</b><span>Универсальный APK</span></span></div>
+            <div class="trust-item"><svg><use href="#i-tv"/></svg><span><b>Android TV</b><span>Отдельное приложение</span></span></div>
+            <div class="trust-item"><svg><use href="#i-shield"/></svg><span><b>Проверка SHA-256</b><span>Подписанный APK</span></span></div>
+            <div class="trust-item"><svg><use href="#i-globe"/></svg><span><b>Windows 10/11</b><span>Клиент для ПК</span></span></div>
+        </div>
+    </div>
+
+    <section class="section" id="features">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Технологии ECLIPSE</span>
+                <h2>Всё сложное — <span class="gold">под капотом.</span></h2>
+                <p>Вы видите одну кнопку. Внутри работают автоматический выбор серверов, маршрутизация и защита соединения.</p>
+            </div>
+            <div class="features-grid">
+                <article class="feature reveal" style="--d:.02s"><span class="idx">01</span><div class="feature-icon"><svg><use href="#i-server"/></svg></div><h3>Intelligent Connection</h3><p>Автоматически выбирает доступный сервер и подключается без ручной настройки.</p></article>
+                <article class="feature reveal" style="--d:.06s"><span class="idx">02</span><div class="feature-icon"><svg><use href="#i-route"/></svg></div><h3>Smart Routing</h3><p>Российские сайты — напрямую, остальной трафик — через VPN. Или весь трафик через туннель.</p></article>
+                <article class="feature reveal" style="--d:.10s"><span class="idx">03</span><div class="feature-icon"><svg><use href="#i-refresh"/></svg></div><h3>Auto Recovery</h3><p>Соединение восстанавливается автоматически после обрыва или смены сети.</p></article>
+                <article class="feature reveal" style="--d:.14s"><span class="idx">04</span><div class="feature-icon"><svg><use href="#i-layers"/></svg></div><h3>Multi-Protocol</h3><p>Современные протоколы VLESS, VMess, Trojan и Hysteria2 в одном клиенте.</p></article>
+                <article class="feature reveal" style="--d:.18s"><span class="idx">05</span><div class="feature-icon"><svg><use href="#i-spark"/></svg></div><h3>AI Support</h3><p>Встроенный AI-помощник отвечает на вопросы и помогает с настройкой 24/7.</p></article>
+                <article class="feature reveal" style="--d:.22s"><span class="idx">06</span><div class="feature-icon"><svg><use href="#i-lock"/></svg></div><h3>Kill Switch</h3><p>При обрыве VPN интернет блокируется, пока защищённое соединение не восстановится.</p></article>
+                <article class="feature reveal" style="--d:.26s"><span class="idx">07</span><div class="feature-icon"><svg><use href="#i-infinity"/></svg></div><h3>Unlimited Experience</h3><p>Безлимитный трафик, все доступные локации и максимальная скорость на Premium.</p></article>
+                <article class="feature reveal" style="--d:.30s"><span class="idx">08</span><div class="feature-icon"><svg><use href="#i-tv"/></svg></div><h3>Smart TV</h3><p>Отдельное приложение для Android TV с управлением пультом и QR-переносом подписки.</p></article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="screens">
+        <div class="wrap">
+            <div class="screens-top">
+                <div class="screens-copy">
+                    <span class="eyebrow">Реальные экраны</span>
+                    <h2>Интерфейс, <span class="gold">который понятен.</span></h2>
+                    <p>Никаких выдуманных макетов: здесь настоящие экраны приложения ECLIPSE Unlimited для Android.</p>
+                    <p class="note">Скриншоты сделаны в действующей версии приложения. Часть деталей интерфейса может отличаться в зависимости от версии и темы.</p>
+                </div>
+                <div class="gallery" aria-label="Скриншоты приложения">
+                    <figure class="shot reveal" style="--d:.02s"><div class="shot-img"><img src="/static/app-preview/connected.webp" width="640" height="1351" alt="Экран активного VPN-подключения ECLIPSE" loading="lazy"></div><figcaption><b>Подключение</b><span>01</span></figcaption></figure>
+                    <figure class="shot reveal" style="--d:.07s"><div class="shot-img"><img src="/static/app-preview/home.webp" width="640" height="1351" alt="Главный экран приложения ECLIPSE" loading="lazy"></div><figcaption><b>Главный экран</b><span>02</span></figcaption></figure>
+                    <figure class="shot reveal" style="--d:.12s"><div class="shot-img"><img src="/static/app-preview/modes.webp" width="640" height="1351" alt="Выбор режима маршрутизации в ECLIPSE" loading="lazy"></div><figcaption><b>Маршрутизация</b><span>03</span></figcaption></figure>
+                    <figure class="shot reveal" style="--d:.17s"><div class="shot-img"><img src="/static/app-preview/light.webp" width="640" height="1351" alt="Светлая тема приложения ECLIPSE" loading="lazy"></div><figcaption><b>Светлая тема</b><span>04</span></figcaption></figure>
+                    <figure class="shot reveal" style="--d:.22s"><div class="shot-img"><img src="/static/app-preview/login.webp" width="640" height="1351" alt="Вход в аккаунт ECLIPSE" loading="lazy"></div><figcaption><b>Вход в аккаунт</b><span>05</span></figcaption></figure>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="tv">
+        <div class="wrap tv-grid">
+            <div class="tv-visual reveal">
+                <div class="tv-frame"><img src="/static/app-preview/tv.webp" width="1600" height="900" alt="ECLIPSE TV на Android TV: подключение и подписка" loading="lazy"></div>
+                <div class="tv-stand" aria-hidden="true"></div>
+            </div>
+            <div class="tv-copy">
+                <span class="eyebrow">ECLIPSE TV</span>
+                <h2>Большой экран. <span class="gold">Та же защита.</span></h2>
+                <p class="section-head" style="margin-bottom:0">Отдельное приложение для Android TV: крупные элементы, управление пультом и перенос подписки с телефона по QR-коду.</p>
+                <ul class="tv-features">
+                    <li><svg><use href="#i-check"/></svg> Управление пультом</li>
+                    <li><svg><use href="#i-check"/></svg> Крупные кнопки</li>
+                    <li><svg><use href="#i-check"/></svg> Подключение в одно касание</li>
+                    <li><svg><use href="#i-check"/></svg> Перенос подписки по QR</li>
+                    <li><svg><use href="#i-check"/></svg> Блокировка рекламы и трекеров</li>
+                    <li><svg><use href="#i-check"/></svg> Kill Switch</li>
+                </ul>
+                <div class="tv-actions">
+                    <a class="btn btn-gold" href="/client-update/tv.apk" download="ECLIPSE TV.apk">Скачать для Android TV <span class="arrow" aria-hidden="true">↗</span></a>
+                    <a class="btn btn-glass" href="/app/tv">Подробнее о TV</a>
+                </div>
+                <div class="tv-meta" id="tvMeta">Android TV · APK · проверка версии…</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="install">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Как это работает</span>
+                <h2>Четыре шага <span class="gold">до защиты.</span></h2>
+                <p>Без регистрации на сторонних сайтах и сложных настроек. Всё начинается с одного APK.</p>
+            </div>
+            <div class="steps">
+                <article class="step reveal" style="--d:.02s"><span class="step-line"></span><h3>Скачайте приложение</h3><p>Универсальный APK для Android 7+ с официальной страницы.</p></article>
+                <article class="step reveal" style="--d:.07s"><span class="step-line"></span><h3>Установите ECLIPSE</h3><p>Разрешите установку из браузера и подтвердите установку APK.</p></article>
+                <article class="step reveal" style="--d:.12s"><span class="step-line"></span><h3>Войдите в аккаунт</h3><p>Код из бота, номер телефона, Google или Яндекс. <img class="step-thumb" src="/static/app-preview/login.webp" width="640" height="1351" alt="Экран входа ECLIPSE" loading="lazy"></p></article>
+                <article class="step reveal" style="--d:.17s"><h3>Нажмите подключение</h3><p>Одна кнопка — и трафик защищён. <img class="step-thumb" src="/static/app-preview/connected.webp" width="640" height="1351" alt="Экран подключённого VPN ECLIPSE" loading="lazy"></p></article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="pricing">
+        <div class="wrap">
+            <div class="pricing-head">
+                <div class="section-head" style="margin-bottom:0">
+                    <span class="eyebrow">Тарифы</span>
+                    <h2>Выберите <span class="gold">свой формат.</span></h2>
+                    <p>Актуальные цены и сроки — в магазине. Здесь показаны реальные тарифы ECLIPSE.</p>
+                </div>
+                <div class="duration-tabs" role="group" aria-label="Срок подписки">
+                    <button type="button" data-days="31" class="is-active">31 день</button>
+                    <button type="button" data-days="180">180 дней</button>
+                    <button type="button" data-days="365">365 дней</button>
+                </div>
+            </div>
+            <div class="pricing-grid">
+                <article class="price-card reveal">
+                    <h3>Базовый</h3>
+                    <p class="sub">100 ГБ трафика</p>
+                    <div class="price"><span class="amount" id="basePrice">—</span><span class="cur">₽</span></div>
+                    <div class="per" id="basePer">за 31 день</div>
+                    <ul class="price-features">
+                        <li><svg><use href="#i-check"/></svg> 100 ГБ трафика</li>
+                        <li><svg><use href="#i-check"/></svg> Срок на выбор: 31, 180 или 365 дней</li>
+                        <li><svg><use href="#i-check"/></svg> Android, Android TV и Windows</li>
+                        <li><svg><use href="#i-check"/></svg> Оплата картой и СБП</li>
+                    </ul>
+                    <a class="btn btn-glass btn-block" href="/shop">Выбрать тариф</a>
+                </article>
+                <article class="price-card premium reveal" style="--d:.08s">
+                    <span class="price-badge">Premium</span>
+                    <h3>Premium 👑</h3>
+                    <p class="sub">Безлимитный трафик</p>
+                    <div class="price"><span class="amount" id="premiumPrice">—</span><span class="cur">₽</span></div>
+                    <div class="per" id="premiumPer">за 31 день</div>
+                    <ul class="price-features">
+                        <li><svg><use href="#i-check"/></svg> Безлимитный трафик</li>
+                        <li><svg><use href="#i-check"/></svg> Все доступные локации</li>
+                        <li><svg><use href="#i-check"/></svg> Максимальная доступная скорость</li>
+                        <li><svg><use href="#i-check"/></svg> Все возможности ECLIPSE</li>
+                    </ul>
+                    <a class="btn btn-gold btn-block" href="/shop">Выбрать Premium <span class="arrow" aria-hidden="true">↗</span></a>
+                </article>
+            </div>
+            <p class="price-note">Цены и условия обновляются автоматически из действующего магазина. Итоговая стоимость — на странице оформления.</p>
+        </div>
+    </section>
+
+    <section class="section" id="security">
+        <div class="wrap security-grid">
+            <div>
+                <span class="eyebrow">Безопасность</span>
+                <h2>Проверьте файл <span class="gold">до установки.</span></h2>
+                <p style="color:var(--muted);font-size:14px;max-width:480px">APK подписан ECLIPSE. Сверьте SHA-256 скачанного файла с опубликованным значением — так вы убедитесь, что файл не изменён.</p>
+                <p style="color:var(--dim);font-size:11.5px;max-width:480px">Android предупреждает при установке приложений не из Google Play — это нормально. Проверка подписи и хеша помогает убедиться в подлинности.</p>
+                <a class="btn btn-glass" href="/api/public/client-update" target="_blank" rel="noopener">Открыть latest.json <span class="arrow" aria-hidden="true">↗</span></a>
+            </div>
+            <div class="verify-panel reveal">
+                <div class="verify-row"><span class="k">Android</span><span class="v" id="verifyVersion">загружается…</span></div>
+                <div class="verify-row"><span class="k">SHA-256 APK</span><span class="v" id="verifySha">загружается…</span></div>
+                <div class="verify-row"><span class="k">Подпись</span><span class="v small" id="verifyFingerprint">cbe9873439bd12ab165a1aea5d141e189316fe5102c0c6947248e5197bd5d78c</span><button class="copy-btn" type="button" data-copy="verifyFingerprint">Копировать</button></div>
+                <span class="code-line" id="hashCommand">Get-FileHash ".\ECLIPSE Unlimited.apk" -Algorithm SHA256</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="faq">
+        <div class="wrap">
+            <div class="section-head centered">
+                <span class="eyebrow">Вопросы</span>
+                <h2>Коротко <span class="gold">о главном.</span></h2>
+            </div>
+            <div class="faq">
+                <details><summary>Чем отличается тариф на 100 ГБ от безлимитного?</summary><p>Тариф «Базовый» включает 100 ГБ трафика. «Premium» — без ограничения по объёму, со всеми доступными локациями и максимальной доступной скоростью. Актуальные цены и сроки смотрите в <a href="/shop">магазине</a>.</p></details>
+                <details><summary>Как установить приложение на Android?</summary><p>Скачайте APK, разрешите браузеру установку неизвестных приложений, откройте файл и подтвердите установку. После установки войдите по коду из бота, номеру телефона, Google или Яндекс.</p></details>
+                <details><summary>Безопасно ли устанавливать APK?</summary><p>Да, если файл скачан с официальной страницы. APK подписан ECLIPSE, а SHA-256 опубликован выше. Сверьте хеш командой <code>Get-FileHash</code> или <code>sha256sum</code>.</p></details>
+                <details><summary>Работает ли ECLIPSE на Android TV?</summary><p>Да. Для телевизоров есть отдельное приложение <a href="/app/tv">ECLIPSE TV</a> с управлением пультом, крупными кнопками и переносом подписки с телефона по QR-коду.</p></details>
+                <details><summary>Есть ли приложение для Windows?</summary><p>Да. Windows-клиент с работой в трее, автозапуском, PIN-блокировкой, импортом подписки и раздельным туннелем доступен на <a href="/app/windows">отдельной странице</a>.</p></details>
+                <details><summary>Как перенести подписку на телевизор?</summary><p>Откройте ECLIPSE TV, выберите перенос подписки и покажите QR-код. На телефоне отсканируйте его в приложении ECLIPSE — подписка появится на телевизоре автоматически.</p></details>
+                <details><summary>Почему Android предупреждает при установке?</summary><p>Приложение распространяется напрямую, не через Google Play, поэтому Android показывает стандартное предупреждение. Это не вирус: подпись и SHA-256 можно проверить на этой странице.</p></details>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="wrap">
+            <div class="final reveal">
+                <span class="eyebrow">ECLIPSE Unlimited</span>
+                <h2>Подключитесь <span class="gold">за минуту.</span></h2>
+                <p>Скачайте приложение, войдите в аккаунт и нажмите одну кнопку. Остальное ECLIPSE сделает сам.</p>
+                <div class="final-actions">
+                    <a class="btn btn-gold btn-lg" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk">Скачать для Android <span class="arrow" aria-hidden="true">↗</span></a>
+                    <a class="btn btn-glass btn-lg" href="/shop">Оформить подписку</a>
+                </div>
+                <div class="final-small">Android 7+ · Android TV · Windows 10/11</div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div class="wrap">
+        <div class="footer-main">
+            <div class="footer-brand">
+                <a class="brand" href="/app"><span class="brand-mark" aria-hidden="true"></span><span>ECLIPSE <span>Unlimited</span></span></a>
+                <p>Премиальный защищённый доступ для телефона, телевизора и компьютера.</p>
+            </div>
+            <div class="footer-cols">
+                <div class="footer-col"><b>Приложения</b><a href="/app/phone">Android</a><a href="/app/tv">Android TV</a><a href="/app/windows">Windows</a></div>
+                <div class="footer-col"><b>Продукт</b><a href="/shop">Тарифы</a><a href="#features">Возможности</a><a href="#security">Безопасность</a></div>
+                <div class="footer-col"><b>Помощь</b><a href="#faq">FAQ</a><a href="/app/phone#install">Установка</a><a href="/status">Статус</a></div>
+            </div>
+        </div>
+        <div class="footer-bottom"><span>© <span id="year">2026</span> ECLIPSE Unlimited</span><span>Сделано с вниманием к деталям</span></div>
+    </div>
+</footer>
+
+<script>
+(function () {
+    'use strict';
+    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    var header = document.getElementById('header');
+    var onScroll = function () {
+        if (window.scrollY > 12) header.classList.add('is-scrolled');
+        else header.classList.remove('is-scrolled');
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+
+    var menu = document.getElementById('menuToggle');
+    var nav = document.getElementById('nav');
+    if (menu && nav) {
+        menu.addEventListener('click', function () {
+            var open = nav.classList.toggle('is-open');
+            menu.setAttribute('aria-expanded', open ? 'true' : 'false');
+            menu.setAttribute('aria-label', open ? 'Закрыть меню' : 'Открыть меню');
+        });
+        nav.querySelectorAll('a').forEach(function (a) {
+            a.addEventListener('click', function () {
+                nav.classList.remove('is-open');
+                menu.setAttribute('aria-expanded', 'false');
+            });
+        });
+    }
+
+    if (!reduced && 'IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('is-in');
+                    io.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+        document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+    } else {
+        document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('is-in'); });
+    }
+
+    // Тонкий параллакс затмения; отключается на мобильных и при reduced motion
+    var art = document.querySelector('.hero-art');
+    var eclipse = document.querySelector('.eclipse');
+    if (art && eclipse && !reduced && window.matchMedia('(min-width: 900px)').matches) {
+        var ticking = false;
+        var update = function () {
+            var y = window.scrollY;
+            eclipse.style.transform = 'translate(-50%, calc(-54% + ' + Math.min(y * 0.06, 42) + 'px))';
+            ticking = false;
+        };
+        window.addEventListener('scroll', function () {
+            if (!ticking) { requestAnimationFrame(update); ticking = true; }
+        }, { passive: true });
+    }
+
+    // Лёгкий 3D-наклон телефона за курсором
+    var phone = document.getElementById('heroPhone');
+    if (phone && !reduced && window.matchMedia('(pointer:fine)').matches) {
+        var stage = phone.parentElement;
+        stage.addEventListener('mousemove', function (e) {
+            var r = stage.getBoundingClientRect();
+            var x = (e.clientX - r.left) / r.width - .5;
+            var y = (e.clientY - r.top) / r.height - .5;
+            phone.style.transform = 'perspective(1100px) rotateY(' + (-8 + x * 8) + 'deg) rotateX(' + (4 - y * 8) + 'deg) rotate(1.5deg)';
+        });
+        stage.addEventListener('mouseleave', function () {
+            phone.style.transform = '';
+        });
+    }
+
+    // Подсветка карточек за курсором
+    document.querySelectorAll('.feature').forEach(function (card) {
+        card.addEventListener('mousemove', function (e) {
+            var r = card.getBoundingClientRect();
+            card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+            card.style.setProperty('--my', (e.clientY - r.top) + 'px');
+        });
+    });
+
+    // Реальные тарифы из действующего магазина
+    var tariffs = [];
+    var days = 31;
+    var setPrice = function (id, perId, limit) {
+        var t = tariffs.filter(function (x) { return Number(x.traffic_limit_gb) === limit && Number(x.duration_days) === days; })[0];
+        var el = document.getElementById(id);
+        var per = document.getElementById(perId);
+        if (el) el.textContent = t ? String(Math.round(t.price_rub)) : '—';
+        if (per) per.textContent = 'за ' + days + ' ' + (days === 31 ? 'день' : (days === 180 ? 'дней' : 'дней'));
+    };
+    var renderPrices = function () {
+        setPrice('basePrice', 'basePer', 100);
+        setPrice('premiumPrice', 'premiumPer', 0);
+    };
+    fetch('/api/public/landing-tariffs')
+        .then(function (r) { if (!r.ok) throw new Error('no tariffs'); return r.json(); })
+        .then(function (data) {
+            tariffs = Array.isArray(data.tariffs) ? data.tariffs : [];
+            renderPrices();
+        })
+        .catch(function () {
+            document.querySelectorAll('.price-card .amount').forEach(function (el) { el.textContent = '—'; });
+            var note = document.querySelector('.price-note');
+            if (note) note.textContent = 'Актуальные цены — на странице магазина.';
+        });
+    document.querySelectorAll('.duration-tabs button').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.duration-tabs button').forEach(function (b) { b.classList.remove('is-active'); });
+            btn.classList.add('is-active');
+            days = Number(btn.getAttribute('data-days')) || 31;
+            renderPrices();
+        });
+    });
+
+    // Версия/SHA Android и TV
+    fetch('/api/public/client-update')
+        .then(function (r) { if (!r.ok) throw new Error('no meta'); return r.json(); })
+        .then(function (release) {
+            var v = document.getElementById('verifyVersion');
+            var s = document.getElementById('verifySha');
+            if (v) v.textContent = release.version_name ? 'v' + release.version_name + (release.version_code ? ' (' + release.version_code + ')' : '') : '—';
+            if (s) s.textContent = release.sha256 ? String(release.sha256).toLowerCase() : '—';
+        })
+        .catch(function () {
+            var v = document.getElementById('verifyVersion');
+            var s = document.getElementById('verifySha');
+            if (v) v.textContent = '—';
+            if (s) s.textContent = 'нет данных';
+        });
+
+    fetch('/api/public/tv-update')
+        .then(function (r) { if (!r.ok) throw new Error('no tv meta'); return r.json(); })
+        .then(function (release) {
+            var el = document.getElementById('tvMeta');
+            if (!el) return;
+            var sha = release.sha256 ? String(release.sha256).toLowerCase() : '';
+            el.textContent = 'Версия ' + (release.version_name || '—') + (sha ? ' · SHA-256 ' + sha.slice(0, 12) + '…' + sha.slice(-8) : '') + ' · Android TV · APK';
+            if (sha) el.title = 'SHA-256: ' + sha;
+        })
+        .catch(function () {});
+
+    // Копирование SHA / отпечатка
+    document.querySelectorAll('.copy-btn[data-copy]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var target = document.getElementById(btn.getAttribute('data-copy'));
+            if (!target) return;
+            var text = target.textContent.trim();
+            var done = function () {
+                var old = btn.textContent;
+                btn.textContent = 'Скопировано';
+                setTimeout(function () { btn.textContent = old; }, 1600);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(function () {});
+            } else {
+                var area = document.createElement('textarea');
+                area.value = text; document.body.appendChild(area); area.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(area);
+            }
+        });
+    });
+})();
+</script>
+</body>
+</html>

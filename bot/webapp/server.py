@@ -6372,8 +6372,8 @@ async def _serve_app_page(template: str) -> web.Response:
 
 
 async def handle_app_page(request: web.Request) -> web.Response:
-    """GET /app — хаб приложений: телефон, Windows, Android TV."""
-    return await _serve_app_page("app_hub.html")
+    """GET /app — премиальный лендинг приложений ECLIPSE."""
+    return await _serve_app_page("app_premium.html")
 
 
 async def handle_app_phone_page(request: web.Request) -> web.Response:
