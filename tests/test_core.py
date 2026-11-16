@@ -2450,6 +2450,8 @@ class TrialAndroidDeviceTest(unittest.TestCase):
         from bot.services.client_apps import detect_client
         cases = (
             ("ECLIPSE TV/1.0.45 (Android 12)", 'eclipse_tv', 'android'),
+            ("ECLIPSE-Android/1.0.3-tv (Linux; Android 12)", 'eclipse_tv', 'android'),
+            ("ECLIPSE-Android/2.10.9 (Android 14)", 'eclipse_vpn', 'android'),
             ("ECLIPSE VPN/2.10.9 (Android 14)", 'eclipse_vpn', 'android'),
             ("Happ/2.9.0 (Android 14; Pixel 7)", 'happ', 'android'),
             ("INCY/1.0 (iPhone; iOS 18)", 'incy', 'ios'),

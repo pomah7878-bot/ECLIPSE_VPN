@@ -15,8 +15,8 @@ __all__ = ['detect_client', 'is_android']
 
 # Порядок важен: ECLIPSE TV проверяем раньше ECLIPSE VPN.
 _PATTERNS = (
-    ('eclipse_tv', re.compile(r'ECLIPSE[\s_.-]*TV', re.I), 'ECLIPSE TV', 'android'),
-    ('eclipse_vpn', re.compile(r'ECLIPSE[\s_.-]*(?:VPN|UNLIMITED)', re.I), 'ECLIPSE VPN', 'android'),
+    ('eclipse_tv', re.compile(r'(ECLIPSE[\s_.-]*TV|ECLIPSE-Android/[^\s]*-tv(?:\s|$))', re.I), 'ECLIPSE TV', 'android'),
+    ('eclipse_vpn', re.compile(r'(ECLIPSE[\s_.-]*(?:VPN|UNLIMITED)|ECLIPSE-Android/)', re.I), 'ECLIPSE VPN', 'android'),
     ('happ', re.compile(r'(?:^|[\s(])Happ(?:/|\s|$)', re.I), 'Happ', 'android/ios'),
     ('incy', re.compile(r'\bINCY\b', re.I), 'INCY', 'android/ios'),
     ('v2raytun', re.compile(r'v2rayTun', re.I), 'v2rayTun', 'android/ios'),
