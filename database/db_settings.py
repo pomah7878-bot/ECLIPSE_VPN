@@ -765,6 +765,45 @@ def set_trial_mode(mode: str) -> None:
     set_setting('trial_mode', mode)
 
 
+def is_trial_strict_identity() -> bool:
+    """Строгий режим: пробник только тем, у кого уже подтверждён номер телефона.
+
+    По умолчанию выключен: обычная выдача не требует телефона (так решили
+    из-за лишнего трения). Включать — осознанно, для борьбы с мультиаккаунтами.
+    """
+    return get_setting('trial_strict_identity', '0') == '1'
+
+
+def set_trial_strict_identity(enabled: bool) -> None:
+    set_setting('trial_strict_identity', '1' if enabled else '0')
+
+
+def get_trial_auto_ban_threshold() -> int:
+    """Сколько отказов за сутки включают автоблокировку. 0 — автобан выключен."""
+    try:
+        value = int(get_setting('trial_auto_ban_threshold', '0') or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(20, value))
+
+
+def set_trial_auto_ban_threshold(value: int) -> None:
+    set_setting('trial_auto_ban_threshold', str(max(0, min(20, int(value)))))
+
+
+def get_trial_abuse_alert_threshold() -> int:
+    """После скольких отказов за сутки уведомлять админов (не чаще раза в сутки)."""
+    try:
+        value = int(get_setting('trial_abuse_alert_threshold', '3') or 3)
+    except (TypeError, ValueError):
+        return 3
+    return max(1, min(50, value))
+
+
+def set_trial_abuse_alert_threshold(value: int) -> None:
+    set_setting('trial_abuse_alert_threshold', str(max(1, min(50, int(value)))))
+
+
 def get_marketing_channel_id() -> Optional[str]:
     """
     Username маркетингового Telegram-канала для раздела «📰 Группа» в

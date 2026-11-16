@@ -448,21 +448,18 @@ async def handle_phone_linking_contact(message: Message, state: FSMContext, cont
         await message.answer("❌ Это не твой собственный номер телефона. Поделись именно своим контактом.")
         return
 
-    from bot.services.trial_phone_registry import mark_phone_trial_used, has_phone_used_trial
+    from bot.services.trial_phone_registry import link_phone, has_telegram_id_linked_phone
 
-    if has_phone_used_trial(contact.phone_number):
-        await state.clear()
+    already_linked = has_telegram_id_linked_phone(message.from_user.id)
+    linked = link_phone(contact.phone_number, message.from_user.id)
+    await state.clear()
+    if not linked:
         await message.answer(
             "ℹ️ Этот номер телефона уже привязан к другому аккаунту — обратись в поддержку, если это ошибка.",
             reply_markup=ReplyKeyboardRemove(),
         )
         return
-
-    from bot.services.trial_phone_registry import has_telegram_id_linked_phone
-    already_linked = has_telegram_id_linked_phone(message.from_user.id)
-    newly_marked = mark_phone_trial_used(contact.phone_number, telegram_id=message.from_user.id)
-    await state.clear()
-    bonus = await _grant_phone_bonus(message.from_user.id) if newly_marked and not already_linked else ''
+    bonus = await _grant_phone_bonus(message.from_user.id) if not already_linked else ''
     await message.answer(
         "✅ Номер привязан! Теперь для входа на сайт можно использовать номер телефона "
         "вместо кода из бота — на странице входа выбери «Войти по номеру телефона»." + bonus,

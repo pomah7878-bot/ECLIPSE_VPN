@@ -3081,8 +3081,15 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
         trial_tariff_id = get_trial_tariff_id()
         if trial_tariff_id:
             account = get_site_account_by_id(account_id)
-            already_used = _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id") if account else None)
-            trial_available = not already_used and bool(account) and _site_account_is_new_client(account)
+            if account:
+                from bot.services import trial_guard
+                already_used = _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id"))
+                status = trial_guard.status_site(
+                    account,
+                    used_trial=already_used,
+                    is_new_client=_site_account_is_new_client(account),
+                )
+                trial_available = status["allowed"]
 
     current_tariff_id = None
     vpn_key_id_raw = request.query.get("vpn_key_id")
@@ -3496,6 +3503,48 @@ def _is_trusted_app_request(request: web.Request) -> bool:
     return hmac.compare_digest(given.encode("utf-8"), secret.encode("utf-8"))
 
 
+_TRIAL_DENY_HTTP = {
+    'banned': ('banned', 403),
+    'blocked': ('trial_blocked', 403),
+    'already_used': ('trial_already_used', 400),
+    'new_clients_only': ('trial_new_clients_only', 400),
+    'strict_identity_required': ('trial_identity_required', 400),
+}
+
+
+def _log_site_trial_refusal(request: web.Request, account: Dict[str, Any], status: Dict[str, Any], client_ip: str) -> None:
+    """Журналирует отказ сайта и уведомляет админов, если пора."""
+    try:
+        from bot.services import trial_guard
+        identities = status.get('identities') or trial_guard.site_identities(account)
+        if account.get('telegram_id'):
+            primary = ('telegram', str(account['telegram_id']))
+        else:
+            primary = ('site_account', str(account['id']))
+        channel = 'app' if request.headers.get('X-Eclipse-App') == '1' else 'site'
+        reason = status.get('reason') or 'already_used'
+        result = trial_guard.record_refusal(
+            identities,
+            primary=primary,
+            scope='account',
+            channel=channel,
+            reason=reason,
+            ip=client_ip,
+            user_agent=request.headers.get('User-Agent', ''),
+        )
+        if result.get('alert'):
+            asyncio.create_task(trial_guard.send_abuse_alert(
+                channel=channel,
+                identities=identities,
+                primary=primary,
+                reason=reason,
+                count=result.get('count') or 0,
+                auto_banned=bool(result.get('auto_banned')),
+            ))
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f'trial: не удалось записать отказ сайта: {e}')
+
+
 async def _handle_public_trial_create_impl(request: web.Request) -> web.Response:
     """POST /api/public/trial/create — активирует бесплатный пробный период
     для текущего залогиненного аккаунта (по коду или OAuth). Без оплаты —
@@ -3559,18 +3608,53 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
     if not account:
         return web.json_response({"error": "account_not_found"}, status=404)
 
-    if _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id")):
-        return web.json_response({"error": "trial_already_used", "message": "Вы уже использовали пробный период."}, status=400)
-    if not _site_account_is_new_client(account):
-        return web.json_response({"error": "trial_new_clients_only", "message": "Пробный период доступен только новым клиентам."}, status=400)
+    from bot.services import trial_guard
+
+    already_used = _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id"))
+    status = trial_guard.status_site(
+        account,
+        used_trial=already_used,
+        is_new_client=_site_account_is_new_client(account),
+    )
+    if not status["allowed"]:
+        _log_site_trial_refusal(request, account, status, client_ip)
+        code, http_status = _TRIAL_DENY_HTTP.get(status["reason"], ("trial_already_used", 400))
+        return web.json_response(
+            {"error": code, "message": status["message"]},
+            status=http_status,
+        )
+
+    try:
+        claim = trial_guard.claim_site(
+            account,
+            channel='app' if request.headers.get("X-Eclipse-App") == "1" else 'site',
+        )
+    except Exception as _claim_err:
+        logger.error(f"trial: не удалось зафиксировать выдачу для сайта {account_id}: {_claim_err}")
+        return web.json_response(
+            {"error": "trial_creation_failed", "message": "Не удалось активировать пробный период. Попробуйте позже."},
+            status=502,
+        )
+    if not claim.get("ok"):
+        _log_site_trial_refusal(
+            request, account,
+            {"reason": "already_used", "identities": trial_guard.site_identities(account)},
+            client_ip,
+        )
+        return web.json_response(
+            {"error": "trial_already_used", "message": trial_guard.REASON_MESSAGES["already_used"]},
+            status=400,
+        )
 
     order_id = _generate_public_order_id()
+    issued = False
     try:
         create_anonymous_purchase(order_id, trial_tariff_id, from_app=request.headers.get("X-Eclipse-App") == "1")
         link_purchase_to_account(order_id, account_id)
 
         from bot.services.anonymous_purchase import provision_anonymous_vpn_key
         result = await provision_anonymous_vpn_key(trial_tariff_id, order_id, site_account_id=account_id)
+        issued = True
         save_anonymous_purchase_provisioning(order_id, result["key_id"], result["sub_url"], result["placeholder_user_id"])
         mark_anonymous_purchase_paid(order_id, "trial")  # без реального платежа, просто маркер завершения
         _mark_app_client(request, result["placeholder_user_id"])
@@ -3622,6 +3706,8 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
             "sub_url": result["sub_url"],
         })
     except Exception as e:
+        if not issued:
+            trial_guard.release_claim(claim)
         logger.error(f"Public trial creation error: {e}")
         return web.json_response({"error": "trial_creation_failed", "message": "Не удалось активировать пробный период. Попробуйте позже."}, status=502)
 
@@ -4129,6 +4215,13 @@ async def handle_public_account_session_login(request: web.Request) -> web.Respo
         link_purchase_to_account(purchase["order_id"], account["id"])
         site_account_id = account["id"]
 
+    if (purchase.get("yookassa_payment_id") or "") == "trial":
+        try:
+            from bot.services import trial_guard
+            trial_guard.transfer_site_trial(site_account_id, None)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning(f"claim login: не удалось перенести отметку о пробнике: {_e}")
+
     session_value = _sign_session(site_account_id)
     resp = web.json_response({"ok": True, "account_type": "guest"})
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
@@ -4556,15 +4649,15 @@ async def handle_public_account_link_code(request: web.Request) -> web.Response:
     if not link_oauth_to_site_account(account_id, telegram_id):
         return web.json_response({"ok": False, "message": "Не удалось привязать аккаунт. Обратитесь в поддержку."})
 
-    # v1.186: если этот сайт-аккаунт уже брал пробник — помечаем и Telegram-пользователя,
-    # иначе тот же человек мог взять второй пробник уже в боте
+    # v1.186: если этот сайт-аккаунт уже брал пробник — помечаем все
+    # связанные личности (Telegram, номер), иначе тот же человек мог взять
+    # второй пробник уже в боте.
     try:
-        from database.requests import get_trial_tariff_id, get_user_internal_id, mark_trial_used
+        from database.requests import get_trial_tariff_id
+        from bot.services import trial_guard
         _tid = get_trial_tariff_id()
         if _tid and _site_account_used_trial(account_id, _tid, None):
-            _uid = get_user_internal_id(telegram_id)
-            if _uid:
-                mark_trial_used(_uid)
+            trial_guard.transfer_site_trial(account_id, telegram_id)
     except Exception as _e:
         logger.warning(f"link-code: не удалось перенести отметку о пробнике: {_e}")
 

@@ -1,14 +1,13 @@
 """
-Общий реестр номеров телефонов, использованных для получения пробного
-периода — единая проверка и с сайта, и из бота, чтобы один и тот же
-человек не мог получить пробник дважды под разными аккаунтами
-(Telegram-аккаунт + отдельный, никак не связанный с ним OAuth-аккаунт
-на сайте).
+Общий реестр номеров телефонов, связанных с человеком: Telegram-аккаунт
+(кнопка "Поделиться контактом", верифицируется самим Telegram) и обычный
+сайт (подтверждение звонком/SMS, см. bot/services/phone_verification.py).
 
-Номер телефона — единственный практически общий идентификатор между
-Telegram (передаётся через кнопку "Поделиться контактом", уже
-верифицирован самим Telegram) и обычным сайтом (верифицируется через
-звонок/SMS с кодом, см. bot/services/phone_verification.py).
+Реестр отвечает на вопрос «чей это номер», а не «брал ли он пробник»:
+факт выдачи пробного периода хранится в trial_claims
+(database/db_trial_guard.py) и проверяется по номеру как по одной из
+личностей. Так привязка номера ради входа на сайт больше не расходует
+пробник.
 """
 import re
 from typing import Optional
@@ -25,8 +24,8 @@ def normalize_phone(raw_phone: str) -> str:
 
 
 def has_phone_used_trial(raw_phone: str) -> bool:
-    """Проверяет, использовался ли уже этот номер для пробного периода
-    (с любой стороны — сайт или бот)."""
+    """Есть ли номер в реестре (уже привязан к какому-то аккаунту).
+    Историческое имя; факт выдачи пробника проверяется в trial_claims."""
     phone = normalize_phone(raw_phone)
     if not phone:
         return False
@@ -44,10 +43,10 @@ def mark_phone_trial_used(
     telegram_id: Optional[int] = None,
     site_account_id: Optional[int] = None,
 ) -> bool:
-    """Отмечает номер как использованный для пробного периода.
-    Возвращает False, если номер уже был использован ДО этого вызова
-    (защита от гонки — двух почти одновременных попыток одним и тем же
-    номером с разных сторон)."""
+    """Историческая отметка номера. Для реальной выдачи пробника используйте
+    trial_claims (database/db_trial_guard.py): эта таблица — справочник
+    «номер → человек», а не факт использования пробника.
+    Возвращает False, если номер уже был отмечен ДО этого вызова."""
     phone = normalize_phone(raw_phone)
     if not phone:
         return False
@@ -64,6 +63,61 @@ def mark_phone_trial_used(
         except Exception:
             # UNIQUE constraint — номер уже был отмечен кем-то другим
             return False
+
+
+def link_phone(raw_phone: str, telegram_id: int) -> bool:
+    """Привязывает номер к Telegram-аккаунту (вход на сайт по номеру, бонус).
+
+    Не означает «пробник использован» — факт выдачи живёт в trial_claims.
+    Возвращает False, если номер уже принадлежит другому аккаунту.
+    """
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return False
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT telegram_id FROM trial_verified_phones WHERE phone_normalized = ?",
+            (phone,),
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO trial_verified_phones (phone_normalized, telegram_id) VALUES (?, ?)",
+                (phone, telegram_id),
+            )
+            return True
+        owner = row["telegram_id"]
+        if owner is None:
+            conn.execute(
+                "UPDATE trial_verified_phones SET telegram_id = ? WHERE phone_normalized = ?",
+                (telegram_id, phone),
+            )
+            return True
+        return int(owner) == int(telegram_id)
+
+
+def get_phone_for_telegram_id(telegram_id: int) -> Optional[str]:
+    """Первый подтверждённый номер этого Telegram-аккаунта (для связки каналов)."""
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT phone_normalized FROM trial_verified_phones "
+            "WHERE telegram_id = ? AND phone_normalized != '' ORDER BY id LIMIT 1",
+            (telegram_id,),
+        ).fetchone()
+    return row["phone_normalized"] if row else None
+
+
+def get_phone_for_site_account_id(site_account_id: int) -> Optional[str]:
+    """Первый подтверждённый номер, привязанный к сайт-аккаунту."""
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT phone_normalized FROM trial_verified_phones "
+            "WHERE site_account_id = ? AND phone_normalized != '' ORDER BY id LIMIT 1",
+            (site_account_id,),
+        ).fetchone()
+    return row["phone_normalized"] if row else None
 
 
 def unmark_phone_trial_used(raw_phone: str) -> None:

@@ -127,7 +127,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     """
     from bot.utils.page_renderer import render_page
     from database.requests import (
-        get_page, is_trial_enabled, get_trial_tariff_id, has_used_trial,
+        get_page, is_trial_enabled, get_trial_tariff_id,
         get_trial_mode, get_groups_with_trial, get_user_internal_id, get_eligible_trial_group_ids,
     )
 
@@ -144,6 +144,7 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
     tariff_text = _build_tariff_text()
 
     # Dynamic visibility of buttons
+    from bot.services import trial_guard as _trial_guard
     if not is_trial_enabled():
         show_trial = False
     elif get_trial_mode() == 'per_group':
@@ -158,9 +159,15 @@ async def _render_main_page(target, force_new: bool = False) -> bool:
                 show_trial = False
             else:
                 eligible = get_eligible_trial_group_ids(internal_id, [g['id'] for g in groups_with_trial])
-                show_trial = bool(eligible)
+                show_trial = any(
+                    _trial_guard.status_bot(user_id, f"group:{gid}")['allowed']
+                    for gid in eligible
+                )
     else:
-        show_trial = get_trial_tariff_id() is not None and (not has_used_trial(user_id))
+        show_trial = (
+            get_trial_tariff_id() is not None
+            and _trial_guard.status_bot(user_id, 'account')['allowed']
+        )
     show_referral = is_referral_enabled()
 
     from database.requests import is_start_balance_button_enabled, is_ai_support_enabled
@@ -753,17 +760,20 @@ async def _continue_start(
         return
 
     if args == 'trial':
-        from database.requests import is_trial_enabled, get_trial_tariff_id, has_used_trial
+        from database.requests import is_trial_enabled, get_trial_tariff_id
+        from bot.services import trial_guard
         from bot.utils.page_renderer import render_page
         try:
             if not is_trial_enabled():
                 await send_target.answer('❌ Пробная подписка сейчас недоступна')
             elif get_trial_tariff_id() is None:
                 await send_target.answer('❌ Пробный тариф не настроен')
-            elif has_used_trial(telegram_id):
-                await send_target.answer('ℹ️ Вы уже использовали пробный период')
             else:
-                await render_page(send_target, page_key='trial')
+                status = trial_guard.status_bot(telegram_id, 'account')
+                if not status['allowed']:
+                    await send_target.answer(status['message'])
+                else:
+                    await render_page(send_target, page_key='trial')
         except Exception as e:
             logger.exception(f'Ошибка открытия страницы триала: {e}')
         return

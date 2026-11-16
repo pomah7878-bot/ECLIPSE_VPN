@@ -16,10 +16,12 @@ __all__ = [
     '_generate_referral_code',
     'get_or_create_user',
     'is_user_banned',
+    'is_user_banned_by_id',
     'mark_user_bot_blocked',
     'mark_user_bot_unblocked',
     'has_used_trial',
     'mark_trial_used',
+    'set_user_banned',
     'get_all_users_count',
     'get_users_stats',
     'get_all_users_paginated',
@@ -135,8 +137,7 @@ def get_or_create_user(
         }, True
 
 def is_user_banned(telegram_id: int) -> bool:
-    """
-    Checks if the user is banned.
+    """Checks if the user is banned.
     
     Args:
         telegram_id: Telegram user ID
@@ -151,6 +152,15 @@ def is_user_banned(telegram_id: int) -> bool:
         )
         row = cursor.fetchone()
         return bool(row['is_banned']) if row else False
+
+
+def is_user_banned_by_id(user_id: int) -> bool:
+    """Бан по внутреннему users.id (для служебных личностей сайт-аккаунтов)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT is_banned FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    return bool(row['is_banned']) if row else False
 
 def mark_user_bot_blocked(telegram_id: int) -> bool:
     """Marks the user as unavailable for bot messages."""
@@ -207,6 +217,16 @@ def mark_trial_used(user_id: int) -> None:
             (user_id,)
         )
         logger.info(f"Пользователь ID {user_id} использовал пробный период")
+
+
+def set_user_banned(telegram_id: int, banned: bool = True) -> bool:
+    """Ставит/снимает бан по Telegram ID. Возвращает True, если запись найдена."""
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE users SET is_banned = ? WHERE telegram_id = ?",
+            (1 if banned else 0, telegram_id),
+        )
+        return cursor.rowcount > 0
 
 def get_all_users_count() -> int:
     """

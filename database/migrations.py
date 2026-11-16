@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 174
+LATEST_VERSION = 175
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -3918,6 +3918,125 @@ def migration_174(conn: sqlite3.Connection) -> None:
     logger.info("Migration v174 applied: anonymous_purchases.from_app")
 
 
+def _norm_trial_phone(raw) -> str:
+    """Локальная нормализация номера для бэкфилла (без импорта bot.* в миграциях)."""
+    digits = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if len(digits) == 11 and digits.startswith("8"):
+        digits = "7" + digits[1:]
+    return digits
+
+
+def migration_175(conn: sqlite3.Connection) -> None:
+    """Единый учёт выдачи пробного периода и защита от повторной выдачи.
+
+    trial_claims — кто и в каком объёме уже получил пробник (Telegram,
+    сайт-аккаунт, подтверждённый номер; scope 'account' или 'group:<id>').
+    trial_abuse_events — попытки получить пробник повторно (для анализа).
+    trial_blocks — запрет пробника конкретной личности (ручной или авто).
+    trial_abuse_alerts — не чаще одного уведомления админам в сутки.
+
+    Бэкфилл переносит уже выданные пробники из старого учёта, чтобы
+    обновление не открыло повторную выдачу тем, кто брал пробник раньше.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trial_claims (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identity_kind TEXT NOT NULL,
+            identity_value TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'account',
+            channel TEXT NOT NULL DEFAULT 'legacy',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(identity_kind, identity_value, scope)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trial_claims_identity "
+        "ON trial_claims(identity_kind, identity_value)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trial_abuse_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identity_kind TEXT NOT NULL,
+            identity_value TEXT NOT NULL,
+            scope TEXT NOT NULL DEFAULT 'account',
+            channel TEXT NOT NULL DEFAULT 'unknown',
+            reason TEXT NOT NULL DEFAULT 'already_used',
+            ip TEXT,
+            user_agent TEXT,
+            detail TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trial_abuse_identity "
+        "ON trial_abuse_events(identity_kind, identity_value, created_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trial_abuse_created "
+        "ON trial_abuse_events(created_at)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trial_blocks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identity_kind TEXT NOT NULL,
+            identity_value TEXT NOT NULL,
+            reason TEXT,
+            created_by TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(identity_kind, identity_value)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trial_abuse_alerts (
+            identity_kind TEXT NOT NULL,
+            identity_value TEXT NOT NULL,
+            alerted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(identity_kind, identity_value)
+        )
+    """)
+
+    # --- бэкфилл выданных пробников (старый учёт) ---
+    conn.execute(
+        "INSERT OR IGNORE INTO trial_claims (identity_kind, identity_value, scope, channel) "
+        "SELECT 'telegram', CAST(telegram_id AS TEXT), 'account', 'legacy' "
+        "FROM users WHERE used_trial = 1"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO trial_claims (identity_kind, identity_value, scope, channel) "
+        "SELECT 'telegram', CAST(u.telegram_id AS TEXT), 'group:' || t.group_id, 'legacy' "
+        "FROM user_group_trials t JOIN users u ON u.id = t.user_id"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO trial_claims (identity_kind, identity_value, scope, channel) "
+        "SELECT 'site_account', CAST(site_account_id AS TEXT), 'account', 'legacy' "
+        "FROM anonymous_purchases "
+        "WHERE yookassa_payment_id = 'trial' AND status IN ('paid', 'claimed') "
+        "AND site_account_id IS NOT NULL"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO trial_claims (identity_kind, identity_value, scope, channel) "
+        "SELECT 'telegram', CAST(sa.telegram_id AS TEXT), 'account', 'legacy' "
+        "FROM anonymous_purchases ap JOIN site_accounts sa ON sa.id = ap.site_account_id "
+        "WHERE ap.yookassa_payment_id = 'trial' AND ap.status IN ('paid', 'claimed') "
+        "AND sa.telegram_id IS NOT NULL"
+    )
+    phone_rows = conn.execute(
+        "SELECT DISTINCT COALESCE(NULLIF(sa.phone, ''), "
+        "  CASE WHEN sa.provider = 'phone' THEN sa.provider_user_id END) AS phone "
+        "FROM anonymous_purchases ap JOIN site_accounts sa ON sa.id = ap.site_account_id "
+        "WHERE ap.yookassa_payment_id = 'trial' AND ap.status IN ('paid', 'claimed')"
+    ).fetchall()
+    for row in phone_rows:
+        phone = _norm_trial_phone(row[0] if not isinstance(row, sqlite3.Row) else row["phone"])
+        if phone:
+            conn.execute(
+                "INSERT OR IGNORE INTO trial_claims (identity_kind, identity_value, scope, channel) "
+                "VALUES ('phone', ?, 'account', 'legacy')",
+                (phone,),
+            )
+    logger.info("Migration v175 applied: trial_claims, trial_abuse_events, trial_blocks, trial_abuse_alerts")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -4019,6 +4138,7 @@ MIGRATIONS = {
     172: migration_172,
     173: migration_173,
     174: migration_174,
+    175: migration_175,
 }
 
 

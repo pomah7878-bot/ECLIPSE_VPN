@@ -292,6 +292,11 @@ async def claim_anonymous_purchase(claim_code: str, telegram_id: int, username: 
                     link_oauth_to_site_account(site_account_id, telegram_id)
                 except Exception as e:
                     logger.warning(f"Не удалось связать site_account {site_account_id} с telegram_id {telegram_id}: {e}")
+            try:
+                from bot.services import trial_guard
+                trial_guard.transfer_claimed_purchase(purchase, telegram_id)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Не удалось перенести отметку о пробнике (повторный claim) на {telegram_id}: {e}")
             return {"ok": True, "message": "Этот ключ уже привязан к вашему аккаунту — он в разделе «Мои ключи».", "key_id": purchase.get("claimed_vpn_key_id")}
         return {"ok": False, "message": "Этот код уже был использован ранее.", "key_id": None}
 
@@ -320,6 +325,14 @@ async def claim_anonymous_purchase(claim_code: str, telegram_id: int, username: 
             link_oauth_to_site_account(site_account_id, telegram_id)
         except Exception as e:
             logger.warning(f"Не удалось связать site_account {site_account_id} с telegram_id {telegram_id}: {e}")
+
+    # Пробник, полученный на сайте, должен считаться использованным и в
+    # Telegram — иначе тем же человеком можно взять второй пробник в боте.
+    try:
+        from bot.services import trial_guard
+        trial_guard.transfer_claimed_purchase(purchase, telegram_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Не удалось перенести отметку о пробнике на telegram_id {telegram_id}: {e}")
 
     return {"ok": True, "message": "Готово! Ключ теперь в разделе «Мои ключи».", "key_id": key_id}
 

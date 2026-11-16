@@ -2298,6 +2298,127 @@ class TrialVirtualClientTest(unittest.IsolatedAsyncioTestCase):
         issued.assert_awaited_once()
 
 
+class TrialGuardTest(unittest.TestCase):
+    """Единый реестр: атомарный захват, связка каналов, бан, автобан, строгий режим."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def _site_account(self, telegram_id=None, phone=None, provider_id=None):
+        from database.db_accounts import get_or_create_site_account
+        account = get_or_create_site_account('test', provider_id or f"guard-{telegram_id or phone}")
+        with get_db() as c:
+            if telegram_id:
+                c.execute("UPDATE site_accounts SET telegram_id = ? WHERE id = ?", (telegram_id, account['id']))
+            if phone:
+                c.execute("UPDATE site_accounts SET phone = ? WHERE id = ?", (phone, account['id']))
+        from database.db_accounts import get_site_account_by_id
+        return get_site_account_by_id(account['id'])
+
+    def test_claim_is_atomic_and_released(self):
+        from bot.services import trial_guard
+        tg = 990100001
+        trial_guard.claim_bot(tg, 'account', 'bot')
+        self.assertFalse(trial_guard.claim_bot(tg, 'account', 'bot')['ok'])
+        self.assertEqual(trial_guard.status_bot(tg, 'account')['reason'], 'already_used')
+        # Откат неудавшейся выдачи снова разрешает пробник.
+        claims = [c for c in trial_guard.claims_recent(50) if c['identity_value'] == str(tg)]
+        trial_guard.release_claim({'ok': True, 'claim_ids': [c['id'] for c in claims]})
+        self.assertTrue(trial_guard.status_bot(tg, 'account')['allowed'])
+
+    def test_site_trial_blocks_bot_trial(self):
+        from bot.services import trial_guard
+        from database.db_users import get_or_create_user
+        tg = 990100002
+        get_or_create_user(tg, 'cross_site')
+        account = self._site_account(telegram_id=tg, phone='79995550002')
+        self.assertTrue(trial_guard.claim_site(account, 'site')['ok'])
+        status = trial_guard.status_bot(tg, 'account')
+        self.assertFalse(status['allowed'])
+        self.assertEqual(status['reason'], 'already_used')
+
+    def test_bot_trial_blocks_site_trial(self):
+        from bot.services import trial_guard
+        from database.db_users import get_or_create_user
+        tg = 990100003
+        get_or_create_user(tg, 'cross_bot')
+        account = self._site_account(telegram_id=tg)
+        self.assertTrue(trial_guard.claim_bot(tg, 'account', 'bot')['ok'])
+        status = trial_guard.status_site(account, used_trial=False, is_new_client=True)
+        self.assertFalse(status['allowed'])
+        self.assertEqual(status['reason'], 'already_used')
+
+    def test_banned_user_gets_no_trial(self):
+        from bot.services import trial_guard
+        from database.db_users import get_or_create_user, set_user_banned
+        tg = 990100004
+        get_or_create_user(tg, 'banned_trial')
+        set_user_banned(tg, True)
+        self.addCleanup(set_user_banned, tg, False)
+        self.assertEqual(trial_guard.status_bot(tg, 'account')['reason'], 'banned')
+        account = self._site_account(telegram_id=tg)
+        self.assertEqual(
+            trial_guard.status_site(account, used_trial=False, is_new_client=True)['reason'],
+            'banned',
+        )
+
+    def test_auto_ban_after_threshold_and_unblock(self):
+        from bot.services import trial_guard
+        from database.db_users import get_or_create_user, is_user_banned
+        st.set_setting('trial_auto_ban_threshold', '2')
+        st.set_setting('trial_abuse_alert_threshold', '1')
+        self.addCleanup(st.set_setting, 'trial_auto_ban_threshold', '0')
+        self.addCleanup(st.set_setting, 'trial_abuse_alert_threshold', '3')
+        tg = 990100005
+        get_or_create_user(tg, 'auto_ban')
+        identities = trial_guard.bot_identities(tg)
+        first = trial_guard.record_refusal(
+            identities, primary=('telegram', str(tg)), scope='account',
+            channel='bot', reason='already_used',
+        )
+        self.assertFalse(first['auto_banned'])
+        second = trial_guard.record_refusal(
+            identities, primary=('telegram', str(tg)), scope='account',
+            channel='bot', reason='already_used',
+        )
+        self.assertTrue(second['auto_banned'])
+        self.assertTrue(is_user_banned(tg))
+        self.assertEqual(trial_guard.status_bot(tg, 'account')['reason'], 'banned')
+        auto_block = next(
+            b for b in trial_guard.blocked_list(50)
+            if b['identity_kind'] == 'telegram' and b['identity_value'] == str(tg)
+        )
+        trial_guard.unblock(auto_block['id'])
+        self.assertFalse(is_user_banned(tg))
+
+    def test_backfill_marks_existing_trial_as_used(self):
+        """Обновление не открывает повторную выдачу тем, кто брал пробник раньше."""
+        from database.migrations import migration_175
+        from database.db_trial_guard import find_trial_claim
+        with get_db() as c:
+            c.execute("INSERT INTO users (telegram_id, username, used_trial) VALUES (990100006, 'legacy_trial', 1)")
+        with get_db() as c:
+            migration_175(c)  # идемпотентно: CREATE IF NOT EXISTS + INSERT OR IGNORE
+        claim = find_trial_claim([('telegram', '990100006')], 'account')
+        self.assertIsNotNone(claim)
+        self.assertEqual(claim['channel'], 'legacy')
+
+    def test_strict_mode_requires_phone(self):
+        from bot.services import trial_guard
+        st.set_setting('trial_strict_identity', '1')
+        self.addCleanup(st.set_setting, 'trial_strict_identity', '0')
+        no_phone = self._site_account(provider_id='strict-no-phone')
+        self.assertEqual(
+            trial_guard.status_site(no_phone, used_trial=False, is_new_client=True)['reason'],
+            'strict_identity_required',
+        )
+        with_phone = self._site_account(phone='79995550003', provider_id='strict-with-phone')
+        self.assertTrue(
+            trial_guard.status_site(with_phone, used_trial=False, is_new_client=True)['allowed']
+        )
+
+
 class PaymentHistoryTest(unittest.TestCase):
     """История в приложении: деньги не задваиваются и не смешиваются между клиентами."""
 
