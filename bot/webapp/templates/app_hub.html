@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Приложения ECLIPSE Unlimited — телефон, Windows, Android TV</title>
+<meta name="description" content="ECLIPSE Unlimited для Android, Windows и Android TV. Одна подписка, три приложения. Скачайте клиент для своего устройства.">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/app-pages.css">
+<style>
+    .apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 28px; }
+    .app-card {
+        display: flex; flex-direction: column; overflow: hidden;
+        border-radius: 26px; border: 1px solid var(--border-soft);
+        background: linear-gradient(180deg, rgba(22, 22, 30, .86), rgba(12, 12, 17, .92));
+        text-decoration: none; color: inherit;
+        transition: transform .25s var(--ease-out), border-color .25s, box-shadow .25s;
+    }
+    .app-card:hover { transform: translateY(-4px); border-color: rgba(214, 158, 74, .38); box-shadow: 0 24px 60px rgba(0, 0, 0, .35); }
+    .app-thumb { position: relative; height: 190px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 20%, rgba(214, 158, 74, .18), transparent 62%), #0a0a10; }
+    .app-thumb img { max-height: 190px; width: auto; object-fit: contain; }
+    .app-thumb .phone-shot { height: 200px; margin-top: 24px; border-radius: 18px 18px 0 0; border: 1px solid rgba(255, 255, 255, .08); }
+    .app-thumb .tv-shot { width: 88%; border-radius: 10px; border: 1px solid rgba(255, 255, 255, .08); }
+    .app-thumb .mini-desktop { transform: scale(.86); }
+    .app-body { padding: 18px 18px 20px; display: flex; flex-direction: column; flex: 1; }
+    .app-body .tag { align-self: flex-start; padding: 4px 9px; border-radius: 999px; background: rgba(214, 158, 74, .10); border: 1px solid rgba(214, 158, 74, .20); color: var(--gold-bright); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+    .app-body h2 { margin: 10px 0 6px; font-size: 21px; letter-spacing: -.01em; }
+    .app-body p { margin: 0 0 14px; color: var(--muted); font-size: 13px; flex: 1; }
+    .app-body .open { display: flex; align-items: center; justify-content: space-between; color: var(--gold-bright); font-size: 13px; font-weight: 700; }
+    .app-body .open span:last-child { transition: transform .2s; }
+    .app-card:hover .open span:last-child { transform: translateX(4px); }
+    @media (max-width: 860px) { .apps { grid-template-columns: 1fr; } .app-thumb { height: 210px; } }
+</style>
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<header class="site-header">
+    <a class="header-brand" href="/app">ECLIPSE <span class="gold">Unlimited</span></a>
+    <nav class="header-nav">
+        <a href="/app" class="is-active">Приложения</a>
+        <a href="/app/phone">Телефон</a>
+        <a href="/app/windows">Windows</a>
+        <a href="/app/tv">Android TV</a>
+    </nav>
+    <div class="header-actions">
+        <a class="btn btn-ghost btn-sm" href="/shop"><span>Личный кабинет</span></a>
+    </div>
+</header>
+
+<main class="page">
+    <section class="hero">
+        <div class="hero-copy">
+            <div class="eyebrow"><span class="dot"></span> Приложения ECLIPSE</div>
+            <h1>Один VPN.<br><span class="gold">Три экрана.</span></h1>
+            <p class="lead">Одна подписка работает на телефоне, компьютере и телевизоре. Выберите своё устройство — у каждого приложения отдельная страница, установка и возможности.</p>
+            <div class="meta">
+                <span>Android 7+</span>
+                <span>Windows 10/11 x64</span>
+                <span>Android TV</span>
+                <span>Без логов и рекламы</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" style="border-top:0;padding-top:0">
+        <div class="apps">
+            <a class="app-card" href="/app/phone">
+                <div class="app-thumb">
+                    <img class="phone-shot" src="/static/app-preview/home.jpg?v=3000" alt="Приложение ECLIPSE на Android" loading="lazy">
+                </div>
+                <div class="app-body">
+                    <span class="tag">Телефон</span>
+                    <h2>Android</h2>
+                    <p>Один клик, умная маршрутизация, раздельный туннель, темы и QR-перенос подписки.</p>
+                    <div class="open"><span>Открыть страницу</span><span>→</span></div>
+                </div>
+            </a>
+
+            <a class="app-card" href="/app/windows">
+                <div class="app-thumb">
+                    <div class="desktop mini-desktop">
+                        <div class="desktop-bar"><i></i><i></i><i></i><span class="desktop-title">ECLIPSE VPN</span></div>
+                        <div class="desktop-body">
+                            <div class="desktop-logo">E</div>
+                            <h3>ECLIPSE VPN</h3>
+                            <p>Подключено · Автоподбор</p>
+                            <div class="desktop-power">⏻</div>
+                            <div class="desktop-stats">
+                                <div class="desktop-stat"><b>0.0</b><span>МБ/с</span></div>
+                                <div class="desktop-stat"><b>0.0</b><span>МБ/с</span></div>
+                                <div class="desktop-stat"><b>—</b><span>Ping</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="app-body">
+                    <span class="tag">Компьютер</span>
+                    <h2>Windows</h2>
+                    <p>Работа в трее, автозапуск, PIN-блокировка, маршрутизация и обновления из приложения.</p>
+                    <div class="open"><span>Открыть страницу</span><span>→</span></div>
+                </div>
+            </a>
+
+            <a class="app-card" href="/app/tv">
+                <div class="app-thumb">
+                    <img class="tv-shot" src="/static/app-preview/tv.jpg?v=3000" alt="ECLIPSE TV на Android TV" loading="lazy">
+                </div>
+                <div class="app-body">
+                    <span class="tag">Телевизор</span>
+                    <h2>Android TV</h2>
+                    <p>Управление пультом, блокировка рекламы, 4K и вход по QR-коду с телефона.</p>
+                    <div class="open"><span>Открыть страницу</span><span>→</span></div>
+                </div>
+            </a>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="download">
+            <div>
+                <h2>Уже есть подписка?</h2>
+                <p>Войдите в личный кабинет на сайте или откройте приложение и войдите по коду из бота, номеру телефона, Google или Яндекс.</p>
+            </div>
+            <a class="btn btn-primary btn-lg" href="/shop">В личный кабинет</a>
+        </div>
+        <div class="cross">
+            <a href="/app/phone">📱 Телефон</a>
+            <a href="/app/windows">🖥 Windows</a>
+            <a href="/app/tv">📺 Android TV</a>
+            <a href="/">На главную сайта</a>
+        </div>
+    </section>
+</main>
+
+<footer class="footer">
+    <span>© <span id="year">2026</span> ECLIPSE Unlimited</span>
+    <span><a href="/app">Все приложения</a> · <a href="/shop">Личный кабинет</a></span>
+</footer>
+<script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+</body>
+</html>

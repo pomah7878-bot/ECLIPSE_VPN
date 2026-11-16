@@ -6359,28 +6359,40 @@ async def handle_awg_file(request: web.Request) -> web.Response:
     return resp
 
 
-async def handle_app_page(request: web.Request) -> web.Response:
-    """GET /app — страница скачивания Android-приложения.
-
-    Сама подтягивает последний релиз из GitHub и предлагает подходящий APK,
-    чтобы клиенту не нужно было разбираться в архитектурах.
-
-    Эта механика (автопроверка релизов конкретно из GitHub-репозитория
-    Android-приложения) целиком специфична для инсталляций, у которых
-    есть СВОЁ Android-приложение (own_app_url настроен) — у white-label
-    клиентов без своего приложения (own_app_url пуст, дефолт для новых
-    установок) страница отдаёт 404, а не показывает чужой репозиторий
-    чужого приложения."""
+async def _serve_app_page(template: str) -> web.Response:
     from database.requests import get_effective_own_app_url
     if not get_effective_own_app_url():
         return web.Response(text="404: Not Found", status=404)
+    page_path = os.path.join(_TEMPLATES_DIR, template)
+    if not os.path.exists(page_path):
+        return web.Response(text="<h1>App page not found</h1>", status=404)
+    resp = web.FileResponse(page_path)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
-    app_path = os.path.join(_TEMPLATES_DIR, "app.html")
-    if os.path.exists(app_path):
-        return web.FileResponse(app_path)
-    return web.Response(
-        text="<h1>App page not found</h1>", status=404
-    )
+
+async def handle_app_page(request: web.Request) -> web.Response:
+    """GET /app — хаб приложений: телефон, Windows, Android TV."""
+    return await _serve_app_page("app_hub.html")
+
+
+async def handle_app_phone_page(request: web.Request) -> web.Response:
+    """GET /app/phone — страница Android-приложения."""
+    return await _serve_app_page("app_phone.html")
+
+
+async def handle_app_windows_page(request: web.Request) -> web.Response:
+    """GET /app/windows — страница Windows-приложения."""
+    return await _serve_app_page("app_windows.html")
+
+
+async def handle_app_tv_page(request: web.Request) -> web.Response:
+    """GET /app/tv — страница Android TV-приложения."""
+    return await _serve_app_page("app_tv.html")
+
+
+async def handle_app_android_redirect(request: web.Request) -> web.Response:
+    raise web.HTTPFound("/app/phone")
 
 
 async def handle_app_login_page(request: web.Request) -> web.Response:
@@ -6545,6 +6557,10 @@ def create_web_app() -> web.Application:
     app.router.add_get("/", handle_index)
     app.router.add_get("/import", handle_import)
     app.router.add_get("/app", handle_app_page)
+    app.router.add_get("/app/phone", handle_app_phone_page)
+    app.router.add_get("/app/windows", handle_app_windows_page)
+    app.router.add_get("/app/tv", handle_app_tv_page)
+    app.router.add_get("/app/android", handle_app_android_redirect)
     app.router.add_get("/app/login", handle_app_login_page)
     app.router.add_get("/api/keys", handle_keys)
     app.router.add_get("/api/traffic-history", handle_traffic_history)

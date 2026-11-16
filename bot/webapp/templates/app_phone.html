@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECLIPSE Unlimited для Android — скачать APK</title>
+<meta name="description" content="VPN ECLIPSE Unlimited для Android: один клик, умная маршрутизация, раздельный туннель, Kill Switch, темы, QR-перенос подписки. Скачайте APK.">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/app-pages.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<header class="site-header">
+    <a class="header-brand" href="/app">ECLIPSE <span class="gold">Unlimited</span></a>
+    <nav class="header-nav">
+        <a href="/app">Приложения</a>
+        <a href="/app/phone" class="is-active">Телефон</a>
+        <a href="/app/windows">Windows</a>
+        <a href="/app/tv">Android TV</a>
+    </nav>
+    <div class="header-actions">
+        <a class="btn btn-ghost btn-sm" href="/shop"><span>Личный кабинет</span></a>
+    </div>
+</header>
+
+<main class="page">
+    <section class="hero">
+        <div class="hero-grid">
+            <div class="hero-copy">
+                <div class="eyebrow"><span class="dot"></span> Android · телефон</div>
+                <h1>VPN в одно<br><span class="gold">касание.</span></h1>
+                <p class="lead">Приложение ECLIPSE Unlimited для Android: подключайтесь одной кнопкой, выбирайте маршрутизацию и держите интернет под контролем.</p>
+                <div class="actions">
+                    <a class="btn btn-primary btn-lg" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk">Скачать APK</a>
+                    <a class="btn btn-ghost btn-lg" href="#install">Как установить</a>
+                </div>
+                <div class="meta">
+                    <span>Android 7+</span>
+                    <span>Универсальный APK</span>
+                    <span>Бесплатно</span>
+                </div>
+            </div>
+            <div class="visual">
+                <div class="phone-frame">
+                    <img src="/static/app-preview/connected.jpg?v=3000" alt="ECLIPSE Unlimited на Android: VPN подключён" loading="eager">
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="download">
+            <div>
+                <h2>Скачать для Android</h2>
+                <p>Официальный подписанный APK. Установите поверх старой версии — ключ и настройки сохранятся.</p>
+                <div class="download-meta" id="releaseMeta">Проверяем актуальную версию…</div>
+            </div>
+            <a class="btn btn-primary btn-lg" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk">Скачать</a>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head">
+            <h2>Что умеет приложение</h2>
+            <p>Всё, что нужно для ежедневного VPN, без лишних экранов.</p>
+        </div>
+        <div class="grid">
+            <div class="card"><div class="icon">⚡</div><h3>Одно касание</h3><p>Подключение и отключение одной кнопкой, сервер выбирается автоматически.</p></div>
+            <div class="card"><div class="icon">🧭</div><h3>Маршрутизация</h3><p>Умный режим, весь трафик через VPN или белые списки для строгих сетей.</p></div>
+            <div class="card"><div class="icon">🧩</div><h3>Раздельный туннель</h3><p>Выберите приложения, которые идут через VPN, или исключите их из туннеля.</p></div>
+            <div class="card"><div class="icon">🛡</div><h3>Kill Switch</h3><p>При обрыве VPN интернет блокируется, пока соединение не восстановится.</p></div>
+            <div class="card"><div class="icon">🎨</div><h3>Темы</h3><p>Тёмная, светлая, как на телефоне или по времени суток.</p></div>
+            <div class="card"><div class="icon">📲</div><h3>QR и перенос</h3><p>Передайте подписку на другое устройство ссылкой или QR-кодом.</p></div>
+        </div>
+    </section>
+
+    <section class="section" id="install">
+        <div class="section-head">
+            <h2>Установка за минуту</h2>
+            <p>Android предупредит об установке APK — это нормально для приложений не из Google Play.</p>
+        </div>
+        <div class="steps">
+            <div class="step"><b>Скачайте APK</b><span>Кнопкой выше. Файл подписан ECLIPSE.</span></div>
+            <div class="step"><b>Разрешите установку</b><span>В настройках браузера разрешите установку неизвестных приложений.</span></div>
+            <div class="step"><b>Установите</b><span>Откройте файл и подтвердите установку.</span></div>
+            <div class="step"><b>Войдите</b><span>Код из бота, номер телефона, Google или Яндекс.</span></div>
+        </div>
+        <div class="cross">
+            <a href="/app/windows">🖥 Windows</a>
+            <a href="/app/tv">📺 Android TV</a>
+            <a href="/app">Все приложения</a>
+            <a href="/shop">Личный кабинет</a>
+        </div>
+    </section>
+</main>
+
+<footer class="footer">
+    <span>© <span id="year">2026</span> ECLIPSE Unlimited</span>
+    <span><a href="/app">Все приложения</a> · <a href="/shop">Личный кабинет</a></span>
+</footer>
+<script>
+(function () {
+    document.getElementById('year').textContent = new Date().getFullYear();
+    var meta = document.getElementById('releaseMeta');
+    fetch('/api/public/client-update')
+        .then(function (r) { if (!r.ok) throw new Error('no meta'); return r.json(); })
+        .then(function (release) {
+            var sha = release.sha256 ? String(release.sha256).toLowerCase() : '';
+            var shortSha = sha ? sha.slice(0, 12) + '…' + sha.slice(-8) : '';
+            meta.textContent = 'Версия ' + (release.version_name || '—') +
+                (shortSha ? ' · SHA-256 ' + shortSha : '') +
+                ' · Android 7+ · универсальный APK';
+            if (sha) meta.title = 'SHA-256: ' + sha;
+        })
+        .catch(function () {
+            meta.textContent = 'Android 7+ · универсальный APK · бесплатно';
+        });
+})();
+</script>
+</body>
+</html>

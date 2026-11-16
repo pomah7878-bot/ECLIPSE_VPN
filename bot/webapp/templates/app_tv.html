@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECLIPSE TV для Android TV — скачать APK</title>
+<meta name="description" content="ECLIPSE TV для Android TV: VPN с управлением пультом, блокировка рекламы, 4K и вход по QR-коду с телефона. Скачайте APK.">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/app-pages.css">
+</head>
+<body>
+<div class="aurora" aria-hidden="true"></div>
+
+<header class="site-header">
+    <a class="header-brand" href="/app">ECLIPSE <span class="gold">Unlimited</span></a>
+    <nav class="header-nav">
+        <a href="/app">Приложения</a>
+        <a href="/app/phone">Телефон</a>
+        <a href="/app/windows">Windows</a>
+        <a href="/app/tv" class="is-active">Android TV</a>
+    </nav>
+    <div class="header-actions">
+        <a class="btn btn-ghost btn-sm" href="/shop"><span>Личный кабинет</span></a>
+    </div>
+</header>
+
+<main class="page">
+    <section class="hero">
+        <div class="hero-grid">
+            <div class="hero-copy">
+                <div class="eyebrow"><span class="dot"></span> Android TV · телевизор</div>
+                <h1>ECLIPSE<br><span class="gold">на большом экране.</span></h1>
+                <p class="lead">VPN для Android TV с управлением с пульта: подключайтесь, смотрите 4K и блокируйте рекламу. Вход — по QR-коду с телефона.</p>
+                <div class="actions">
+                    <a class="btn btn-primary btn-lg" href="/client-update/tv.apk" download="ECLIPSE TV.apk">Скачать APK для TV</a>
+                    <a class="btn btn-ghost btn-lg" href="#install">Как установить</a>
+                </div>
+                <div class="meta">
+                    <span>Android TV</span>
+                    <span>Пульт ДУ</span>
+                    <span>Вход по QR</span>
+                </div>
+            </div>
+            <div class="visual">
+                <div>
+                    <div class="tv-frame">
+                        <img src="/static/app-preview/tv.jpg?v=3000" alt="ECLIPSE TV на Android TV" loading="eager">
+                    </div>
+                    <div class="tv-stand"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="download">
+            <div>
+                <h2>Скачать для Android TV</h2>
+                <p>Отдельное приложение ECLIPSE TV. Подходит для телевизоров и ТВ-приставок на Android TV.</p>
+                <div class="download-meta" id="releaseMeta">Проверяем актуальную версию…</div>
+            </div>
+            <a class="btn btn-primary btn-lg" href="/client-update/tv.apk" download="ECLIPSE TV.apk">Скачать</a>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head">
+            <h2>Что умеет ECLIPSE TV</h2>
+            <p>Минимум лишнего, максимум удобства на расстоянии пульта.</p>
+        </div>
+        <div class="grid">
+            <div class="card"><div class="icon">🎮</div><h3>Управление пультом</h3><p>Крупные кнопки и фокус, который видно с дивана.</p></div>
+            <div class="card"><div class="icon">🚫</div><h3>Блокировка рекламы</h3><p>DNS-фильтрация рекламы и трекеров на уровне ТВ.</p></div>
+            <div class="card"><div class="icon">🎬</div><h3>4K и стриминг</h3><p>Оптимальный маршрут для видеосервисов без лишних переключений.</p></div>
+            <div class="card"><div class="icon">📲</div><h3>Вход по QR</h3><p>Отсканируйте код телефоном — подписка появится на телевизоре.</p></div>
+            <div class="card"><div class="icon">⚡</div><h3>Автозапуск</h3><p>VPN поднимается вместе с телевизором.</p></div>
+            <div class="card"><div class="icon">🛡</div><h3>Без логов</h3><p>Тот же аккаунт и защита, что на телефоне и компьютере.</p></div>
+        </div>
+    </section>
+
+    <section class="section" id="install">
+        <div class="section-head">
+            <h2>Установка на телевизор</h2>
+            <p>Самый простой способ — приложение Downloader на Android TV.</p>
+        </div>
+        <div class="steps">
+            <div class="step"><b>Установите Downloader</b><span>Найдите в Google Play на телевизоре.</span></div>
+            <div class="step"><b>Разрешите установку</b><span>В Downloader включите установку неизвестных приложений.</span></div>
+            <div class="step"><b>Скачайте APK</b><span>Откройте эту страницу на ТВ или введите ссылку в Downloader.</span></div>
+            <div class="step"><b>Войдите по QR</b><span>Откройте приложение и отсканируйте код телефоном.</span></div>
+        </div>
+        <div class="cross">
+            <a href="/app/phone">📱 Телефон</a>
+            <a href="/app/windows">🖥 Windows</a>
+            <a href="/app">Все приложения</a>
+            <a href="/shop">Личный кабинет</a>
+        </div>
+    </section>
+</main>
+
+<footer class="footer">
+    <span>© <span id="year">2026</span> ECLIPSE Unlimited</span>
+    <span><a href="/app">Все приложения</a> · <a href="/shop">Личный кабинет</a></span>
+</footer>
+<script>
+(function () {
+    document.getElementById('year').textContent = new Date().getFullYear();
+    var meta = document.getElementById('releaseMeta');
+    fetch('/api/public/tv-update')
+        .then(function (r) { if (!r.ok) throw new Error('no meta'); return r.json(); })
+        .then(function (release) {
+            var sha = release.sha256 ? String(release.sha256).toLowerCase() : '';
+            var shortSha = sha ? sha.slice(0, 12) + '…' + sha.slice(-8) : '';
+            meta.textContent = 'Версия ' + (release.version_name || '—') +
+                (shortSha ? ' · SHA-256 ' + shortSha : '') +
+                ' · Android TV · APK';
+            if (sha) meta.title = 'SHA-256: ' + sha;
+        })
+        .catch(function () {
+            meta.textContent = 'Android TV · APK · вход по QR-коду';
+        });
+})();
+</script>
+</body>
+</html>
