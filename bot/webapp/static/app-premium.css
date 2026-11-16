@@ -675,20 +675,20 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     50% { opacity: .9; }
 }
 .tv-focus {
-    position: absolute; left: 6%; top: 24%; width: 25%; height: 6%;
+    position: absolute; left: 6%; top: 24%; width: 25%; height: 7%;
     border-radius: 9px; border: 1px solid rgba(241, 213, 154, .9);
     box-shadow: 0 0 20px rgba(214, 172, 88, .28), inset 0 0 16px rgba(214, 172, 88, .12);
     pointer-events: none; z-index: 4;
     animation: tv-focus 16s ease-in-out infinite;
 }
 @keyframes tv-focus {
-    0%, 8% { left: 6%; top: 24%; width: 25%; height: 7%; border-radius: 9px; opacity: 1; }
-    18%, 26% { left: 6%; top: 34%; width: 25%; height: 7%; border-radius: 9px; }
-    34%, 42% { left: 6%; top: 44%; width: 25%; height: 7%; border-radius: 9px; }
-    50%, 58% { left: 6%; top: 54%; width: 25%; height: 7%; border-radius: 9px; }
-    66%, 74% { left: 6%; top: 64%; width: 25%; height: 7%; border-radius: 9px; }
-    82%, 90% { left: 62%; top: 55%; width: 7%; height: 12%; border-radius: 50%; }
-    96%, 100% { left: 62%; top: 55%; width: 7%; height: 12%; border-radius: 50%; opacity: 0; }
+    0%, 8% { transform: translateY(0); opacity: 1; }
+    18%, 26% { transform: translateY(143%); opacity: 1; }
+    34%, 42% { transform: translateY(286%); opacity: 1; }
+    50%, 58% { transform: translateY(429%); opacity: 1; }
+    66%, 74% { transform: translateY(571%); opacity: 1; }
+    82%, 90% { transform: translateY(571%); opacity: 0; }
+    96%, 100% { transform: translateY(571%); opacity: 0; }
 }
 .tv-connect-pulse {
     position: absolute; left: 62%; top: 55%; width: 7%; height: 12%;
@@ -774,6 +774,9 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     .trust-item:nth-child(4) { border-top: 1px solid var(--line-soft); }
     .gallery { grid-template-columns: repeat(2, 1fr); }
     .gallery .shot:nth-child(n+3) { display: none; }
+}
+@media (max-width: 900px) {
+    .hero-art::after, .premium-banner::before { display: none; }
 }
 @media (max-width: 600px) {
     :root { --header: 64px; }
