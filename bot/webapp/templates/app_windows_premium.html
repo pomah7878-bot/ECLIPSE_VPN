@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ECLIPSE VPN для Windows — скачать установщик</title>
+<meta name="description" content="ECLIPSE VPN для Windows 10/11: работа в трее, автозапуск, раздельный туннель, импорт подписки по QR, PIN-блокировка, Kill Switch, уведомления и обновления из приложения.">
+<meta name="theme-color" content="#080a0e">
+<link rel="canonical" href="https://eclipse.unlimited.bot.nu/app/windows">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ECLIPSE VPN для Windows">
+<meta property="og:description" content="Полный клиент ECLIPSE для Windows 10/11. Скачайте установщик с официального релиза.">
+<meta property="og:image" content="https://eclipse.unlimited.bot.nu/static/app-preview/windows-home.webp">
+<link rel="icon" type="image/x-icon" href="/favicon.ico">
+<link rel="stylesheet" href="/static/app-premium.css?v=4">
+<style>
+    .win-hero { padding-top: calc(var(--header) + clamp(28px, 5vw, 62px)); }
+    .win-hero .hero-grid { grid-template-columns: minmax(0, 1.02fr) minmax(340px, .98fr); }
+    .win-stage { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 500px; }
+    .win-stage::before {
+        content: ''; position: absolute; width: 520px; height: 520px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(214,172,88,.18), transparent 64%);
+        filter: blur(28px); z-index: 0;
+    }
+    .win-window {
+        position: relative; z-index: 2; width: min(420px, 84vw); border-radius: 15px; overflow: hidden;
+        border: 1px solid rgba(241,213,154,.22); background: #0b0f16;
+        box-shadow: 0 45px 100px rgba(0,0,0,.62), 0 0 0 1px rgba(255,255,255,.04);
+        transform: perspective(1100px) rotateY(-7deg) rotateX(3deg) rotate(1deg);
+    }
+    .win-window img { width: 100%; height: auto; display: block; }
+    .win-window::after {
+        content: ''; position: absolute; inset: 0; pointer-events: none;
+        background: linear-gradient(120deg, rgba(255,255,255,.10), transparent 22%, transparent 72%, rgba(255,255,255,.04));
+    }
+    .win-caption { position: relative; z-index: 2; margin-top: 16px; color: var(--dim); font-size: 10.5px; text-align: center; }
+    .win-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .win-shot {
+        border: 1px solid var(--line-soft); border-radius: 20px; overflow: hidden;
+        background: linear-gradient(170deg, #131b28, #090d14);
+    }
+    .win-shot img { width: 100%; height: auto; display: block; }
+    .win-shot figcaption { padding: 13px 16px; display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--muted); }
+    .win-shot figcaption b { color: var(--white); }
+    .req-list { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 0; padding: 0; list-style: none; color: var(--dim); font-size: 11.5px; }
+    .req-list li { display: inline-flex; align-items: center; gap: 6px; }
+    .req-list svg { width: 13px; height: 13px; color: var(--gold); }
+    @media (max-width: 900px) {
+        .win-hero .hero-grid { grid-template-columns: 1fr; }
+        .win-stage { order: -1; min-height: auto; }
+        .win-window { transform: none; }
+        .win-shots { gap: 10px; }
+    }
+    @media (max-width: 600px) {
+        .win-shots { grid-template-columns: 1fr; }
+    }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Перейти к содержимому</a>
+<div class="space" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<symbol id="w-download" viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="w-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="w-tray" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 15h5l1.5 2h5L16 15h5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+<symbol id="w-split" viewBox="0 0 24 24"><path d="M4 6h4l4 6 4-6h4M4 18h4l4-6 4 6h4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="w-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4V4Zm10 0h6v6h-6V4ZM4 14h6v6H4v-6Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 14h2v2h-2v-2Zm4 0h1v1h-1v-1Zm-2 4h2v2h-2v-2Zm4-2h1v4h-3v-2h2v-2Z" fill="currentColor"/></symbol>
+<symbol id="w-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.4 3 7.5 7 9 4-1.5 7-4.6 7-9V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="w-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="w-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 7 2 7 2 9H4c0-2 2-2 2-9ZM10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="w-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.1 8A7 7 0 0 1 19 9m-1 7a7 7 0 0 1-12.9-1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+<symbol id="w-power" viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+</defs>
+</svg>
+
+<header class="site-header" id="header">
+    <a class="brand" href="/app" aria-label="ECLIPSE Unlimited — приложения">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>ECLIPSE <span>Unlimited</span></span>
+    </a>
+    <nav class="nav" id="nav" aria-label="Навигация">
+        <a href="/app">Все приложения</a>
+        <a href="#features">Возможности</a>
+        <a href="#screens">Экраны</a>
+        <a href="#install">Установка</a>
+        <a href="#security">Безопасность</a>
+    </nav>
+    <div class="header-actions">
+        <a class="btn btn-gold btn-sm" id="downloadBtn" href="https://github.com/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest" rel="noopener"><span>Скачать</span> <span class="arrow" aria-hidden="true">↗</span></a>
+        <button class="menu-toggle" id="menuToggle" type="button" aria-label="Открыть меню" aria-controls="nav" aria-expanded="false"><span></span></button>
+    </div>
+</header>
+
+<main id="main">
+    <section class="hero win-hero">
+        <div class="wrap hero-grid">
+            <div class="hero-copy">
+                <span class="eyebrow">Windows 10/11 · x64</span>
+                <h1><span class="line">Полный ECLIPSE</span><span class="line gold">на компьютере.</span></h1>
+                <p class="hero-lead">Тот же аккаунт и подписка, что на телефоне, плюс работа в трее, автозапуск, раздельный туннель, импорт подписки по QR и Kill Switch.</p>
+                <div class="hero-actions">
+                    <a class="btn btn-gold btn-lg" id="downloadBtn2" href="https://github.com/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest" rel="noopener">Скачать установщик <span class="arrow" aria-hidden="true">↗</span></a>
+                    <a class="btn btn-glass btn-lg" href="#screens">Смотреть экраны</a>
+                </div>
+                <ul class="hero-points">
+                    <li><svg><use href="#w-check"/></svg> Работа в трее</li>
+                    <li><svg><use href="#w-check"/></svg> Автозапуск и автоподключение</li>
+                    <li><svg><use href="#w-check"/></svg> Kill Switch и PIN</li>
+                    <li><svg><use href="#w-check"/></svg> Обновления из приложения</li>
+                </ul>
+                <div class="platforms">
+                    <a class="platform-pill" href="/app/phone"><span class="dot"></span> Android</a>
+                    <a class="platform-pill" href="/app/tv"><span class="dot"></span> Android TV</a>
+                    <a class="platform-pill" href="/app"><span class="dot"></span> Все приложения</a>
+                </div>
+            </div>
+            <div class="win-stage">
+                <div class="win-window">
+                    <img src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" fetchpriority="high">
+                </div>
+                <div class="win-caption">Реальный интерфейс ECLIPSE VPN для Windows</div>
+            </div>
+        </div>
+    </section>
+
+    <div class="trust">
+        <div class="wrap trust-row">
+            <div class="trust-item"><svg><use href="#w-tray"/></svg><span><b>Работа в трее</b><span>Окно можно закрыть</span></span></div>
+            <div class="trust-item"><svg><use href="#w-split"/></svg><span><b>Раздельный туннель</b><span>Программы мимо VPN</span></span></div>
+            <div class="trust-item"><svg><use href="#w-shield"/></svg><span><b>Kill Switch</b><span>Opt-in защита</span></span></div>
+            <div class="trust-item"><svg><use href="#w-refresh"/></svg><span><b>Автообновление</b><span>Установка из приложения</span></span></div>
+        </div>
+    </div>
+
+    <section class="section" id="features">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Windows-клиент</span>
+                <h2>Всё для <span class="gold">рабочего стола.</span></h2>
+                <p>Нативные удобства Windows и та же защита, что в мобильном приложении.</p>
+            </div>
+            <div class="features-grid">
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-tray"/></svg></div><h3>Работа в трее</h3><p>Закройте окно — VPN продолжает работать. Управление из значка рядом с часами.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-power"/></svg></div><h3>Автозапуск</h3><p>Клиент стартует вместе с Windows и готов к подключению.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-split"/></svg></div><h3>Раздельный туннель</h3><p>Выбранные программы ходят напрямую, остальное — через VPN.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-qr"/></svg></div><h3>Импорт и QR</h3><p>Ссылка на подписку, конфиг или перенос с телефона по QR-коду.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-shield"/></svg></div><h3>Kill Switch</h3><p>Опциональная блокировка трафика при обрыве VPN через Windows Firewall.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-lock"/></svg></div><h3>PIN-блокировка</h3><p>PIN при запуске и после сворачивания окна.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-bell"/></svg></div><h3>Уведомления</h3><p>Системные уведомления о подключении, отключении и ошибках.</p></article>
+                <article class="feature"><div class="feature-icon"><svg><use href="#w-refresh"/></svg></div><h3>Обновления</h3><p>Проверка, загрузка с SHA-256 и установка новой версии из приложения.</p></article>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="screens">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Реальный интерфейс</span>
+                <h2>Не мокап. <span class="gold">Рабочий клиент.</span></h2>
+                <p>Скриншоты сняты с установленного ECLIPSE VPN для Windows.</p>
+            </div>
+            <div class="win-shots">
+                <figure class="win-shot"><img src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" loading="lazy"><figcaption><b>Подключение</b><span>Главный экран</span></figcaption></figure>
+                <figure class="win-shot"><img src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="Настройки ECLIPSE VPN для Windows: раздельный туннель, Kill Switch, уведомления" loading="lazy"><figcaption><b>Настройки</b><span>Kill Switch · туннель · QR</span></figcaption></figure>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="install">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Установка</span>
+                <h2>Три шага <span class="gold">до Windows.</span></h2>
+                <p>Для TUN-адаптера приложению нужны права администратора.</p>
+            </div>
+            <div class="steps">
+                <article class="step"><span class="step-line"></span><h3>Скачайте установщик</h3><p>Официальный .exe с GitHub-релиза.</p></article>
+                <article class="step"><span class="step-line"></span><h3>Установите</h3><p>Подтвердите UAC и пройдите мастер установки.</p></article>
+                <article class="step"><span class="step-line"></span><h3>Войдите</h3><p>Код из бота, телефон или импорт подписки.</p></article>
+                <article class="step"><h3>Подключитесь</h3><p>Запустите от администратора и нажмите кнопку питания.</p></article>
+            </div>
+            <ul class="req-list">
+                <li><svg><use href="#w-check"/></svg> Windows 10/11 x64</li>
+                <li><svg><use href="#w-check"/></svg> Права администратора</li>
+                <li><svg><use href="#w-check"/></svg> ~30 МБ установщик</li>
+                <li><svg><use href="#w-check"/></svg> Обновления из приложения</li>
+            </ul>
+        </div>
+    </section>
+
+    <section class="section" id="security">
+        <div class="wrap security-grid">
+            <div>
+                <span class="eyebrow">Безопасность</span>
+                <h2>Проверьте <span class="gold">установщик.</span></h2>
+                <p style="color:var(--muted);font-size:14px;max-width:480px">Скачивайте только с официального GitHub-релиза. На странице релиза опубликован SHA-256 установщика.</p>
+                <a class="btn btn-glass" id="releaseLink" href="https://github.com/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest" target="_blank" rel="noopener">Открыть релиз на GitHub <span class="arrow" aria-hidden="true">↗</span></a>
+            </div>
+            <div class="verify-panel">
+                <div class="verify-row"><span class="k">Версия</span><span class="v" id="winVersion">загружается…</span></div>
+                <div class="verify-row"><span class="k">Файл</span><span class="v small" id="winFile">—</span></div>
+                <div class="verify-row"><span class="k">SHA-256</span><span class="v" id="winSha">—</span></div>
+                <span class="code-line">Get-FileHash ".\ECLIPSE_VPN_Setup.exe" -Algorithm SHA256</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="wrap">
+            <div class="final">
+                <span class="eyebrow">ECLIPSE Unlimited</span>
+                <h2>Компьютер <span class="gold">под защитой.</span></h2>
+                <p>Скачайте установщик, войдите в аккаунт и подключитесь одной кнопкой.</p>
+                <div class="final-actions">
+                    <a class="btn btn-gold btn-lg" id="downloadBtn3" href="https://github.com/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest" rel="noopener">Скачать для Windows <span class="arrow" aria-hidden="true">↗</span></a>
+                    <a class="btn btn-glass btn-lg" href="/app">Все приложения</a>
+                </div>
+                <div class="final-small">Windows 10/11 x64 · установщик .exe</div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div class="wrap">
+        <div class="footer-main">
+            <div class="footer-brand">
+                <a class="brand" href="/app"><span class="brand-mark" aria-hidden="true"></span><span>ECLIPSE <span>Unlimited</span></span></a>
+                <p>Один аккаунт для Windows, Android и Android TV.</p>
+            </div>
+            <div class="footer-cols">
+                <div class="footer-col"><b>Приложения</b><a href="/app/phone">Android</a><a href="/app/tv">Android TV</a><a href="/app/windows">Windows</a></div>
+                <div class="footer-col"><b>Продукт</b><a href="/shop">Тарифы</a><a href="#features">Возможности</a><a href="#security">Безопасность</a></div>
+                <div class="footer-col"><b>Помощь</b><a href="/app#faq">FAQ</a><a href="#install">Установка</a><a href="/app">Все приложения</a></div>
+            </div>
+        </div>
+        <div class="footer-bottom"><span>© <span id="year">2026</span> ECLIPSE Unlimited</span><span>Windows 10/11 · x64</span></div>
+    </div>
+</footer>
+
+<script>
+(function () {
+    'use strict';
+    document.getElementById('year').textContent = new Date().getFullYear();
+    var header = document.getElementById('header');
+    var onScroll = function () { header.classList.toggle('is-scrolled', window.scrollY > 12); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    var menu = document.getElementById('menuToggle');
+    var nav = document.getElementById('nav');
+    if (menu && nav) {
+        menu.addEventListener('click', function () {
+            var open = nav.classList.toggle('is-open');
+            menu.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+        nav.querySelectorAll('a').forEach(function (a) {
+            a.addEventListener('click', function () { nav.classList.remove('is-open'); menu.setAttribute('aria-expanded', 'false'); });
+        });
+    }
+    if ('IntersectionObserver' in window) {
+        var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); } });
+        }, { threshold: 0.12 });
+        document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+    }
+    fetch('https://api.github.com/repos/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest', {
+        headers: { 'Accept': 'application/vnd.github+json' }
+    }).then(function (r) { if (!r.ok) throw new Error('no release'); return r.json(); })
+        .then(function (release) {
+            var assets = release.assets || [];
+            var exe = assets.filter(function (a) { return /\.exe$/i.test(a.name || ''); })[0];
+            if (exe && exe.browser_download_url) {
+                ['downloadBtn', 'downloadBtn2', 'downloadBtn3'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.href = exe.browser_download_url;
+                });
+            }
+            var digest = exe && exe.digest ? String(exe.digest).replace(/^sha256:/, '') : '';
+            var v = document.getElementById('winVersion');
+            var f = document.getElementById('winFile');
+            var s = document.getElementById('winSha');
+            if (v) v.textContent = release.tag_name || '—';
+            if (f) f.textContent = exe ? exe.name + (exe.size ? ' · ' + (exe.size / 1048576).toFixed(1) + ' МБ' : '') : '—';
+            if (s) s.textContent = digest || 'на странице релиза';
+        })
+        .catch(function () {
+            var v = document.getElementById('winVersion');
+            if (v) v.textContent = 'на GitHub';
+        });
+})();
+</script>
+</body>
+</html>

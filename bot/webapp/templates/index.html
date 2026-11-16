@@ -2271,12 +2271,16 @@
                 const providers = (prov.providers || []).map(p => names[p] || p);
                 const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
                 const items = [];
+                const contact = [];
+                if (s.phone) contact.push(`<p class="text-xs text-mist">📱 Телефон: <span class="text-ink">${escapeHtml(String(s.phone))}</span></p>`);
+                if (s.email) contact.push(`<p class="text-xs text-mist">✉️ Email: <span class="text-ink">${escapeHtml(String(s.email))}</span></p>`);
                 if (s.account_type !== 'telegram') items.push(`<button onclick="linkTelegram()" class="${btn}">✈️ Привязать Telegram</button>`);
                 if (!s.phone) items.push(`<a href="/shop#account" class="${btn}">📱 Добавить номер телефона</a>`);
                 if (!s.email && providers.length) items.push(`<a href="/shop#account" class="${btn}">🔑 Добавить вход через ${escapeHtml(providers.join(' / '))}</a>`);
-                if (!items.length) return;
+                if (!items.length && !contact.length) return;
                 box.innerHTML = translateHtml(`<div class="card rounded-2xl p-4 space-y-2">
-                    <p class="text-xs text-mist mb-1">Добавьте другие способы входа — пригодятся, если потеряете доступ к одному из них.${s.account_type !== 'telegram' ? ' С Telegram будут приходить уведомления об оплате и окончании подписки.' : ''}</p>
+                    ${contact.join('')}
+                    ${items.length ? `<p class="text-xs text-mist mb-1">Добавьте другие способы входа — пригодятся, если потеряете доступ к одному из них.${s.account_type !== 'telegram' ? ' С Telegram будут приходить уведомления об оплате и окончании подписки.' : ''}</p>` : ''}
                     ${items.join('')}</div>`);
             } catch (e) { /* подсказка необязательна */ }
         }

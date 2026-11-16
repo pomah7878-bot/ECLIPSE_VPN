@@ -6378,17 +6378,17 @@ async def handle_app_page(request: web.Request) -> web.Response:
 
 async def handle_app_phone_page(request: web.Request) -> web.Response:
     """GET /app/phone — страница Android-приложения."""
-    return await _serve_app_page("app_phone.html")
+    return await _serve_app_page("app_phone_premium.html")
 
 
 async def handle_app_windows_page(request: web.Request) -> web.Response:
     """GET /app/windows — страница Windows-приложения."""
-    return await _serve_app_page("app_windows.html")
+    return await _serve_app_page("app_windows_premium.html")
 
 
 async def handle_app_tv_page(request: web.Request) -> web.Response:
     """GET /app/tv — страница Android TV-приложения."""
-    return await _serve_app_page("app_tv.html")
+    return await _serve_app_page("app_tv_premium.html")
 
 
 async def handle_app_android_redirect(request: web.Request) -> web.Response:
