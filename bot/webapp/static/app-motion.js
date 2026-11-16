@@ -23,6 +23,22 @@
         }, 2600);
     }
 
+    // Демонстрации приложений запускаются при входе блока в кадр:
+    // TV — обход меню пультом, Windows — окно → подключение → настройки.
+    var demos = Array.prototype.slice.call(document.querySelectorAll('[data-motion-demo]'));
+    if (reduced || !('IntersectionObserver' in window)) {
+        demos.forEach(function (el) { el.classList.add('is-visible'); });
+    } else if (demos.length) {
+        var demoIo = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add('is-visible');
+                demoIo.unobserve(entry.target);
+            });
+        }, { threshold: 0.3, rootMargin: '0px 0px -8% 0px' });
+        demos.forEach(function (el) { demoIo.observe(el); });
+    }
+
     if (reduced || !window.matchMedia('(pointer: fine)').matches) {
         doc.classList.add('motion-ready');
         return;

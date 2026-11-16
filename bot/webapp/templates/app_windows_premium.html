@@ -13,7 +13,7 @@
 <meta property="og:image" content="https://eclipse.unlimited.bot.nu/static/app-preview/windows-home.webp">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="preload" as="image" href="/static/app-preview/windows-home.webp?v=1" type="image/webp">
-<link rel="stylesheet" href="/static/app-premium.css?v=16">
+<link rel="stylesheet" href="/static/app-premium.css?v=17">
 <style>
     .win-hero { padding-top: calc(var(--header) + clamp(28px, 5vw, 62px)); }
     .win-hero .hero-grid { grid-template-columns: minmax(0, 1.02fr) minmax(340px, .98fr); }
@@ -121,7 +121,7 @@
                     <a class="platform-pill" href="/app"><span class="dot"></span> Все приложения</a>
                 </div>
             </div>
-            <div class="win-stage">
+            <div class="win-stage" data-motion-demo>
                 <div class="win-window motion-screen" data-motion-tilt>
                     <img class="win-layer-a" src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" fetchpriority="high">
                     <img class="win-layer-b" src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="" aria-hidden="true" loading="lazy">
@@ -171,7 +171,7 @@
             </div>
             <div class="win-shots">
                 <figure class="win-shot reveal"><img src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" loading="lazy"><figcaption><b>Подключение</b><span>Главный экран</span></figcaption></figure>
-                <figure class="win-shot motion-settings reveal"><img src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="Настройки ECLIPSE VPN для Windows: раздельный туннель, Kill Switch, уведомления" loading="lazy"><span class="settings-focus" aria-hidden="true"></span><figcaption><b>Настройки</b><span>Kill Switch · туннель · QR</span></figcaption></figure>
+                <figure class="win-shot motion-settings reveal" data-motion-demo><img src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="Настройки ECLIPSE VPN для Windows: раздельный туннель, Kill Switch, уведомления" loading="lazy"><span class="settings-focus" aria-hidden="true"></span><figcaption><b>Настройки</b><span>Kill Switch · туннель · QR</span></figcaption></figure>
             </div>
         </div>
     </section>
@@ -306,6 +306,6 @@
         });
 })();
 </script>
-<script src="/static/app-motion.js?v=2" defer></script>
+<script src="/static/app-motion.js?v=3" defer></script>
 </body>
 </html>

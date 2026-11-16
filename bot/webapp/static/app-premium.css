@@ -589,6 +589,10 @@ html.js-motion .reveal {
 }
 html.js-motion .reveal.is-in { opacity: 1; transform: none; }
 
+/* Демо-анимации запускаются, когда блок реально в кадре. */
+html.js-motion [data-motion-demo] { --motion-play: paused; }
+html.js-motion [data-motion-demo].is-visible { --motion-play: running; }
+
 /* Windows: появление окна, глубина и смена реальных экранов */
 .win-stage { animation: win-stage-in 1.05s var(--ease) both; }
 @keyframes win-stage-in {
@@ -603,9 +607,11 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
 }
 .win-window.motion-screen .win-layer-a {
     animation: win-layer-a 18s ease-in-out infinite;
+    animation-play-state: var(--motion-play, running);
 }
 .win-window.motion-screen .win-layer-b {
     opacity: 0; animation: win-layer-b 18s ease-in-out infinite;
+    animation-play-state: var(--motion-play, running);
 }
 @keyframes win-layer-a {
     0%, 40% { opacity: 1; }
@@ -624,6 +630,7 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     box-shadow: 0 0 26px rgba(214, 172, 88, .32), inset 0 0 18px rgba(214, 172, 88, .16);
     pointer-events: none; z-index: 3; opacity: 0;
     animation: win-power-glow 3.2s ease-in-out infinite, win-power-visible 18s linear infinite;
+    animation-play-state: var(--motion-play, running);
 }
 @keyframes win-power-glow {
     0%, 100% { transform: scale(.88); opacity: .28; }
@@ -642,6 +649,7 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     box-shadow: 0 0 24px rgba(214, 172, 88, .22), inset 0 0 18px rgba(214, 172, 88, .08);
     pointer-events: none; z-index: 3;
     animation: settings-focus 10s ease-in-out infinite;
+    animation-play-state: var(--motion-play, running);
 }
 @keyframes settings-focus {
     0%, 8% { transform: translateY(452%); opacity: 0; }
@@ -659,6 +667,7 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
 }
 .tv-frame.motion-tv img {
     animation: tv-zoom 16s ease-in-out infinite alternate;
+    animation-play-state: var(--motion-play, running);
     transform-origin: 56% 48%;
 }
 @keyframes tv-zoom {
@@ -669,6 +678,7 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     position: absolute; inset: 0; pointer-events: none; z-index: 2;
     background: radial-gradient(ellipse at 68% 42%, rgba(241, 213, 154, .10), transparent 52%);
     animation: tv-glow 7s ease-in-out infinite;
+    animation-play-state: var(--motion-play, running);
 }
 @keyframes tv-glow {
     0%, 100% { opacity: .35; }
@@ -680,6 +690,7 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     box-shadow: 0 0 20px rgba(214, 172, 88, .28), inset 0 0 16px rgba(214, 172, 88, .12);
     pointer-events: none; z-index: 4;
     animation: tv-focus 16s ease-in-out infinite;
+    animation-play-state: var(--motion-play, running);
 }
 @keyframes tv-focus {
     0%, 8% { transform: translateY(0); opacity: 1; }
@@ -696,6 +707,7 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     border: 1px solid rgba(241, 213, 154, .42);
     box-shadow: 0 0 28px rgba(214, 172, 88, .16);
     animation: tv-connect 4.2s ease-in-out infinite;
+    animation-play-state: var(--motion-play, running);
 }
 @keyframes tv-connect {
     0%, 100% { transform: scale(.96); opacity: .35; }
