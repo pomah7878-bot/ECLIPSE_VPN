@@ -644,7 +644,7 @@ html.js-motion [data-motion-demo].is-visible { --motion-play: running; }
 /* Windows: последовательная подсветка реальных настроек */
 .win-shot.motion-settings { position: relative; overflow: hidden; }
 .settings-focus {
-    position: absolute; left: 3%; top: 0; width: 94%; height: 5.6%;
+    position: absolute; left: 5.6%; top: 0; width: 88.8%; height: 8.05%;
     border-radius: 12px; border: 1px solid rgba(241, 213, 154, .8);
     box-shadow: 0 0 24px rgba(214, 172, 88, .22), inset 0 0 18px rgba(214, 172, 88, .08);
     pointer-events: none; z-index: 3;
@@ -652,11 +652,11 @@ html.js-motion [data-motion-demo].is-visible { --motion-play: running; }
     animation-play-state: var(--motion-play, running);
 }
 @keyframes settings-focus {
-    0%, 8% { transform: translateY(452%); opacity: 0; }
-    12%, 28% { transform: translateY(452%); opacity: 1; }
-    34%, 50% { transform: translateY(873%); opacity: 1; }
-    56%, 76% { transform: translateY(1343%); opacity: 1; }
-    82%, 100% { transform: translateY(1343%); opacity: 0; }
+    0%, 8% { transform: translateY(317%); opacity: 0; }
+    12%, 28% { transform: translateY(317%); opacity: 1; }
+    34%, 50% { transform: translateY(647%); opacity: 1; }
+    56%, 76% { transform: translateY(993%); opacity: 1; }
+    82%, 100% { transform: translateY(993%); opacity: 0; }
 }
 
 /* Android TV: камера, фокус пульта и свечение */
