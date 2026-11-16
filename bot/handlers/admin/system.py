@@ -2417,8 +2417,10 @@ async def trial_devices_cmd(message: Message):
     if blocks:
         lines.append("\nПоследние блокировки:")
         for b in blocks:
+            device = (b.get('device_label') or b.get('client') or '').strip()
+            device_suffix = f", {escape_html(device)}" if device else ""
             lines.append(
-                f"• ключ #{b['key_id']} (tg {b.get('tg') or '—'}), устройство уже было у tg {b.get('owner_tg') or '—'}, "
+                f"• ключ #{b['key_id']} (tg {b.get('tg') or '—'}){device_suffix}, устройство уже было у tg {b.get('owner_tg') or '—'}, "
                 f"запросов: {b['hits']}, {b['created_at']}"
             )
         lines.append("\nСнять блокировку: /trial_devices unblock <id ключа>")

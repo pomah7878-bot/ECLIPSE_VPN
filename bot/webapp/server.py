@@ -544,11 +544,38 @@ def _trial_tariff_ids() -> set:
 
 
 def _is_trial_key(key) -> bool:
+    """Пробный ли ключ: по текущему пробному тарифу ИЛИ по метке 'trial' в заказе.
+
+    Метка нужна, чтобы старые пробные ключи не выпадали из защиты после
+    смены пробного тарифа админом (та же логика, что в v1.186 для выдачи).
+    """
     try:
         tid = key.get("tariff_id")
-        return bool(tid) and int(tid) in _trial_tariff_ids()
-    except Exception:
+        if tid and int(tid) in _trial_tariff_ids():
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    key_id = key.get("id")
+    if not key_id:
         return False
+    try:
+        from database.connection import get_db
+        with get_db() as conn:
+            if conn.execute(
+                "SELECT 1 FROM payments WHERE vpn_key_id = ? AND payment_type = 'trial' "
+                "AND status = 'paid' LIMIT 1",
+                (int(key_id),),
+            ).fetchone():
+                return True
+            if conn.execute(
+                "SELECT 1 FROM anonymous_purchases WHERE vpn_key_id = ? "
+                "AND yookassa_payment_id = 'trial' AND status IN ('paid', 'claimed') LIMIT 1",
+                (int(key_id),),
+            ).fetchone():
+                return True
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"_is_trial_key: не удалось проверить метку trial для ключа {key_id}: {e}")
+    return False
 
 
 async def handle_keys(request: web.Request) -> web.Response:
@@ -2094,20 +2121,44 @@ async def _trial_device_guard(request: web.Request, key: Dict[str, Any]):
     if not key_id or not user_id:
         return None
 
+    device = td.extract_device(request)
+    hwid_hash = device["hash"] if device else None
+
     if td.is_key_blocked(key_id):
         td.touch_block(key_id)
+    elif not hwid_hash:
+        # Клиент не прислал настоящий идентификатор устройства — проверять нечего.
+        return None
     else:
-        # берём только настоящий идентификатор клиента; синтетический (его подставляет бот) не годится
-        hwid_hash = td.normalize_hwid(request.headers.get("X-HWID"))
-        if not hwid_hash:
-            return None
-        res = td.check_and_register(hwid_hash, key_id, user_id)
+        res = td.check_and_register(
+            hwid_hash,
+            key_id,
+            user_id,
+            client=device["client"],
+            device_label=device["label"],
+        )
+        # Пробник реально используется с этого устройства: помечаем его в
+        # едином реестре, чтобы второй пробник с него не выдали даже на
+        # новый аккаунт (из приложения, где есть HWID).
+        try:
+            if res["status"] != "allowed":
+                from bot.services import trial_guard
+                trial_guard.bind_device_to_trial(key, hwid_hash, device["client"])
+        except Exception as bind_err:  # noqa: BLE001
+            logger.debug(f"trial_device_guard: не удалось привязать устройство к реестру: {bind_err}")
         if res["status"] != "duplicate":
             return None
-        created = td.block_key(key_id, hwid_hash, user_id, res.get("owner_user_id"))
+        created = td.block_key(
+            key_id,
+            hwid_hash,
+            user_id,
+            res.get("owner_user_id"),
+            client=device["client"],
+            device_label=device["label"],
+        )
         logger.warning(
-            f"trial_device_guard: пробный ключ {key_id} (user {user_id}) заблокирован — устройство уже "
-            f"использовало пробник (user {res.get('owner_user_id')})"
+            f"trial_device_guard: пробный ключ {key_id} (user {user_id}) заблокирован — устройство "
+            f"{device['client_label']} уже использовало пробник (user {res.get('owner_user_id')})"
         )
         if created:
             try:
@@ -2120,7 +2171,8 @@ async def _trial_device_guard(request: web.Request, key: Dict[str, Any]):
                             from bot.utils.notify_kb import with_home
                             await bot_instance.send_message(
                                 admin_id,
-                                f"⚠️ Повторный пробник на том же устройстве: ключ #{key_id} заблокирован. "
+                                f"⚠️ Повторный пробник на том же устройстве: ключ #{key_id} заблокирован.\n"
+                                f"📱 {_html_module.escape(device['label'] or device['client_label'])}\n"
                                 f"Список и исключения: /trial_devices",
                                 reply_markup=with_home(),
                             )
@@ -2260,7 +2312,11 @@ async def handle_happ_subscription(request: web.Request) -> web.Response:
     # подписки (сама панель добавляет заголовки x-hwid-active/
     # x-hwid-not-supported, сигнализируя об этом). См. стандарт:
     # github.com/XTLS/Xray-core/discussions/4877
-    _forward_header_names = ("X-HWID", "User-Agent", "X-Device-OS", "X-Ver-OS", "X-Device-Model")
+    _forward_header_names = (
+        "X-HWID", "X-Device-Id", "X-Device-ID", "X-DeviceId",
+        "X-Android-Id", "X-Install-Id", "X-Instance-Id",
+        "User-Agent", "X-Device-OS", "X-Ver-OS", "X-Device-Model",
+    )
     forward_headers = {
         name: request.headers[name]
         for name in _forward_header_names
@@ -3088,6 +3144,7 @@ async def handle_public_tariffs(request: web.Request) -> web.Response:
                     account,
                     used_trial=already_used,
                     is_new_client=_site_account_is_new_client(account),
+                    extra_identities=_trial_device_extra(request),
                 )
                 trial_available = status["allowed"]
 
@@ -3512,6 +3569,19 @@ _TRIAL_DENY_HTTP = {
 }
 
 
+def _trial_device_extra(request: web.Request) -> list:
+    """Личность устройства из заголовков Android/iOS-клиента (если защита включена)."""
+    try:
+        from bot.services import trial_device as _td
+        if not _td.guard_enabled():
+            return []
+        device = _td.extract_device(request)
+        return [('device', device['hash'])] if device else []
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f'trial: не удалось определить устройство: {e}')
+        return []
+
+
 def _log_site_trial_refusal(request: web.Request, account: Dict[str, Any], status: Dict[str, Any], client_ip: str) -> None:
     """Журналирует отказ сайта и уведомляет админов, если пора."""
     try:
@@ -3611,10 +3681,12 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
     from bot.services import trial_guard
 
     already_used = _site_account_used_trial(account_id, trial_tariff_id, account.get("telegram_id"))
+    device_extra = _trial_device_extra(request)
     status = trial_guard.status_site(
         account,
         used_trial=already_used,
         is_new_client=_site_account_is_new_client(account),
+        extra_identities=device_extra,
     )
     if not status["allowed"]:
         _log_site_trial_refusal(request, account, status, client_ip)
@@ -3628,6 +3700,7 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
         claim = trial_guard.claim_site(
             account,
             channel='app' if request.headers.get("X-Eclipse-App") == "1" else 'site',
+            extra_identities=device_extra,
         )
     except Exception as _claim_err:
         logger.error(f"trial: не удалось зафиксировать выдачу для сайта {account_id}: {_claim_err}")

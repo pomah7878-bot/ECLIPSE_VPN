@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 175
+LATEST_VERSION = 176
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -4037,6 +4037,27 @@ def migration_175(conn: sqlite3.Connection) -> None:
     logger.info("Migration v175 applied: trial_claims, trial_abuse_events, trial_blocks, trial_abuse_alerts")
 
 
+def migration_176(conn: sqlite3.Connection) -> None:
+    """Учёт Android-клиентов для пробников: каким приложением пришло устройство.
+
+    trial_devices.client/device_label — чтобы админ видел, из какого клиента
+    (ECLIPSE TV, Happ, INCY, v2rayTun и др.) устройство брало пробник.
+    last_seen — когда устройство последний раз запрашивало подписку.
+    """
+    for table, columns in (
+        ("trial_devices", (("client", "TEXT"), ("device_label", "TEXT"), ("last_seen", "TEXT"))),
+        ("trial_device_blocks", (("client", "TEXT"), ("device_label", "TEXT"))),
+    ):
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, kind in columns:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+    conn.execute(
+        "UPDATE trial_devices SET last_seen = COALESCE(last_seen, first_seen)"
+    )
+    logger.info("Migration v176 applied: trial_devices/trial_device_blocks client, device_label, last_seen")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -4139,6 +4160,7 @@ MIGRATIONS = {
     173: migration_173,
     174: migration_174,
     175: migration_175,
+    176: migration_176,
 }
 
 

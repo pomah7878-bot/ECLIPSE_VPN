@@ -48,6 +48,7 @@ __all__ = [
     'claim_bot',
     'claim_site',
     'release_claim',
+    'bind_device_to_trial',
     'record_refusal',
     'send_abuse_alert',
     'transfer_site_trial',
@@ -138,10 +139,10 @@ def bot_identities(telegram_id: int) -> List[Identity]:
     return _dedupe(identities)
 
 
-def site_identities(account: Dict[str, Any]) -> List[Identity]:
-    """Все известные личности сайт-аккаунта."""
+def site_identities(account: Dict[str, Any], extra_identities: Optional[Iterable[Identity]] = None) -> List[Identity]:
+    """Все известные личности сайт-аккаунта (+ устройство из запроса, если есть)."""
     if not account or not account.get('id'):
-        return []
+        return _dedupe(extra_identities or ())
     identities: List[Identity] = [('site_account', str(account['id']))]
     if account.get('telegram_id'):
         try:
@@ -162,7 +163,7 @@ def site_identities(account: Dict[str, Any]) -> List[Identity]:
             identities.append(phone)
     except Exception as e:  # noqa: BLE001
         logger.debug('trial_guard: не удалось получить телефон сайта (реестр) %s: %s', account.get('id'), e)
-    return _dedupe(identities)
+    return _dedupe(identities + list(extra_identities or ()))
 
 
 def _has_phone(identities: Iterable[Identity]) -> bool:
@@ -260,10 +261,16 @@ def status_site(
     *,
     used_trial: bool = False,
     is_new_client: bool = True,
+    extra_identities: Optional[Iterable[Identity]] = None,
 ) -> Dict[str, Any]:
     """Можно ли выдать пробник этому сайт-аккаунту (fail closed при ошибке)."""
     try:
-        return _status_site_impl(account, used_trial=used_trial, is_new_client=is_new_client)
+        return _status_site_impl(
+            account,
+            used_trial=used_trial,
+            is_new_client=is_new_client,
+            extra_identities=extra_identities,
+        )
     except Exception as e:  # noqa: BLE001
         logger.exception('trial_guard: ошибка проверки пробника сайта %s: %s', (account or {}).get('id'), e)
         return _deny('blocked', [])
@@ -274,8 +281,9 @@ def _status_site_impl(
     *,
     used_trial: bool = False,
     is_new_client: bool = True,
+    extra_identities: Optional[Iterable[Identity]] = None,
 ) -> Dict[str, Any]:
-    identities = site_identities(account)
+    identities = site_identities(account, extra_identities)
     if not identities:
         return _deny('blocked', identities)
 
@@ -309,8 +317,34 @@ def claim_bot(telegram_id: int, scope: str = 'account', channel: str = 'bot') ->
     return add_trial_claim(bot_identities(telegram_id), scope, channel)
 
 
-def claim_site(account: Dict[str, Any], channel: str = 'site', scope: str = 'account') -> Dict[str, Any]:
-    return add_trial_claim(site_identities(account), scope, channel)
+def claim_site(
+    account: Dict[str, Any],
+    channel: str = 'site',
+    scope: str = 'account',
+    extra_identities: Optional[Iterable[Identity]] = None,
+) -> Dict[str, Any]:
+    return add_trial_claim(site_identities(account, extra_identities), scope, channel)
+
+
+def bind_device_to_trial(key: Dict[str, Any], device_hash: str, client: str = '') -> None:
+    """Помечает устройство, с которого реально использовали пробный ключ.
+
+    Вызывается при загрузке подписки пробного ключа: устройство получает
+    отметку в trial_claims, поэтому второй пробник с этого же устройства
+    (из приложения, где есть HWID) уже не выдаётся даже на новый аккаунт.
+    """
+    device_hash = str(device_hash or '').strip()
+    if not device_hash:
+        return
+    identities = [('device', device_hash)]
+    # Обычно отметка уже есть — не открываем лишнюю запись на каждую загрузку подписки.
+    if find_trial_claim(identities, 'account'):
+        return
+    ensure_trial_claims(
+        identities,
+        'account',
+        f"device:{client or 'unknown'}",
+    )
 
 
 def release_claim(result: Dict[str, Any]) -> None:
@@ -498,6 +532,8 @@ def identity_label(kind: str, value: str) -> str:
         if len(digits) >= 10:
             return f"номер +{digits[0]} ••• •••-{digits[-4:]}"
         return 'номер'
+    if kind == 'device':
+        return f"устройство {value[:10]}"
     return f"{kind}:{value}"
 
 

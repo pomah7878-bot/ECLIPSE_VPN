@@ -266,7 +266,7 @@ async def _show_trial_devices(callback: CallbackQuery):
         "Не даёт получить второй пробный период на одном и том же телефоне под другим аккаунтом.",
         "",
         "<b>Как это работает:</b>",
-        "• приложение (Happ, INCY и др.) присылает идентификатор устройства",
+        "• приложение (Happ, INCY, ECLIPSE TV, v2rayTun и др.) присылает идентификатор устройства",
         "• если устройство уже брало пробник под другим аккаунтом — второй пробный ключ блокируется",
         "• вместо подписки человек видит кнопку покупки",
         "",
@@ -279,8 +279,10 @@ async def _show_trial_devices(callback: CallbackQuery):
         lines.append("")
         lines.append("<b>Последние блокировки:</b>")
         for b in blocks:
+            device = (b.get('device_label') or b.get('client') or '').strip()
+            device_suffix = f" · {escape_html(device)}" if device else ""
             lines.append(
-                f"• ключ #{b['key_id']} (tg {b.get('tg') or '—'}) — устройство уже было у tg "
+                f"• ключ #{b['key_id']} (tg {b.get('tg') or '—'}){device_suffix} — устройство уже было у tg "
                 f"{b.get('owner_tg') or '—'}, запросов: {b['hits']}"
             )
         lines.append("")

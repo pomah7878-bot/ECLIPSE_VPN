@@ -2434,6 +2434,110 @@ class TrialGuardTest(unittest.TestCase):
         )
 
 
+class TrialAndroidDeviceTest(unittest.TestCase):
+    """Android-клиенты: распознавание, устройство по HWID/доп. заголовкам, блокировка."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def _site_account(self, provider_id):
+        from database.db_accounts import get_or_create_site_account, get_site_account_by_id
+        account = get_or_create_site_account('test', provider_id)
+        return get_site_account_by_id(account['id'])
+
+    def test_client_detection(self):
+        from bot.services.client_apps import detect_client
+        cases = (
+            ("ECLIPSE TV/1.0.45 (Android 12)", 'eclipse_tv', 'android'),
+            ("ECLIPSE VPN/2.10.9 (Android 14)", 'eclipse_vpn', 'android'),
+            ("Happ/2.9.0 (Android 14; Pixel 7)", 'happ', 'android'),
+            ("INCY/1.0 (iPhone; iOS 18)", 'incy', 'ios'),
+            ("v2rayTun/3.2 (Android)", 'v2raytun', 'android'),
+            ("Mozilla/5.0 (Windows NT 10.0)", 'browser', 'web'),
+        )
+        for ua, key, platform in cases:
+            with self.subTest(ua=ua):
+                client = detect_client(ua)
+                self.assertEqual(client['key'], key)
+                self.assertEqual(client['platform'], platform)
+
+    def test_extract_device_from_hwid_and_extra_headers(self):
+        from aiohttp.test_utils import make_mocked_request
+        from bot.services import trial_device as td
+
+        request = make_mocked_request("GET", "/", headers={
+            "X-HWID": "device-abc-12345",
+            "User-Agent": "Happ/2.9 (Android 14)",
+            "X-Device-Model": "Pixel 7",
+            "X-Device-OS": "Android",
+            "X-Ver-OS": "14",
+        })
+        device = td.extract_device(request)
+        self.assertIsNotNone(device)
+        self.assertEqual(device['hash'], td.normalize_hwid("device-abc-12345"))
+        self.assertEqual(device['header'], 'X-HWID')
+        self.assertEqual(device['client'], 'happ')
+        self.assertIn('Pixel 7', device['label'])
+
+        fallback = make_mocked_request("GET", "/", headers={
+            "X-Device-Id": "incy-device-987654",
+            "User-Agent": "INCY/1.0 (Android 13)",
+        })
+        device = td.extract_device(fallback)
+        self.assertIsNotNone(device)
+        self.assertEqual(device['header'], 'X-Device-Id')
+        self.assertEqual(device['client'], 'incy')
+
+        no_device = make_mocked_request("GET", "/", headers={"User-Agent": "Mozilla/5.0"})
+        self.assertIsNone(td.extract_device(no_device))
+
+    def test_second_trial_from_same_android_device_blocked(self):
+        from bot.services import trial_guard
+        first = self._site_account('android-dev-1')
+        self.assertTrue(trial_guard.claim_site(
+            first, 'app', extra_identities=[('device', 'devhash-trial-1')],
+        )['ok'])
+        second = self._site_account('android-dev-2')
+        status = trial_guard.status_site(
+            second, used_trial=False, is_new_client=True,
+            extra_identities=[('device', 'devhash-trial-1')],
+        )
+        self.assertFalse(status['allowed'])
+        self.assertEqual(status['reason'], 'already_used')
+
+    def test_trial_key_usage_binds_device_and_blocks_new_account(self):
+        from database.db_users import get_or_create_user
+        from bot.services import trial_guard, trial_device as td
+        user = get_or_create_user(990100010, 'android_trial')[0]
+        with get_db() as c:
+            key_id = c.execute(
+                "INSERT INTO vpn_keys (user_id, tariff_id, expires_at) "
+                "VALUES (?, 1, datetime('now', '+3 days'))", (user['id'],)
+            ).lastrowid
+        device_hash = td.normalize_hwid('android-bound-device-42')
+        trial_guard.bind_device_to_trial({'id': key_id, 'user_id': user['id']}, device_hash, 'eclipse_tv')
+        fresh = self._site_account('android-dev-3')
+        status = trial_guard.status_site(
+            fresh, used_trial=False, is_new_client=True,
+            extra_identities=[('device', device_hash)],
+        )
+        self.assertEqual(status['reason'], 'already_used')
+
+    def test_device_row_keeps_client(self):
+        from database.db_users import get_or_create_user
+        from bot.services import trial_device as td
+        user = get_or_create_user(990100011, 'android_device_row')[0]
+        hwid = td.normalize_hwid('device-row-123456')
+        td.check_and_register(hwid, 1, user['id'], client='happ', device_label='Happ · Android 14 · Pixel 7')
+        with get_db() as c:
+            row = c.execute(
+                "SELECT client, device_label FROM trial_devices WHERE hwid_hash = ?", (hwid,)
+            ).fetchone()
+        self.assertEqual(row['client'], 'happ')
+        self.assertIn('Pixel 7', row['device_label'])
+
+
 class PaymentHistoryTest(unittest.TestCase):
     """История в приложении: деньги не задваиваются и не смешиваются между клиентами."""
 
