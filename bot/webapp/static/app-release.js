@@ -64,22 +64,16 @@
 
     async function loadWindows(root) {
         try {
-            var rel = await fetch('https://api.github.com/repos/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest', {
-                headers: { 'Accept': 'application/vnd.github+json' },
-                cache: 'no-store'
-            }).then(function (r) {
-                if (!r.ok) throw new Error('no github');
+            var rel = await fetch('/api/public/windows-update', { cache: 'no-store' }).then(function (r) {
+                if (!r.ok) throw new Error('no windows meta');
                 return r.json();
             });
-            var assets = rel.assets || [];
-            var exe = assets.filter(function (a) { return /\.exe$/i.test(a.name || ''); })[0];
-            if (!exe) throw new Error('no exe');
+            if (!rel.ok) throw new Error('no windows release');
             setText(root, '[data-rel-version]', rel.tag_name || '—');
-            setText(root, '[data-rel-size]', formatBytes(exe.size));
-            var digest = exe.digest ? String(exe.digest).replace(/^sha256:/, '') : '';
-            setSha(root, digest);
+            setText(root, '[data-rel-size]', formatBytes(rel.size));
+            setSha(root, rel.sha256 ? String(rel.sha256).toLowerCase() : '');
             document.querySelectorAll('[data-download="windows"]').forEach(function (a) {
-                if (exe.browser_download_url) a.href = exe.browser_download_url;
+                if (rel.download_url) a.href = rel.download_url;
             });
             root.dataset.loaded = '1';
         } catch (e) {

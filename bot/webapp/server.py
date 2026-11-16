@@ -2021,6 +2021,92 @@ async def handle_tv_update_info(request: web.Request) -> web.Response:
         return web.json_response({"error": "not_configured"}, status=404)
 
 
+_WINDOWS_RELEASE_CACHE: Dict[str, Any] = {"at": 0.0, "data": None}
+_WINDOWS_RELEASE_REPO = "pomah7878-bot/ECLIPSE_VPN_Windows"
+
+
+async def handle_windows_update_info(request: web.Request) -> web.Response:
+    """GET /api/public/windows-update — последний релиз Windows с кэшем.
+
+    GitHub API ограничивает анонимные запросы по IP, поэтому читаем обычную
+    страницу релиза и её expanded_assets: там есть имя файла, размер и SHA-256.
+    Ответ кэшируется, при сбое отдаётся последний успешный снимок.
+    """
+    now = asyncio.get_running_loop().time()
+    cached = _WINDOWS_RELEASE_CACHE.get("data")
+    if cached and now - float(_WINDOWS_RELEASE_CACHE.get("at") or 0) < 600:
+        return web.json_response(cached)
+
+    import aiohttp
+    timeout = aiohttp.ClientTimeout(total=20)
+    headers = {"User-Agent": "ECLIPSE-Unlimited-Site"}
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(
+                f"https://github.com/{_WINDOWS_RELEASE_REPO}/releases/latest",
+                allow_redirects=True,
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"GitHub release HTTP {resp.status}")
+                final_url = str(resp.url)
+                page = await resp.text()
+
+        tag_match = re.search(r"/releases/tag/([^/?#]+)", final_url)
+        if not tag_match:
+            raise RuntimeError("release tag not found")
+        tag = tag_match.group(1)
+
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(
+                f"https://github.com/{_WINDOWS_RELEASE_REPO}/releases/expanded_assets/{tag}"
+            ) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"GitHub assets HTTP {resp.status}")
+                assets_html = await resp.text()
+
+            href_match = re.search(
+                r'href="(/[^"]+/releases/download/[^"]+/[^"]+\.exe)"', assets_html
+            )
+            if not href_match:
+                raise RuntimeError("installer asset not found")
+            href = href_match.group(1)
+            name = href.rsplit("/", 1)[-1]
+            digest_match = re.search(r"sha256:([a-f0-9]{64})", assets_html, re.I)
+            if not digest_match:
+                raise RuntimeError("asset digest not found")
+
+            size = 0
+            download_url = "https://github.com" + href
+            try:
+                async with session.head(download_url, allow_redirects=True) as head:
+                    size = int(head.headers.get("Content-Length") or 0)
+            except Exception:
+                pass
+            if not size:
+                size_match = re.search(r">([\d.]+)\s*MB<", assets_html)
+                if size_match:
+                    size = int(float(size_match.group(1)) * 1048576)
+
+        data = {
+            "ok": True,
+            "tag_name": tag,
+            "version": tag.lstrip("v"),
+            "name": name,
+            "size": size,
+            "sha256": digest_match.group(1).lower(),
+            "download_url": download_url,
+            "release_url": final_url,
+        }
+        _WINDOWS_RELEASE_CACHE["data"] = data
+        _WINDOWS_RELEASE_CACHE["at"] = now
+        return web.json_response(data)
+    except Exception as e:
+        logger.warning(f"Windows update info: {e}")
+        if cached:
+            return web.json_response(cached)
+        return web.json_response({"ok": False, "error": "unavailable"}, status=503)
+
+
 async def handle_client_update_file(request: web.Request) -> web.StreamResponse:
     """GET /client-update/client.apk — файл обновления."""
     path = os.path.join(_client_update_dir(), "client.apk")
@@ -6589,6 +6675,7 @@ def create_web_app() -> web.Application:
     app.router.add_get("/api/public/site-info", handle_public_site_info)
     app.router.add_get("/api/public/client-update", handle_client_update_info)
     app.router.add_get("/api/public/tv-update", handle_tv_update_info)
+    app.router.add_get("/api/public/windows-update", handle_windows_update_info)
     app.router.add_get("/client-update/client.apk", handle_client_update_file)
     app.router.add_get("/client-update/tv.apk", handle_tv_update_file)
     app.router.add_post("/api/public/tv-pair/create", handle_tv_pair_create)

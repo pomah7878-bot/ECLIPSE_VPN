@@ -276,33 +276,30 @@
         }, { threshold: 0.12 });
         document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
     }
-    fetch('https://api.github.com/repos/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest', {
-        headers: { 'Accept': 'application/vnd.github+json' }
-    }).then(function (r) { if (!r.ok) throw new Error('no release'); return r.json(); })
+    fetch('/api/public/windows-update', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error('no release'); return r.json(); })
         .then(function (release) {
-            var assets = release.assets || [];
-            var exe = assets.filter(function (a) { return /\.exe$/i.test(a.name || ''); })[0];
-            if (exe && exe.browser_download_url) {
+            if (!release.ok) throw new Error('no release data');
+            if (release.download_url) {
                 ['downloadBtn', 'downloadBtn2', 'downloadBtn3'].forEach(function (id) {
                     var el = document.getElementById(id);
-                    if (el) el.href = exe.browser_download_url;
+                    if (el) el.href = release.download_url;
                 });
             }
-            var digest = exe && exe.digest ? String(exe.digest).replace(/^sha256:/, '') : '';
             var v = document.getElementById('winVersion');
             var f = document.getElementById('winFile');
             var s = document.getElementById('winSha');
-            if (v) v.textContent = release.tag_name || '—';
-            if (f) f.textContent = exe ? exe.name : '—';
             var z = document.getElementById('winSize');
-            if (z) z.textContent = exe && exe.size ? (exe.size / 1048576).toFixed(1).replace('.', ',') + ' МБ' : '—';
-            if (s) s.textContent = digest || 'на странице релиза';
+            if (v) v.textContent = release.tag_name || '—';
+            if (f) f.textContent = release.name || '—';
+            if (z) z.textContent = release.size ? (release.size / 1048576).toFixed(1).replace('.', ',') + ' МБ' : '—';
+            if (s) s.textContent = release.sha256 || 'на странице релиза';
         })
         .catch(function () {
             var v = document.getElementById('winVersion');
             if (v) v.textContent = 'на GitHub';
         });
-})();
+;
 </script>
 </body>
 </html>
