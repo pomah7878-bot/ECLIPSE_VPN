@@ -1012,8 +1012,7 @@ def get_key_details_for_user(key_id: int, telegram_id: int) -> Optional[Dict[str
         return key
 
 def update_key_custom_name(key_id: int, telegram_id: int, new_name: str) -> bool:
-    """
-    Updates the custom key name.
+    """Updates the custom key name.
     
     Args:
         key_id: Key ID
@@ -1037,6 +1036,18 @@ def update_key_custom_name(key_id: int, telegram_id: int, new_name: str) -> bool
         """, (new_name or None, key_id))
         logger.info(f"Ключ {key_id}: переименован в '{new_name}'")
         return True
+
+
+def set_key_custom_name(key_id: int, new_name: str) -> bool:
+    """Переименование ключа без привязки к Telegram (сайт-аккаунт)."""
+    if new_name and len(new_name) > 30:
+        return False
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE vpn_keys SET custom_name = ? WHERE id = ?",
+            (new_name or None, int(key_id)),
+        )
+        return cur.rowcount > 0
 
 def add_days_to_first_active_key(user_id: int, days: int) -> bool:
     """

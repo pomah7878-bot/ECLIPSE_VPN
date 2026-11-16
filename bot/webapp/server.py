@@ -4754,6 +4754,96 @@ async def handle_public_account_link_code(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_public_account_history(request: web.Request) -> web.Response:
+    """GET /api/public/account/history — платежи и движения баланса сайт-аккаунта."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    from database.requests import get_site_account_by_id, get_user_payment_history, get_user_balance
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"error": "account_not_found"}, status=404)
+    internal_id = _resolve_site_account_internal_user_id(account)
+    if not internal_id:
+        return web.json_response({"ok": True, "items": [], "balance_cents": 0, "balance_human": "0 ₽"})
+    from bot.utils.ru_format import format_rub
+    balance_cents = int(get_user_balance(internal_id) or 0)
+    return web.json_response({
+        "ok": True,
+        "balance_cents": balance_cents,
+        "balance_human": format_rub(balance_cents, cents=True),
+        "items": get_user_payment_history(internal_id, limit=50),
+    })
+
+
+async def handle_public_account_key_rename(request: web.Request) -> web.Response:
+    """POST /api/public/account/key/rename — переименовать свой ключ из ЛК сайта."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    from database.requests import get_site_account_by_id
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"error": "account_not_found"}, status=404)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+    try:
+        key_id = int(data.get("key_id") or 0)
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_key_id"}, status=400)
+    name = (data.get("name") or data.get("new_name") or "").strip()
+    if not key_id:
+        return web.json_response({"error": "invalid_key_id"}, status=400)
+    if len(name) > 30:
+        return web.json_response({"error": "name_too_long"}, status=400)
+    if not _verify_key_belongs_to_account(key_id, account):
+        return web.json_response({"error": "not_found_or_forbidden"}, status=404)
+    from database.db_keys import set_key_custom_name
+    if set_key_custom_name(key_id, name):
+        return web.json_response({"ok": True})
+    return web.json_response({"error": "not_found_or_forbidden"}, status=404)
+
+
+async def handle_public_account_key_delete(request: web.Request) -> web.Response:
+    """POST /api/public/account/key/delete — удалить неактивный свой ключ из ЛК сайта."""
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if not account_id:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    from database.requests import get_site_account_by_id, get_vpn_key_by_id, delete_vpn_key
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"error": "account_not_found"}, status=404)
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        return web.json_response({"error": "invalid_json"}, status=400)
+    try:
+        key_id = int(data.get("key_id") or 0)
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid_key_id"}, status=400)
+    key = get_vpn_key_by_id(key_id) if key_id else None
+    if not key or not _verify_key_belongs_to_account(key_id, account):
+        return web.json_response({"error": "not_found_or_forbidden"}, status=404)
+    from database.db_keys import is_key_active
+    if is_key_active(key):
+        return web.json_response({"error": "key_still_active"}, status=400)
+    try:
+        if key.get("server_id") and key.get("panel_email"):
+            from bot.services.vpn_api import get_client
+            client = await get_client(key["server_id"])
+            if key.get("sub_id"):
+                await client.delete_clients_by_email_on_server(key["panel_email"])
+            elif key.get("panel_inbound_id") and key.get("client_uuid"):
+                await client.delete_client(key["panel_inbound_id"], key["client_uuid"])
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"public key delete: не удалось удалить клиента с панели: {e}")
+    if delete_vpn_key(key_id):
+        return web.json_response({"ok": True})
+    return web.json_response({"error": "db_error"}, status=500)
+
+
 async def handle_public_account_referral(request: web.Request) -> web.Response:
     """GET /api/public/account/referral — собственная реферальная
     ссылка сайт-аккаунта. Работает и для чисто сайтовых пользователей
@@ -6528,6 +6618,9 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/claim-purchase", handle_public_account_claim_purchase)
     app.router.add_post("/api/public/account/link-code", handle_public_account_link_code)
     app.router.add_get("/api/public/account/referral", handle_public_account_referral)
+    app.router.add_get("/api/public/account/history", handle_public_account_history)
+    app.router.add_post("/api/public/account/key/rename", handle_public_account_key_rename)
+    app.router.add_post("/api/public/account/key/delete", handle_public_account_key_delete)
     app.router.add_get("/api/public/account/session", handle_public_account_session)
     app.router.add_post("/api/public/account/telegram-link", handle_public_account_telegram_link)
     app.router.add_post("/api/public/account/phone-switch", handle_public_account_phone_switch)
