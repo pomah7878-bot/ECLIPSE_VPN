@@ -2392,6 +2392,21 @@ class TrialGuardTest(unittest.TestCase):
         trial_guard.unblock(auto_block['id'])
         self.assertFalse(is_user_banned(tg))
 
+    def test_public_api_exports(self):
+        """Экран админки импортирует это через database.requests — имена должны быть в __all__."""
+        from database.requests import (  # noqa: F401
+            add_trial_claim,
+            get_trial_abuse_alert_threshold,
+            get_trial_auto_ban_threshold,
+            is_trial_strict_identity,
+            is_user_banned_by_id,
+            set_trial_abuse_alert_threshold,
+            set_trial_auto_ban_threshold,
+            set_trial_strict_identity,
+            set_user_banned,
+            trial_guard_stats,
+        )
+
     def test_backfill_marks_existing_trial_as_used(self):
         """Обновление не открывает повторную выдачу тем, кто брал пробник раньше."""
         from database.migrations import migration_175
