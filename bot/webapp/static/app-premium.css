@@ -142,7 +142,7 @@ a { color: var(--gold); }
 
 /* ---------- layout ---------- */
 main { position: relative; z-index: 2; }
-.wrap { width: min(1180px, calc(100% - 44px)); margin: 0 auto; }
+.wrap { width: min(1280px, calc(100% - 44px)); margin: 0 auto; }
 .section { padding: clamp(58px, 9vw, 108px) 0; position: relative; }
 .section + .section { border-top: 1px solid var(--line-soft); }
 .eyebrow {
