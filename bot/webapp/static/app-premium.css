@@ -682,11 +682,11 @@ html.js-motion .reveal.is-in { opacity: 1; transform: none; }
     animation: tv-focus 16s ease-in-out infinite;
 }
 @keyframes tv-focus {
-    0%, 8% { left: 6%; top: 24%; width: 25%; height: 6%; border-radius: 9px; opacity: 1; }
-    18%, 26% { left: 6%; top: 32%; width: 25%; height: 6%; border-radius: 9px; }
-    34%, 42% { left: 6%; top: 40%; width: 25%; height: 6%; border-radius: 9px; }
-    50%, 58% { left: 6%; top: 48%; width: 25%; height: 6%; border-radius: 9px; }
-    66%, 74% { left: 6%; top: 56%; width: 25%; height: 6%; border-radius: 9px; }
+    0%, 8% { left: 6%; top: 24%; width: 25%; height: 7%; border-radius: 9px; opacity: 1; }
+    18%, 26% { left: 6%; top: 34%; width: 25%; height: 7%; border-radius: 9px; }
+    34%, 42% { left: 6%; top: 44%; width: 25%; height: 7%; border-radius: 9px; }
+    50%, 58% { left: 6%; top: 54%; width: 25%; height: 7%; border-radius: 9px; }
+    66%, 74% { left: 6%; top: 64%; width: 25%; height: 7%; border-radius: 9px; }
     82%, 90% { left: 62%; top: 55%; width: 7%; height: 12%; border-radius: 50%; }
     96%, 100% { left: 62%; top: 55%; width: 7%; height: 12%; border-radius: 50%; opacity: 0; }
 }
