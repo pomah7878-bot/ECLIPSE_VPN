@@ -140,16 +140,17 @@ async def permanent_ban(user_id: int, by: str = 'auto', reason: str = '') -> Dic
     return {'ok': True}
 
 
-async def unblock(user_id: int, by: str = 'admin', reset_strikes: bool = False) -> Dict[str, Any]:
+async def unblock(user_id: int, by: str = 'admin', reset_strikes: bool = False, sync_keys: bool = True) -> Dict[str, Any]:
     user = _user(user_id)
     if not user:
         return {'ok': False, 'message': 'Пользователь не найден'}
     reset_ip_abuse(int(user_id), reset_strikes=reset_strikes)
     from database.db_users import set_user_banned
     set_user_banned(int(user['telegram_id']), False)
-    _sync_keys(user.get('telegram_id'))
+    if sync_keys:
+        _sync_keys(user.get('telegram_id'))
     log_ip_abuse_event(int(user_id), None, 0, 0, 'unblock', f"by={by}; reset_strikes={reset_strikes}")
-    return {'ok': True}
+    return {'ok': True, 'telegram_id': user.get('telegram_id')}
 
 
 async def record_episode(key: Dict[str, Any], used: int, limit: int) -> Dict[str, Any]:

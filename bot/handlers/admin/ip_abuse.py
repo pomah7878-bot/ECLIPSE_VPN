@@ -68,6 +68,7 @@ def _abuse_text() -> str:
             f"эпизодов: {int(row.get('strikes') or 0)} · {_abuse_status(row)}"
         )
     lines += ["", "Действия — кнопками ниже. /devlimit — уведомления о лимите."]
+    lines += ["Снять бан вручную: /unban <code>tg_id</code> или <code>@username</code>."]
     return "\n".join(lines)
 
 
@@ -260,3 +261,68 @@ async def platforms_screen(callback: CallbackQuery):
     kb.row(*_back_home())
     await safe_edit_or_send(callback.message, _platforms_text(), reply_markup=kb.as_markup())
     await callback.answer()
+
+
+@router.message(Command('unban'))
+async def unban_cmd(message: Message):
+    """Снять бан вручную: /unban <tg_id|@username> [reset].
+
+    reset — дополнительно обнулить историю нарушений лимита IP.
+    """
+    from database.db_users import get_user_by_telegram_id, get_user_by_username
+    from bot.services import ip_abuse
+
+    parts = (message.text or '').split()
+    if len(parts) < 2:
+        await message.answer(
+            "ℹ️ <b>Снятие бана</b>\n\n"
+            "Использование: <code>/unban 123456789</code> или <code>/unban @username</code>\n"
+            "Добавьте <code>reset</code>, чтобы обнулить историю нарушений: "
+            "<code>/unban @username reset</code>",
+            parse_mode='HTML',
+        )
+        return
+    target = parts[1].strip()
+    reset_strikes = any(p.lower() == 'reset' for p in parts[2:])
+    if target.lstrip('-').isdigit():
+        user = get_user_by_telegram_id(int(target))
+    else:
+        user = get_user_by_username(target.lstrip('@'))
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        return
+
+    was_banned = bool(user.get('is_banned'))
+    result = await ip_abuse.unblock(
+        user['id'], by=f"admin:{message.from_user.id}", reset_strikes=reset_strikes, sync_keys=False,
+    )
+    if not result.get('ok'):
+        await message.answer(f"❌ {escape_html(result.get('message') or 'Не удалось разблокировать')}")
+        return
+
+    sync_text = 'ключей нет'
+    try:
+        from bot.services.key_lifecycle import sync_user_keys_panel_access
+        sync = await sync_user_keys_panel_access(int(user['telegram_id']))
+        total = int(sync.get('keys_total', 0) or 0)
+        errors = int(sync.get('errors', 0) or 0)
+        sync_text = 'ключей нет' if total == 0 else (
+            f"синхронизировано {total}/{total}" if not errors else f"ошибок: {errors} из {total}"
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning('unban: не удалось синхронизировать ключи %s: %s', user.get('telegram_id'), e)
+        sync_text = 'ошибка синхронизации — проверьте панель'
+
+    who = f"@{user['username']}" if user.get('username') else f"tg {user.get('telegram_id')}"
+    if was_banned:
+        head = '✅ <b>Бан снят</b>'
+    else:
+        head = 'ℹ️ <b>Пользователь не был забанен</b>'
+    history = 'История нарушений IP обнулена.' if reset_strikes else 'История нарушений IP сохранена.'
+    await message.answer(
+        f"{head}\n\n"
+        f"👤 {escape_html(who)} · <code>{user.get('telegram_id')}</code>\n"
+        f"🔑 Ключи: {escape_html(sync_text)}\n"
+        f"{history}",
+        parse_mode='HTML',
+    )
