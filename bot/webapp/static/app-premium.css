@@ -583,11 +583,11 @@ h1 .line { display: block; }
 /* Контент видим по умолчанию. Скрываем только после явного включения motion. */
 .reveal { opacity: 1; transform: none; }
 html.js-motion .reveal {
-    opacity: 0; transform: translateY(24px);
-    transition: opacity .7s var(--ease), transform .7s var(--ease);
+    opacity: 1; transform: translateY(24px);
+    transition: transform .7s var(--ease);
     transition-delay: var(--d, 0s);
 }
-html.js-motion .reveal.is-in { opacity: 1; transform: none; }
+html.js-motion .reveal.is-in { transform: none; }
 
 /* Демо-анимации запускаются, когда блок реально в кадре. */
 html.js-motion [data-motion-demo] { --motion-play: paused; }
