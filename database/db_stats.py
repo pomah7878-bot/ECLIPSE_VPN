@@ -16,7 +16,64 @@ __all__ = [
     'is_notification_sent_today',
     'log_notification_sent',
     'get_keys_stats',
+    'get_platform_stats',
 ]
+
+
+def get_platform_stats(days: int = 30) -> List[Dict[str, Any]]:
+    """Пользователи, заказы, выручка и активные ключи в разрезе платформ."""
+    days = max(1, min(365, int(days)))
+    window = f"-{days} days"
+    out: Dict[str, Dict[str, Any]] = {}
+
+    def _row(platform: str) -> Dict[str, Any]:
+        key = platform or 'unknown'
+        return out.setdefault(key, {
+            'platform': key, 'users': 0, 'orders': 0, 'revenue_rub': 0.0, 'active_users': 0,
+        })
+
+    with get_db() as conn:
+        for row in conn.execute(
+            "SELECT COALESCE(NULLIF(platform, ''), 'unknown') AS p, COUNT(*) AS n "
+            "FROM users GROUP BY 1"
+        ):
+            _row(row['p'])['users'] = int(row['n'] or 0)
+
+        for row in conn.execute(
+            "SELECT COUNT(*) AS n, COALESCE(SUM(final_amount_cents), 0) AS cents "
+            "FROM payments WHERE status = 'paid' AND paid_at >= datetime('now', ?) "
+            "AND COALESCE(final_amount_cents, 0) > 0", (window,)
+        ):
+            item = _row('telegram')
+            item['orders'] += int(row['n'] or 0)
+            item['revenue_rub'] += float(row['cents'] or 0) / 100
+
+        for row in conn.execute(
+            "SELECT COALESCE(NULLIF(ap.platform, ''), 'unknown') AS p, COUNT(*) AS n, "
+            "COALESCE(SUM(COALESCE(t.price_rub, 0)), 0) AS rub "
+            "FROM anonymous_purchases ap LEFT JOIN tariffs t ON t.id = ap.tariff_id "
+            "WHERE ap.status = 'paid' AND ap.created_at >= datetime('now', ?) "
+            "AND COALESCE(ap.yookassa_payment_id, '') != 'trial' "
+            "GROUP BY 1", (window,)
+        ):
+            item = _row(row['p'])
+            item['orders'] += int(row['n'] or 0)
+            item['revenue_rub'] += float(row['rub'] or 0)
+
+        for row in conn.execute(
+            "SELECT COALESCE(NULLIF(u.platform, ''), 'unknown') AS p, "
+            "COUNT(DISTINCT vk.user_id) AS n "
+            "FROM vpn_keys vk JOIN users u ON u.id = vk.user_id "
+            "WHERE vk.expires_at > datetime('now') "
+            "GROUP BY 1"
+        ):
+            _row(row['p'])['active_users'] = int(row['n'] or 0)
+
+    order = ('telegram', 'web', 'android', 'android_tv', 'windows', 'ios', 'app', 'unknown')
+    return sorted(
+        out.values(),
+        key=lambda item: (order.index(item['platform']) if item['platform'] in order else len(order), -item['users']),
+    )
 
 def get_users_for_broadcast(filter_type: str) -> List[int]:
     """

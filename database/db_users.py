@@ -19,6 +19,8 @@ __all__ = [
     'is_user_banned_by_id',
     'mark_user_bot_blocked',
     'mark_user_bot_unblocked',
+    'set_user_platform',
+    'get_user_platform',
     'has_used_trial',
     'mark_trial_used',
     'set_user_banned',
@@ -114,6 +116,9 @@ def get_or_create_user(
         if 'last_name' in user_columns:
             fields.append('last_name')
             values.append(last_name)
+        if 'platform' in user_columns:
+            fields.append('platform')
+            values.append('telegram' if int(telegram_id) > 0 else 'web')
 
         placeholders = ', '.join('?' for _ in fields)
         cursor = conn.execute(
@@ -465,6 +470,36 @@ def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
         row = cursor.fetchone()
         return dict(row) if row else None
 
+def set_user_platform(user_id: int, platform: str, overwrite: bool = False) -> bool:
+    """Платформа клиента: telegram, web, android, android_tv, windows, ios, app.
+
+    По умолчанию заполняет только пустую/неизвестную платформу; overwrite=True
+    перезаписывает (например, сайт-клиент впервые пришёл из приложения).
+    """
+    value = (platform or '').strip().lower()
+    if not value or value == 'unknown':
+        return False
+    with get_db() as conn:
+        if overwrite:
+            cur = conn.execute(
+                "UPDATE users SET platform = ? WHERE id = ?", (value, int(user_id))
+            )
+        else:
+            cur = conn.execute(
+                "UPDATE users SET platform = ? WHERE id = ? AND (platform = '' OR platform = 'unknown')",
+                (value, int(user_id)),
+            )
+        return cur.rowcount > 0
+
+
+def get_user_platform(user_id: int) -> str:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT platform FROM users WHERE id = ?", (int(user_id),)
+        ).fetchone()
+    return (row['platform'] or '') if row else ''
+
+
 def toggle_user_ban(telegram_id: int) -> Optional[bool]:
     """
     Toggles user ban.
@@ -488,6 +523,20 @@ def toggle_user_ban(telegram_id: int) -> Optional[bool]:
         )
         status_text = "забанен" if new_status else "разбанен"
         logger.info(f"Пользователь {telegram_id}: {status_text}")
+        if new_status:
+            # Ручной бан не должен сниматься автоматикой по истечении IP-блокировки.
+            try:
+                from .db_ip_abuse import mark_ip_abuse_permanent
+                mark_ip_abuse_permanent(user['id'])
+            except Exception:
+                pass
+        else:
+            # Ручной разбан снимает и отметку постоянного нарушителя.
+            try:
+                from .db_ip_abuse import reset_ip_abuse
+                reset_ip_abuse(user['id'])
+            except Exception:
+                pass
         return bool(new_status)
 
 def get_new_users_count_today() -> int:

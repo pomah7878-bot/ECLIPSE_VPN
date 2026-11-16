@@ -39,6 +39,7 @@ from bot.handlers.admin.collabs import router as collabs_router
 from bot.handlers.admin.site_ai import router as site_ai_router
 from bot.handlers.admin.main_view import router as main_view_router
 from bot.handlers.admin.rollback import router as rollback_router
+from bot.handlers.admin.ip_abuse import router as ip_abuse_router
 
 admin_router = Router()
 
@@ -78,4 +79,5 @@ admin_router.include_router(license_shop_router)
 admin_router.include_router(licenses_router)
 admin_router.include_router(creator_chat_router)
 admin_router.include_router(help_orders_router)
+admin_router.include_router(ip_abuse_router)
 

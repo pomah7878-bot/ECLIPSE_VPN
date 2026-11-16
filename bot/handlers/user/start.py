@@ -456,6 +456,11 @@ async def cmd_start(message: Message, state: FSMContext, command: CommandObject)
         first_name=getattr(message.from_user, 'first_name', None),
         last_name=getattr(message.from_user, 'last_name', None),
     )
+    try:
+        from database.requests import set_user_platform
+        set_user_platform(user['id'], 'telegram')
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f'Не удалось сохранить платформу telegram для {user_id}: {e}')
     if user.get('is_banned'):
         await render_access_blocked_page(message, force_new=True)
         return

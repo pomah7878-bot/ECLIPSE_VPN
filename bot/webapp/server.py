@@ -1104,11 +1104,28 @@ async def _guarded_purchase(guard_key, coro) -> web.Response:
         end_purchase(guard_key, done)
 
 
+def _request_platform(request: web.Request) -> str:
+    """Платформа заказа/клиента из заголовков (web/android/android_tv/windows/ios/app)."""
+    try:
+        from bot.services.platforms import detect_request_platform
+        return detect_request_platform(request)
+    except Exception:  # noqa: BLE001
+        return 'web'
+
+
 def _mark_app_client(request: web.Request, user_id: int, order_id: Optional[str] = None) -> None:
     """Метка для админа, не проверка доступа: поддельный заголовок даст только лишнюю метку."""
     if request.headers.get("X-Eclipse-App") == "1":
         from database.db_payments import mark_app_client
         mark_app_client(user_id, order_id)
+    platform = _request_platform(request)
+    try:
+        from bot.services.platforms import is_native_platform
+        if is_native_platform(platform):
+            from database.db_users import set_user_platform
+            set_user_platform(user_id, platform, overwrite=True)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"_mark_app_client: не удалось сохранить платформу: {e}")
 
 
 async def _handle_pay_create_impl(request: web.Request) -> web.Response:
@@ -3274,7 +3291,7 @@ async def handle_public_pay_create(request: web.Request) -> web.Response:
     order_id = _generate_public_order_id()
 
     try:
-        claim_code = create_anonymous_purchase(order_id, tariff["id"], from_app=request.headers.get("X-Eclipse-App") == "1")
+        claim_code = create_anonymous_purchase(order_id, tariff["id"], from_app=request.headers.get("X-Eclipse-App") == "1", platform=_request_platform(request))
         _sp.tag_purchase(order_id, promo_quote)
 
         # Если покупатель авторизован (Google/Яндекс/код) — сразу связываем
@@ -3722,7 +3739,7 @@ async def _handle_public_trial_create_impl(request: web.Request) -> web.Response
     order_id = _generate_public_order_id()
     issued = False
     try:
-        create_anonymous_purchase(order_id, trial_tariff_id, from_app=request.headers.get("X-Eclipse-App") == "1")
+        create_anonymous_purchase(order_id, trial_tariff_id, from_app=request.headers.get("X-Eclipse-App") == "1", platform=_request_platform(request))
         link_purchase_to_account(order_id, account_id)
 
         from bot.services.anonymous_purchase import provision_anonymous_vpn_key
@@ -5280,7 +5297,7 @@ async def handle_public_account_key_renew_create(request: web.Request) -> web.Re
     order_id = _generate_public_order_id()
 
     try:
-        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=int(key_id), from_app=request.headers.get("X-Eclipse-App") == "1")
+        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=int(key_id), from_app=request.headers.get("X-Eclipse-App") == "1", platform=_request_platform(request))
 
         from aiogram import Bot
         from config import BOT_TOKEN
@@ -5612,6 +5629,7 @@ async def handle_public_account_buy_balance(request: web.Request) -> web.Respons
         result = await complete_anonymous_purchase_via_balance(
             account_id, int(tariff_id), promo_code=request.cookies.get("site_promo_code"),
             from_app=request.headers.get("X-Eclipse-App") == "1",
+            platform=_request_platform(request),
         )
         _done = bool(result.get("ok"))
     except Exception as e:
@@ -5709,7 +5727,7 @@ async def handle_public_account_renew_create(request: web.Request) -> web.Respon
     order_id = _generate_public_order_id()
 
     try:
-        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=account["key_id"], from_app=request.headers.get("X-Eclipse-App") == "1")
+        create_anonymous_purchase(order_id, tariff["id"], renewal_of_key_id=account["key_id"], from_app=request.headers.get("X-Eclipse-App") == "1", platform=_request_platform(request))
 
         from aiogram import Bot
         from config import BOT_TOKEN

@@ -180,13 +180,21 @@ def _admin_markup():
     ])
 
 
-async def _notify(bot, key: Dict[str, Any], reason: str, counts: Optional[Tuple[int, int]] = None) -> None:
+async def _notify(
+    bot,
+    key: Dict[str, Any],
+    reason: str,
+    counts: Optional[Tuple[int, int]] = None,
+    action: Optional[Dict[str, Any]] = None,
+) -> None:
     """reason: 'limit' | 'missing' | 'unknown'. counts: (занято, лимит) для режима IP."""
     key_id = int(key["id"])
     now = time.time()
+    action_name = (action or {}).get("action")
 
     if (
         reason == "limit"
+        and action_name not in ("temp_block", "permanent")
         and _enabled(SETTING_USER)
         and now - _last_user_notice.get(key_id, 0) >= USER_COOLDOWN_SEC
         and key.get("telegram_id")
@@ -218,6 +226,14 @@ async def _notify(bot, key: Dict[str, Any], reason: str, counts: Optional[Tuple[
         if reason == "limit" and counts:
             head = "📱 <b>Лимит устройств (IP)</b>"
             body = f"Одновременно активных IP-адресов: {counts[0]} при лимите {counts[1]}."
+            if action_name == "warning":
+                body += "\nДействие: предупреждение (1-е нарушение)."
+            elif action_name == "temp_block":
+                body += "\nДействие: временная блокировка до " + str((action or {}).get("blocked_until") or "—") + "."
+            elif action_name == "permanent":
+                body += "\nДействие: постоянная блокировка."
+            elif action_name == "cooldown":
+                body += "\nДействие: нарушение уже учтено, ждём исправления."
         elif reason == "limit":
             head = "📱 <b>Лимит устройств</b>"
             body = "Панель отказала в подписке: на ключе исчерпан лимит устройств."
@@ -277,7 +293,7 @@ def _load_ip_keys() -> list:
     from database.connection import get_db
     with get_db() as conn:
         rows = conn.execute("""
-            SELECT vk.id, vk.panel_email, vk.custom_name, vk.server_id, vk.tariff_id,
+            SELECT vk.id, vk.user_id, vk.panel_email, vk.custom_name, vk.server_id, vk.tariff_id,
                    t.max_ips, u.telegram_id, u.username, u.is_banned
             FROM vpn_keys vk
             JOIN servers s ON vk.server_id = s.id
@@ -333,8 +349,14 @@ async def check_ip_limits_once(bot) -> int:
                 _ip_streak.pop(key_id, None)
                 continue
             if _ip_streak[key_id] >= IP_STREAK_NEEDED:
+                action: Dict[str, Any] = {}
+                try:
+                    from bot.services import ip_abuse
+                    action = await ip_abuse.record_episode(key, used, limit)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"device_limit_notify: не удалось применить наказание по ключу {key_id}: {e}")
                 before = (_last_user_notice.get(key_id), _last_admin_notice.get(key_id))
-                await _notify(bot, key, "limit", counts=(used, limit))
+                await _notify(bot, key, "limit", counts=(used, limit), action=action)
                 if before != (_last_user_notice.get(key_id), _last_admin_notice.get(key_id)):
                     notified += 1
                     logger.info(
@@ -349,7 +371,12 @@ async def run_ip_limit_scheduler(bot) -> None:
     await asyncio.sleep(120)
     while True:
         try:
-            if _limit_type() == "ip" and (_enabled(SETTING_USER) or _enabled(SETTING_ADMIN)):
+            from bot.services import ip_abuse
+            if ip_abuse.is_enabled():
+                await ip_abuse.release_expired(bot)
+            if _limit_type() == "ip" and (
+                _enabled(SETTING_USER) or _enabled(SETTING_ADMIN) or ip_abuse.is_enabled()
+            ):
                 await check_ip_limits_once(bot)
         except asyncio.CancelledError:
             raise

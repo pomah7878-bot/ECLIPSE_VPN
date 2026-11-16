@@ -75,6 +75,10 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text='📣 Маркетинг' + _bonus_badge(), callback_data='admin_marketing')
     )
     builder.row(
+        InlineKeyboardButton(text='📊 Платформы', callback_data='admin_platforms'),
+        InlineKeyboardButton(text='🛡 Лимит IP', callback_data='admin_ipabuse')
+    )
+    builder.row(
         InlineKeyboardButton(text='⚙️ Настройки бота', callback_data='admin_bot_settings'),
         InlineKeyboardButton(text='🩺 Диагностика', callback_data='admin_extensions_diagnostics')
     )

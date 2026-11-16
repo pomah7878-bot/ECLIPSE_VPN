@@ -2540,6 +2540,148 @@ class TrialAndroidDeviceTest(unittest.TestCase):
         self.assertIn('Pixel 7', row['device_label'])
 
 
+class PlatformDetectionTest(unittest.TestCase):
+    """Платформа клиента по заголовкам: бот, сайт, Android, TV, Windows, iOS."""
+
+    def _platform(self, headers):
+        from aiohttp.test_utils import make_mocked_request
+        from bot.services.platforms import detect_request_platform
+        return detect_request_platform(make_mocked_request("GET", "/", headers=headers))
+
+    def test_detection(self):
+        cases = (
+            ({"User-Agent": "ECLIPSE-Android/2.23.3 (Linux; Android 14)"}, 'android'),
+            ({"User-Agent": "ECLIPSE-Android/1.0.45-tv (Linux; Android 12)"}, 'android_tv'),
+            ({"User-Agent": "ECLIPSE-Windows/0.2.0"}, 'windows'),
+            ({"User-Agent": "Mozilla/5.0 (Windows NT 10.0)"}, 'web'),
+            ({"User-Agent": "ECLIPSE-Android/2.23.3", "X-Eclipse-Platform": "android_tv"}, 'android_tv'),
+            ({"X-Eclipse-App": "1"}, 'app'),
+        )
+        for headers, expected in cases:
+            with self.subTest(headers=headers):
+                self.assertEqual(self._platform(headers), expected)
+
+    def test_labels(self):
+        from bot.services.platforms import platform_label
+        self.assertIn('Telegram', platform_label('telegram'))
+        self.assertIn('Android TV', platform_label('android_tv'))
+        self.assertIn('Windows', platform_label('windows'))
+
+
+class PlatformStatsTest(unittest.TestCase):
+    """Статистика разделяет пользователей и заказы по платформам."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_platform_stats_split(self):
+        from database.db_users import get_or_create_user, set_user_platform
+        from database.db_stats import get_platform_stats
+        tg_bot = 990200001
+        tg_android = 990200002
+        bot_user = get_or_create_user(tg_bot, 'platform_bot')[0]
+        android_user = get_or_create_user(tg_android, 'platform_android')[0]
+        set_user_platform(android_user['id'], 'android', overwrite=True)
+        with get_db() as c:
+            c.execute(
+                "INSERT INTO payments (user_id, order_id, status, payment_type, final_amount_cents, paid_at) "
+                "VALUES (?, 'plat-bot-1', 'paid', 'yookassa_qr', 10000, datetime('now'))",
+                (bot_user['id'],),
+            )
+            c.execute(
+                "INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, platform, created_at) "
+                "VALUES ('plat-and-1', 1, 'PLATAND1', 'paid', 'android', datetime('now'))"
+            )
+        rows = {row['platform']: row for row in get_platform_stats(30)}
+        self.assertGreaterEqual(rows.get('telegram', {}).get('users', 0), 1)
+        self.assertGreaterEqual(rows.get('android', {}).get('users', 0), 1)
+        self.assertGreaterEqual(rows.get('android', {}).get('orders', 0), 1)
+        self.assertGreaterEqual(rows.get('telegram', {}).get('revenue_rub', 0), 100)
+
+
+class IpAbuseEnforcementTest(unittest.TestCase):
+    """Страйки, временная блокировка, авторазблокировка и постоянный бан."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def setUp(self):
+        st.set_setting('ip_limit_enforce', '1')
+        st.set_setting('ip_limit_temp_hours', '24')
+        st.set_setting('ip_limit_permanent_strikes', '3')
+        st.set_setting('ip_limit_strike_reset_days', '30')
+        self.addCleanup(st.set_setting, 'ip_limit_enforce', '1')
+        self.addCleanup(st.set_setting, 'ip_limit_temp_hours', '24')
+        self.addCleanup(st.set_setting, 'ip_limit_permanent_strikes', '3')
+        self.addCleanup(st.set_setting, 'ip_limit_strike_reset_days', '30')
+
+    def _user_with_key(self, tg):
+        from database.db_users import get_or_create_user
+        user = get_or_create_user(tg, f'ip_{tg}')[0]
+        with get_db() as c:
+            key_id = c.execute(
+                "INSERT INTO vpn_keys (user_id, tariff_id, expires_at) "
+                "VALUES (?, 1, datetime('now', '+30 days'))", (user['id'],)
+            ).lastrowid
+        return user, {'id': key_id, 'user_id': user['id'], 'telegram_id': tg}
+
+    def test_escalation_and_release(self):
+        import asyncio
+        from unittest.mock import patch
+        from bot.services import ip_abuse
+        from database.db_users import is_user_banned
+
+        user, key = self._user_with_key(990200010)
+        with patch('bot.services.ip_abuse._sync_keys', lambda tg: None):
+            first = asyncio.run(ip_abuse.record_episode(key, 6, 1))
+            self.assertEqual(first['action'], 'warning')
+            self.assertFalse(is_user_banned(990200010))
+
+            # Кулдаун: та же серия не наращивает страйк.
+            again = asyncio.run(ip_abuse.record_episode(key, 6, 1))
+            self.assertFalse(again.get('counted'))
+            self.assertEqual(again['action'], 'cooldown')
+
+            # Следующий эпизод через 13 часов — временная блокировка.
+            with get_db() as c:
+                c.execute("UPDATE ip_abuse SET last_strike_at = datetime('now', '-13 hours') WHERE user_id = ?", (user['id'],))
+            second = asyncio.run(ip_abuse.record_episode(key, 6, 1))
+            self.assertEqual(second['action'], 'temp_block')
+            self.assertTrue(is_user_banned(990200010))
+
+            # Истекла временная блокировка — доступ возвращается.
+            with get_db() as c:
+                c.execute("UPDATE ip_abuse SET blocked_until = datetime('now', '-1 minute') WHERE user_id = ?", (user['id'],))
+            released = asyncio.run(ip_abuse.release_expired())
+            self.assertGreaterEqual(released, 1)
+            self.assertFalse(is_user_banned(990200010))
+
+            # Третий эпизод — постоянный бан.
+            with get_db() as c:
+                c.execute("UPDATE ip_abuse SET last_strike_at = datetime('now', '-13 hours') WHERE user_id = ?", (user['id'],))
+            third = asyncio.run(ip_abuse.record_episode(key, 6, 1))
+            self.assertEqual(third['action'], 'permanent')
+            self.assertTrue(is_user_banned(990200010))
+            self.assertTrue(ip_abuse.get_record(user['id'])['permanent'])
+
+            # Ручной разбан снимает постоянную отметку.
+            asyncio.run(ip_abuse.unblock(user['id'], by='test'))
+            self.assertFalse(is_user_banned(990200010))
+            self.assertFalse(ip_abuse.get_record(user['id'])['permanent'])
+
+    def test_small_overflow_is_not_punished(self):
+        import asyncio
+        from unittest.mock import patch
+        from bot.services import ip_abuse
+        user, key = self._user_with_key(990200011)
+        with patch('bot.services.ip_abuse._sync_keys', lambda tg: None):
+            result = asyncio.run(ip_abuse.record_episode(key, 2, 1))
+        self.assertEqual(result['action'], 'none')
+        self.assertIsNone(ip_abuse.get_record(user['id']))
+
+
 class PaymentHistoryTest(unittest.TestCase):
     """История в приложении: деньги не задваиваются и не смешиваются между клиентами."""
 

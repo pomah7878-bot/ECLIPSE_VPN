@@ -169,6 +169,27 @@ def _format_user_card(user: dict) -> tuple[str, any]:
         lines.append(f'📱 Telegram ID: <code>{telegram_id}</code>')
     if user.get('from_app'):
         lines.append('📲 Клиент приложения')
+    try:
+        from bot.services.platforms import platform_label
+        platform = (user.get('platform') or '').strip()
+        if platform:
+            lines.append(f'🌐 Платформа: <b>{escape_html(platform_label(platform))}</b>')
+    except Exception:
+        pass
+    try:
+        from database.requests import get_ip_abuse
+        abuse = get_ip_abuse(user['id'])
+        if abuse:
+            strikes = int(abuse.get('strikes') or 0)
+            if abuse.get('permanent'):
+                status = 'постоянный бан'
+            elif abuse.get('blocked_until'):
+                status = f"временная блокировка до {abuse['blocked_until']}"
+            else:
+                status = 'без блокировки'
+            lines.append(f'⚠️ Лимит IP: <b>{strikes}</b> эпизод(ов), {escape_html(status)}')
+    except Exception:
+        pass
     if int(telegram_id) < 0:
         lines.append('📵 Статус доставки: <b>нет Telegram — сообщения не доставляются</b>')
     elif is_bot_blocked:

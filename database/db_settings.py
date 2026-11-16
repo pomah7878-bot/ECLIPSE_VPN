@@ -155,6 +155,14 @@ __all__ = [
     'set_trial_auto_ban_threshold',
     'get_trial_abuse_alert_threshold',
     'set_trial_abuse_alert_threshold',
+    'is_ip_limit_enforce_enabled',
+    'set_ip_limit_enforce_enabled',
+    'get_ip_limit_temp_hours',
+    'set_ip_limit_temp_hours',
+    'get_ip_limit_permanent_strikes',
+    'set_ip_limit_permanent_strikes',
+    'get_ip_limit_strike_reset_days',
+    'set_ip_limit_strike_reset_days',
     'is_demo_payment_enabled',
     'get_effective_webapp_url',
     'set_webapp_url',
@@ -808,6 +816,54 @@ def get_trial_abuse_alert_threshold() -> int:
 
 def set_trial_abuse_alert_threshold(value: int) -> None:
     set_setting('trial_abuse_alert_threshold', str(max(1, min(50, int(value)))))
+
+
+def is_ip_limit_enforce_enabled() -> bool:
+    """Автонаказание за превышение лимита IP включено (по умолчанию да)."""
+    return get_setting('ip_limit_enforce', '1') == '1'
+
+
+def set_ip_limit_enforce_enabled(enabled: bool) -> None:
+    set_setting('ip_limit_enforce', '1' if enabled else '0')
+
+
+def get_ip_limit_temp_hours() -> int:
+    """На сколько часов временно блокировать нарушителя лимита IP."""
+    try:
+        value = int(get_setting('ip_limit_temp_hours', '24') or 24)
+    except (TypeError, ValueError):
+        return 24
+    return max(1, min(720, value))
+
+
+def set_ip_limit_temp_hours(value: int) -> None:
+    set_setting('ip_limit_temp_hours', str(max(1, min(720, int(value)))))
+
+
+def get_ip_limit_permanent_strikes() -> int:
+    """После скольких эпизодов нарушения — блокировка навсегда."""
+    try:
+        value = int(get_setting('ip_limit_permanent_strikes', '3') or 3)
+    except (TypeError, ValueError):
+        return 3
+    return max(2, min(10, value))
+
+
+def set_ip_limit_permanent_strikes(value: int) -> None:
+    set_setting('ip_limit_permanent_strikes', str(max(2, min(10, int(value)))))
+
+
+def get_ip_limit_strike_reset_days() -> int:
+    """Через сколько дней без нарушений старые страйки сбрасываются."""
+    try:
+        value = int(get_setting('ip_limit_strike_reset_days', '30') or 30)
+    except (TypeError, ValueError):
+        return 30
+    return max(1, min(365, value))
+
+
+def set_ip_limit_strike_reset_days(value: int) -> None:
+    set_setting('ip_limit_strike_reset_days', str(max(1, min(365, int(value)))))
 
 
 def get_marketing_channel_id() -> Optional[str]:

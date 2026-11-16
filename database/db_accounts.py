@@ -531,17 +531,19 @@ def get_or_create_placeholder_user_for_site_account(account_id: int) -> int:
     быть СВОЙ реферальный код (через ensure_user_referral_code) и
     накопленный баланс/дни от рефералов, привязанные к его же ключам."""
     import time
-    from database.requests import get_or_create_user
+    from database.requests import get_or_create_user, set_user_platform
 
     with get_db() as conn:
         row = conn.execute("SELECT placeholder_user_id FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
         if row and row["placeholder_user_id"]:
+            set_user_platform(int(row["placeholder_user_id"]), 'web')
             return row["placeholder_user_id"]
 
     placeholder_tg_id = -int(time.time() * 1000) - account_id
     placeholder_username = f"site_{account_id}"
     owner, _ = get_or_create_user(placeholder_tg_id, username=placeholder_username)
     placeholder_user_id = owner["id"]
+    set_user_platform(placeholder_user_id, 'web')
 
     with get_db() as conn:
         conn.execute(

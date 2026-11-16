@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 176
+LATEST_VERSION = 177
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -4058,6 +4058,64 @@ def migration_176(conn: sqlite3.Connection) -> None:
     logger.info("Migration v176 applied: trial_devices/trial_device_blocks client, device_label, last_seen")
 
 
+def migration_177(conn: sqlite3.Connection) -> None:
+    """Платформа клиента и учёт злоупотреблений лимитом IP.
+
+    users.platform / anonymous_purchases.platform — откуда пришёл клиент:
+    telegram, web, android, android_tv, windows, ios, app. Нужно для
+    раздельной статистики и развития функций под конкретную платформу.
+
+    ip_abuse — по одному ряду на пользователя: сколько раз превышал лимит
+    IP, когда последний раз, до какого времени временно заблокирован,
+    постоянный ли он нарушитель. ip_abuse_events — журнал действий.
+    """
+    user_cols = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "platform" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
+    ap_cols = {row[1] for row in conn.execute("PRAGMA table_info(anonymous_purchases)").fetchall()}
+    if "platform" not in ap_cols:
+        conn.execute("ALTER TABLE anonymous_purchases ADD COLUMN platform TEXT NOT NULL DEFAULT ''")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ip_abuse (
+            user_id INTEGER PRIMARY KEY,
+            key_id INTEGER,
+            strikes INTEGER NOT NULL DEFAULT 0,
+            first_strike_at TEXT,
+            last_strike_at TEXT,
+            last_seen_at TEXT,
+            last_used INTEGER NOT NULL DEFAULT 0,
+            last_limit INTEGER NOT NULL DEFAULT 0,
+            blocked_until TEXT,
+            permanent INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ip_abuse_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            key_id INTEGER,
+            used INTEGER NOT NULL DEFAULT 0,
+            limit_ips INTEGER NOT NULL DEFAULT 0,
+            action TEXT NOT NULL,
+            detail TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ip_abuse_events_user ON ip_abuse_events(user_id, created_at)"
+    )
+
+    # Бэкфилл платформы: telegram-бот, сайт и уже помеченные приложением клиенты.
+    conn.execute("UPDATE users SET platform = 'telegram' WHERE platform = '' AND telegram_id > 0")
+    conn.execute("UPDATE users SET platform = 'web' WHERE platform = '' AND telegram_id <= 0")
+    conn.execute("UPDATE users SET platform = 'android' WHERE from_app = 1")
+    conn.execute("UPDATE anonymous_purchases SET platform = 'web' WHERE platform = ''")
+    conn.execute("UPDATE anonymous_purchases SET platform = 'android' WHERE from_app = 1")
+    logger.info("Migration v177 applied: platform, ip_abuse, ip_abuse_events")
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -4161,6 +4219,7 @@ MIGRATIONS = {
     174: migration_174,
     175: migration_175,
     176: migration_176,
+    177: migration_177,
 }
 
 

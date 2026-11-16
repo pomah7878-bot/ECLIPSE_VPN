@@ -1190,22 +1190,30 @@ def _generate_claim_code() -> str:
     return f"{part1}-{part2}"
 
 
-def create_anonymous_purchase(order_id: str, tariff_id: int, renewal_of_key_id: Optional[int] = None, from_app: bool = False) -> str:
+def create_anonymous_purchase(
+    order_id: str,
+    tariff_id: int,
+    renewal_of_key_id: Optional[int] = None,
+    from_app: bool = False,
+    platform: str = 'web',
+) -> str:
     """Создаёт запись анонимной покупки и возвращает сгенерированный код
     привязки. Если renewal_of_key_id указан — это продление существующего
     ключа (личный кабинет), а не выпуск нового. from_app — заказ пришёл из
     мобильного приложения (заголовок X-Eclipse-App на запросе, который
-    СОЗДАЛ заказ); сохраняем это сразу, потому что оплата может
-    завершиться позже, фоновой проверкой, без доступа к запросу."""
+    СОЗДАЛ заказ); platform — конкретная платформа (web/android/android_tv/
+    windows/ios/app) для раздельной статистики."""
     claim_code = _generate_claim_code()
+    platform = (platform or 'web').strip().lower() or 'web'
     with get_db() as conn:
         # На случай крайне маловероятного совпадения — пробуем несколько раз
         for _ in range(5):
             try:
                 conn.execute(
-                    """INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, renewal_of_key_id, from_app)
-                       VALUES (?, ?, ?, 'pending', ?, ?)""",
-                    (order_id, tariff_id, claim_code, renewal_of_key_id, int(bool(from_app))),
+                    """INSERT INTO anonymous_purchases
+                       (order_id, tariff_id, claim_code, status, renewal_of_key_id, from_app, platform)
+                       VALUES (?, ?, ?, 'pending', ?, ?, ?)""",
+                    (order_id, tariff_id, claim_code, renewal_of_key_id, int(bool(from_app)), platform),
                 )
                 return claim_code
             except sqlite3.IntegrityError:

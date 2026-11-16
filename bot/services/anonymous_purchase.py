@@ -82,6 +82,19 @@ async def provision_anonymous_vpn_key(tariff_id: int, order_id: str, site_accoun
         owner, _ = get_or_create_user(placeholder_tg_id, username=placeholder_username)
         owner_user_id = owner["id"]
 
+    # Платформа заказа: сайт, Android/TV/Windows-приложение. Нужна и для
+    # статистики, и чтобы карточка клиента показывала, откуда он пришёл.
+    try:
+        from database.db_payments import get_anonymous_purchase_by_order_id
+        from database.db_users import set_user_platform
+        from bot.services.platforms import is_native_platform
+        _purchase = get_anonymous_purchase_by_order_id(order_id)
+        _platform = ((_purchase or {}).get('platform') or '').strip()
+        if _platform:
+            set_user_platform(owner_user_id, _platform, overwrite=is_native_platform(_platform))
+    except Exception as _platform_err:  # noqa: BLE001
+        logger.debug(f"anonymous provisioning: платформа не сохранена: {_platform_err}")
+
     days = tariff.get("duration_days") or 30
     traffic_limit_bytes = (tariff.get("traffic_limit_gb", 0) or 0) * 1024 ** 3
 
@@ -528,7 +541,7 @@ async def check_and_complete_anonymous_payment(order_id: str) -> dict:
     return {"status": "paid", "claim_code": purchase["claim_code"], "sub_url": sub_url}
 
 
-async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int, promo_code: str | None = None, from_app: bool = False) -> dict:
+async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: int, promo_code: str | None = None, from_app: bool = False, platform: str = 'web') -> dict:
     """Оформляет НОВУЮ покупку с сайта (личный кабинет, залогинен) сразу за
     счёт личного баланса — без ЮKassa/QR, синхронно в один вызов.
 
@@ -602,7 +615,7 @@ async def complete_anonymous_purchase_via_balance(account_id: int, tariff_id: in
         return {"ok": False, "message": "Не удалось списать баланс."}
 
     order_id = f"SITEBAL{int(_time.time() * 1000)}{account_id}"
-    claim_code = create_anonymous_purchase(order_id, tariff_id, from_app=from_app)
+    claim_code = create_anonymous_purchase(order_id, tariff_id, from_app=from_app, platform=platform)
     _sp.tag_purchase(order_id, promo_quote)
     link_purchase_to_account(order_id, account_id)
     # yookassa_payment_id тут не платёж ЮKassa, а просто метка источника —
