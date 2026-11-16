@@ -12,7 +12,7 @@
 <meta property="og:description" content="Полный клиент ECLIPSE для Windows 10/11. Скачайте установщик с официального релиза.">
 <meta property="og:image" content="https://eclipse.unlimited.bot.nu/static/app-preview/windows-home.webp">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
-<link rel="stylesheet" href="/static/app-premium.css?v=8">
+<link rel="stylesheet" href="/static/app-premium.css?v=14">
 <style>
     .win-hero { padding-top: calc(var(--header) + clamp(28px, 5vw, 62px)); }
     .win-hero .hero-grid { grid-template-columns: minmax(0, 1.02fr) minmax(340px, .98fr); }
@@ -55,6 +55,7 @@
         .win-shots { grid-template-columns: 1fr; }
     }
 </style>
+<script>document.documentElement.classList.add('js-motion');window.setTimeout(function(){var d=document.documentElement;if(!d.classList.contains('motion-ready'))d.classList.remove('js-motion');},2500);</script>
 </head>
 <body>
 <a class="skip" href="#main">Перейти к содержимому</a>
@@ -120,8 +121,10 @@
                 </div>
             </div>
             <div class="win-stage">
-                <div class="win-window">
-                    <img src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" fetchpriority="high">
+                <div class="win-window motion-screen" data-motion-tilt>
+                    <img class="win-layer-a" src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" fetchpriority="high">
+                    <img class="win-layer-b" src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="" aria-hidden="true" loading="lazy">
+                    <span class="win-power-pulse" aria-hidden="true"></span>
                 </div>
                 <div class="win-caption">Реальный интерфейс ECLIPSE VPN для Windows</div>
             </div>
@@ -166,8 +169,8 @@
                 <p>Скриншоты сняты с установленного ECLIPSE VPN для Windows.</p>
             </div>
             <div class="win-shots">
-                <figure class="win-shot"><img src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" loading="lazy"><figcaption><b>Подключение</b><span>Главный экран</span></figcaption></figure>
-                <figure class="win-shot"><img src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="Настройки ECLIPSE VPN для Windows: раздельный туннель, Kill Switch, уведомления" loading="lazy"><figcaption><b>Настройки</b><span>Kill Switch · туннель · QR</span></figcaption></figure>
+                <figure class="win-shot reveal"><img src="/static/app-preview/windows-home.webp?v=1" width="404" height="800" alt="Главный экран ECLIPSE VPN для Windows" loading="lazy"><figcaption><b>Подключение</b><span>Главный экран</span></figcaption></figure>
+                <figure class="win-shot motion-settings reveal"><img src="/static/app-preview/windows-settings.webp?v=1" width="404" height="800" alt="Настройки ECLIPSE VPN для Windows: раздельный туннель, Kill Switch, уведомления" loading="lazy"><span class="settings-focus" aria-hidden="true"></span><figcaption><b>Настройки</b><span>Kill Switch · туннель · QR</span></figcaption></figure>
             </div>
         </div>
     </section>
@@ -302,5 +305,6 @@
         });
 })();
 </script>
+<script src="/static/app-motion.js?v=2" defer></script>
 </body>
 </html>
