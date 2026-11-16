@@ -17,7 +17,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="preload" as="image" href="/static/app-preview/connected.webp?v=3" type="image/webp">
-<link rel="stylesheet" href="/static/app-premium.css?v=4">
+<link rel="stylesheet" href="/static/app-premium.css?v=5">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"ECLIPSE Unlimited","applicationCategory":"SecurityApplication","operatingSystem":"Android 7+, Android TV, Windows 10/11","description":"Интеллектуальная система защищённого доступа с автоматическим выбором серверов и умной маршрутизацией.","url":"https://eclipse.unlimited.bot.nu/app","downloadUrl":"https://eclipse.unlimited.bot.nu/client-update/client.apk"}
 </script>
@@ -69,6 +69,7 @@
         <a href="#faq">FAQ</a>
     </nav>
     <div class="header-actions">
+        <a class="btn btn-glass btn-sm" href="https://eclipse.unlimited.bot.nu/shop"><span>Premium</span></a>
         <a class="btn btn-gold btn-sm" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk"><span>Скачать</span> <span class="arrow" aria-hidden="true">↗</span></a>
         <button class="menu-toggle" id="menuToggle" type="button" aria-label="Открыть меню" aria-controls="nav" aria-expanded="false"><span></span></button>
     </div>
@@ -130,6 +131,60 @@
                         <span><b>Автовыбор сервера</b><small>Без ручных настроек</small></span>
                     </div>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="releases">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Актуальные версии</span>
+                <h2>Свежие сборки <span class="gold">и проверка файлов.</span></h2>
+                <p>Версия, размер и SHA-256 подтягиваются с сервера и GitHub при открытии страницы.</p>
+            </div>
+            <div class="release-grid">
+                <article class="release-card" data-release="android">
+                    <span class="platform-label">Android</span>
+                    <h3>Телефон</h3>
+                    <p class="release-sub">Универсальный APK · Android 7+</p>
+                    <div class="release-rows">
+                        <div class="release-row"><span>Версия</span><b data-rel-version>загружается…</b></div>
+                        <div class="release-row"><span>Размер</span><b data-rel-size>—</b></div>
+                        <div class="release-row sha"><span>SHA-256</span><code data-rel-sha>—</code><button class="release-copy" type="button" data-rel-copy>Копировать</button></div>
+                    </div>
+                    <div class="release-actions">
+                        <a class="btn btn-gold btn-sm" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk">Скачать APK</a>
+                        <a class="btn btn-glass btn-sm" href="https://eclipse.unlimited.bot.nu/shop">Premium</a>
+                    </div>
+                </article>
+                <article class="release-card" data-release="tv">
+                    <span class="platform-label">Android TV</span>
+                    <h3>Телевизор</h3>
+                    <p class="release-sub">ECLIPSE TV · Android TV</p>
+                    <div class="release-rows">
+                        <div class="release-row"><span>Версия</span><b data-rel-version>загружается…</b></div>
+                        <div class="release-row"><span>Размер</span><b data-rel-size>—</b></div>
+                        <div class="release-row sha"><span>SHA-256</span><code data-rel-sha>—</code><button class="release-copy" type="button" data-rel-copy>Копировать</button></div>
+                    </div>
+                    <div class="release-actions">
+                        <a class="btn btn-gold btn-sm" href="/client-update/tv.apk" download="ECLIPSE TV.apk">Скачать APK</a>
+                        <a class="btn btn-glass btn-sm" href="https://eclipse.unlimited.bot.nu/shop">Premium</a>
+                    </div>
+                </article>
+                <article class="release-card" data-release="windows">
+                    <span class="platform-label">Windows</span>
+                    <h3>Компьютер</h3>
+                    <p class="release-sub">Windows 10/11 x64 · .exe</p>
+                    <div class="release-rows">
+                        <div class="release-row"><span>Версия</span><b data-rel-version>загружается…</b></div>
+                        <div class="release-row"><span>Размер</span><b data-rel-size>—</b></div>
+                        <div class="release-row sha"><span>SHA-256</span><code data-rel-sha>—</code><button class="release-copy" type="button" data-rel-copy>Копировать</button></div>
+                    </div>
+                    <div class="release-actions">
+                        <a class="btn btn-gold btn-sm" data-download="windows" href="https://github.com/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest" rel="noopener">Скачать .exe</a>
+                        <a class="btn btn-glass btn-sm" href="/app/windows">Подробнее</a>
+                    </div>
+                </article>
             </div>
         </div>
     </section>
@@ -275,7 +330,7 @@
                         <li><svg><use href="#i-check"/></svg> Android, Android TV и Windows</li>
                         <li><svg><use href="#i-check"/></svg> Оплата картой и СБП</li>
                     </ul>
-                    <a class="btn btn-glass btn-block" href="/shop">Выбрать тариф</a>
+                    <a class="btn btn-glass btn-block" href="https://eclipse.unlimited.bot.nu/shop">Выбрать тариф</a>
                 </article>
                 <article class="price-card premium reveal" style="--d:.08s">
                     <span class="price-badge">Premium</span>
@@ -289,7 +344,7 @@
                         <li><svg><use href="#i-check"/></svg> Максимальная доступная скорость</li>
                         <li><svg><use href="#i-check"/></svg> Все возможности ECLIPSE</li>
                     </ul>
-                    <a class="btn btn-gold btn-block" href="/shop">Выбрать Premium <span class="arrow" aria-hidden="true">↗</span></a>
+                    <a class="btn btn-gold btn-block" href="https://eclipse.unlimited.bot.nu/shop">Выбрать Premium <span class="arrow" aria-hidden="true">↗</span></a>
                 </article>
             </div>
             <p class="price-note">Цены и условия обновляются автоматически из действующего магазина. Итоговая стоимость — на странице оформления.</p>
@@ -321,7 +376,7 @@
                 <h2>Коротко <span class="gold">о главном.</span></h2>
             </div>
             <div class="faq">
-                <details><summary>Чем отличается тариф на 100 ГБ от безлимитного?</summary><p>Тариф «Базовый» включает 100 ГБ трафика. «Premium» — без ограничения по объёму, со всеми доступными локациями и максимальной доступной скоростью. Актуальные цены и сроки смотрите в <a href="/shop">магазине</a>.</p></details>
+                <details><summary>Чем отличается тариф на 100 ГБ от безлимитного?</summary><p>Тариф «Базовый» включает 100 ГБ трафика. «Premium» — без ограничения по объёму, со всеми доступными локациями и максимальной доступной скоростью. Актуальные цены и сроки смотрите в <a href="https://eclipse.unlimited.bot.nu/shop">магазине</a>.</p></details>
                 <details><summary>Как установить приложение на Android?</summary><p>Скачайте APK, разрешите браузеру установку неизвестных приложений, откройте файл и подтвердите установку. После установки войдите по коду из бота, номеру телефона, Google или Яндекс.</p></details>
                 <details><summary>Безопасно ли устанавливать APK?</summary><p>Да, если файл скачан с официальной страницы. APK подписан ECLIPSE, а SHA-256 опубликован выше. Сверьте хеш командой <code>Get-FileHash</code> или <code>sha256sum</code>.</p></details>
                 <details><summary>Работает ли ECLIPSE на Android TV?</summary><p>Да. Для телевизоров есть отдельное приложение <a href="/app/tv">ECLIPSE TV</a> с управлением пультом, крупными кнопками и переносом подписки с телефона по QR-коду.</p></details>
@@ -340,7 +395,7 @@
                 <p>Скачайте приложение, войдите в аккаунт и нажмите одну кнопку. Остальное ECLIPSE сделает сам.</p>
                 <div class="final-actions">
                     <a class="btn btn-gold btn-lg" href="/client-update/client.apk" download="ECLIPSE Unlimited.apk">Скачать для Android <span class="arrow" aria-hidden="true">↗</span></a>
-                    <a class="btn btn-glass btn-lg" href="/shop">Оформить подписку</a>
+                    <a class="btn btn-glass btn-lg" href="https://eclipse.unlimited.bot.nu/shop">Оформить подписку</a>
                 </div>
                 <div class="final-small">Android 7+ · Android TV · Windows 10/11</div>
             </div>
@@ -357,7 +412,7 @@
             </div>
             <div class="footer-cols">
                 <div class="footer-col"><b>Приложения</b><a href="/app/phone">Android</a><a href="/app/tv">Android TV</a><a href="/app/windows">Windows</a></div>
-                <div class="footer-col"><b>Продукт</b><a href="/shop">Тарифы</a><a href="#features">Возможности</a><a href="#security">Безопасность</a></div>
+                <div class="footer-col"><b>Продукт</b><a href="https://eclipse.unlimited.bot.nu/shop">Тарифы</a><a href="#features">Возможности</a><a href="#security">Безопасность</a></div>
                 <div class="footer-col"><b>Помощь</b><a href="#faq">FAQ</a><a href="/app/phone#install">Установка</a><a href="#security">Проверка APK</a></div>
             </div>
         </div>
@@ -532,5 +587,6 @@
     });
 })();
 </script>
+<script src="/static/app-release.js?v=1" defer></script>
 </body>
 </html>

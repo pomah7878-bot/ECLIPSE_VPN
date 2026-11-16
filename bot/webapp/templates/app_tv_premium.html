@@ -12,7 +12,7 @@
 <meta property="og:description" content="Отдельное приложение ECLIPSE для Android TV.">
 <meta property="og:image" content="https://eclipse.unlimited.bot.nu/static/app-preview/tv.webp">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
-<link rel="stylesheet" href="/static/app-premium.css?v=4">
+<link rel="stylesheet" href="/static/app-premium.css?v=5">
 </head>
 <body>
 <a class="skip" href="#main">Перейти к содержимому</a>
@@ -29,6 +29,7 @@
         <a href="/app/windows">Windows</a>
     </nav>
     <div class="header-actions">
+        <a class="btn btn-glass btn-sm" href="https://eclipse.unlimited.bot.nu/shop"><span>Premium</span></a>
         <a class="btn btn-gold btn-sm" href="/client-update/tv.apk" download="ECLIPSE TV.apk"><span>Скачать</span> <span class="arrow" aria-hidden="true">↗</span></a>
         <button class="menu-toggle" id="menuToggle" type="button" aria-label="Открыть меню" aria-controls="nav" aria-expanded="false"><span></span></button>
     </div>
@@ -77,6 +78,15 @@
                     <h2>Скачать для Android TV</h2>
                     <p>Отдельный APK ECLIPSE TV. Подходит для телевизоров и ТВ-приставок на Android TV.</p>
                     <div class="download-meta" id="releaseMeta">Проверяем актуальную версию…</div>
+                    <div class="release-panel" data-release="tv">
+                        <div class="release-panel-head"><b>Проверка файла</b><span>обновляется автоматически</span></div>
+                        <div class="release-rows">
+                            <div class="release-row"><span>Версия</span><b data-rel-version>загружается…</b></div>
+                            <div class="release-row"><span>Размер</span><b data-rel-size>—</b></div>
+                            <div class="release-row sha"><span>SHA-256</span><code data-rel-sha>—</code><button class="release-copy" type="button" data-rel-copy>Копировать</button></div>
+                            <div class="release-row"><span>Подпись</span><code>cbe9873439bd12ab165a1aea5d141e189316fe5102c0c6947248e5197bd5d78c</code></div>
+                        </div>
+                    </div>
                 </div>
                 <a class="btn btn-gold btn-lg" href="/client-update/tv.apk" download="ECLIPSE TV.apk">Скачать</a>
             </div>
@@ -106,12 +116,30 @@
                 <article class="step"><h3>Скачайте APK</h3><p>Откройте эту страницу на ТВ или введите ссылку в Downloader.</p></article>
                 <article class="step"><h3>Войдите по QR</h3><p>Отсканируйте код телефоном — подписка перенесётся.</p></article>
             </div>
-            <div class="cross"><a href="/app">Все приложения</a><a href="/app/phone">Android</a><a href="/app/windows">Windows</a><a href="/shop">Тарифы</a></div>
+            <div class="cross"><a href="/app">Все приложения</a><a href="/app/phone">Android</a><a href="/app/windows">Windows</a><a href="https://eclipse.unlimited.bot.nu/shop">Тарифы</a></div>
         </div>
+    </section>
+    <section class="section" id="premium">
+        <div class="wrap"><div class="premium-banner">
+            <div><span class="eyebrow">Premium</span><h2>Больше контента. <span class="gold">Без лимитов.</span></h2><p>Безлимитный трафик и максимальная скорость для стриминга на большом экране.</p></div>
+            <a class="btn btn-gold btn-lg" href="https://eclipse.unlimited.bot.nu/shop">Оформить Premium <span class="arrow" aria-hidden="true">↗</span></a>
+        </div></div>
     </section>
 </main>
 
-<footer class="site-footer"><div class="wrap"><div class="footer-bottom" style="border:0;margin:0;padding:0"><span>© <span id="year">2026</span> ECLIPSE Unlimited</span><span><a href="/app">Все приложения</a></span></div></div></footer>
+<footer class="site-footer">
+    <div class="wrap">
+        <div class="footer-main">
+            <div class="footer-brand"><a class="brand" href="/app"><span class="brand-mark" aria-hidden="true"></span><span>ECLIPSE <span>Unlimited</span></span></a><p>Один аккаунт для Android, Android TV и Windows.</p></div>
+            <div class="footer-cols">
+                <div class="footer-col"><b>Приложения</b><a href="/app/phone">Android</a><a href="/app/tv">Android TV</a><a href="/app/windows">Windows</a></div>
+                <div class="footer-col"><b>Продукт</b><a href="https://eclipse.unlimited.bot.nu/shop">Premium</a><a href="#features">Возможности</a><a href="#install">Установка</a></div>
+                <div class="footer-col"><b>Помощь</b><a href="/app#faq">FAQ</a><a href="/app">Все приложения</a><a href="/app/windows">Windows</a></div>
+            </div>
+        </div>
+        <div class="footer-bottom"><span>© <span id="year">2026</span> ECLIPSE Unlimited</span><span>Android TV · APK</span></div>
+    </div>
+</footer>
 <script>
 (function () {
     document.getElementById('year').textContent = new Date().getFullYear();
@@ -127,5 +155,6 @@
     }).catch(function () { document.getElementById('releaseMeta').textContent = 'Android TV · APK · вход по QR'; });
 })();
 </script>
+<script src="/static/app-release.js?v=1" defer></script>
 </body>
 </html>

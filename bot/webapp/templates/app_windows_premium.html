@@ -12,7 +12,7 @@
 <meta property="og:description" content="Полный клиент ECLIPSE для Windows 10/11. Скачайте установщик с официального релиза.">
 <meta property="og:image" content="https://eclipse.unlimited.bot.nu/static/app-preview/windows-home.webp">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
-<link rel="stylesheet" href="/static/app-premium.css?v=4">
+<link rel="stylesheet" href="/static/app-premium.css?v=5">
 <style>
     .win-hero { padding-top: calc(var(--header) + clamp(28px, 5vw, 62px)); }
     .win-hero .hero-grid { grid-template-columns: minmax(0, 1.02fr) minmax(340px, .98fr); }
@@ -89,6 +89,7 @@
         <a href="#security">Безопасность</a>
     </nav>
     <div class="header-actions">
+        <a class="btn btn-glass btn-sm" href="https://eclipse.unlimited.bot.nu/shop"><span>Premium</span></a>
         <a class="btn btn-gold btn-sm" id="downloadBtn" href="https://github.com/pomah7878-bot/ECLIPSE_VPN_Windows/releases/latest" rel="noopener"><span>Скачать</span> <span class="arrow" aria-hidden="true">↗</span></a>
         <button class="menu-toggle" id="menuToggle" type="button" aria-label="Открыть меню" aria-controls="nav" aria-expanded="false"><span></span></button>
     </div>
@@ -203,10 +204,18 @@
             <div class="verify-panel">
                 <div class="verify-row"><span class="k">Версия</span><span class="v" id="winVersion">загружается…</span></div>
                 <div class="verify-row"><span class="k">Файл</span><span class="v small" id="winFile">—</span></div>
+                <div class="verify-row"><span class="k">Размер</span><span class="v small" id="winSize">—</span></div>
                 <div class="verify-row"><span class="k">SHA-256</span><span class="v" id="winSha">—</span></div>
                 <span class="code-line">Get-FileHash ".\ECLIPSE_VPN_Setup.exe" -Algorithm SHA256</span>
             </div>
         </div>
+    </section>
+
+    <section class="section" id="premium">
+        <div class="wrap"><div class="premium-banner">
+            <div><span class="eyebrow">Premium</span><h2>Windows <span class="gold">без лимитов.</span></h2><p>Безлимитный трафик, все доступные локации и максимальная скорость на компьютере.</p></div>
+            <a class="btn btn-gold btn-lg" href="https://eclipse.unlimited.bot.nu/shop">Оформить Premium <span class="arrow" aria-hidden="true">↗</span></a>
+        </div></div>
     </section>
 
     <section class="section">
@@ -234,7 +243,7 @@
             </div>
             <div class="footer-cols">
                 <div class="footer-col"><b>Приложения</b><a href="/app/phone">Android</a><a href="/app/tv">Android TV</a><a href="/app/windows">Windows</a></div>
-                <div class="footer-col"><b>Продукт</b><a href="/shop">Тарифы</a><a href="#features">Возможности</a><a href="#security">Безопасность</a></div>
+                <div class="footer-col"><b>Продукт</b><a href="https://eclipse.unlimited.bot.nu/shop">Premium</a><a href="#features">Возможности</a><a href="#security">Безопасность</a></div>
                 <div class="footer-col"><b>Помощь</b><a href="/app#faq">FAQ</a><a href="#install">Установка</a><a href="/app">Все приложения</a></div>
             </div>
         </div>
@@ -284,7 +293,9 @@
             var f = document.getElementById('winFile');
             var s = document.getElementById('winSha');
             if (v) v.textContent = release.tag_name || '—';
-            if (f) f.textContent = exe ? exe.name + (exe.size ? ' · ' + (exe.size / 1048576).toFixed(1) + ' МБ' : '') : '—';
+            if (f) f.textContent = exe ? exe.name : '—';
+            var z = document.getElementById('winSize');
+            if (z) z.textContent = exe && exe.size ? (exe.size / 1048576).toFixed(1).replace('.', ',') + ' МБ' : '—';
             if (s) s.textContent = digest || 'на странице релиза';
         })
         .catch(function () {
