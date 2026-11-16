@@ -392,7 +392,7 @@ h1 .line { display: block; }
     width: min(360px, 86%); margin-left: auto; display: block;
     border-radius: 14px; border: 1px solid rgba(241,213,154,.22);
     box-shadow: 0 35px 80px rgba(0,0,0,.55);
-    transform: perspective(1000px) rotateY(-6deg) rotate(1deg);
+    transform: none;
 }
 .win-teaser-points { list-style: none; padding: 0; margin: 20px 0 0; display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: 12px; }
 .win-teaser-points li::before { content: '✓'; color: var(--gold); margin-right: 6px; }
