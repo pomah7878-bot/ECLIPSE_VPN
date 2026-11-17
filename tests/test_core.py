@@ -3138,6 +3138,19 @@ class PhoneLoginNoticeTest(unittest.IsolatedAsyncioTestCase):
         callback.message.edit_text.assert_not_awaited()
         self.assertTrue(callback.answer.call_args.kwargs.get("show_alert"))
 
+    async def test_unlink_removes_empty_registry_row(self):
+        from bot.services.trial_phone_registry import (
+            link_phone, unlink_phone_from_telegram, get_phone_for_telegram_id,
+        )
+        from database.connection import get_db
+        self.assertTrue(link_phone("79091112266", 777920004))
+        self.assertTrue(unlink_phone_from_telegram("79091112266", 777920004))
+        self.assertIsNone(get_phone_for_telegram_id(777920004))
+        with get_db() as c:
+            self.assertIsNone(
+                c.execute("SELECT 1 FROM trial_verified_phones WHERE phone_normalized = '79091112266'").fetchone()
+            )
+
 
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""

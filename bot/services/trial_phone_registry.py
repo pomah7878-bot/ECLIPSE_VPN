@@ -241,6 +241,14 @@ def unlink_phone_from_telegram(raw_phone: str, telegram_id: int) -> bool:
             "WHERE phone_normalized = ? AND telegram_id = ?",
             (phone, telegram_id),
         )
+        if cursor.rowcount:
+            # Номер больше ничей: ни Telegram, ни сайт-аккаунт — запись не храним,
+            # иначе она навсегда остаётся в реестре «чьей-то».
+            conn.execute(
+                "DELETE FROM trial_verified_phones "
+                "WHERE phone_normalized = ? AND telegram_id IS NULL AND site_account_id IS NULL",
+                (phone,),
+            )
         conn.commit()
         return cursor.rowcount > 0
 
