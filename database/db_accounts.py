@@ -91,6 +91,16 @@ def _get_or_create_telegram_site_account(telegram_id: int, referred_by_code: Opt
         return dict(row)
 
 
+def _norm_phone(phone: str) -> str:
+    """Номер в едином виде, как его сравнивает бот: «909…» → «7909…».
+
+    Нормализация нужна на входе в каждую функцию: если клиент набрал номер
+    без кода страны, прежний код заводил ему отдельный пустой аккаунт.
+    """
+    from bot.services.trial_phone_registry import normalize_phone
+    return normalize_phone(phone)
+
+
 def site_account_phone(account: Dict[str, Any]) -> Optional[str]:
     """Номер аккаунта: привязанный (phone) или тот, по которому он создан (provider='phone')."""
     if account.get("phone"):
@@ -100,6 +110,7 @@ def site_account_phone(account: Dict[str, Any]) -> Optional[str]:
 
 def find_site_account_by_phone(phone_normalized: str, exclude_id: int = 0) -> Optional[Dict[str, Any]]:
     """Аккаунт, которому принадлежит номер: привязанный (phone) или созданный входом по нему."""
+    phone_normalized = _norm_phone(phone_normalized)
     with get_db() as conn:
         row = conn.execute(
             "SELECT * FROM site_accounts WHERE (phone = ? OR (provider = 'phone' AND provider_user_id = ?)) AND id != ? ORDER BY id LIMIT 1",
@@ -178,6 +189,7 @@ def get_or_create_site_account_by_phone(phone_normalized: str, referred_by_code:
     нормализованный номер) — подтверждается звонком через zvonok.com
     при каждом входе. Повторный вход тем же номером возвращает ТОТ ЖЕ
     аккаунт (со всей историей покупок), а не создаёт новый."""
+    phone_normalized = _norm_phone(phone_normalized)
     with get_db() as conn:
         # Сначала аккаунт, к которому этот номер привязан как второй способ входа (Google/Яндекс/VK + телефон),
         # иначе вход по добавленному номеру открывал бы новый пустой аккаунт
@@ -276,6 +288,7 @@ def set_account_phone(account_id: int, phone_normalized: str) -> bool:
     аккаунту иметь и email (через OAuth/telegram), и телефон
     одновременно, для полной связки. Отклоняет, если номер уже
     привязан к ДРУГОМУ аккаунту."""
+    phone_normalized = _norm_phone(phone_normalized)
     with get_db() as conn:
         # занят и привязанный номер, и номер, по которому создан другой аккаунт (вход по телефону)
         existing = conn.execute(

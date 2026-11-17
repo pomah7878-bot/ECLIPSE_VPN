@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 177
+LATEST_VERSION = 178
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -4116,6 +4116,167 @@ def migration_177(conn: sqlite3.Connection) -> None:
     logger.info("Migration v177 applied: platform, ip_abuse, ip_abuse_events")
 
 
+def _norm_phone_with_country(digits: str) -> str:
+    """Телефон без кода страны → международный вид (v178).
+
+    Та же логика, что в bot.services.trial_phone_registry.normalize_phone;
+    здесь продублирована намеренно: миграция не должна зависеть от кода,
+    который может измениться позже.
+    """
+    d = "".join(ch for ch in str(digits or "") if ch.isdigit())
+    if len(d) == 11 and d.startswith("8"):
+        return "7" + d[1:]
+    if len(d) == 10 and d.startswith("9"):
+        return "7" + d
+    return d
+
+
+def _merge_phone_accounts(conn: sqlite3.Connection, keep_id: int, drop_id: int, phone: str) -> None:
+    """Вливает сайт-аккаунт drop в keep внутри соединения миграции (v178).
+
+    Повторяет merge_site_account_into, но без второго соединения с базой:
+    во время миграции открывать ещё одно нельзя — оно упрётся в блокировку.
+    """
+    keep = conn.execute(
+        "SELECT id, provider, telegram_id, placeholder_user_id FROM site_accounts WHERE id = ?",
+        (keep_id,),
+    ).fetchone()
+    drop = conn.execute(
+        "SELECT id, provider, telegram_id, placeholder_user_id FROM site_accounts WHERE id = ?",
+        (drop_id,),
+    ).fetchone()
+    if not keep or not drop or keep_id == drop_id:
+        return
+    if drop[1] not in ("phone", "telegram"):
+        # вход через Google/Яндекс/VK потерялся бы при объединении
+        logger.warning("Migration v178: аккаунт %s не объединён — вход через %s", drop_id, drop[1])
+        return
+
+    telegram_id = keep[2] or drop[2]
+    keep_placeholder, drop_placeholder = keep[3], drop[3]
+    owner = None
+    if telegram_id:
+        row = conn.execute("SELECT id FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
+        owner = row[0] if row else None
+    if owner is None and not keep_placeholder and drop_placeholder:
+        keep_placeholder = drop_placeholder  # чтобы ключи не остались без владельца
+    if owner is None:
+        owner = keep_placeholder
+    for placeholder in {drop_placeholder, keep_placeholder if telegram_id else None} - {None, owner}:
+        conn.execute("UPDATE vpn_keys SET user_id = ? WHERE user_id = ?", (owner, placeholder))
+    conn.execute("UPDATE anonymous_purchases SET site_account_id = ? WHERE site_account_id = ?", (keep_id, drop_id))
+    conn.execute("UPDATE trial_verified_phones SET site_account_id = ? WHERE site_account_id = ?", (keep_id, drop_id))
+    conn.execute("DELETE FROM site_accounts WHERE id = ?", (drop_id,))
+    conn.execute(
+        "UPDATE site_accounts SET phone = ?, telegram_id = ?, placeholder_user_id = ? WHERE id = ?",
+        (phone, telegram_id, keep_placeholder, keep_id),
+    )
+    conn.execute(
+        "UPDATE site_accounts SET provider_user_id = ? WHERE id = ? AND provider = 'phone'",
+        (phone, keep_id),
+    )
+    logger.info("Migration v178: аккаунт %s объединён с %s по номеру %s", drop_id, keep_id, phone)
+
+
+def migration_178(conn: sqlite3.Connection) -> None:
+    """Номер без кода страны — тот же человек, а не второй аккаунт.
+
+    Номер, набранный как «909…» (без +7), сохранялся отдельной личностью:
+    создавался пустой сайт-аккаунт без подписки, хотя в боте тот же номер
+    уже был привязан к Telegram. Приводим сохранённые номера к виду
+    «7909…» в реестре номеров, сайт-аккаунтах и отметках пробников;
+    аккаунты-дубли объединяем, сохраняя покупки и ключи.
+    """
+    changed = 0
+
+    # 1. Реестр номеров «номер → человек»
+    registry = conn.execute(
+        "SELECT id, phone_normalized, telegram_id, site_account_id FROM trial_verified_phones"
+    ).fetchall()
+    for rid, phone, telegram_id, site_account_id in registry:
+        target = _norm_phone_with_country(phone)
+        if not target or target == phone:
+            continue
+        other = conn.execute(
+            "SELECT id FROM trial_verified_phones WHERE phone_normalized = ? AND id != ?",
+            (target, rid),
+        ).fetchone()
+        if other:
+            conn.execute(
+                "UPDATE trial_verified_phones SET telegram_id = COALESCE(telegram_id, ?), "
+                "site_account_id = COALESCE(site_account_id, ?) WHERE id = ?",
+                (telegram_id, site_account_id, other[0]),
+            )
+            conn.execute("DELETE FROM trial_verified_phones WHERE id = ?", (rid,))
+        else:
+            conn.execute(
+                "UPDATE trial_verified_phones SET phone_normalized = ? WHERE id = ?", (target, rid)
+            )
+        changed += 1
+
+    # 2. Сайт-аккаунты: номер входа и привязанный номер
+    accounts = conn.execute(
+        "SELECT id, provider, provider_user_id, phone, telegram_id FROM site_accounts"
+    ).fetchall()
+    for account_id, provider, provider_user_id, phone, telegram_id in accounts:
+        # предыдущее объединение могло убрать этот аккаунт — тогда он уже влит в другой
+        if not conn.execute("SELECT 1 FROM site_accounts WHERE id = ?", (account_id,)).fetchone():
+            continue
+        by_phone_login = provider == "phone"
+        raw = provider_user_id if by_phone_login else phone
+        target = _norm_phone_with_country(raw)
+        if not target or target == raw:
+            continue
+        other = conn.execute(
+            "SELECT id, telegram_id FROM site_accounts WHERE id != ? AND "
+            "((provider = 'phone' AND provider_user_id = ?) OR phone = ?) LIMIT 1",
+            (account_id, target, target),
+        ).fetchone()
+        if other:
+            other_id, other_telegram = other[0], other[1]
+            # Оставляем аккаунт с Telegram (на нём подписка); если Telegram у
+            # текущего — оставляем текущий, чтобы его сессия не потерялась.
+            if not telegram_id and other_telegram:
+                keep_id, drop_id = account_id, other_id
+            else:
+                keep_id, drop_id = other_id, account_id
+            _merge_phone_accounts(conn, keep_id, drop_id, target)
+            survive_id = keep_id
+        else:
+            survive_id = account_id
+            if by_phone_login:
+                conn.execute(
+                    "UPDATE site_accounts SET provider_user_id = ? WHERE id = ?", (target, account_id)
+                )
+            conn.execute("UPDATE site_accounts SET phone = ? WHERE id = ?", (target, account_id))
+        conn.execute(
+            "UPDATE trial_verified_phones SET site_account_id = ? WHERE site_account_id = ?",
+            (survive_id, account_id),
+        )
+        changed += 1
+
+    # 3. Отметки пробников: номер — одна из личностей человека
+    claims = conn.execute(
+        "SELECT id, identity_value, scope FROM trial_claims WHERE identity_kind = 'phone'"
+    ).fetchall()
+    for claim_id, value, scope in claims:
+        target = _norm_phone_with_country(value)
+        if not target or target == value:
+            continue
+        duplicate = conn.execute(
+            "SELECT id FROM trial_claims WHERE identity_kind = 'phone' AND identity_value = ? "
+            "AND scope = ? AND id != ?",
+            (target, scope, claim_id),
+        ).fetchone()
+        if duplicate:
+            conn.execute("DELETE FROM trial_claims WHERE id = ?", (claim_id,))
+        else:
+            conn.execute("UPDATE trial_claims SET identity_value = ? WHERE id = ?", (target, claim_id))
+        changed += 1
+
+    logger.info("Migration v178 applied: номер без кода страны приведён к +7 (записей: %s)", changed)
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -4220,6 +4381,7 @@ MIGRATIONS = {
     175: migration_175,
     176: migration_176,
     177: migration_177,
+    178: migration_178,
 }
 
 

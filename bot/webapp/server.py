@@ -4221,6 +4221,12 @@ async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Re
     if not phone:
         return web.json_response({"error": "phone_required", "message": "Укажите номер телефона."}, status=400)
 
+    # Звоним на номер в международном виде: «909…» без кода страны Zvonok
+    # может не распознать, и человек попадёт в другую личность на сайте.
+    from bot.services.trial_phone_registry import normalize_phone
+    normalized_phone = normalize_phone(phone)
+    call_phone = ("+" + normalized_phone) if normalized_phone else phone
+
     from database.requests import get_zvonok_verification_method
     import bot.services.zvonok_verification as zv
 
@@ -4229,7 +4235,7 @@ async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Re
     if method == "pincode":
         # Мы сами звоним клиенту — код нужно показать ему НА САЙТЕ
         # заранее, он вводит его с клавиатуры телефона во время звонка.
-        result = await zv.request_phone_confirmation_pincode(phone)
+        result = await zv.request_phone_confirmation_pincode(call_phone)
         if not result or not result.get("pincode"):
             return web.json_response(
                 {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
@@ -4240,7 +4246,7 @@ async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Re
     if method == "flashcall_real":
         # Настоящий Flash Call — клиент читает последние 4 цифры номера,
         # с которого ему позвонили, вводит их у нас на сайте.
-        result = await zv.request_phone_confirmation_flashcall_real(phone)
+        result = await zv.request_phone_confirmation_flashcall_real(call_phone)
         if not result or not result.get("call_id"):
             return web.json_response(
                 {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
@@ -4250,7 +4256,7 @@ async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Re
 
     if method == "voice_code":
         # Робот диктует код — клиент вводит услышанное у нас на сайте.
-        result = await zv.request_phone_confirmation_voice_code(phone)
+        result = await zv.request_phone_confirmation_voice_code(call_phone)
         if not result or not result.get("call_id"):
             return web.json_response(
                 {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
@@ -4259,7 +4265,7 @@ async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Re
         return web.json_response({"status": "ok", "method": "voice_code", "call_id": result["call_id"]})
 
     if method == "press_digit":
-        result = await zv.request_phone_confirmation_press_digit(phone)
+        result = await zv.request_phone_confirmation_press_digit(call_phone)
         if not result or not result.get("call_id"):
             return web.json_response(
                 {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},
@@ -4267,7 +4273,7 @@ async def _handle_public_auth_phone_request_impl(request: web.Request) -> web.Re
             )
         return web.json_response({"status": "ok", "method": "press_digit", "call_id": result["call_id"]})
 
-    result = await zv.request_phone_confirmation(phone)
+    result = await zv.request_phone_confirmation(call_phone)
     if not result or not result.get("allowed_phones_for_call"):
         return web.json_response(
             {"error": "verification_unavailable", "message": "Вход по телефону временно недоступен, попробуйте позже."},

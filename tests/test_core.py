@@ -2941,6 +2941,104 @@ class CabinetPhoneTest(unittest.TestCase):
         self.assertEqual(cab.collect(777008)["phone"], "")  # у остальных телефона нет
 
 
+class PhoneNormalizationTest(unittest.TestCase):
+    """Номер без кода страны — тот же человек: «909…» не должен создавать второй аккаунт."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_normalize_without_country_code(self):
+        from bot.services.trial_phone_registry import normalize_phone
+        self.assertEqual(normalize_phone("9099638727"), "79099638727")
+        self.assertEqual(normalize_phone("79099638727"), "79099638727")
+        self.assertEqual(normalize_phone("+7 (909) 963-87-27"), "79099638727")
+        self.assertEqual(normalize_phone("89099638727"), "79099638727")
+        self.assertEqual(normalize_phone("380501112233"), "380501112233")  # чужая страна не трогаем
+        self.assertEqual(normalize_phone(""), "")
+
+    def test_phone_login_finds_same_account_without_country_code(self):
+        from database.db_accounts import get_or_create_site_account_by_phone
+        account = get_or_create_site_account_by_phone("79002233445")
+        self.assertEqual(get_or_create_site_account_by_phone("9002233445")["id"], account["id"])
+
+
+class PhoneMergeMigrationTest(unittest.TestCase):
+    """Миграция v178: дубль, созданный номером без +7, вливается в аккаунт с подпиской."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_migration_merges_countryless_duplicate(self):
+        from database.connection import get_db
+        from database.migrations import migration_178
+        from database.requests import get_or_create_user
+        from database.db_accounts import (
+            get_or_create_site_account, link_oauth_to_site_account, get_site_account_by_id,
+        )
+
+        telegram_id = 777911001
+        user, _ = get_or_create_user(telegram_id, username="phone_merge_mig")
+        canon = get_or_create_site_account("phone", "79001234567")
+        self.assertTrue(link_oauth_to_site_account(canon["id"], telegram_id))
+        duplicate = get_or_create_site_account("phone", "9001234567")
+        with get_db() as c:
+            key_id = c.execute(
+                "INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))",
+                (user["id"],),
+            ).lastrowid
+            c.execute(
+                "INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, vpn_key_id, site_account_id) "
+                "VALUES ('mig-178', 1, 'MIG1-781', 'paid', ?, ?)",
+                (key_id, duplicate["id"]),
+            )
+            c.execute(
+                "INSERT INTO trial_verified_phones (phone_normalized, telegram_id, site_account_id) VALUES (?, ?, ?)",
+                ("9001234567", None, duplicate["id"]),
+            )
+            c.execute(
+                "INSERT INTO trial_verified_phones (phone_normalized, telegram_id) VALUES (?, ?)",
+                ("79001234567", telegram_id),
+            )
+            c.execute(
+                "INSERT INTO trial_claims (identity_kind, identity_value, scope) VALUES ('phone', '9001234567', 'account')"
+            )
+            c.execute(
+                "INSERT INTO trial_claims (identity_kind, identity_value, scope) VALUES ('phone', '79001234567', 'account')"
+            )
+            c.execute("UPDATE site_accounts SET placeholder_user_id = ? WHERE id = ?", (user["id"], canon["id"]))
+            c.execute("UPDATE site_accounts SET placeholder_user_id = ? WHERE id = ?", (user["id"], duplicate["id"]))
+            migration_178(c)
+
+        # проверяем после коммита: запросы ниже идут отдельными соединениями
+        with get_db() as c:
+            # дубль сохранил сессию и получил личность канонического аккаунта
+            survivor = c.execute("SELECT * FROM site_accounts WHERE id = ?", (duplicate["id"],)).fetchone()
+            self.assertIsNotNone(survivor)
+            self.assertEqual(survivor["provider_user_id"], "79001234567")
+            self.assertEqual(survivor["phone"], "79001234567")
+            self.assertEqual(survivor["telegram_id"], telegram_id)
+            self.assertIsNone(c.execute("SELECT 1 FROM site_accounts WHERE id = ?", (canon["id"],)).fetchone())
+
+            purchase = c.execute("SELECT site_account_id FROM anonymous_purchases WHERE order_id = 'mig-178'").fetchone()
+            self.assertEqual(purchase["site_account_id"], duplicate["id"])
+
+            registry = c.execute(
+                "SELECT phone_normalized, site_account_id FROM trial_verified_phones "
+                "WHERE phone_normalized IN ('9001234567', '79001234567')"
+            ).fetchall()
+            self.assertEqual(len(registry), 1)
+            self.assertEqual(registry[0]["phone_normalized"], "79001234567")
+            self.assertEqual(registry[0]["site_account_id"], duplicate["id"])
+
+            claims = c.execute(
+                "SELECT identity_value FROM trial_claims WHERE identity_kind = 'phone' "
+                "AND identity_value IN ('9001234567', '79001234567')"
+            ).fetchall()
+            self.assertEqual([row["identity_value"] for row in claims], ["79001234567"])
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 
