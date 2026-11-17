@@ -12,6 +12,7 @@ import json
 import re
 import html as _html_module
 import logging
+import mimetypes
 import os
 import base64
 import hmac
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 # Путь к директории с шаблонами (index.html)
 _TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+mimetypes.add_type("image/webp", ".webp")
 
 # Кэш последней успешно полученной от панели подписки (Happ/INCY),
 # ключ — sub_id. In-memory, живёт до перезапуска процесса — если панель
@@ -6620,11 +6622,18 @@ async def _security_headers(request: web.Request, response: web.StreamResponse):
 
 
 async def _static_js_css_revalidate(request: web.Request, response: web.StreamResponse):
-    """JS и CSS сайта меняются при обновлении бота, а без Cache-Control мобильные браузеры
-    держат их в кэше по своему усмотрению (после правки клиент видит старый вид).
-    «no-cache» = каждый раз сверять по ETag: файл не изменился — ответ 304 без загрузки."""
-    if request.path.startswith("/static/") and request.path.endswith((".js", ".css")):
+    """JS/CSS сверяем по ETag, изображения кэшируем на сутки.
+
+    Изображения версионируются query-параметрами (?v=...), поэтому суточный
+    кэш безопасен и убирает повторную загрузку тяжёлых скриншотов.
+    """
+    if not request.path.startswith("/static/"):
+        return
+    if request.path.endswith((".js", ".css")):
         response.headers.setdefault("Cache-Control", "no-cache")
+        return
+    if request.path.lower().endswith((".webp", ".png", ".jpg", ".jpeg", ".svg", ".ico")):
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
 
 
 def create_web_app() -> web.Application:

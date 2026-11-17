@@ -853,3 +853,8 @@ html.js-motion [data-motion-demo].is-visible { --motion-play: running; }
     .win-window.motion-screen .win-layer-b,
     .win-power-pulse, .settings-focus, .tv-focus { display: none; }
 }
+
+/* На десктопе Premium уже есть в шапке; в мобильном меню ссылка остаётся. */
+@media (min-width: 901px) {
+    .nav .nav-premium { display: none; }
+}
