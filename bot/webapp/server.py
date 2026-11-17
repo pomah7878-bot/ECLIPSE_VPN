@@ -5172,7 +5172,9 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             })
         return web.json_response({"ok": True, "logged_in": False})
 
-    from database.requests import get_site_account_by_id, site_account_phone, phone_unlink_blocker
+    from database.requests import (
+        get_site_account_by_id, site_account_phone, phone_unlink_blocker, email_unlink_blocker,
+    )
     account = get_site_account_by_id(account_id)
     if not account:
         return web.json_response({"ok": True, "logged_in": False})
@@ -5180,6 +5182,8 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     # Готовый текст причины, по которой номер нельзя отвязать (None — можно):
     # экран кабинета не дублирует правило про «единственный способ входа».
     phone_unlink_blocked = phone_unlink_blocker(account)
+    # То же для почты: приложение показывает причину вместо кнопки «Отвязать».
+    email_unlink_blocked = email_unlink_blocker(account)
 
     # Смена почты доступна, только когда вход по почте включён и SMTP настроен:
     # иначе код просто некуда отправить, и кнопка была бы нерабочей.
@@ -5194,7 +5198,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         return web.json_response({
             "ok": True, "logged_in": True,
             "phone": site_account_phone(account),
-            "phone_unlink_blocked": phone_unlink_blocked,
+            "phone_unlink_blocked": phone_unlink_blocked, "email_unlink_blocked": email_unlink_blocked,
             "email": account.get("email"),
             "email_change_enabled": email_change_enabled,
         })
@@ -5243,7 +5247,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "ok": True, "logged_in": True, "account_type": "telegram",
             "can_link_oauth": account.get("provider") in (None, "telegram"),
             "phone": site_account_phone(account),
-            "phone_unlink_blocked": phone_unlink_blocked,
+            "phone_unlink_blocked": phone_unlink_blocked, "email_unlink_blocked": email_unlink_blocked,
             "email": account.get("email"),
             "email_change_enabled": email_change_enabled,
             "avatar_base64": base64.b64encode(avatar).decode("ascii") if avatar else None,
@@ -5257,7 +5261,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     if not purchase:
         return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": [],
                                   "phone": site_account_phone(account),
-                                  "phone_unlink_blocked": phone_unlink_blocked,
+                                  "phone_unlink_blocked": phone_unlink_blocked, "email_unlink_blocked": email_unlink_blocked,
                                   "email": account.get("email"),
                                   "email_change_enabled": email_change_enabled,
                                   "can_link_oauth": not account.get("email")})
@@ -5266,7 +5270,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     if not key:
         return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": [],
                                   "phone": site_account_phone(account),
-                                  "phone_unlink_blocked": phone_unlink_blocked,
+                                  "phone_unlink_blocked": phone_unlink_blocked, "email_unlink_blocked": email_unlink_blocked,
                                   "email": account.get("email"),
                                   "email_change_enabled": email_change_enabled,
                                   "can_link_oauth": not account.get("email")})
@@ -5275,7 +5279,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         "ok": True, "logged_in": True, "account_type": "oauth",
         "can_link_oauth": not account.get("email"),  # вошёл по телефону — предлагаем Google/Яндекс/VK
         "phone": site_account_phone(account),
-        "phone_unlink_blocked": phone_unlink_blocked,
+        "phone_unlink_blocked": phone_unlink_blocked, "email_unlink_blocked": email_unlink_blocked,
         "email": account.get("email"),
         "email_change_enabled": email_change_enabled,
         "keys": [{
