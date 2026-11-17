@@ -5159,6 +5159,12 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     # экран кабинета не дублирует правило про «единственный способ входа».
     phone_unlink_blocked = phone_unlink_blocker(account)
 
+    # Смена почты доступна, только когда вход по почте включён и SMTP настроен:
+    # иначе код просто некуда отправить, и кнопка была бы нерабочей.
+    from bot.services.email_sender import is_email_configured
+    from database.requests import is_site_auth_method_enabled
+    email_change_enabled = is_site_auth_method_enabled('email') and is_email_configured()
+
     # Лёгкий режим для блока «Телефон»: Mini App запрашивает его при каждом
     # открытии кабинета, и тянуть ради номера ключи, подписки и аватар
     # Telegram излишне.
@@ -5168,6 +5174,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "phone": site_account_phone(account),
             "phone_unlink_blocked": phone_unlink_blocked,
             "email": account.get("email"),
+            "email_change_enabled": email_change_enabled,
         })
 
     if account.get("telegram_id"):
@@ -5216,6 +5223,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "phone": site_account_phone(account),
             "phone_unlink_blocked": phone_unlink_blocked,
             "email": account.get("email"),
+            "email_change_enabled": email_change_enabled,
             "avatar_base64": base64.b64encode(avatar).decode("ascii") if avatar else None,
             "keys": keys_with_urls,
             "balance_cents": balance_cents,
@@ -5229,6 +5237,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
                                   "phone": site_account_phone(account),
                                   "phone_unlink_blocked": phone_unlink_blocked,
                                   "email": account.get("email"),
+                                  "email_change_enabled": email_change_enabled,
                                   "can_link_oauth": not account.get("email")})
 
     key = get_key_details_by_id(purchase["vpn_key_id"])
@@ -5237,6 +5246,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
                                   "phone": site_account_phone(account),
                                   "phone_unlink_blocked": phone_unlink_blocked,
                                   "email": account.get("email"),
+                                  "email_change_enabled": email_change_enabled,
                                   "can_link_oauth": not account.get("email")})
 
     return web.json_response({
@@ -5245,6 +5255,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
         "phone": site_account_phone(account),
         "phone_unlink_blocked": phone_unlink_blocked,
         "email": account.get("email"),
+        "email_change_enabled": email_change_enabled,
         "keys": [{
             "key_id": key["id"],
             "display_name": key.get("tariff_name") or f"Ключ #{key['id']}",
