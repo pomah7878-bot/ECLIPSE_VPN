@@ -2386,6 +2386,7 @@
                 const viaMail = site.email_login_enabled === true ? ' · вход по почте' : '';
                 parts.push(`<p class="text-xs text-mist">✉️ Почта: <span class="text-ink">${escapeHtml(String(s.email))}</span>${viaMail}</p>`);
                 if (emailEnabled) parts.push(`<button onclick="showEmailForm()" class="${btn}">Изменить почту</button>`);
+                parts.push(`<button onclick="unlinkEmail()" class="block w-full py-2 text-[11px] text-mist-dim underline transition">Отвязать почту</button>`);
             } else if (emailEnabled) {
                 parts.push(`<p class="text-xs text-mist">Добавьте почту — ещё один способ входа и связь с поддержкой.</p>`);
                 parts.push(`<button onclick="showEmailForm()" class="${btn}">✉️ Добавить почту</button>`);
@@ -2445,6 +2446,14 @@
                 <button onclick="verifyEmailChange()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить</button>
                 <button onclick="showEmailForm()" class="w-full py-2 mt-1 text-xs text-mist">Другая почта</button>
                 <div id="emailChangeCodeError" class="text-xs text-alert mt-2 text-center"></div>`;
+        }
+
+        async function unlinkEmail() {
+            if (!confirm('Отвязать почту от аккаунта? Вход по ней перестанет работать.')) return;
+            const res = await postPublicAPI('account/unlink-email', {});
+            if (!res.ok) { showToast(res.message || 'Не удалось отвязать почту'); return; }
+            showToast('Почта отвязана');
+            await renderPhoneBlock();
         }
 
         async function verifyEmailChange() {

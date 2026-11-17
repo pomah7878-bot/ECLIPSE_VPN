@@ -43,6 +43,7 @@ __all__ = [
     'find_site_accounts_by_email',
     'resolve_email_login_account',
     'clear_account_email',
+    'email_unlink_blocker',
     'get_or_create_placeholder_user_for_site_account',
     'get_site_account_by_placeholder_user_id',
 ]
@@ -633,6 +634,21 @@ def resolve_email_login_account(email: str, referred_by_code: Optional[str] = No
     if not (keep.get("email") or "").strip():
         set_account_email(keep["id"], email)
     return get_site_account_by_id(keep["id"]) or keep
+
+
+def email_unlink_blocker(account: Dict[str, Any]) -> Optional[str]:
+    """Почему почту нельзя отвязать самому (None — можно).
+
+    В отличие от кнопки «❌ Это не я» в уведомлении (там владелец может
+    пожертвовать доступом ради безопасности), здесь клиент отвязывает почту
+    сам — и если это его единственный способ входа, он потеряет кабинет.
+    """
+    if not (account.get("email") or "").strip():
+        return "Почта не привязана."
+    if (account.get("provider") or "") == "email" and not account.get("telegram_id"):
+        return ("Это единственный способ входа в аккаунт. Сначала привяжите "
+                "Telegram или другой способ входа, потом отвязывайте почту.")
+    return None
 
 
 def clear_account_email(account_id: int) -> bool:

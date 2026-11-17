@@ -5400,6 +5400,31 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     return web.json_response({"ok": True, "verified": True, "phone": normalized, "telegram_linked": telegram_linked})
 
 
+async def handle_public_account_unlink_email(request: web.Request) -> web.Response:
+    """POST /api/public/account/unlink-email — отвязывает почту от кабинета.
+
+    Почта перестаёт быть способом входа и контактом для писем. Если это
+    единственный вход (provider='email' и нет Telegram) — отвязка отклоняется:
+    иначе клиент потеряет доступ к кабинету и подписке."""
+    account_id = _resolve_account_id_for_request(request)
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+
+    from database.requests import get_site_account_by_id, email_unlink_blocker, clear_account_email
+
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"ok": False, "message": "Аккаунт не найден, войдите заново."}, status=401)
+    blocker = email_unlink_blocker(account)
+    if blocker:
+        return web.json_response({"ok": False, "message": blocker}, status=409)
+    if not clear_account_email(account_id):
+        return web.json_response(
+            {"ok": False, "message": "Не удалось отвязать почту. Попробуйте ещё раз."}, status=500
+        )
+    return web.json_response({"ok": True})
+
+
 async def handle_public_account_unlink_phone(request: web.Request) -> web.Response:
     """POST /api/public/account/unlink-phone — отвязывает номер от кабинета.
 
@@ -7011,6 +7036,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/phone-switch", handle_public_account_phone_switch)
     app.router.add_post("/api/public/account/phone-merge", handle_public_account_phone_merge)
     app.router.add_post("/api/public/account/unlink-phone", handle_public_account_unlink_phone)
+    app.router.add_post("/api/public/account/unlink-email", handle_public_account_unlink_email)
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)

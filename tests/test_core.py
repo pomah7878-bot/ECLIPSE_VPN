@@ -3482,6 +3482,46 @@ class ClearAccountEmailTest(unittest.TestCase):
         self.assertFalse(clear_account_email(999999))
 
 
+class EmailUnlinkApiTest(unittest.TestCase):
+    """Отвязка почты из кабинета и приложения: контактную — можно, единственный вход — нельзя."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def _post(self, account_id):
+        import asyncio
+        from aiohttp.test_utils import make_mocked_request
+        from bot.webapp import server as sv
+
+        async def run():
+            req = make_mocked_request(
+                "POST", "/",
+                headers={
+                    "Cookie": "site_session=" + sv._sign_session(account_id),
+                    "Content-Type": "application/json",
+                },
+            )
+            req._read_bytes = b"{}"
+            return await sv.handle_public_account_unlink_email(req)
+
+        return asyncio.run(run())
+
+    def test_contact_email_is_unlinked(self):
+        from database.requests import get_or_create_site_account, get_site_account_by_id
+        account = get_or_create_site_account("google", "g-unlink-1", email="unlink1@example.com")
+        resp = self._post(account["id"])
+        self.assertEqual(resp.status, 200)
+        self.assertIsNone(get_site_account_by_id(account["id"])["email"])
+
+    def test_email_login_of_last_resort_is_kept(self):
+        from database.requests import get_or_create_site_account, get_site_account_by_id
+        account = get_or_create_site_account("email", "unlink2@example.com", email="unlink2@example.com")
+        resp = self._post(account["id"])
+        self.assertEqual(resp.status, 409)
+        self.assertEqual(get_site_account_by_id(account["id"])["email"], "unlink2@example.com")
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 

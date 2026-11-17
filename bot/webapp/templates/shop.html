@@ -2090,6 +2090,14 @@
             reloadAccountData();
         }
 
+        async function unlinkAccountEmail() {
+            if (!confirm('Отвязать почту от аккаунта? Вход по ней перестанет работать.')) return;
+            const res = await postAPISafe('account/unlink-email', {});
+            if (!res.ok) { showToast(res.message || 'Не удалось отвязать почту'); return; }
+            showToast('Почта отвязана');
+            reloadAccountData();
+        }
+
         async function reloadAccountData() {
             try {
                 renderAccountData(await fetchAPI('account/session'));
@@ -2299,6 +2307,7 @@
                             ${session.email ? 'Изменить почту' : '✉️ Добавить почту'}
                         </button>
                         <div id="emailChangeBody" class="hidden mt-2 text-left"></div>
+                        ${session.email ? '<button onclick="unlinkAccountEmail()" class="block w-full py-2 mt-2 text-[11px] text-mist-dim underline transition">Отвязать почту</button>' : ''}
                     </div>
                 `;
             }
