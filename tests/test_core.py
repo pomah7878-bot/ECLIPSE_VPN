@@ -437,7 +437,7 @@ class EmailLoginTests(unittest.TestCase):
         ratelimit._BUCKETS.clear()
         with get_db() as conn:
             conn.execute("DELETE FROM email_login_codes")
-            conn.execute("DELETE FROM site_accounts WHERE provider = 'email'")
+            conn.execute("DELETE FROM site_accounts WHERE provider = 'email' OR provider_user_id = 'g-email-test'")
         self.sent = []
         env = mock.patch.dict(os.environ, {
             "SMTP_HOST": "smtp.example.com", "SMTP_USER": "u", "SMTP_PASSWORD": "p", "SMTP_FROM": "noreply@example.com",
@@ -480,20 +480,29 @@ class EmailLoginTests(unittest.TestCase):
         self.assertEqual(to, "ivan@example.com")
         self.assertRegex(code, r"^\d{6}$")
         resp = self._verify(code)
-        self.assertEqual(json.loads(resp.text), {"ok": True})
+        body = json.loads(resp.text)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body.get("account_type"), "email")
         with get_db() as conn:
             row = conn.execute("SELECT * FROM site_accounts WHERE provider = 'email'").fetchone()
         self.assertEqual((row["provider_user_id"], row["email"]), ("ivan@example.com", "ivan@example.com"))
         self.assertEqual(sv._verify_session(resp.cookies["site_session"].value), row["id"])
         self.assertEqual(self._verify(code).status, 400)  # код одноразовый
 
-    def test_same_email_on_oauth_account_is_not_merged(self):
+    def test_same_email_on_oauth_account_is_used(self):
+        """Почта — контакт, как номер: вход по ней открывает существующий аккаунт
+        (с подпиской), а не заводит рядом пустой."""
         from database.requests import get_or_create_site_account
         from bot.webapp import server as sv
         google = get_or_create_site_account("google", "g-email-test", email="ivan@example.com")
         self._start()
         resp = self._verify(self.sent[-1][1])
-        self.assertNotEqual(sv._verify_session(resp.cookies["site_session"].value), google["id"])
+        self.assertEqual(sv._verify_session(resp.cookies["site_session"].value), google["id"])
+        with get_db() as conn:
+            created = conn.execute(
+                "SELECT COUNT(*) FROM site_accounts WHERE provider = 'email'"
+            ).fetchone()[0]
+        self.assertEqual(created, 0, "второй аккаунт на тот же адрес не нужен")
 
     def test_app_client_gets_exchange_code_with_pkce(self):
         import base64, hashlib
@@ -3376,6 +3385,67 @@ class DeleteUserEverywhereTest(unittest.IsolatedAsyncioTestCase):
     async def test_delete_unknown_user_returns_none(self):
         from bot.services.user_cleanup import delete_user_everywhere
         self.assertIsNone(await delete_user_everywhere(111111111))
+
+
+class EmailLoginResolveTest(unittest.TestCase):
+    """Вход по почте подтягивает существующий аккаунт с подпиской, как номер телефона."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_prefers_telegram_linked_account(self):
+        from database.requests import (
+            get_or_create_user, get_or_create_site_account, resolve_email_login_account,
+        )
+        from database.connection import get_db
+
+        user, _ = get_or_create_user(111222333, username="email-login")
+        account = get_or_create_site_account("google", "g-email-login", email="login1@example.com")
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE site_accounts SET telegram_id = ? WHERE id = ?", (111222333, account["id"])
+            )
+        resolved = resolve_email_login_account("Login1@Example.com")
+        self.assertEqual(resolved["id"], account["id"])
+        self.assertEqual(resolved["telegram_id"], 111222333)
+
+    def test_merges_separate_email_account_and_keeps_its_purchases(self):
+        from database.requests import (
+            get_or_create_user, get_or_create_site_account, resolve_email_login_account,
+        )
+        from database.connection import get_db
+
+        get_or_create_user(111222444, username="email-login-2")
+        telegram_account = get_or_create_site_account("telegram", "111222444", email="login2@example.com")
+        email_account = get_or_create_site_account("email", "login2@example.com", email="login2@example.com")
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE site_accounts SET telegram_id = ? WHERE id = ?", (111222444, telegram_account["id"])
+            )
+            conn.execute(
+                "INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, site_account_id) "
+                "VALUES ('order-emaillogin-2', 1, 'CLAIM2', 'paid', ?)",
+                (email_account["id"],),
+            )
+
+        resolved = resolve_email_login_account("login2@example.com")
+        self.assertEqual(resolved["id"], telegram_account["id"])
+        with get_db() as conn:
+            left = conn.execute(
+                "SELECT COUNT(*) FROM site_accounts WHERE id = ?", (email_account["id"],)
+            ).fetchone()[0]
+            moved = conn.execute(
+                "SELECT site_account_id FROM anonymous_purchases WHERE order_id = 'order-emaillogin-2'"
+            ).fetchone()[0]
+        self.assertEqual(left, 0, "пустой email-аккаунт должен влиться в основной")
+        self.assertEqual(moved, telegram_account["id"], "покупка должна переехать в основной аккаунт")
+
+    def test_creates_email_account_for_new_address(self):
+        from database.requests import resolve_email_login_account
+        account = resolve_email_login_account("brand-new@example.com")
+        self.assertEqual(account["provider"], "email")
+        self.assertEqual(account["email"], "brand-new@example.com")
 
 
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):

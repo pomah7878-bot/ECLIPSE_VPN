@@ -4,9 +4,12 @@
 bot/services/oauth.py (сам OAuth-обмен) и bot/services/anonymous_purchase.py
 (покупки/ключи).
 """
-from typing import Optional, Dict, Any
+import logging
+from typing import Optional, Dict, Any, List
 import sqlite3
 from .connection import get_db
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     'get_or_create_site_account',
@@ -37,6 +40,8 @@ __all__ = [
     'email_taken',
     'set_account_email',
     'find_site_account_by_contact',
+    'find_site_accounts_by_email',
+    'resolve_email_login_account',
     'get_or_create_placeholder_user_for_site_account',
     'get_site_account_by_placeholder_user_id',
 ]
@@ -147,7 +152,9 @@ def verify_phone_proof(proof: str, account_id: int):
 
 def phone_merge_blocker(keep: Dict[str, Any], drop: Dict[str, Any]) -> Optional[str]:
     """Почему нельзя влить drop в keep без потерь (None — можно)."""
-    if drop.get("provider") not in ("phone", "telegram"):
+    # email-аккаунт вливать можно: его «личность» — адрес, а он останется
+    # на keep (email проставляется при объединении), вход по почте не пропадёт.
+    if drop.get("provider") not in ("phone", "telegram", "email"):
         return "Тот аккаунт создан входом через Google/Яндекс/VK — при объединении этот вход пропал бы."
     if keep.get("telegram_id") and drop.get("telegram_id") and keep["telegram_id"] != drop["telegram_id"]:
         return "К аккаунтам привязаны разные Telegram."
@@ -159,9 +166,11 @@ def phone_merge_blocker(keep: Dict[str, Any], drop: Dict[str, Any]) -> Optional[
     return None
 
 
-def merge_site_account_into(keep_id: int, drop_id: int, phone_normalized: str) -> Optional[str]:
-    """Вливает аккаунт drop (вход по номеру / кодом из бота) в keep: покупки, ключи, Telegram, номер.
-    Возвращает текст ошибки или None при успехе."""
+def merge_site_account_into(keep_id: int, drop_id: int, phone_normalized: Optional[str] = None) -> Optional[str]:
+    """Вливает аккаунт drop (вход по номеру / кодом из бота / по почте) в keep:
+    покупки, ключи, Telegram, номер и почту. None — если телефон не передан,
+    номер остаётся прежним (объединение по почте). Возвращает текст ошибки
+    или None при успехе."""
     keep, drop = get_site_account_by_id(keep_id), get_site_account_by_id(drop_id)
     if not keep or not drop or keep_id == drop_id:
         return "Аккаунт не найден."
@@ -183,7 +192,16 @@ def merge_site_account_into(keep_id: int, drop_id: int, phone_normalized: str) -
         # Реестр номеров (его читает бот) не должен указывать на удалённый аккаунт
         conn.execute("UPDATE trial_verified_phones SET site_account_id = ? WHERE site_account_id = ?", (keep_id, drop_id))
         conn.execute("DELETE FROM site_accounts WHERE id = ?", (drop_id,))
-        conn.execute("UPDATE site_accounts SET phone = ?, telegram_id = ? WHERE id = ?", (phone_normalized, telegram_id, keep_id))
+        if phone_normalized:
+            conn.execute(
+                "UPDATE site_accounts SET phone = ?, telegram_id = ?, email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?",
+                (phone_normalized, telegram_id, drop.get("email"), keep_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE site_accounts SET telegram_id = ?, email = COALESCE(NULLIF(email, ''), ?) WHERE id = ?",
+                (telegram_id, drop.get("email"), keep_id),
+            )
     return None
 
 
@@ -562,6 +580,58 @@ def find_site_account_by_contact(raw: str) -> Optional[Dict[str, Any]]:
             if row:
                 return dict(row)
     return None
+
+
+def find_site_accounts_by_email(email: str) -> List[Dict[str, Any]]:
+    """Все аккаунты, у которых этот адрес указан (в любом регистре)."""
+    email = (email or "").strip().lower()
+    if not email:
+        return []
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM site_accounts WHERE LOWER(email) = ? ORDER BY id", (email,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def resolve_email_login_account(email: str, referred_by_code: Optional[str] = None) -> Dict[str, Any]:
+    """Аккаунт для входа по почте — с подпиской, как у входа по номеру.
+
+    Почта — такой же контакт, как телефон: если адрес уже привязан к аккаунту
+    Telegram/Google/Яндекс или к аккаунту входа по номеру, входим в НЕГО со
+    всей историей, а не создаём пустой аккаунт. Отдельный аккаунт «вход по
+    почте» заводится только когда адреса нет ни у кого. Пустые email-аккаунты
+    с тем же адресом вливаются в найденный, чтобы не терять их ключи.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        raise ValueError("email required")
+
+    accounts = find_site_accounts_by_email(email)
+    if not accounts:
+        return get_or_create_site_account("email", email, email=email, referred_by_code=referred_by_code)
+
+    # Приоритет: аккаунт с Telegram (в боте есть подписка и переписка) →
+    # аккаунт другого способа входа (Google/Яндекс/VK/номер) → чистая почта.
+    def rank(account: Dict[str, Any]):
+        return (
+            0 if account.get("telegram_id") else 1,
+            0 if account.get("provider") != "email" else 1,
+            account.get("id") or 0,
+        )
+
+    accounts.sort(key=rank)
+    keep = accounts[0]
+    for other in accounts[1:]:
+        if other.get("provider") != "email":
+            continue
+        try:
+            merge_site_account_into(keep["id"], other["id"])
+        except Exception as e:  # noqa: BLE001 — вход важнее объединения
+            logger.warning(f"Вход по почте {email}: не удалось влить аккаунт {other['id']}: {e}")
+    if not (keep.get("email") or "").strip():
+        set_account_email(keep["id"], email)
+    return get_site_account_by_id(keep["id"]) or keep
 
 
 def email_taken(email: str, exclude_id: int = 0) -> bool:

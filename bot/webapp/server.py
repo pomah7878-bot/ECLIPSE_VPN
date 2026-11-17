@@ -4501,7 +4501,8 @@ async def handle_public_account_email_verify(request: web.Request) -> web.Respon
 
     from bot.services.email_sender import normalize_email
     from database.requests import (
-        consume_email_login_code, create_oauth_exchange_code, get_or_create_site_account, is_site_auth_method_enabled,
+        consume_email_login_code, create_oauth_exchange_code, is_site_auth_method_enabled,
+        resolve_email_login_account,
     )
 
     is_app_client = data.get("client") == "app"
@@ -4521,14 +4522,23 @@ async def handle_public_account_email_verify(request: web.Request) -> web.Respon
         _rl_record(f"email-fail:{_ip}")
         return web.json_response({"ok": False, "error": "invalid_code", "message": "Код неверный или истёк."}, status=400)
 
-    account = get_or_create_site_account(
-        "email", email, email=email, referred_by_code=request.cookies.get("site_ref_code"),
+    # Почта — такой же контакт, как номер: если адрес уже привязан к аккаунту
+    # Telegram/Google/Яндекс, входим в НЕГО с подпиской и историей, а не в
+    # пустой аккаунт. Новый аккаунт — только если адреса нет ни у кого.
+    account = resolve_email_login_account(
+        email, referred_by_code=request.cookies.get("site_ref_code"),
+    )
+    account_type = (
+        "telegram" if account.get("telegram_id")
+        else "email" if (account.get("provider") or "") == "email"
+        else "oauth"
     )
     if is_app_client:
         return web.json_response({
             "ok": True, "exchange_code": create_oauth_exchange_code(account["id"], code_challenge=code_challenge),
+            "account_type": account_type,
         })
-    resp = web.json_response({"ok": True})
+    resp = web.json_response({"ok": True, "account_type": account_type})
     resp.set_cookie("site_session", _sign_session(account["id"]), max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
     return resp
 

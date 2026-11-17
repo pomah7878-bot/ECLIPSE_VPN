@@ -2383,7 +2383,8 @@
             const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
             const parts = [];
             if (s.email) {
-                parts.push(`<p class="text-xs text-mist">✉️ Почта: <span class="text-ink">${escapeHtml(String(s.email))}</span></p>`);
+                const viaMail = site.email_login_enabled === true ? ' · вход по почте' : '';
+                parts.push(`<p class="text-xs text-mist">✉️ Почта: <span class="text-ink">${escapeHtml(String(s.email))}</span>${viaMail}</p>`);
                 if (emailEnabled) parts.push(`<button onclick="showEmailForm()" class="${btn}">Изменить почту</button>`);
             } else if (emailEnabled) {
                 parts.push(`<p class="text-xs text-mist">Добавьте почту — ещё один способ входа и связь с поддержкой.</p>`);

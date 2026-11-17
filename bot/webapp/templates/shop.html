@@ -2293,7 +2293,7 @@
                 emailBlock = `
                     <div class="card rounded-2xl p-4 mb-4 text-center">
                         ${session.email
-                            ? `<p class="text-xs text-mist mb-3">✉️ Почта: <span class="text-ink">${escapeHtml(String(session.email))}</span></p>`
+                            ? `<p class="text-xs text-mist mb-3">✉️ Почта: <span class="text-ink">${escapeHtml(String(session.email))}</span>${siteInfo.email_login_enabled === true ? ' · вход по почте' : ''}</p>`
                             : `<p class="text-xs text-mist mb-3">Добавьте почту — ещё один способ входа и связь с поддержкой.</p>`}
                         <button onclick="showEmailChangeStep()" id="emailChangeToggleBtn" class="btn-secondary rounded-lg px-4 py-2 text-xs">
                             ${session.email ? 'Изменить почту' : '✉️ Добавить почту'}
