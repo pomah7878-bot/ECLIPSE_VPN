@@ -3038,6 +3038,46 @@ class PhoneMergeMigrationTest(unittest.TestCase):
             ).fetchall()
             self.assertEqual([row["identity_value"] for row in claims], ["79001234567"])
 
+    def test_migration_merges_oauth_canonical(self):
+        from database.connection import get_db
+        from database.migrations import migration_179
+        from database.requests import get_or_create_user
+        from database.db_accounts import (
+            get_or_create_site_account, link_oauth_to_site_account, set_account_phone,
+            get_or_create_placeholder_user_for_site_account,
+        )
+
+        telegram_id = 777911002
+        user, _ = get_or_create_user(telegram_id, username="phone_merge_oauth")
+        canon = get_or_create_site_account("google", "g-mig-179", email="g179@example.com")
+        self.assertTrue(link_oauth_to_site_account(canon["id"], telegram_id))
+        self.assertTrue(set_account_phone(canon["id"], "79005556677"))
+        duplicate = get_or_create_site_account("phone", "9005556677")
+        placeholder = get_or_create_placeholder_user_for_site_account(duplicate["id"])
+
+        with get_db() as c:
+            key_id = c.execute(
+                "INSERT INTO vpn_keys (user_id, tariff_id, expires_at) VALUES (?, 1, datetime('now', '+30 days'))",
+                (placeholder,),
+            ).lastrowid
+            c.execute(
+                "INSERT INTO anonymous_purchases (order_id, tariff_id, claim_code, status, vpn_key_id, site_account_id) "
+                "VALUES ('mig-179', 1, 'MIG1-791', 'paid', ?, ?)",
+                (key_id, duplicate["id"]),
+            )
+            migration_179(c)
+
+        with get_db() as c:
+            self.assertIsNone(c.execute("SELECT 1 FROM site_accounts WHERE id = ?", (duplicate["id"],)).fetchone())
+            kept = c.execute("SELECT * FROM site_accounts WHERE id = ?", (canon["id"],)).fetchone()
+            self.assertEqual(kept["provider"], "google")  # вход через Google сохранён
+            self.assertEqual(kept["phone"], "79005556677")
+            self.assertEqual(kept["telegram_id"], telegram_id)
+            purchase = c.execute("SELECT site_account_id FROM anonymous_purchases WHERE order_id = 'mig-179'").fetchone()
+            self.assertEqual(purchase["site_account_id"], canon["id"])
+            owner = c.execute("SELECT user_id FROM vpn_keys WHERE id = ?", (key_id,)).fetchone()
+            self.assertEqual(owner["user_id"], user["id"])  # ключ переехал владельцу
+
 
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""

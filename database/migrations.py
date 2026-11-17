@@ -34,7 +34,7 @@ def _add_column(conn: sqlite3.Connection, table: str, column_def: str) -> None:
 INITIAL_VERSION = 73
 
 # Current version of the database schema (incremented when new migrations are added)
-LATEST_VERSION = 178
+LATEST_VERSION = 179
 
 DEFAULT_BROADCAST_STYLE_PROFILE = {
     "schema_version": 1,
@@ -4277,6 +4277,59 @@ def migration_178(conn: sqlite3.Connection) -> None:
     logger.info("Migration v178 applied: номер без кода страны приведён к +7 (записей: %s)", changed)
 
 
+def migration_179(conn: sqlite3.Connection) -> None:
+    """Добивает дубли номеров без +7, которые v178 не смогла объединить.
+
+    Если у «короткого» аккаунта (provider='phone') есть канонический
+    тёзка с другим способом входа (Google/Яндекс/VK), v178 оставляла
+    такой аккаунт как есть: объединять в сторону OAuth-аккаунта она
+    избегала, чтобы не потерять вход. Здесь вливаем короткий аккаунт в
+    канонический — вход через Google/Яндекс/VK у него сохраняется, а
+    покупки и ключи переезжают к владельцу.
+    """
+    changed = 0
+    accounts = conn.execute(
+        "SELECT id, provider, provider_user_id, phone, telegram_id FROM site_accounts"
+    ).fetchall()
+    for account_id, provider, provider_user_id, phone, telegram_id in accounts:
+        if not conn.execute("SELECT 1 FROM site_accounts WHERE id = ?", (account_id,)).fetchone():
+            continue
+        by_phone_login = provider == "phone"
+        raw = provider_user_id if by_phone_login else phone
+        target = _norm_phone_with_country(raw)
+        if not target or target == raw:
+            continue
+        other = conn.execute(
+            "SELECT id, telegram_id, provider FROM site_accounts WHERE id != ? AND "
+            "((provider = 'phone' AND provider_user_id = ?) OR phone = ?) LIMIT 1",
+            (account_id, target, target),
+        ).fetchone()
+        if not other:
+            # дубля нет — просто приводим номер к международному виду
+            if by_phone_login:
+                conn.execute("UPDATE site_accounts SET provider_user_id = ? WHERE id = ?", (target, account_id))
+            conn.execute("UPDATE site_accounts SET phone = ? WHERE id = ?", (target, account_id))
+            changed += 1
+            continue
+        other_id, other_telegram, other_provider = other[0], other[1], other[2]
+        # Оставляем аккаунт с Telegram (на нём подписка клиента)
+        if telegram_id and not other_telegram:
+            keep_id, drop_id = account_id, other_id
+            drop_provider = other_provider
+        else:
+            keep_id, drop_id = other_id, account_id
+            drop_provider = provider
+        if drop_provider not in ("phone", "telegram"):
+            logger.warning(
+                "Migration v179: аккаунт %s не объединён — вход через %s", drop_id, drop_provider
+            )
+            continue
+        _merge_phone_accounts(conn, keep_id, drop_id, target)
+        changed += 1
+
+    logger.info("Migration v179 applied: дубли номеров без +7 объединены (записей: %s)", changed)
+
+
 MIGRATIONS = {
     74: migration_74,
     75: migration_75,
@@ -4382,6 +4435,7 @@ MIGRATIONS = {
     176: migration_176,
     177: migration_177,
     178: migration_178,
+    179: migration_179,
 }
 
 
