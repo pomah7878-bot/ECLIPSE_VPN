@@ -1,5 +1,6 @@
 # История версий ECLIPSE Unlimited VPN
 
+- **1.594** — `decoding="async"` для скриншотов: меньше блокировки main thread при загрузке
 - **1.593** — явный `Content-Type` для WebP/PNG/JPG/SVG, чтобы сервер не отдавал изображения как `application/octet-stream`
 - **1.592** — корректный `Content-Type: image/webp`, суточный кэш изображений и убрана дублирующая ссылка Premium в десктопном меню
 - **1.591** — финальное выравнивание всех трёх focus-ring Windows, включая «Kill Switch»
