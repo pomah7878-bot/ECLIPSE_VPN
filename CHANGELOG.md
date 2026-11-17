@@ -1,5 +1,6 @@
 # История версий ECLIPSE Unlimited VPN
 
+- **1.591** — финальное выравнивание всех трёх focus-ring Windows, включая «Kill Switch»
 - **1.590** — focus-ring Windows выровнен по карточкам настроек: «Раздельный туннель», «Уведомления», «Kill Switch»
 - **1.589** — focus-ring Android TV выровнен по реальным карточкам меню
 - **1.588** — reveal без opacity: плавный сдвиг, текст всегда контрастен; устранён ложный contrast-риск Lighthouse
