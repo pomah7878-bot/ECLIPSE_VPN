@@ -2042,6 +2042,54 @@
             attachPhoneAutoFormat(document.getElementById('linkPhoneInput'));
         }
 
+        // Смена почты: код уходит на НОВЫЙ адрес, до подтверждения ничего не меняется
+        function showEmailChangeStep() {
+            document.getElementById('emailChangeToggleBtn')?.classList.add('hidden');
+            const body = document.getElementById('emailChangeBody');
+            body.classList.remove('hidden');
+            body.innerHTML = `
+                <input id="emailChangeInput" type="email" placeholder="you@example.com" autocomplete="email"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2"
+                    style="outline:none;">
+                <div class="text-xs text-mist mb-2">Пришлём код на новый адрес. Он действует 10 минут.</div>
+                <button onclick="requestEmailChange()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Получить код</button>
+                <div id="emailChangeError" class="text-xs text-alert mt-2 text-center"></div>
+            `;
+        }
+
+        async function requestEmailChange() {
+            const email = (document.getElementById('emailChangeInput').value || '').trim();
+            const errBox = document.getElementById('emailChangeError');
+            errBox.textContent = '';
+            if (!email) { errBox.textContent = 'Введите адрес почты.'; return; }
+
+            const res = await postAPISafe('account/email/change/start', { email });
+            if (!res.ok) { errBox.textContent = res.message || 'Не удалось отправить код.'; return; }
+            window._changeEmail = res.email || email;
+            const body = document.getElementById('emailChangeBody');
+            body.innerHTML = `
+                <div class="text-xs text-mist mb-2 text-center">Код отправлен на ${escapeHtml(window._changeEmail)}. Он действует 10 минут.</div>
+                <input id="emailChangeCodeInput" type="text" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code"
+                    class="w-full bg-panel-2 border border-[color:var(--hairline)] rounded-xl px-3.5 py-3 text-sm text-ink mb-2 text-center"
+                    style="outline:none;">
+                <button onclick="verifyEmailChange()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить</button>
+                <button onclick="showEmailChangeStep()" class="w-full py-2 mt-1 text-xs text-mist">Другая почта</button>
+                <div id="emailChangeCodeError" class="text-xs text-alert mt-2 text-center"></div>
+            `;
+        }
+
+        async function verifyEmailChange() {
+            const code = (document.getElementById('emailChangeCodeInput').value || '').trim();
+            const errBox = document.getElementById('emailChangeCodeError');
+            errBox.textContent = '';
+            if (!code) { errBox.textContent = 'Введите код из письма.'; return; }
+
+            const res = await postAPISafe('account/email/change/verify', { email: window._changeEmail, code });
+            if (!res.ok) { errBox.textContent = res.message || 'Код неверный или истёк.'; return; }
+            showToast('Почта изменена');
+            reloadAccountData();
+        }
+
         async function reloadAccountData() {
             try {
                 renderAccountData(await fetchAPI('account/session'));
@@ -2239,6 +2287,22 @@
                 `;
             }
 
+            // Почта: показать текущую и дать сменить — с подтверждением кодом из письма
+            let emailBlock = '';
+            if (siteInfo.email_login_enabled === true) {
+                emailBlock = `
+                    <div class="card rounded-2xl p-4 mb-4 text-center">
+                        ${session.email
+                            ? `<p class="text-xs text-mist mb-3">✉️ Почта: <span class="text-ink">${escapeHtml(String(session.email))}</span></p>`
+                            : `<p class="text-xs text-mist mb-3">Добавьте почту — ещё один способ входа и связь с поддержкой.</p>`}
+                        <button onclick="showEmailChangeStep()" id="emailChangeToggleBtn" class="btn-secondary rounded-lg px-4 py-2 text-xs">
+                            ${session.email ? 'Изменить почту' : '✉️ Добавить почту'}
+                        </button>
+                        <div id="emailChangeBody" class="hidden mt-2 text-left"></div>
+                    </div>
+                `;
+            }
+
             // Телефон: показать привязанный номер, дать сменить (повторное
             // подтверждение звонком) или отвязать. Кнопки есть только когда
             // вход по номеру вообще включён админом и настроен Zvonok —
@@ -2271,6 +2335,7 @@
                 cabinetBtn +
                 linkCodeBlock +
                 linkOAuthBlock +
+                emailBlock +
                 linkPhoneBlock +
                 `<button onclick="logoutAccount()" class="w-full py-2.5 text-xs text-mist-dim underline transition mb-6">Выйти</button>`;
         }

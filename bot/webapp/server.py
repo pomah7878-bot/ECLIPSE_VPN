@@ -4531,6 +4531,111 @@ async def handle_public_account_email_verify(request: web.Request) -> web.Respon
     return resp
 
 
+async def handle_public_account_email_change_start(request: web.Request) -> web.Response:
+    """POST /api/public/account/email/change/start — код подтверждения на НОВЫЙ адрес.
+
+    Смена почты, в отличие от входа по почте, ничего не меняет до подтверждения:
+    код уходит на новый адрес, и только после него адрес переезжает в аккаунт.
+    Body JSON: {"email": "..."}"""
+    account_id = _resolve_account_id_for_request(request)
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        data = {}
+
+    from bot.services import email_sender
+    from database.requests import get_effective_brand_name, is_site_auth_method_enabled, get_site_account_by_id
+
+    if not is_site_auth_method_enabled('email') or not email_sender.is_email_configured():
+        return web.json_response(
+            {"ok": False, "error": "email_disabled", "message": "Смена почты сейчас недоступна."}, status=503
+        )
+    email = email_sender.normalize_email((data or {}).get("email"))
+    if not email:
+        return web.json_response({"ok": False, "message": "Проверьте адрес почты."}, status=400)
+
+    account = get_site_account_by_id(account_id) or {}
+    current = (account.get("email") or "").strip().lower()
+    if current == email:
+        return web.json_response({"ok": False, "message": "Это уже ваша почта."}, status=409)
+    from database.requests import email_taken
+    if email_taken(email, exclude_id=account_id):
+        return web.json_response(
+            {"ok": False, "email_taken": True, "message": "Эта почта уже привязана к другому аккаунту."}, status=409
+        )
+
+    _ip = _get_client_ip(request)
+    if (not _rl_allowed(f"emailchg-ip:{_ip}", 10, 3600)
+            or not _rl_allowed(f"emailchg-acc:{account_id}", 5, 600)
+            or not _rl_allowed(f"emailchg-to:{email}", 3, 600)):
+        return web.json_response(
+            {"ok": False, "message": "Слишком много запросов. Попробуйте позже."}, status=429
+        )
+    _rl_record(f"emailchg-ip:{_ip}")
+    _rl_record(f"emailchg-acc:{account_id}")
+    _rl_record(f"emailchg-to:{email}")
+
+    from database.requests import create_email_login_code
+    code = create_email_login_code(email)
+    try:
+        await asyncio.to_thread(email_sender.send_login_code, email, code, get_effective_brand_name())
+    except Exception as e:
+        logger.error(f"Смена почты: не удалось отправить код на {email}: {e}")
+        return web.json_response(
+            {"ok": False, "message": "Не удалось отправить письмо. Попробуйте позже."}, status=502
+        )
+    return web.json_response({"ok": True, "email": email, "expires_in": 600})
+
+
+async def handle_public_account_email_change_verify(request: web.Request) -> web.Response:
+    """POST /api/public/account/email/change/verify — применяет новый адрес после кода.
+
+    Body JSON: {"email": "...", "code": "123456"}"""
+    account_id = _resolve_account_id_for_request(request)
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        data = {}
+
+    from bot.services.email_sender import normalize_email
+    from database.requests import (
+        consume_email_login_code, is_site_auth_method_enabled, set_account_email, email_taken,
+    )
+
+    if not is_site_auth_method_enabled('email'):
+        return web.json_response({"ok": False, "message": "Смена почты сейчас недоступна."}, status=503)
+    email = normalize_email((data or {}).get("email"))
+    code = str((data or {}).get("code") or "").strip()
+    if not email or not code:
+        return web.json_response({"ok": False, "message": "Введите код из письма."}, status=400)
+
+    _ip = _get_client_ip(request)
+    if not _rl_allowed(f"email-fail:{_ip}", 10, 600):
+        return web.json_response(
+            {"ok": False, "message": "Слишком много неудачных попыток. Попробуйте через 10 минут."}, status=429
+        )
+    if not consume_email_login_code(email, code):
+        _rl_record(f"email-fail:{_ip}")
+        return web.json_response({"ok": False, "message": "Код неверный или истёк."}, status=400)
+
+    if email_taken(email, exclude_id=account_id):
+        return web.json_response(
+            {"ok": False, "email_taken": True, "message": "Эта почта уже привязана к другому аккаунту."}, status=409
+        )
+    if not set_account_email(account_id, email):
+        return web.json_response(
+            {"ok": False, "message": "Не удалось сменить почту. Попробуйте ещё раз."}, status=500
+        )
+    logger.info(f"Кабинет: аккаунт {account_id} сменил почту")
+    return web.json_response({"ok": True, "email": email})
+
+
 async def handle_public_account_oauth_exchange(request: web.Request) -> web.Response:
     """POST /api/public/account/oauth-exchange — обменивает одноразовый код
     (полученный приложением через deep-link после OAuth-входа в системном
@@ -5062,6 +5167,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "ok": True, "logged_in": True,
             "phone": site_account_phone(account),
             "phone_unlink_blocked": phone_unlink_blocked,
+            "email": account.get("email"),
         })
 
     if account.get("telegram_id"):
@@ -6852,6 +6958,8 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/oauth-exchange", handle_public_account_oauth_exchange)
     app.router.add_post("/api/public/account/email/start", handle_public_account_email_start)
     app.router.add_post("/api/public/account/email/verify", handle_public_account_email_verify)
+    app.router.add_post("/api/public/account/email/change/start", handle_public_account_email_change_start)
+    app.router.add_post("/api/public/account/email/change/verify", handle_public_account_email_change_verify)
     app.router.add_post("/api/license/check", handle_license_check)
     app.router.add_post("/api/license/report", handle_license_report)
     app.router.add_post("/api/license/trial", handle_license_trial)

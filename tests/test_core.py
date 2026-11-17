@@ -3156,6 +3156,45 @@ class PhoneLoginNoticeTest(unittest.IsolatedAsyncioTestCase):
             )
 
 
+class SiteEmailChangeTest(unittest.TestCase):
+    """Смена почты: адрес переносится, у входа по почте переезжает и логин."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_change_email_keeps_login_method(self):
+        from database.db_accounts import (
+            get_or_create_site_account, get_site_account_by_id, set_account_email, email_taken,
+        )
+        google = get_or_create_site_account("google", "g-email-1", email="old1@example.com")
+        self.assertTrue(set_account_email(google["id"], "new1@example.com"))
+        updated = get_site_account_by_id(google["id"])
+        self.assertEqual(updated["email"], "new1@example.com")
+        self.assertEqual(updated["provider"], "google")  # вход не изменился
+        self.assertEqual(updated["provider_user_id"], "g-email-1")
+        self.assertTrue(email_taken("new1@example.com", exclude_id=0))
+        self.assertFalse(email_taken("new1@example.com", exclude_id=google["id"]))
+
+    def test_change_email_moves_email_login(self):
+        from database.db_accounts import (
+            get_or_create_site_account, get_site_account_by_id, set_account_email,
+        )
+        mail = get_or_create_site_account("email", "old2@example.com", email="old2@example.com")
+        self.assertTrue(set_account_email(mail["id"], "new2@example.com"))
+        updated = get_site_account_by_id(mail["id"])
+        # иначе старый адрес продолжал бы входить в аккаунт
+        self.assertEqual(updated["provider_user_id"], "new2@example.com")
+        self.assertEqual(updated["email"], "new2@example.com")
+
+    def test_email_of_another_account_is_taken(self):
+        from database.db_accounts import get_or_create_site_account, set_account_email, email_taken
+        first = get_or_create_site_account("google", "g-email-3", email="first3@example.com")
+        second = get_or_create_site_account("yandex", "y-email-3", email="second3@example.com")
+        self.assertFalse(set_account_email(second["id"], "first3@example.com"))
+        self.assertTrue(email_taken("first3@example.com", exclude_id=second["id"]))
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 

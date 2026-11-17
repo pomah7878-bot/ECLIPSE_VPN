@@ -34,6 +34,8 @@ __all__ = [
     'consume_oauth_exchange_code',
     'create_email_login_code',
     'consume_email_login_code',
+    'email_taken',
+    'set_account_email',
     'get_or_create_placeholder_user_for_site_account',
     'get_site_account_by_placeholder_user_id',
 ]
@@ -528,6 +530,51 @@ def consume_oauth_exchange_code(code: str, code_verifier: Optional[str] = None) 
                 return None
         conn.execute("UPDATE oauth_exchange_codes SET used = 1 WHERE code = ?", (code.strip().upper(),))
         return row["account_id"]
+
+
+def email_taken(email: str, exclude_id: int = 0) -> bool:
+    """Занят ли адрес другим аккаунтом: привязанный email или вход по почте."""
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id FROM site_accounts WHERE id != ? AND (LOWER(email) = ? "
+            "OR (provider = 'email' AND LOWER(provider_user_id) = ?)) LIMIT 1",
+            (exclude_id, email, email),
+        ).fetchone()
+        return row is not None
+
+
+def set_account_email(account_id: int, email: str) -> bool:
+    """Меняет почту аккаунта после подтверждения кодом с нового адреса.
+
+    Если вход был по почте (provider='email'), переносим и логин: иначе
+    старый адрес продолжал бы входить в аккаунт. Отклоняет, если адрес
+    уже привязан к другому аккаунту.
+    """
+    email = (email or "").strip().lower()
+    if not email:
+        return False
+    with get_db() as conn:
+        acc = conn.execute("SELECT provider FROM site_accounts WHERE id = ?", (account_id,)).fetchone()
+        if not acc:
+            return False
+        taken = conn.execute(
+            "SELECT id FROM site_accounts WHERE id != ? AND (LOWER(email) = ? "
+            "OR (provider = 'email' AND LOWER(provider_user_id) = ?)) LIMIT 1",
+            (account_id, email, email),
+        ).fetchone()
+        if taken:
+            return False
+        if acc["provider"] == "email":
+            conn.execute(
+                "UPDATE site_accounts SET email = ?, provider_user_id = ? WHERE id = ?",
+                (email, email, account_id),
+            )
+        else:
+            conn.execute("UPDATE site_accounts SET email = ? WHERE id = ?", (email, account_id))
+        return True
 
 
 def create_email_login_code(email: str, ttl_minutes: int = 10) -> str:

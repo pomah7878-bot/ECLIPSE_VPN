@@ -2272,7 +2272,6 @@
                 const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
                 const items = [];
                 const contact = [];
-                if (s.email) contact.push(`<p class="text-xs text-mist">✉️ Email: <span class="text-ink">${escapeHtml(String(s.email))}</span></p>`);
                 if (s.account_type !== 'telegram') items.push(`<button onclick="linkTelegram()" class="${btn}">✈️ Привязать Telegram</button>`);
                 if (!s.email && providers.length) items.push(`<a href="/shop#account" class="${btn}">🔑 Добавить вход через ${escapeHtml(providers.join(' / '))}</a>`);
                 if (!items.length && !contact.length) return;
@@ -2380,8 +2379,16 @@
             let site = {};
             try { site = await siteInfoPromise; } catch (e) { site = {}; }
             const enabled = site.phone_login_enabled === true;
+            const emailEnabled = site.email_login_enabled === true;
             const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
             const parts = [];
+            if (s.email) {
+                parts.push(`<p class="text-xs text-mist">✉️ Почта: <span class="text-ink">${escapeHtml(String(s.email))}</span></p>`);
+                if (emailEnabled) parts.push(`<button onclick="showEmailForm()" class="${btn}">Изменить почту</button>`);
+            } else if (emailEnabled) {
+                parts.push(`<p class="text-xs text-mist">Добавьте почту — ещё один способ входа и связь с поддержкой.</p>`);
+                parts.push(`<button onclick="showEmailForm()" class="${btn}">✉️ Добавить почту</button>`);
+            }
             if (s.phone) {
                 parts.push(`<p class="text-xs text-mist">📱 Телефон: <span class="text-ink">${escapeHtml(phonePretty(s.phone))}</span></p>`);
                 if (enabled) parts.push(`<button onclick="showPhoneForm()" class="${btn}">Изменить номер</button>`);
@@ -2395,7 +2402,59 @@
                 parts.push(`<button onclick="showPhoneForm()" class="${btn}">📱 Добавить номер телефона</button>`);
             }
             if (!parts.length) { box.innerHTML = ''; return; }
-            box.innerHTML = `<div class="card rounded-2xl p-4 space-y-2">${parts.join('')}<div id="phoneFormBody" class="hidden"></div></div>`;
+            box.innerHTML = `<div class="card rounded-2xl p-4 space-y-2">${parts.join('')}<div id="phoneFormBody" class="hidden"></div><div id="emailFormBody" class="hidden"></div></div>`;
+        }
+
+        // Смена почты: код уходит на новый адрес, до подтверждения ничего не меняется
+        async function showEmailForm() {
+            const body = document.getElementById('emailFormBody');
+            if (!body) return;
+            const s = await fetch(`/api/public/account/session?phone_only=1&initData=${encodeURIComponent(initData)}`)
+                .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+            body.classList.remove('hidden');
+            body.innerHTML = `
+                <p class="text-xs text-mist mb-2">${s.email ? 'Сейчас: ' + escapeHtml(String(s.email)) + '. ' : ''}Пришлём код на новый адрес — он действует 10 минут.</p>
+                <input id="emailChangeInput" type="email" placeholder="you@example.com" autocomplete="email"
+                    class="w-full rounded-xl px-3.5 py-3 text-sm text-ink mb-2"
+                    style="outline:none; background: var(--panel-2); border: 1px solid var(--hairline);">
+                <button onclick="requestEmailChange()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Получить код</button>
+                <div id="emailChangeError" class="text-xs text-alert mt-2 text-center"></div>`;
+            document.getElementById('emailChangeInput').focus();
+        }
+
+        async function requestEmailChange() {
+            const email = (document.getElementById('emailChangeInput').value || '').trim();
+            const err = document.getElementById('emailChangeError');
+            err.textContent = '';
+            if (!email) { err.textContent = 'Введите адрес почты.'; return; }
+            const body = document.getElementById('emailFormBody');
+            body.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
+            const res = await postPublicAPI('account/email/change/start', { email });
+            if (!res.ok) {
+                body.innerHTML = `<p class="text-xs text-alert text-center py-2">${escapeHtml(res.message || 'Не удалось отправить код.')}</p>
+                    <button onclick="showEmailForm()" class="w-full py-2 mt-1 text-xs text-mist">Попробовать снова</button>`;
+                return;
+            }
+            window._changeEmail = res.email || email;
+            body.innerHTML = `
+                <p class="text-xs text-mist mb-2">Код отправлен на ${escapeHtml(window._changeEmail)}. Он действует 10 минут.</p>
+                <input id="emailChangeCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000"
+                    class="w-full rounded-xl px-3.5 py-3 text-sm text-ink mb-2 text-center"
+                    style="outline:none; background: var(--panel-2); border: 1px solid var(--hairline);">
+                <button onclick="verifyEmailChange()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить</button>
+                <button onclick="showEmailForm()" class="w-full py-2 mt-1 text-xs text-mist">Другая почта</button>
+                <div id="emailChangeCodeError" class="text-xs text-alert mt-2 text-center"></div>`;
+        }
+
+        async function verifyEmailChange() {
+            const code = (document.getElementById('emailChangeCodeInput').value || '').trim();
+            const err = document.getElementById('emailChangeCodeError');
+            err.textContent = '';
+            if (!code) { err.textContent = 'Введите код из письма.'; return; }
+            const res = await postPublicAPI('account/email/change/verify', { email: window._changeEmail, code });
+            if (!res.ok) { err.textContent = res.message || 'Код неверный или истёк.'; return; }
+            showToast('Почта изменена');
+            await renderPhoneBlock();
         }
 
         function showPhoneForm() {
