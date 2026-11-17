@@ -148,22 +148,40 @@ async def notify_phone_login_by_telegram_id(telegram_id: int, raw_phone: str) ->
     if not phone_normalized:
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='❌ Это не я — отвязать номер', callback_data=f'phone_login_deny:{phone_normalized}')],
+        [InlineKeyboardButton(text='✅ Это я', callback_data=f'phone_login_ok:{phone_normalized}'),
+         InlineKeyboardButton(text='❌ Это не я', callback_data=f'phone_login_deny:{phone_normalized}')],
     ])
     try:
         await bot.send_message(
             telegram_id,
             '🔐 <b>Вход по номеру телефона</b>\n\n'
             'Кто-то только что вошёл в этот аккаунт на сайте или в приложении, '
-            'подтвердив ваш номер телефона звонком. Если это были вы — ничего делать не нужно.\n\n'
-            'Если это не вы — например, номер сменил владельца — нажмите кнопку ниже, '
-            'чтобы отвязать номер и закрыть этот способ входа в ваш аккаунт.',
+            'подтвердив ваш номер телефона звонком.\n\n'
+            '• <b>Это были вы</b> — нажмите «✅ Это я», сообщение исчезнет.\n'
+            '• <b>Это не вы</b> — например, номер сменил владельца — нажмите «❌ Это не я»: '
+            'номер отвяжется, этот способ входа закроется.',
             reply_markup=kb, parse_mode='HTML',
         )
     except TelegramForbiddenError:
         pass
     except Exception as e:
         logger.warning(f"Не удалось уведомить {telegram_id} о входе по телефону: {e}")
+
+
+@router.callback_query(F.data.startswith('phone_login_ok:'))
+async def handle_phone_login_ok(callback: CallbackQuery):
+    """«Это я» — вход подтверждён, уведомление больше не нужно: убираем его."""
+    await callback.answer('Хорошо, вход подтверждён')
+    try:
+        await callback.message.delete()
+        return
+    except Exception as e:  # noqa: BLE001 — старое сообщение бот удалить не может
+        logger.info(f'Уведомление о входе по телефону не удалено: {e}')
+    try:
+        # запасной вариант: хотя бы снимаем кнопки и оставляем короткое подтверждение
+        await callback.message.edit_text('✅ Вход подтверждён. Ничего делать не нужно.')
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @router.callback_query(F.data.startswith('phone_login_deny:'))
@@ -175,8 +193,16 @@ async def handle_phone_login_deny(callback: CallbackQuery):
 
     ok = unlink_phone_from_telegram(phone_normalized, callback.from_user.id)
     if ok:
+        home_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text='🈴 На главную', callback_data='start')],
+        ])
         await callback.message.edit_text(
-            '✅ Номер телефона отвязан от вашего аккаунта. Вход по нему больше недоступен.'
+            '✅ <b>Номер отвязан от аккаунта</b>\n\n'
+            '• Вход по номеру на сайте и в приложении больше не работает.\n'
+            '• Если номер всё ещё ваш — привяжите его заново в профиле приложения '
+            'или в кабинете на сайте.\n'
+            '• Если в аккаунт уже вошли посторонние — напишите в поддержку из меню бота.',
+            reply_markup=home_kb, parse_mode='HTML',
         )
     else:
         await callback.answer('Номер уже был отвязан или не найден.', show_alert=True)

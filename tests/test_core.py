@@ -3079,6 +3079,66 @@ class PhoneMergeMigrationTest(unittest.TestCase):
             self.assertEqual(owner["user_id"], user["id"])  # ключ переехал владельцу
 
 
+class PhoneLoginNoticeTest(unittest.IsolatedAsyncioTestCase):
+    """Уведомление о входе по номеру: «Это я» убирает сообщение, «Это не я» отвязывает номер."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_notification_has_both_buttons(self):
+        from unittest.mock import AsyncMock, patch
+        import bot.handlers.user.keys as keys
+        bot = AsyncMock()
+        with patch("bot.utils.runtime_state.get_bot_instance", return_value=bot):
+            await keys.notify_phone_login_by_telegram_id(777920001, "+7 909 111-22-33")
+        kb = bot.send_message.call_args.kwargs["reply_markup"]
+        texts = [b.text for row in kb.inline_keyboard for b in row]
+        self.assertEqual(texts, ["✅ Это я", "❌ Это не я"])
+        datas = [b.callback_data for row in kb.inline_keyboard for b in row]
+        self.assertEqual(datas, ["phone_login_ok:79091112233", "phone_login_deny:79091112233"])
+
+    async def test_ok_deletes_notification(self):
+        from unittest.mock import AsyncMock, MagicMock
+        import bot.handlers.user.keys as keys
+        callback = MagicMock()
+        callback.data = "phone_login_ok:79091112233"
+        callback.from_user.id = 777920001
+        callback.answer = AsyncMock()
+        callback.message.delete = AsyncMock()
+        await keys.handle_phone_login_ok(callback)
+        callback.message.delete.assert_awaited_once()
+        callback.answer.assert_awaited()
+
+    async def test_deny_unlinks_and_explains_next_steps(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from bot.services.trial_phone_registry import link_phone, get_phone_for_telegram_id
+        import bot.handlers.user.keys as keys
+        self.assertTrue(link_phone("79091112244", 777920002))
+        callback = MagicMock()
+        callback.data = "phone_login_deny:79091112244"
+        callback.from_user.id = 777920002
+        callback.answer = AsyncMock()
+        callback.message.edit_text = AsyncMock()
+        await keys.handle_phone_login_deny(callback)
+        text = callback.message.edit_text.call_args.args[0]
+        self.assertIn("Номер отвязан", text)
+        self.assertIn("поддержку", text)  # что делать дальше
+        self.assertIsNone(get_phone_for_telegram_id(777920002))
+
+    async def test_deny_without_link_answers_alert(self):
+        from unittest.mock import AsyncMock, MagicMock
+        import bot.handlers.user.keys as keys
+        callback = MagicMock()
+        callback.data = "phone_login_deny:79091112255"
+        callback.from_user.id = 777920003
+        callback.answer = AsyncMock()
+        callback.message.edit_text = AsyncMock()
+        await keys.handle_phone_login_deny(callback)
+        callback.message.edit_text.assert_not_awaited()
+        self.assertTrue(callback.answer.call_args.kwargs.get("show_alert"))
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 
