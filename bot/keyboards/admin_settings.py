@@ -346,7 +346,48 @@ def integrations_auth_menu_kb() -> InlineKeyboardMarkup:
             callback_data='admin_toggle_auth_method:email',
         ),
     )
+    builder.row(InlineKeyboardButton(text='✉️ Настроить почту (SMTP)', callback_data='admin_integrations_smtp'))
     builder.row(back_button('admin_integrations'), home_button())
+    return builder.as_markup()
+
+
+def _mask_secret(value: str) -> str:
+    """Секрет для показа в кнопке: только последние 4 символа."""
+    if not value:
+        return 'не задан'
+    return '•' * max(0, len(value) - 4) + value[-4:] if len(value) > 8 else '•' * len(value)
+
+
+def integrations_smtp_menu_kb() -> InlineKeyboardMarkup:
+    """Подменю «Почта (SMTP)»: поля, проверка отправки и переключатель входа по Email.
+
+    Значения берутся действующие: из админки, а если поле пустое — из
+    secrets.env (см. bot.services.email_sender.smtp_config).
+    """
+    from bot.services.email_sender import smtp_config
+    from database.requests import is_site_auth_method_enabled
+
+    cfg = smtp_config()
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"Хост: {cfg['host'] or 'не задан'}", callback_data='admin_edit_smtp:host'))
+    builder.row(InlineKeyboardButton(
+        text=f"Порт: {cfg['port'] or '465'}", callback_data='admin_edit_smtp:port'))
+    builder.row(InlineKeyboardButton(
+        text=f"Логин: {cfg['user'] or 'не задан'}", callback_data='admin_edit_smtp:user'))
+    builder.row(InlineKeyboardButton(
+        text=f"Пароль: {_mask_secret(cfg['password'])}", callback_data='admin_edit_smtp:password'))
+    builder.row(InlineKeyboardButton(
+        text=f"Отправитель: {cfg['from'] or 'не задан'}", callback_data='admin_edit_smtp:from'))
+    builder.row(InlineKeyboardButton(text='📨 Проверить отправку', callback_data='admin_smtp_test'))
+    builder.row(
+        InlineKeyboardButton(text='📧 Вход по Email', callback_data='admin_noop'),
+        InlineKeyboardButton(
+            text='✅ Вкл' if is_site_auth_method_enabled('email') else '❌ Выкл',
+            callback_data='admin_toggle_auth_method:email',
+        ),
+    )
+    builder.row(back_button('admin_integrations_auth'), home_button())
     return builder.as_markup()
 
 

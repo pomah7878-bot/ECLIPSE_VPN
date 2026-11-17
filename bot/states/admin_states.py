@@ -42,6 +42,13 @@ class AdminStates(StatesGroup):
     edit_zvonok_public_key = State()     # Ввод Zvonok API Public Key
     edit_zvonok_campaign_id = State()    # Ввод Zvonok Campaign ID
     edit_zvonok_pincode_campaign_id = State()  # Ввод Zvonok Campaign ID (пин-код)
+    # ========== Почта (SMTP) для входа по Email ==========
+    edit_smtp_host = State()        # SMTP-хост (smtp.mail.ru и т.п.)
+    edit_smtp_port = State()        # SMTP-порт (465/587)
+    edit_smtp_user = State()        # Логин ящика
+    edit_smtp_password = State()    # Пароль приложения
+    edit_smtp_from = State()        # Адрес отправителя
+    edit_smtp_test_to = State()     # Адрес для проверочного письма
     edit_zvonok_flashcall_real_campaign_id = State()  # Ввод Zvonok Campaign ID (Flash Call)
     edit_zvonok_voice_code_campaign_id = State()  # Ввод Zvonok Campaign ID (диктовка кода)
     edit_zvonok_press_digit_campaign_id = State()  # Ввод Zvonok Campaign ID (нажать цифру)

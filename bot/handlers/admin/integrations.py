@@ -5,6 +5,7 @@ Lets the admin configure these directly from the bot if they weren't
 provided (or need changing) after installation, instead of editing
 config.py/secrets.env by hand on the server.
 """
+import asyncio
 import logging
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -1934,6 +1935,219 @@ async def toggle_auth_method(callback: CallbackQuery):
     label = SITE_AUTH_METHODS[method]
     await callback.answer(f"{'✅ Включено' if new_value else '❌ Выключено'}: {label}")
     await safe_edit_or_send(callback.message, _integrations_menu_text(), reply_markup=integrations_menu_kb())
+
+
+# ============================================================
+# Почта (SMTP) — код входа по Email и подтверждение смены почты
+# ============================================================
+
+_SMTP_MENU_TEXT = (
+    "✉️ <b>Почта (SMTP)</b>\n\n"
+    "Через почту работают вход по Email и подтверждение смены почты в кабинете "
+    "и приложении. Пока не заполнены хост, логин, пароль и отправитель, "
+    "эти функции у клиентов скрыты.\n\n"
+    "<b>Пароль — не от ящика, а «пароль приложения»:</b>\n"
+    "• Mail.ru: Настройки → Безопасность → Пароли для внешних приложений\n"
+    "• Яндекс: id.yandex.ru → Безопасность → Пароли приложений\n"
+    "• Gmail: Аккаунт Google → Безопасность → Пароли приложений (нужна 2FA)\n\n"
+    "<b>Порты:</b> 465 — SSL (обычно), 587 — STARTTLS.\n"
+    "Отправитель обычно совпадает с логином.\n\n"
+    "После настройки включите «📧 Вход по Email» — это отдельный переключатель."
+)
+
+_SMTP_FIELDS = {
+    "host": (AdminStates.edit_smtp_host, "smtp_host", "Хост SMTP",
+             "например <code>smtp.mail.ru</code>, <code>smtp.yandex.ru</code>, <code>smtp.gmail.com</code>"),
+    "port": (AdminStates.edit_smtp_port, "smtp_port", "Порт",
+             "обычно <code>465</code> (SSL). Если провайдер требует STARTTLS — <code>587</code>"),
+    "user": (AdminStates.edit_smtp_user, "smtp_user", "Логин",
+             "полный адрес ящика, например <code>name@mail.ru</code>"),
+    "password": (AdminStates.edit_smtp_password, "smtp_password", "Пароль приложения",
+                 "это не пароль от ящика: Mail.ru → Настройки → Безопасность → "
+                 "Пароли для внешних приложений (Яндекс и Gmail — так же)"),
+    "from": (AdminStates.edit_smtp_from, "smtp_from", "Адрес отправителя",
+             "обычно совпадает с логином, например <code>name@mail.ru</code>"),
+}
+
+
+def _smtp_menu_text() -> str:
+    from bot.services.email_sender import is_email_configured
+    status = "🟢 настроено" if is_email_configured() else "🔴 не настроено"
+    return _SMTP_MENU_TEXT + f"\n\nСтатус: {status}"
+
+
+@router.callback_query(F.data == "admin_integrations_smtp")
+async def show_smtp_menu(callback: CallbackQuery, state: FSMContext):
+    """Настройка SMTP из бота: админам не нужно править secrets.env на сервере."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.license import GATED_FEATURES, is_feature_available
+    if not is_feature_available("site_webapp"):
+        await callback.answer(
+            f"Входит в лицензию: {GATED_FEATURES['site_webapp']}", show_alert=True
+        )
+        return
+    from bot.keyboards.admin_settings import integrations_smtp_menu_kb
+    await state.set_state(AdminStates.integrations_menu)
+    await safe_edit_or_send(callback.message, _smtp_menu_text(), reply_markup=integrations_smtp_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_edit_smtp:"))
+async def edit_smtp_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    field = callback.data.split(":", 1)[1]
+    if field not in _SMTP_FIELDS:
+        await callback.answer("Неизвестное поле", show_alert=True)
+        return
+    field_state, setting_key, label, hint = _SMTP_FIELDS[field]
+
+    from bot.services.email_sender import smtp_config
+    current = smtp_config().get(field, "")
+    shown = (_mask_secret(current) if field == "password" else current) or "не задан"
+
+    await state.set_state(field_state)
+    await safe_edit_or_send(
+        callback.message,
+        f"✉️ <b>{label}</b>\n\n"
+        f"Сейчас: <code>{shown}</code>\n\n"
+        f"{hint}\n\n"
+        "Отправьте новое значение одним сообщением.",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_smtp'),
+    )
+    await callback.answer()
+
+
+async def _save_smtp_field(message: Message, state: FSMContext, field: str, value: str) -> None:
+    from database.db_settings import set_setting
+    from bot.keyboards.admin_settings import integrations_smtp_menu_kb
+
+    _field_state, setting_key, label, _ = _SMTP_FIELDS[field]
+    set_setting(setting_key, value)
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    await state.set_state(AdminStates.integrations_menu)
+    shown = _mask_secret(value) if field == "password" else value
+    await message.answer(f"✅ Сохранено: <b>{label}</b> = <code>{shown}</code>", parse_mode="HTML")
+    await message.answer(_smtp_menu_text(), parse_mode="HTML", reply_markup=integrations_smtp_menu_kb())
+
+
+@router.message(AdminStates.edit_smtp_host)
+async def edit_smtp_host_save(message: Message, state: FSMContext):
+    value = get_message_text_for_storage(message, "plain").strip().lower()
+    value = value.replace("https://", "").replace("http://", "").strip("/ ")
+    if not value or "." not in value or " " in value:
+        await safe_edit_or_send(
+            message,
+            "❌ Нужен только адрес сервера, например <code>smtp.mail.ru</code> — без "
+            "<code>https://</code> и пробелов. Попробуйте ещё раз.",
+        )
+        return
+    await _save_smtp_field(message, state, "host", value)
+
+
+@router.message(AdminStates.edit_smtp_port)
+async def edit_smtp_port_save(message: Message, state: FSMContext):
+    value = get_message_text_for_storage(message, "plain").strip()
+    if not value.isdigit() or not (1 <= int(value) <= 65535):
+        await safe_edit_or_send(message, "❌ Порт — число от 1 до 65535. Обычно 465 или 587.")
+        return
+    await _save_smtp_field(message, state, "port", value)
+
+
+@router.message(AdminStates.edit_smtp_user)
+async def edit_smtp_user_save(message: Message, state: FSMContext):
+    from bot.services.email_sender import normalize_email
+    email = normalize_email(get_message_text_for_storage(message, "plain"))
+    if not email:
+        await safe_edit_or_send(message, "❌ Нужен полный адрес ящика, например <code>name@mail.ru</code>.")
+        return
+    await _save_smtp_field(message, state, "user", email)
+
+
+@router.message(AdminStates.edit_smtp_from)
+async def edit_smtp_from_save(message: Message, state: FSMContext):
+    from bot.services.email_sender import normalize_email
+    email = normalize_email(get_message_text_for_storage(message, "plain"))
+    if not email:
+        await safe_edit_or_send(message, "❌ Нужен адрес отправителя, например <code>name@mail.ru</code>.")
+        return
+    await _save_smtp_field(message, state, "from", email)
+
+
+@router.message(AdminStates.edit_smtp_password)
+async def edit_smtp_password_save(message: Message, state: FSMContext):
+    value = get_message_text_for_storage(message, "plain").strip().replace(" ", "")
+    if len(value) < 6:
+        await safe_edit_or_send(
+            message,
+            "❌ Пароль приложения короче 6 символов — похоже, это не он.\n\n"
+            "Нужен пароль для внешнего приложения из настроек почты, а не пароль от ящика.",
+        )
+        return
+    await _save_smtp_field(message, state, "password", value)
+
+
+@router.callback_query(F.data == "admin_smtp_test")
+async def smtp_test_start(callback: CallbackQuery, state: FSMContext):
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔ Доступ запрещён", show_alert=True)
+        return
+    from bot.services.email_sender import is_email_configured
+    if not is_email_configured():
+        await callback.answer("Сначала заполните хост, логин, пароль и отправителя", show_alert=True)
+        return
+    await state.set_state(AdminStates.edit_smtp_test_to)
+    await safe_edit_or_send(
+        callback.message,
+        "📨 <b>Проверка отправки</b>\n\n"
+        "Отправьте адрес, на который прислать проверочное письмо. "
+        "Если оно дойдёт — SMTP настроен верно.",
+        reply_markup=integrations_edit_cancel_kb('admin_integrations_smtp'),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.edit_smtp_test_to)
+async def smtp_test_send(message: Message, state: FSMContext):
+    from bot.services import email_sender
+
+    to_email = email_sender.normalize_email(get_message_text_for_storage(message, "plain"))
+    if not to_email:
+        await safe_edit_or_send(message, "❌ Проверьте адрес почты и попробуйте ещё раз.")
+        return
+
+    error = ""
+    try:
+        await asyncio.to_thread(email_sender.send_test_message, to_email, get_effective_brand_name())
+    except Exception as e:  # noqa: BLE001 — показываем причину админу
+        error = str(e)[:300]
+
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    await state.set_state(AdminStates.integrations_menu)
+    from bot.keyboards.admin_settings import integrations_smtp_menu_kb
+    if error:
+        await message.answer(
+            f"❌ Не удалось отправить письмо на <code>{to_email}</code>.\n\n"
+            f"Причина: <code>{error}</code>\n\n"
+            "Чаще всего: неверный пароль приложения, закрыт доступ по SMTP у почтового "
+            "провайдера или блокировка порта на сервере.",
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer(
+            f"✅ Письмо отправлено на <code>{to_email}</code>. Если его нет — проверьте «Спам».",
+            parse_mode="HTML",
+        )
+    await message.answer(_smtp_menu_text(), parse_mode="HTML", reply_markup=integrations_smtp_menu_kb())
 
 
 @router.callback_query(F.data.startswith("admin_toggle_client_setting:"))

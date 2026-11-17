@@ -3195,6 +3195,68 @@ class SiteEmailChangeTest(unittest.TestCase):
         self.assertTrue(email_taken("first3@example.com", exclude_id=second["id"]))
 
 
+class SmtpSettingsTest(unittest.TestCase):
+    """SMTP: значения из админки важнее secrets.env, неполный набор — не настроено."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def tearDown(self):
+        from database.db_settings import set_setting
+        for key in ("smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_from"):
+            set_setting(key, "")
+
+    def test_env_is_used_when_settings_empty(self):
+        import os
+        from unittest.mock import patch
+        from bot.services.email_sender import smtp_config, is_email_configured
+        env = {"SMTP_HOST": "env.mail.ru", "SMTP_PORT": "465", "SMTP_USER": "a@mail.ru",
+               "SMTP_PASSWORD": "secret", "SMTP_FROM": "a@mail.ru"}
+        with patch.dict(os.environ, env, clear=False):
+            cfg = smtp_config()
+            self.assertEqual(cfg["host"], "env.mail.ru")
+            self.assertEqual(cfg["user"], "a@mail.ru")
+            self.assertTrue(is_email_configured())
+
+    def test_settings_override_env_per_field(self):
+        import os
+        from unittest.mock import patch
+        from database.db_settings import set_setting
+        from bot.services.email_sender import smtp_config
+        env = {"SMTP_HOST": "env.mail.ru", "SMTP_PORT": "465", "SMTP_USER": "a@mail.ru",
+               "SMTP_PASSWORD": "secret", "SMTP_FROM": "a@mail.ru"}
+        with patch.dict(os.environ, env, clear=False):
+            set_setting("smtp_host", "smtp.yandex.ru")
+            set_setting("smtp_port", "587")
+            cfg = smtp_config()
+            self.assertEqual(cfg["host"], "smtp.yandex.ru")  # админка важнее
+            self.assertEqual(cfg["port"], "587")
+            self.assertEqual(cfg["user"], "a@mail.ru")       # остальное — из env
+
+    def test_incomplete_config_is_not_configured(self):
+        import os
+        from unittest.mock import patch
+        from bot.services.email_sender import is_email_configured, send_test_message
+        env = {"SMTP_HOST": "env.mail.ru", "SMTP_USER": "a@mail.ru", "SMTP_FROM": "a@mail.ru"}
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("SMTP_PASSWORD", None)
+            self.assertFalse(is_email_configured())
+            with self.assertRaises(RuntimeError):
+                send_test_message("a@mail.ru", "ECLIPSE")
+
+    def test_admin_menu_shows_masked_password(self):
+        import os
+        from unittest.mock import patch
+        from bot.keyboards.admin_settings import integrations_smtp_menu_kb
+        env = {"SMTP_HOST": "env.mail.ru", "SMTP_PORT": "465", "SMTP_USER": "a@mail.ru",
+               "SMTP_PASSWORD": "sWPIRR8mgiAhqJ0yVTfo", "SMTP_FROM": "a@mail.ru"}
+        with patch.dict(os.environ, env, clear=False):
+            texts = [b.text for row in integrations_smtp_menu_kb().inline_keyboard for b in row]
+        self.assertTrue(any("smtp.mail.ru" in t or "env.mail.ru" in t for t in texts))
+        self.assertFalse(any("sWPIRR8mgiAhqJ0yVTfo" in t for t in texts))  # пароль не показываем
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 
