@@ -3448,6 +3448,40 @@ class EmailLoginResolveTest(unittest.TestCase):
         self.assertEqual(account["email"], "brand-new@example.com")
 
 
+class ClearAccountEmailTest(unittest.TestCase):
+    """«❌ Это не я» на уведомлении о входе: почта отвязывается, вход по ней закрыт."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_email_login_account_switches_to_telegram(self):
+        from database.requests import get_or_create_site_account, clear_account_email, get_site_account_by_id
+        account = get_or_create_site_account("email", "revoke1@example.com", email="revoke1@example.com")
+        from database.connection import get_db
+        with get_db() as conn:
+            conn.execute("UPDATE site_accounts SET telegram_id = 123456789 WHERE id = ?", (account["id"],))
+
+        self.assertTrue(clear_account_email(account["id"]))
+        updated = get_site_account_by_id(account["id"])
+        self.assertIsNone(updated["email"])
+        # вход по почте больше не совпадает ни с provider, ни с provider_user_id
+        self.assertEqual(updated["provider"], "telegram")
+        self.assertEqual(updated["provider_user_id"], "123456789")
+
+    def test_oauth_account_just_loses_contact_email(self):
+        from database.requests import get_or_create_site_account, clear_account_email, get_site_account_by_id
+        account = get_or_create_site_account("google", "g-revoke-2", email="revoke2@example.com")
+        self.assertTrue(clear_account_email(account["id"]))
+        updated = get_site_account_by_id(account["id"])
+        self.assertIsNone(updated["email"])
+        self.assertEqual(updated["provider"], "google")  # вход через Google не страдает
+
+    def test_unknown_account_returns_false(self):
+        from database.requests import clear_account_email
+        self.assertFalse(clear_account_email(999999))
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 

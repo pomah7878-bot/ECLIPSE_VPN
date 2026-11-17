@@ -4533,6 +4533,16 @@ async def handle_public_account_email_verify(request: web.Request) -> web.Respon
         else "email" if (account.get("provider") or "") == "email"
         else "oauth"
     )
+    # Вход в аккаунт, привязанный к Telegram, — повод уведомить владельца:
+    # письмо с кодом мог получить и посторонний, а «❌ Это не я» отвяжет почту.
+    if account.get("telegram_id"):
+        try:
+            from bot.handlers.user.keys import notify_email_login_by_telegram_id
+            asyncio.create_task(notify_email_login_by_telegram_id(
+                int(account["telegram_id"]), email, int(account["id"]),
+            ))
+        except Exception as notify_err:  # noqa: BLE001 — вход важнее уведомления
+            logger.warning(f"Не удалось запланировать уведомление о входе по почте: {notify_err}")
     if is_app_client:
         return web.json_response({
             "ok": True, "exchange_code": create_oauth_exchange_code(account["id"], code_challenge=code_challenge),

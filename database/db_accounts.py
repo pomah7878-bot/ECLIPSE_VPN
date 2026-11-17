@@ -42,6 +42,7 @@ __all__ = [
     'find_site_account_by_contact',
     'find_site_accounts_by_email',
     'resolve_email_login_account',
+    'clear_account_email',
     'get_or_create_placeholder_user_for_site_account',
     'get_site_account_by_placeholder_user_id',
 ]
@@ -632,6 +633,43 @@ def resolve_email_login_account(email: str, referred_by_code: Optional[str] = No
     if not (keep.get("email") or "").strip():
         set_account_email(keep["id"], email)
     return get_site_account_by_id(keep["id"]) or keep
+
+
+def clear_account_email(account_id: int) -> bool:
+    """Отвязывает почту от аккаунта — вход по ней перестаёт работать.
+
+    Так наказывается «❌ Это не я» на уведомлении о входе: если аккаунт входил
+    только по почте, его способ входа переводится на Telegram (когда он
+    привязан). Аккаунт без Telegram и без других способов входа становится
+    недоступен до обращения в поддержку — иначе владелец почтового ящика
+    продолжал бы заходить в чужой аккаунт.
+    """
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT provider, telegram_id FROM site_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        if not row:
+            return False
+        if row["provider"] == "email":
+            if row["telegram_id"]:
+                conn.execute(
+                    "UPDATE site_accounts SET email = NULL, provider = 'telegram', provider_user_id = ? "
+                    "WHERE id = ?",
+                    (str(row["telegram_id"]), account_id),
+                )
+            else:
+                logger.warning(
+                    f"Почта аккаунта {account_id} отвязана, но других способов входа нет — "
+                    "аккаунт недоступен до поддержки"
+                )
+                conn.execute(
+                    "UPDATE site_accounts SET email = NULL, provider = 'revoked', provider_user_id = ? "
+                    "WHERE id = ?",
+                    (f"revoked-{account_id}", account_id),
+                )
+        else:
+            conn.execute("UPDATE site_accounts SET email = NULL WHERE id = ?", (account_id,))
+    return True
 
 
 def email_taken(email: str, exclude_id: int = 0) -> bool:

@@ -131,6 +131,37 @@ async def show_my_keys(telegram_id: int, target, is_callback: bool = True):
 _KEY_BACK_TO_MAIN: dict = {}
 
 
+async def notify_email_login_by_telegram_id(telegram_id: int, email: str, account_id: int) -> None:
+    """Уведомляет владельца Telegram-аккаунта, что кто-то вошёл в него на
+    сайте/в приложении по почте. Письмо с кодом мог получить и посторонний
+    (например, при взломе ящика), поэтому владелец должен узнать о входе и
+    одним нажатием отвязать почту."""
+    from bot.utils.runtime_state import get_bot_instance
+
+    bot = get_bot_instance()
+    if not bot:
+        return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ Это я', callback_data=f'email_login_ok:{account_id}'),
+         InlineKeyboardButton(text='❌ Это не я', callback_data=f'email_login_deny:{account_id}')],
+    ])
+    try:
+        await bot.send_message(
+            telegram_id,
+            '🔐 <b>Вход по почте</b>'
+            + '\n\n'
+            + 'Кто-то вошёл в этот аккаунт на сайте или в приложении, подтвердив почту '
+            + f'<code>{escape_html(email)}</code>.\n\n'
+            + 'Если это вы — ничего делать не нужно.\n'
+            + 'Если нет — нажмите «❌ Это не я»: почта отвяжется от аккаунта, '
+            + 'и вход по ней больше не сработает.',
+            reply_markup=kb,
+            parse_mode='HTML',
+        )
+    except Exception as e:
+        logger.warning(f'Не удалось отправить уведомление о входе по почте {telegram_id}: {e}')
+
+
 async def notify_phone_login_by_telegram_id(telegram_id: int, raw_phone: str) -> None:
     """Уведомляет владельца Telegram-аккаунта, что кто-то вошёл в его
     аккаунт на сайте/в приложении по номеру телефона, привязанному через
@@ -207,6 +238,47 @@ async def handle_phone_login_deny(callback: CallbackQuery):
     else:
         await callback.answer('Номер уже был отвязан или не найден.', show_alert=True)
         return
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('email_login_ok:'))
+async def handle_email_login_ok(callback: CallbackQuery):
+    """«Это я» — вход по почте подтверждён, уведомление больше не нужно."""
+    await callback.answer('Хорошо, вход подтверждён')
+    try:
+        await callback.message.delete()
+        return
+    except Exception as e:  # noqa: BLE001 — старое сообщение бот удалить не может
+        logger.info(f'Уведомление о входе по почте не удалено: {e}')
+    try:
+        await callback.message.edit_text('✅ Вход по почте подтверждён. Ничего делать не нужно.')
+    except Exception:  # noqa: BLE001
+        pass
+
+
+@router.callback_query(F.data.startswith('email_login_deny:'))
+async def handle_email_login_deny(callback: CallbackQuery):
+    """«Это не я» — отвязывает почту: вход по ней перестаёт работать."""
+    account_id = int(callback.data.split(':', 1)[1])
+    from database.requests import clear_account_email, get_site_account_by_id
+
+    account = get_site_account_by_id(account_id)
+    if not account or not account.get('email'):
+        await callback.answer('Почта уже отвязана или не найдена.', show_alert=True)
+        return
+
+    clear_account_email(account_id)
+    home_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='🈴 На главную', callback_data='start')],
+    ])
+    await callback.message.edit_text(
+        '✅ <b>Почта отвязана от аккаунта</b>\n\n'
+        + '• Вход по этой почте на сайте и в приложении больше не работает.\n'
+        + '• Если почта всё ещё ваша — добавьте её заново в кабинете: '
+        + '«✉️ Почта → Изменить почту».\n'
+        + '• Если в аккаунт уже вошли посторонние — напишите в поддержку из меню бота.',
+        reply_markup=home_kb, parse_mode='HTML',
+    )
     await callback.answer()
 
 
