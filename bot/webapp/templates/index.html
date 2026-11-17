@@ -2379,7 +2379,7 @@
             let site = {};
             try { site = await siteInfoPromise; } catch (e) { site = {}; }
             const enabled = site.phone_login_enabled === true;
-            const emailEnabled = site.email_login_enabled === true;
+            const emailEnabled = site.email_change_enabled === true;
             const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
             const parts = [];
             if (s.email) {

@@ -2183,6 +2183,8 @@ async def handle_public_site_info(request: web.Request) -> web.Response:
         "code_login_enabled": is_site_auth_method_enabled('code'),
         "phone_login_enabled": phone_login_enabled,
         "email_login_enabled": is_site_auth_method_enabled('email') and is_email_configured(),
+        # Смена почты не включает вход по ней: нужен только настроенный SMTP
+        "email_change_enabled": is_email_configured(),
         # Кнопки импорта в Happ/INCY/Karing — платная функция (см.
         # bot/services/license.py, GATED_FEATURES["app_import"]). Раньше
         # веб-кабинет (/ и /shop) показывал эти кнопки ВСЕГДА, когда у ключа
@@ -4547,9 +4549,9 @@ async def handle_public_account_email_change_start(request: web.Request) -> web.
         data = {}
 
     from bot.services import email_sender
-    from database.requests import get_effective_brand_name, is_site_auth_method_enabled, get_site_account_by_id
+    from database.requests import get_effective_brand_name, get_site_account_by_id
 
-    if not is_site_auth_method_enabled('email') or not email_sender.is_email_configured():
+    if not email_sender.is_email_configured():
         return web.json_response(
             {"ok": False, "error": "email_disabled", "message": "Смена почты сейчас недоступна."}, status=503
         )
@@ -4603,12 +4605,12 @@ async def handle_public_account_email_change_verify(request: web.Request) -> web
     except json.JSONDecodeError:
         data = {}
 
-    from bot.services.email_sender import normalize_email
+    from bot.services.email_sender import normalize_email, is_email_configured
     from database.requests import (
-        consume_email_login_code, is_site_auth_method_enabled, set_account_email, email_taken,
+        consume_email_login_code, set_account_email, email_taken,
     )
 
-    if not is_site_auth_method_enabled('email'):
+    if not is_email_configured():
         return web.json_response({"ok": False, "message": "Смена почты сейчас недоступна."}, status=503)
     email = normalize_email((data or {}).get("email"))
     code = str((data or {}).get("code") or "").strip()
@@ -5163,7 +5165,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     # иначе код просто некуда отправить, и кнопка была бы нерабочей.
     from bot.services.email_sender import is_email_configured
     from database.requests import is_site_auth_method_enabled
-    email_change_enabled = is_site_auth_method_enabled('email') and is_email_configured()
+    email_change_enabled = is_email_configured()  # смена почты не включает вход по ней
 
     # Лёгкий режим для блока «Телефон»: Mini App запрашивает его при каждом
     # открытии кабинета, и тянуть ради номера ключи, подписки и аватар
