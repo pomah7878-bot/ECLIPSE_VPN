@@ -6625,14 +6625,26 @@ async def _static_js_css_revalidate(request: web.Request, response: web.StreamRe
     """JS/CSS сверяем по ETag, изображения кэшируем на сутки.
 
     Изображения версионируются query-параметрами (?v=...), поэтому суточный
-    кэш безопасен и убирает повторную загрузку тяжёлых скриншотов.
+    кэш безопасен и убирает повторную загрузку тяжёлых скриншотов. Content-Type
+    задаём явно: в Python 3.12 на сервере mimetypes не знает .webp и aiohttp
+    отдаёт application/octet-stream, что ломает корректную обработку картинок.
     """
     if not request.path.startswith("/static/"):
         return
     if request.path.endswith((".js", ".css")):
         response.headers.setdefault("Cache-Control", "no-cache")
         return
-    if request.path.lower().endswith((".webp", ".png", ".jpg", ".jpeg", ".svg", ".ico")):
+    ext = os.path.splitext(request.path)[1].lower()
+    content_types = {
+        ".webp": "image/webp",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".ico": "image/x-icon",
+    }
+    if ext in content_types:
+        response.headers["Content-Type"] = content_types[ext]
         response.headers.setdefault("Cache-Control", "public, max-age=86400")
 
 
