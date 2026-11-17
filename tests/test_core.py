@@ -1113,6 +1113,10 @@ class ClientAppScreenTest(unittest.TestCase):
 
         text, kb = ca.app_screen("https://example.com", "ABCD-EFGH")
         self.assertIn("<code>ABCD-EFGH</code>", text)
+        # куда этот код вводить: Android, Windows, кабинет на сайте; TV — по QR
+        for where in ("Где работает код", "Android — ", "Windows — ", "Сайт — ", "Android TV — "):
+            self.assertIn(where, text)
+        self.assertIn("на каждое устройство берите новый", text)
         urls = [b.url for row in kb.inline_keyboard for b in row if b.url]
         self.assertEqual(urls, ["https://example.com/app", "https://example.com/app/login#ABCD-EFGH"])
 
