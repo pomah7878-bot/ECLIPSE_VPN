@@ -3297,6 +3297,87 @@ class AdminUserContactSearchTest(unittest.TestCase):
         self.assertLess(telegram_id, 0)
 
 
+class DeleteUserEverywhereTest(unittest.IsolatedAsyncioTestCase):
+    """Удаление клиента: ключи, платежи, аккаунт сайта, обращения — всё исчезает."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    async def test_delete_removes_all_user_data(self):
+        import asyncio
+        from database.connection import get_db
+        from database.requests import (
+            get_or_create_user, get_user_by_telegram_id, get_or_create_site_account,
+            create_support_thread,
+        )
+        from bot.services.user_cleanup import delete_user_everywhere
+
+        telegram_id = 987654321
+        user, _ = get_or_create_user(telegram_id, username="deleteme")
+        user_id = user["id"]
+        account = get_or_create_site_account("google", "g-delete-1", email="delete@example.com")
+
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO servers (name, host, port, login, password, web_base_path, is_active) "
+                "VALUES ('test-server', '', 2053, 'u', 'p', '/', 0)"
+            )
+            server_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "INSERT INTO tariffs (name, duration_days, price_cents, price_stars, price_rub, is_active) "
+                "VALUES ('test-tariff', 30, 10000, 0, 100, 1)"
+            )
+            tariff_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "INSERT INTO vpn_keys (user_id, server_id, tariff_id, panel_email, client_uuid, expires_at) "
+                "VALUES (?, ?, ?, 'del@panel', 'uuid-del', datetime('now', '+30 days'))",
+                (user_id, server_id, tariff_id),
+            )
+            conn.execute(
+                "INSERT INTO payments (user_id, order_id, amount_cents, status) "
+                "VALUES (?, 'order-delete-1', 10000, 'succeeded')",
+                (user_id,),
+            )
+            conn.execute(
+                "INSERT INTO balance_operations (user_id, operation_type, delta_cents, balance_before, balance_after, source) "
+                "VALUES (?, 'credit', 500, 0, 500, 'admin')",
+                (user_id,),
+            )
+            conn.execute(
+                "UPDATE site_accounts SET telegram_id = ?, phone = '79990001122' WHERE id = ?",
+                (telegram_id, account["id"]),
+            )
+            conn.execute(
+                "INSERT INTO trial_verified_phones (phone_normalized, telegram_id, site_account_id) "
+                "VALUES ('79990001122', ?, ?)",
+                (telegram_id, account["id"]),
+            )
+        create_support_thread(telegram_id, initiator_type="user")
+
+        report = await delete_user_everywhere(telegram_id)
+
+        self.assertIsNotNone(report)
+        self.assertEqual(report["keys"], 1)
+        self.assertEqual(report["accounts"], 1)
+        self.assertIsNone(get_user_by_telegram_id(telegram_id))
+        with get_db() as conn:
+            for table, column, value in (
+                ("vpn_keys", "user_id", user_id),
+                ("payments", "user_id", user_id),
+                ("balance_operations", "user_id", user_id),
+                ("site_accounts", "id", account["id"]),
+                ("trial_verified_phones", "telegram_id", telegram_id),
+                ("support_threads", "user_telegram_id", telegram_id),
+            ):
+                left = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {column} = ?", (value,)).fetchone()[0]
+                self.assertEqual(left, 0, f"остались строки в {table}")
+
+    async def test_delete_unknown_user_returns_none(self):
+        from bot.services.user_cleanup import delete_user_everywhere
+        self.assertIsNone(await delete_user_everywhere(111111111))
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 

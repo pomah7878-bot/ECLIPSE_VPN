@@ -324,6 +324,105 @@ async def confirm_ban_toggle(callback: CallbackQuery, state: FSMContext):
     await callback.answer(f'{icon} Пользователь {action_text}. {panel_status}', show_alert=True)
     await _show_user_view_edit(callback, state, telegram_id)
 
+@router.callback_query(F.data.startswith('admin_user_delete:'))
+async def request_user_delete(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение полного удаления клиента — со списком того, что исчезнет."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    telegram_id = int(callback.data.split(':')[1])
+    user = get_user_by_telegram_id(telegram_id)
+    if not user:
+        await callback.answer('Пользователь не найден', show_alert=True)
+        return
+
+    keys = get_user_vpn_keys(user['id'])
+    from database.requests import get_site_account_by_telegram_id, get_site_account_by_placeholder_user_id
+    account = (get_site_account_by_telegram_id(telegram_id)
+               or get_site_account_by_placeholder_user_id(user['id']))
+
+    lines = ['🗑 <b>Удалить клиента?</b>', '', f'Клиент: {format_user_display(user)}']
+    contacts = []
+    if account:
+        if account.get('email'):
+            contacts.append(f"почта <code>{escape_html(account['email'])}</code>")
+        phone = (account.get('phone') or '').strip()
+        if phone:
+            contacts.append(f"телефон <code>+{escape_html(phone.lstrip('+'))}</code>")
+    if contacts:
+        lines.append('Контакты: ' + ', '.join(contacts))
+    lines += [
+        '',
+        'Будет удалено <b>навсегда</b>:',
+        f'• ключи: <b>{len(keys)}</b> (снимаются с панелей)',
+        '• платежи, баланс и история операций',
+        '• реферальные начисления и бонусы',
+        '• обращения в поддержку и заказы помощи',
+        '• аккаунт сайта, почта и телефон (если привязаны)',
+        '• история пробных периодов',
+        '',
+        'Лицензии и партнёрские записи не затрагиваются.',
+        'Отменить это действие нельзя.',
+    ]
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text='🗑 Да, удалить навсегда', callback_data=f'admin_user_delete_confirm:{telegram_id}'))
+    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data=f'admin_user_view:{telegram_id}'))
+    await safe_edit_or_send(callback.message, '\n'.join(lines), reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith('admin_user_delete_confirm:'))
+@regular_panel_operation
+async def confirm_user_delete(callback: CallbackQuery, state: FSMContext):
+    """Удаляет клиента: ключи с панелей, затем все данные из базы."""
+    if not is_admin(callback.from_user.id):
+        await callback.answer('⛔ Доступ запрещён', show_alert=True)
+        return
+    telegram_id = int(callback.data.split(':')[1])
+
+    await callback.answer('⏳ Удаляю…')
+    await safe_edit_or_send(
+        callback.message,
+        '⏳ Удаляю клиента: снимаю ключи с панелей и чищу историю…',
+    )
+
+    from bot.services.user_cleanup import delete_user_everywhere
+    try:
+        report = await delete_user_everywhere(telegram_id)
+    except Exception as e:  # noqa: BLE001 — показываем причину админу
+        logger.exception(f"Ошибка удаления клиента {telegram_id}")
+        await safe_edit_or_send(
+            callback.message,
+            f'❌ Не удалось удалить клиента.\n\nПричина: <code>{escape_html(str(e)[:300])}</code>',
+            reply_markup=home_only_kb(),
+        )
+        return
+
+    if not report:
+        await safe_edit_or_send(
+            callback.message, '❌ Такого клиента уже нет в базе.', reply_markup=home_only_kb())
+        return
+
+    lines = [
+        '✅ <b>Клиент удалён</b>', '',
+        f'• ключей: <b>{report["keys"]}</b>',
+        f'• аккаунтов сайта: <b>{report["accounts"]}</b>',
+        f'• обращений в поддержку: <b>{report["threads"]}</b>',
+    ]
+    if report['keys_failed']:
+        lines += ['', '⚠️ <b>Не удалось снять с панели:</b>']
+        lines += [f'• {escape_html(name)}' for name in report['keys_failed']]
+        lines += ['', 'Из бота ключи удалены, но на панели могли остаться — проверьте вручную.']
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text='👥 К списку пользователей', callback_data='admin_users_list'))
+    builder.row(home_button())
+    await state.set_state(AdminStates.users_menu)
+    await safe_edit_or_send(callback.message, '\n'.join(lines), reply_markup=builder.as_markup())
+
+
 @router.callback_query(F.data.startswith('admin_user_coefficient:'))
 async def start_coefficient_edit(callback: CallbackQuery, state: FSMContext):
     """Start editing the coefficient."""
