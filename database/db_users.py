@@ -523,21 +523,19 @@ def toggle_user_ban(telegram_id: int) -> Optional[bool]:
         )
         status_text = "забанен" if new_status else "разбанен"
         logger.info(f"Пользователь {telegram_id}: {status_text}")
+
+    # Не открываем второе соединение внутри активной транзакции выше:
+    # SQLite ждёт освобождения write-lock и блокирует event loop на секунды.
+    try:
         if new_status:
-            # Ручной бан не должен сниматься автоматикой по истечении IP-блокировки.
-            try:
-                from .db_ip_abuse import mark_ip_abuse_permanent
-                mark_ip_abuse_permanent(user['id'])
-            except Exception:
-                pass
+            from .db_ip_abuse import mark_ip_abuse_permanent
+            mark_ip_abuse_permanent(user['id'])
         else:
-            # Ручной разбан снимает и отметку постоянного нарушителя.
-            try:
-                from .db_ip_abuse import reset_ip_abuse
-                reset_ip_abuse(user['id'])
-            except Exception:
-                pass
-        return bool(new_status)
+            from .db_ip_abuse import reset_ip_abuse
+            reset_ip_abuse(user['id'])
+    except Exception:
+        pass
+    return bool(new_status)
 
 def get_new_users_count_today() -> int:
     """

@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -2391,6 +2392,19 @@ class TrialGuardTest(unittest.TestCase):
         )
         trial_guard.unblock(auto_block['id'])
         self.assertFalse(is_user_banned(tg))
+
+    def test_toggle_user_ban_does_not_hold_sqlite_write_lock(self):
+        """Бан не должен открывать второе соединение внутри транзакции и вешать loop."""
+        from database.db_users import toggle_user_ban
+        tg = 990100099
+        with get_db() as c:
+            c.execute("INSERT INTO users (telegram_id, username) VALUES (?, 'ban_timing')", (tg,))
+            uid = c.execute("SELECT id FROM users WHERE telegram_id = ?", (tg,)).fetchone()["id"]
+            c.execute("INSERT INTO ip_abuse (user_id, strikes) VALUES (?, 1)", (uid,))
+        started = time.monotonic()
+        self.assertTrue(toggle_user_ban(tg))
+        self.assertFalse(toggle_user_ban(tg))
+        self.assertLess(time.monotonic() - started, 3.0)
 
     def test_public_api_exports(self):
         """Экран админки импортирует это через database.requests — имена должны быть в __all__."""

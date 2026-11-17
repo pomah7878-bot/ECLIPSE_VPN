@@ -1,5 +1,6 @@
 # История версий ECLIPSE Unlimited VPN
 
+- **1.595** — исправлены ошибки из `bot.log`: история платежей сайта импортирует `get_user_payment_history` из правильного модуля; бан/разбан больше не держит SQLite write-lock и не блокирует event loop
 - **1.594** — `decoding="async"` для скриншотов: меньше блокировки main thread при загрузке
 - **1.593** — явный `Content-Type` для WebP/PNG/JPG/SVG, чтобы сервер не отдавал изображения как `application/octet-stream`
 - **1.592** — корректный `Content-Type: image/webp`, суточный кэш изображений и убрана дублирующая ссылка Premium в десктопном меню

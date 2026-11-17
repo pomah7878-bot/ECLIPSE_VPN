@@ -4847,7 +4847,8 @@ async def handle_public_account_history(request: web.Request) -> web.Response:
     account_id = _verify_session(request.cookies.get("site_session"))
     if not account_id:
         return web.json_response({"error": "unauthorized"}, status=401)
-    from database.requests import get_site_account_by_id, get_user_payment_history, get_user_balance
+    from database.requests import get_site_account_by_id, get_user_balance
+    from database.db_payments import get_user_payment_history
     account = get_site_account_by_id(account_id)
     if not account:
         return web.json_response({"error": "account_not_found"}, status=404)
