@@ -167,6 +167,15 @@ def _format_user_card(user: dict) -> tuple[str, any]:
         else:
             lines.append('👤 Username: _не указан_')
         lines.append(f'📱 Telegram ID: <code>{telegram_id}</code>')
+        # Контакты кабинета: админ искал пользователя по ним — пусть видит подтверждение
+        from database.requests import get_site_account_by_telegram_id, site_account_phone
+        account = get_site_account_by_telegram_id(int(telegram_id))
+        if account:
+            if account.get('email'):
+                lines.append(f'📧 Почта: <code>{escape_html(account["email"])}</code>')
+            phone = site_account_phone(account)
+            if phone:
+                lines.append(f'📱 Телефон: <code>+{escape_html(str(phone).lstrip("+"))}</code>')
     if user.get('from_app'):
         lines.append('📲 Клиент приложения')
     try:

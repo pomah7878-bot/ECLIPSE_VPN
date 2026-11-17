@@ -88,7 +88,7 @@ async def request_user_selection(callback: CallbackQuery, state: FSMContext):
         await callback.answer('⛔ Доступ запрещён', show_alert=True)
         return
     await state.set_state(AdminStates.waiting_user_id)
-    text = '🔍 <b>Поиск пользователя</b>\n\nОтправьте:\n• telegram_id (число)\n• @username\n• panel_email (email клиента из панели)'
+    text = '🔍 <b>Поиск пользователя</b>\n\nОтправьте:\n• telegram_id (число)\n• @username\n• почту аккаунта (например <code>name@mail.ru</code>)\n• номер телефона (<code>+7 999…</code>, <code>8 999…</code> или <code>999…</code>)\n• panel_email (email клиента из панели)'
     
     reply_keyboard = ReplyKeyboardMarkup(
         keyboard=[
@@ -140,6 +140,34 @@ async def handle_users_shared(message: Message, state: FSMContext):
             first_name=getattr(shared_user, 'first_name', None),
         )
 
+def _resolve_site_contact(raw: str):
+    """telegram_id владельца аккаунта кабинета по почте или номеру телефона.
+
+    Клиент мог заходить только на сайт (Google/Яндекс/номер), тогда в боте у
+    него нет переписки, но аккаунт есть — отдаём telegram_id связанного
+    пользователя, а если Telegram нет, служебный отрицательный ID клиента сайта.
+    """
+    from database.requests import (
+        find_site_account_by_contact, get_or_create_placeholder_user_for_site_account, get_user_by_id,
+    )
+    from bot.services.trial_phone_registry import get_telegram_id_for_verified_phone, normalize_phone
+
+    phone = normalize_phone(raw)
+    if phone:
+        telegram_id = get_telegram_id_for_verified_phone(phone)
+        if telegram_id:
+            return int(telegram_id)
+
+    account = find_site_account_by_contact(raw)
+    if not account:
+        return None
+    if account.get('telegram_id'):
+        return int(account['telegram_id'])
+    placeholder_user_id = get_or_create_placeholder_user_for_site_account(account['id'])
+    user = get_user_by_id(placeholder_user_id)
+    return int(user['telegram_id']) if user else None
+
+
 @router.message(AdminStates.waiting_user_id, F.text, ~F.text.startswith('/'))
 async def process_user_search_input(message: Message, state: FSMContext):
     """Processing telegram_id, @username or panel_email input."""
@@ -182,7 +210,10 @@ async def process_user_search_input(message: Message, state: FSMContext):
         telegram_id = int(text)
         user = get_user_by_telegram_id(telegram_id)
         if not user:
-            await _show_user_view(message, state, telegram_id)
+            # Число может быть и номером телефона (8999…/9999…/7999…) — тогда
+            # ищем клиента кабинета, а не Telegram-пользователя.
+            contact_tid = _resolve_site_contact(text)
+            await _show_user_view(message, state, contact_tid or telegram_id)
             return
     elif text.startswith('@') or text.replace('_', '').isalnum():
         username = text.lstrip('@')
@@ -191,13 +222,26 @@ async def process_user_search_input(message: Message, state: FSMContext):
             # Trying to find by panel_email (email in the 3X-UI panel)
             user = get_user_by_panel_email(text)
             if not user:
+                contact_tid = _resolve_site_contact(text)
+                if contact_tid:
+                    await _show_user_view(message, state, contact_tid)
+                    return
                 await safe_edit_or_send(message, f'❌ Пользователь @{username} не найден в базе', reply_markup=cancel_reply_kb, force_new=True)
                 return
     else:
-        # Free text - try as panel_email
+        # Свободный текст: почта клиента (сайт/панель) или номер телефона
         user = get_user_by_panel_email(text)
         if not user:
-            await safe_edit_or_send(message, '❌ Введите telegram_id (число), @username или panel_email из панели', reply_markup=cancel_reply_kb, force_new=True)
+            contact_tid = _resolve_site_contact(text)
+            if contact_tid:
+                await _show_user_view(message, state, contact_tid)
+                return
+            await safe_edit_or_send(
+                message,
+                '❌ Не нашли. Отправьте telegram_id, @username, почту аккаунта '
+                '(<code>name@mail.ru</code>) или номер телефона.',
+                reply_markup=cancel_reply_kb, force_new=True,
+            )
             return
             
     import asyncio

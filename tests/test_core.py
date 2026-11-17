@@ -3257,6 +3257,46 @@ class SmtpSettingsTest(unittest.TestCase):
         self.assertFalse(any("sWPIRR8mgiAhqJ0yVTfo" in t for t in texts))  # пароль не показываем
 
 
+class AdminUserContactSearchTest(unittest.TestCase):
+    """Поиск пользователя в админке по почте и номеру телефона."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_find_account_by_email_any_case(self):
+        from database.db_accounts import get_or_create_site_account, find_site_account_by_contact
+        acc = get_or_create_site_account("google", "g-search-1", email="Search@Example.com")
+        self.assertEqual(find_site_account_by_contact("search@example.com")["id"], acc["id"])
+        self.assertEqual(find_site_account_by_contact("SEARCH@EXAMPLE.COM")["id"], acc["id"])
+
+    def test_find_account_by_phone_any_format(self):
+        from database.db_accounts import (
+            get_or_create_site_account, set_account_phone, find_site_account_by_contact,
+        )
+        acc = get_or_create_site_account("phone", "79991234567")
+        set_account_phone(acc["id"], "79991234567")
+        for raw in ("+7 999 123-45-67", "8 999 123 45 67", "9991234567", "79991234567"):
+            found = find_site_account_by_contact(raw)
+            self.assertIsNotNone(found, raw)
+            self.assertEqual(found["id"], acc["id"], raw)
+
+    def test_unknown_contact_returns_none(self):
+        from database.db_accounts import find_site_account_by_contact
+        self.assertIsNone(find_site_account_by_contact("nobody-here@example.com"))
+        self.assertIsNone(find_site_account_by_contact("0000000000"))
+
+    def test_site_contact_resolves_placeholder_id(self):
+        from bot.handlers.admin.users_list import _resolve_site_contact
+        from database.db_accounts import get_or_create_site_account, set_account_email
+        acc = get_or_create_site_account("yandex", "y-search-2")
+        set_account_email(acc["id"], "placeholder@example.com")
+        telegram_id = _resolve_site_contact("placeholder@example.com")
+        self.assertIsNotNone(telegram_id)
+        # без Telegram — служебный отрицательный ID клиента сайта
+        self.assertLess(telegram_id, 0)
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 

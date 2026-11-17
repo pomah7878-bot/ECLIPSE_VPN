@@ -36,6 +36,7 @@ __all__ = [
     'consume_email_login_code',
     'email_taken',
     'set_account_email',
+    'find_site_account_by_contact',
     'get_or_create_placeholder_user_for_site_account',
     'get_site_account_by_placeholder_user_id',
 ]
@@ -530,6 +531,37 @@ def consume_oauth_exchange_code(code: str, code_verifier: Optional[str] = None) 
                 return None
         conn.execute("UPDATE oauth_exchange_codes SET used = 1 WHERE code = ?", (code.strip().upper(),))
         return row["account_id"]
+
+
+def find_site_account_by_contact(raw: str) -> Optional[Dict[str, Any]]:
+    """Аккаунт кабинета по почте или номеру телефона — поиск в админке.
+
+    Понимает и адрес (`Name@Mail.ru` = `name@mail.ru`), и номер в любом виде:
+    `+7 999…`, `8 999…`, `999…` — всё приводится к одному реестровому виду.
+    """
+    from bot.services.email_sender import normalize_email
+    from bot.services.trial_phone_registry import normalize_phone
+
+    email = normalize_email(raw)
+    if email:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT * FROM site_accounts WHERE LOWER(email) = ? ORDER BY id LIMIT 1", (email,)
+            ).fetchone()
+            if row:
+                return dict(row)
+
+    phone = normalize_phone(raw)
+    if phone:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT * FROM site_accounts WHERE phone = ? "
+                "OR (provider = 'phone' AND provider_user_id = ?) ORDER BY id LIMIT 1",
+                (phone, phone),
+            ).fetchone()
+            if row:
+                return dict(row)
+    return None
 
 
 def email_taken(email: str, exclude_id: int = 0) -> bool:
