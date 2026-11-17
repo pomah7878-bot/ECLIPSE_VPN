@@ -2850,6 +2850,97 @@ class SitePhoneMergeTest(unittest.TestCase):
         self.assertIn("Google", phone_merge_blocker(keep, google))  # вход через Google пропал бы
 
 
+class SitePhoneSyncTest(unittest.TestCase):
+    """Номер из кабинета попадает в общий реестр (его видит бот), отвязка убирает связку."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_register_or_unregister(self):
+        from database.db_accounts import (
+            get_or_create_site_account, get_site_account_by_id, set_account_phone,
+            clear_account_phone, phone_unlink_blocker, site_account_phone,
+        )
+        from bot.services.trial_phone_registry import (
+            register_site_account_phone, unregister_site_account_phone,
+            get_phone_for_site_account_id, get_phone_for_telegram_id,
+        )
+        account = get_or_create_site_account("google", "g-sync", email="s@gmail.com")
+        self.assertTrue(set_account_phone(account["id"], "79996661234"))
+        # без записи в реестр бот номер из кабинета не видит
+        self.assertIsNone(get_phone_for_site_account_id(account["id"]))
+        self.assertTrue(register_site_account_phone("79996661234", account["id"], 777001234))
+        self.assertEqual(get_phone_for_site_account_id(account["id"]), "79996661234")
+        self.assertEqual(get_phone_for_telegram_id(777001234), "79996661234")
+        self.assertTrue(register_site_account_phone("79996661234", account["id"]))  # повтор — не ошибка
+        self.assertTrue(register_site_account_phone("+7 (999) 666-12-34", account["id"]))  # тот же номер иначе записан
+        # чужой аккаунт и чужой Telegram номер не перехватывают
+        other = get_or_create_site_account("google", "g-sync-2", email="s2@gmail.com")
+        self.assertFalse(register_site_account_phone("79996661234", other["id"]))
+        self.assertFalse(register_site_account_phone("79996661234", account["id"], 777999999))
+
+        # email останется — отвязать можно
+        self.assertIsNone(phone_unlink_blocker(get_site_account_by_id(account["id"])))
+        self.assertTrue(clear_account_phone(account["id"]))
+        self.assertIsNone(site_account_phone(get_site_account_by_id(account["id"])))
+        self.assertTrue(unregister_site_account_phone("79996661234", account["id"], 777001234))
+        self.assertIsNone(get_phone_for_site_account_id(account["id"]))
+        self.assertIsNone(get_phone_for_telegram_id(777001234))  # в боте номер тоже пропал
+        self.assertFalse(unregister_site_account_phone("79996661234", account["id"]))  # уже отвязан
+
+    def test_unlink_blockers(self):
+        from database.db_accounts import (
+            get_or_create_site_account, get_or_create_site_account_by_phone, get_site_account_by_id,
+            set_account_phone, phone_unlink_blocker,
+        )
+        phone_login = get_or_create_site_account_by_phone("79996665234")
+        self.assertIn("входите по этому номеру", phone_unlink_blocker(phone_login))
+
+        bare = get_or_create_site_account("telegram", "tg-bare")
+        self.assertTrue(set_account_phone(bare["id"], "79996665222"))
+        self.assertIn("единственный способ", phone_unlink_blocker(get_site_account_by_id(bare["id"])))
+        self.assertIsNone(phone_unlink_blocker({**get_site_account_by_id(bare["id"]), "email": "x@example.com"}))
+        self.assertIn("не привязан", phone_unlink_blocker({"provider": "google", "email": "x@example.com"}))
+
+
+class CabinetPhoneTest(unittest.TestCase):
+    """Карточка «Личный кабинет» в боте показывает номер, привязанный в кабинете сайта."""
+
+    @classmethod
+    def setUpClass(cls):
+        run_migrations()
+
+    def test_format_phone(self):
+        from bot.services.client_cabinet import format_phone
+        self.assertEqual(format_phone("79996664455"), "+7 999 666-44-55")
+        self.assertEqual(format_phone("+7 (999) 666-44-55"), "+7 999 666-44-55")
+        self.assertEqual(format_phone("89996664455"), "+7 999 666-44-55")
+        self.assertEqual(format_phone("380501112233"), "+380501112233")
+        self.assertEqual(format_phone(""), "")
+        self.assertEqual(format_phone(None), "")
+
+    def test_collect_shows_synced_phone(self):
+        from bot.services import client_cabinet as cab
+        from bot.services.trial_phone_registry import link_phone
+        from database.requests import get_or_create_user
+        get_or_create_user(777006, username="cab_phone")
+        self.assertTrue(link_phone("79996664455", 777006))
+        data = cab.collect(777006)
+        self.assertEqual(data["phone"], "+7 999 666-44-55")
+        self.assertIn("📱 Телефон", cab.build_html(data))
+        self.assertIn("+7 999 666-44-55", cab.build_fallback(data))
+
+    def test_collect_falls_back_to_site_account(self):
+        from bot.services import client_cabinet as cab
+        from database.db_accounts import get_or_create_site_account, link_oauth_to_site_account, set_account_phone
+        account = get_or_create_site_account("telegram", "tg-cab-phone")
+        self.assertTrue(link_oauth_to_site_account(account["id"], 777007))
+        self.assertTrue(set_account_phone(account["id"], "79996667788"))
+        self.assertEqual(cab.collect(777007)["phone"], "+7 999 666-77-88")
+        self.assertEqual(cab.collect(777008)["phone"], "")  # у остальных телефона нет
+
+
 class PhoneBonusTest(unittest.IsolatedAsyncioTestCase):
     """Бонус за номер: только с лицензией «Бонусные дни», по умолчанию выключен, один раз."""
 

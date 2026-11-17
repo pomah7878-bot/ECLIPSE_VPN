@@ -2026,8 +2026,8 @@
             }
         }
 
-        function showLinkPhoneStep() {
-            document.getElementById('linkPhoneToggleBtn').classList.add('hidden');
+        function showLinkPhoneStep(changing) {
+            document.getElementById('linkPhoneToggleBtn')?.classList.add('hidden');
             const body = document.getElementById('linkPhoneBody');
             body.classList.remove('hidden');
             body.innerHTML = `
@@ -2037,8 +2037,30 @@
                 <div class="text-xs text-mist mb-2">Для России просто начните с 8 или 9. Для других стран введите + и код страны, например +380.</div>
                 <button onclick="requestLinkPhone()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Продолжить</button>
                 <div id="linkPhoneError" class="text-xs text-alert mt-2 text-center"></div>
+                ${changing ? `<button onclick="reloadAccountData()" class="w-full py-2 mt-1 text-xs text-mist">Отмена</button>` : ''}
             `;
             attachPhoneAutoFormat(document.getElementById('linkPhoneInput'));
+        }
+
+        async function reloadAccountData() {
+            try {
+                renderAccountData(await fetchAPI('account/session'));
+            } catch(e) {
+                showToast('Не удалось обновить данные. Обновите страницу.');
+            }
+        }
+
+        // Отвязка номера: сервер сам откажет, если это единственный способ входа
+        // (provider='phone' или у аккаунта нет почты/Telegram) — покажем его текст.
+        async function unlinkAccountPhone() {
+            if (!confirm('Отвязать номер телефона от аккаунта?')) return;
+            const res = await postAPISafe('account/unlink-phone', {});
+            if (res.ok) {
+                showToast('Номер отвязан');
+                reloadAccountData();
+                return;
+            }
+            showToast(res.message || 'Не удалось отвязать номер');
         }
 
         async function requestLinkPhone() {
@@ -2217,12 +2239,25 @@
                 `;
             }
 
-            // Предложение добавить телефон — если у аккаунта уже есть
-            // email/telegram, но нет привязанного номера. И наоборот
-            // (см. linkOAuthBlock выше) — для полной связки аккаунта на
-            // случай утраты доступа к одному из способов входа.
+            // Телефон: показать привязанный номер, дать сменить (повторное
+            // подтверждение звонком) или отвязать. Кнопки есть только когда
+            // вход по номеру вообще включён админом и настроен Zvonok —
+            // иначе клиент вводил бы номер и упирался в отказ на последнем шаге.
             let linkPhoneBlock = '';
-            if (!session.phone) {
+            const phoneEnabled = siteInfo.phone_login_enabled === true;
+            if (session.phone) {
+                const phonePretty = phoneFormat(phoneDigitsNormalize(String(session.phone)));
+                linkPhoneBlock = `
+                    <div class="card rounded-2xl p-4 mb-4 text-center">
+                        <p class="text-xs text-mist mb-3">📱 Телефон: <span class="text-ink">${escapeHtml(phonePretty || String(session.phone))}</span></p>
+                        ${phoneEnabled ? `<button onclick="showLinkPhoneStep(true)" id="linkPhoneToggleBtn" class="btn-secondary rounded-lg px-4 py-2 text-xs">Изменить номер</button>` : ''}
+                        ${session.phone_unlink_blocked
+                            ? `<p class="text-[11px] text-mist-dim mt-2">${escapeHtml(session.phone_unlink_blocked)}</p>`
+                            : `<button onclick="unlinkAccountPhone()" class="mt-2 text-[11px] text-mist-dim underline transition">Отвязать номер</button>`}
+                        <div id="linkPhoneBody" class="hidden mt-2 text-left"></div>
+                    </div>
+                `;
+            } else if (phoneEnabled) {
                 linkPhoneBlock = `
                     <div class="card rounded-2xl p-4 mb-4 text-center">
                         <p class="text-xs text-mist mb-3">Добавьте номер телефона — ещё один способ входа, если потеряете доступ к почте или Telegram.</p>

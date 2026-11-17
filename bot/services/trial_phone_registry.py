@@ -96,6 +96,90 @@ def link_phone(raw_phone: str, telegram_id: int) -> bool:
         return int(owner) == int(telegram_id)
 
 
+def register_site_account_phone(
+    raw_phone: str,
+    site_account_id: int,
+    telegram_id: Optional[int] = None,
+) -> bool:
+    """Записывает подтверждённый в личном кабинете номер в общий реестр
+    «номер → человек».
+
+    Раньше номер, добавленный на сайте, лежал только в
+    site_accounts.phone, а бот читает ЭТУ таблицу — поэтому «Поделиться
+    контактом» и сайт видели разные номера. Теперь оба канала пишут в
+    один реестр. Возвращает False, если номер уже принадлежит ДРУГОМУ
+    сайт-аккаунту или другому Telegram (чужой номер не перехватить).
+    """
+    phone = normalize_phone(raw_phone)
+    if not phone or not site_account_id:
+        return False
+    from database.connection import get_db
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, telegram_id, site_account_id FROM trial_verified_phones "
+            "WHERE phone_normalized = ?",
+            (phone,),
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO trial_verified_phones (phone_normalized, telegram_id, site_account_id) "
+                "VALUES (?, ?, ?)",
+                (phone, telegram_id, site_account_id),
+            )
+            return True
+        owner_account = row["site_account_id"]
+        owner_telegram = row["telegram_id"]
+        if owner_account not in (None, site_account_id):
+            return False
+        if telegram_id and owner_telegram not in (None, telegram_id):
+            return False
+        conn.execute(
+            "UPDATE trial_verified_phones "
+            "SET site_account_id = ?, telegram_id = COALESCE(telegram_id, ?) WHERE id = ?",
+            (site_account_id, telegram_id, row["id"]),
+        )
+        return True
+
+
+def unregister_site_account_phone(
+    raw_phone: str,
+    site_account_id: int,
+    telegram_id: Optional[int] = None,
+) -> bool:
+    """Убирает связку «номер → сайт-аккаунт» при смене или отвязке номера.
+
+    telegram_id передаётся только при ПОЛНОЙ отвязке: тогда удаляется и
+    связка с Telegram этого же человека, иначе после отвязки в кабинете
+    номер продолжал бы показываться в боте. При смене номера историю не
+    стираем — старая запись остаётся «номер подтверждён за человеком».
+    Строку без владельцев удаляем, чтобы номер не остался в реестре
+    навсегда чужим и не блокировал повторную привязку.
+    """
+    phone = normalize_phone(raw_phone)
+    if not phone:
+        return False
+    from database.connection import get_db
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE trial_verified_phones SET site_account_id = NULL "
+            "WHERE phone_normalized = ? AND site_account_id = ?",
+            (phone, site_account_id),
+        )
+        if not cursor.rowcount:
+            return False
+        if telegram_id:
+            conn.execute(
+                "UPDATE trial_verified_phones SET telegram_id = NULL "
+                "WHERE phone_normalized = ? AND telegram_id = ?",
+                (phone, int(telegram_id)),
+            )
+        conn.execute(
+            "DELETE FROM trial_verified_phones WHERE phone_normalized = ? AND telegram_id IS NULL",
+            (phone,),
+        )
+        return True
+
+
 def get_phone_for_telegram_id(telegram_id: int) -> Optional[str]:
     """Первый подтверждённый номер этого Telegram-аккаунта (для связки каналов)."""
     from database.connection import get_db

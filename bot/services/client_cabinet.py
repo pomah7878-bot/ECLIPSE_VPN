@@ -52,6 +52,32 @@ def _days_left(expires_at: Any) -> Optional[int]:
     return max(0, int(-(-sec // 86400)))
 
 
+def format_phone(raw: Any) -> str:
+    """79991234567 → «+7 999 123-45-67»; остальные номера — «+<цифры>».
+
+    Номер в реестре хранится без «+» и разделителей, а в кабинете должен
+    читаться по-человечески. Пустая строка — телефона нет.
+    """
+    digits = "".join(ch for ch in str(raw or "") if ch.isdigit())
+    if not digits:
+        return ""
+    if len(digits) == 11 and digits[0] in ("7", "8"):
+        return f"+7 {digits[1:4]} {digits[4:7]}-{digits[7:9]}-{digits[9:11]}"
+    return "+" + digits
+
+
+def _account_phone(telegram_id: int) -> str:
+    """Номер клиента: сначала общий реестр (им же пользуется бот при
+    «Поделиться контактом»), затем номер, привязанный в кабинете сайта."""
+    from bot.services.trial_phone_registry import get_phone_for_telegram_id
+    raw = get_phone_for_telegram_id(telegram_id)
+    if not raw:
+        from database.db_accounts import get_site_account_by_telegram_id, site_account_phone
+        account = get_site_account_by_telegram_id(telegram_id)
+        raw = site_account_phone(account) if account else ""
+    return format_phone(raw)
+
+
 def collect(telegram_id: int) -> Dict[str, Any]:
     from database.connection import get_db
     from database.requests import get_user_balance, get_user_internal_id, get_user_keys_for_display
@@ -69,6 +95,12 @@ def collect(telegram_id: int) -> Dict[str, Any]:
         traffic = f"{format_traffic(used)} / {format_traffic(limit) if limit > 0 else '∞'}"
         traffic_bar = bar(used, limit)
 
+    try:
+        phone = _account_phone(telegram_id)
+    except Exception as e:  # noqa: BLE001 — кабинет не должен падать из-за телефона
+        logger.warning("Кабинет: телефон клиента %s не получен: %s", telegram_id, e)
+        phone = ""
+
     paid30 = refs = 0
     if uid:
         with get_db() as conn:
@@ -82,6 +114,7 @@ def collect(telegram_id: int) -> Dict[str, Any]:
 
     return {
         "balance": format_rub(get_user_balance(uid) if uid else 0, cents=True),
+        "phone": phone,
         "keys_total": len(keys), "keys_active": len(active),
         "days_left": _days_left(nearest.get("expires_at")) if nearest else None,
         "traffic": traffic, "traffic_bar": traffic_bar,
@@ -92,6 +125,9 @@ def collect(telegram_id: int) -> Dict[str, Any]:
 def _rows(d: Dict[str, Any]) -> list:
     rows = [("💰 Баланс", d["balance"]),
             ("🔑 Ключи", f"{d['keys_active']} активных из {d['keys_total']}")]
+    if d.get("phone"):
+        # Номер — тот же, что привязан в личном кабинете на сайте (общий реестр)
+        rows.append(("📱 Телефон", d["phone"]))
     if d["days_left"] is not None:
         rows.append(("⏳ Ближайшее окончание", f"через {d['days_left']} дн"))
     if d["traffic"]:

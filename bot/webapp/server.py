@@ -272,6 +272,28 @@ def _get_telegram_id(request: web.Request) -> Optional[int]:
     return None
 
 
+def _resolve_account_id_for_request(request: web.Request, create: bool = True) -> Optional[int]:
+    """Аккаунт кабинета для запроса: cookie сайта, иначе проверенный initData.
+
+    Mini App открывается внутри Telegram без cookie-сессии, поэтому
+    привязка телефона должна работать и по initData — иначе в кабинете
+    пришлось бы отправлять клиента на /shop#account в браузере.
+    create=False — только найти существующий аккаунт (чтение не должно
+    заводить запись в site_accounts на каждое открытие кабинета).
+    """
+    account_id = _verify_session(request.cookies.get("site_session"))
+    if account_id:
+        return account_id
+    telegram_id = _get_telegram_id(request)
+    if not telegram_id:
+        return None
+    from database.db_accounts import _get_or_create_telegram_site_account, get_site_account_by_telegram_id
+    if create:
+        return _get_or_create_telegram_site_account(telegram_id)["id"]
+    account = get_site_account_by_telegram_id(telegram_id)
+    return account["id"] if account else None
+
+
 # ============================================================
 # API handlers
 # ============================================================
@@ -4342,6 +4364,14 @@ async def handle_public_auth_phone_check(request: web.Request) -> web.Response:
         account = get_or_create_site_account_by_phone(normalized, referred_by_code=request.cookies.get("site_ref_code"))
         account_type = "phone"
 
+    # Вход по номеру — номер подтверждён звонком, значит это тот же человек:
+    # пишем его в общий реестр, который читает бот (как и привязку в кабинете).
+    try:
+        from bot.services.trial_phone_registry import register_site_account_phone
+        register_site_account_phone(normalized, account["id"], account.get("telegram_id"))
+    except Exception as e:
+        logger.warning(f"Реестр номеров: вход по номеру для аккаунта {account.get('id')} не записан: {e}")
+
     session_value = _sign_session(account["id"])
     resp = web.json_response({"status": "ok", "verified": True, "account_type": account_type})
     resp.set_cookie("site_session", session_value, max_age=_SESSION_TTL_SECONDS, httponly=True, secure=True, samesite="Lax")
@@ -4995,16 +5025,38 @@ async def handle_public_account_telegram_link(request: web.Request) -> web.Respo
 
 async def handle_public_account_session(request: web.Request) -> web.Response:
     """GET /api/public/account/session — данные кабинета для текущей
-    сессии (OAuth или вход по коду). Показывает ВСЕ ключи для клиентов,
-    вошедших через Telegram-мост."""
-    account_id = _verify_session(request.cookies.get("site_session"))
+    сессии (OAuth, вход по коду или Telegram Mini App по initData).
+    Показывает ВСЕ ключи для клиентов, вошедших через Telegram-мост."""
+    account_id = _resolve_account_id_for_request(request, create=not request.query.get("phone_only"))
     if not account_id:
+        if request.query.get("phone_only") and _get_telegram_id(request):
+            # Telegram Mini App: initData проверен, значит человек вошёл —
+            # просто сайт-аккаунта ещё нет и номер не привязан. Запись в
+            # site_accounts появится при привязке номера, а не при просмотре.
+            return web.json_response({
+                "ok": True, "logged_in": True,
+                "phone": None, "phone_unlink_blocked": None,
+            })
         return web.json_response({"ok": True, "logged_in": False})
 
-    from database.requests import get_site_account_by_id, site_account_phone
+    from database.requests import get_site_account_by_id, site_account_phone, phone_unlink_blocker
     account = get_site_account_by_id(account_id)
     if not account:
         return web.json_response({"ok": True, "logged_in": False})
+
+    # Готовый текст причины, по которой номер нельзя отвязать (None — можно):
+    # экран кабинета не дублирует правило про «единственный способ входа».
+    phone_unlink_blocked = phone_unlink_blocker(account)
+
+    # Лёгкий режим для блока «Телефон»: Mini App запрашивает его при каждом
+    # открытии кабинета, и тянуть ради номера ключи, подписки и аватар
+    # Telegram излишне.
+    if request.query.get("phone_only"):
+        return web.json_response({
+            "ok": True, "logged_in": True,
+            "phone": site_account_phone(account),
+            "phone_unlink_blocked": phone_unlink_blocked,
+        })
 
     if account.get("telegram_id"):
         from database.requests import get_user_keys_for_display
@@ -5050,6 +5102,7 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
             "ok": True, "logged_in": True, "account_type": "telegram",
             "can_link_oauth": account.get("provider") in (None, "telegram"),
             "phone": site_account_phone(account),
+            "phone_unlink_blocked": phone_unlink_blocked,
             "email": account.get("email"),
             "avatar_base64": base64.b64encode(avatar).decode("ascii") if avatar else None,
             "keys": keys_with_urls,
@@ -5061,19 +5114,24 @@ async def handle_public_account_session(request: web.Request) -> web.Response:
     purchase = get_latest_purchase_for_account(account_id)
     if not purchase:
         return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": [],
-                                  "phone": site_account_phone(account), "email": account.get("email"),
+                                  "phone": site_account_phone(account),
+                                  "phone_unlink_blocked": phone_unlink_blocked,
+                                  "email": account.get("email"),
                                   "can_link_oauth": not account.get("email")})
 
     key = get_key_details_by_id(purchase["vpn_key_id"])
     if not key:
         return web.json_response({"ok": True, "logged_in": True, "account_type": "oauth_new", "keys": [],
-                                  "phone": site_account_phone(account), "email": account.get("email"),
+                                  "phone": site_account_phone(account),
+                                  "phone_unlink_blocked": phone_unlink_blocked,
+                                  "email": account.get("email"),
                                   "can_link_oauth": not account.get("email")})
 
     return web.json_response({
         "ok": True, "logged_in": True, "account_type": "oauth",
         "can_link_oauth": not account.get("email"),  # вошёл по телефону — предлагаем Google/Яндекс/VK
         "phone": site_account_phone(account),
+        "phone_unlink_blocked": phone_unlink_blocked,
         "email": account.get("email"),
         "keys": [{
             "key_id": key["id"],
@@ -5098,8 +5156,11 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     связки: пользователь вошёл через email/telegram и хочет добавить
     телефон, не теряя существующий email (в отличие от старого
     attach_oauth_to_existing_account, phone хранится в отдельной
-    колонке — оба способа сосуществуют)."""
-    account_id = _verify_session(request.cookies.get("site_session"))
+    колонке — оба способа сосуществуют).
+
+    В Mini App (запрос с initData от Telegram) та же привязка работает
+    без cookie-сессии сайта — см. _resolve_account_id_for_request."""
+    account_id = _resolve_account_id_for_request(request)
     if not account_id:
         return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
 
@@ -5136,8 +5197,11 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
 
     from bot.services.trial_phone_registry import normalize_phone
     from database.db_accounts import set_account_phone
+    from database.requests import get_site_account_by_id, site_account_phone
 
     normalized = normalize_phone(phone)
+    # Что было привязано раньше — чтобы смена номера не оставила старый в реестре
+    previous_phone = site_account_phone(get_site_account_by_id(account_id) or {})
     ok = set_account_phone(account_id, normalized)
     if not ok:
         # Номер подтверждён звонком, но уже принадлежит другому аккаунту — предлагаем действия
@@ -5172,7 +5236,56 @@ async def handle_public_account_link_phone_check(request: web.Request) -> web.Re
     except Exception as e:
         logger.warning(f"Автопривязка Telegram по номеру для аккаунта {account_id} не удалась: {e}")
 
+    # Двусторонняя синхронизация с ботом: номер попадает в общий реестр
+    # «номер → человек» (его читают get_phone_for_telegram_id и
+    # get_phone_for_site_account_id). Раньше номер из кабинета жил только в
+    # site_accounts.phone, и бот его не видел: «Поделиться контактом» и сайт
+    # знали разные номера одного и того же клиента.
+    try:
+        from bot.services.trial_phone_registry import (
+            register_site_account_phone, unregister_site_account_phone,
+        )
+        if previous_phone and previous_phone != normalized:
+            unregister_site_account_phone(previous_phone, account_id)
+        fresh = get_site_account_by_id(account_id) or {}
+        register_site_account_phone(normalized, account_id, fresh.get("telegram_id"))
+    except Exception as e:
+        logger.warning(f"Реестр номеров: синхронизация аккаунта {account_id} не удалась: {e}")
+
     return web.json_response({"ok": True, "verified": True, "phone": normalized, "telegram_linked": telegram_linked})
+
+
+async def handle_public_account_unlink_phone(request: web.Request) -> web.Response:
+    """POST /api/public/account/unlink-phone — отвязывает номер от кабинета.
+
+    Номер уходит из site_accounts.phone и из общего реестра номеров,
+    поэтому бот тоже перестаёт его показывать. Если номер остаётся
+    единственным способом входа (provider='phone' или у аккаунта больше
+    нет почты/Telegram) — отвязка отклоняется с понятным текстом, чтобы
+    клиент не потерял доступ к кабинету."""
+    account_id = _resolve_account_id_for_request(request)
+    if not account_id:
+        return web.json_response({"ok": False, "message": "Сессия истекла, войдите заново."}, status=401)
+
+    from database.requests import get_site_account_by_id, site_account_phone, phone_unlink_blocker, clear_account_phone
+    from bot.services.trial_phone_registry import unregister_site_account_phone
+
+    account = get_site_account_by_id(account_id)
+    if not account:
+        return web.json_response({"ok": False, "message": "Аккаунт не найден, войдите заново."}, status=401)
+    blocker = phone_unlink_blocker(account)
+    if blocker:
+        return web.json_response({"ok": False, "message": blocker}, status=409)
+
+    phone = site_account_phone(account)
+    if not clear_account_phone(account_id):
+        return web.json_response({"ok": False, "message": "Не удалось отвязать номер. Попробуйте ещё раз."}, status=500)
+    try:
+        unregister_site_account_phone(phone, account_id, account.get("telegram_id"))
+    except Exception as e:
+        logger.warning(f"Реестр номеров: отвязка номера аккаунта {account_id} не удалась: {e}")
+    logger.info(f"Кабинет: аккаунт {account_id} отвязал номер телефона")
+    return web.json_response({"ok": True, "phone": None})
 
 
 async def handle_public_account_phone_switch(request: web.Request) -> web.Response:
@@ -6750,6 +6863,7 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/public/account/telegram-link", handle_public_account_telegram_link)
     app.router.add_post("/api/public/account/phone-switch", handle_public_account_phone_switch)
     app.router.add_post("/api/public/account/phone-merge", handle_public_account_phone_merge)
+    app.router.add_post("/api/public/account/unlink-phone", handle_public_account_unlink_phone)
     app.router.add_post("/api/public/account/logout", handle_public_account_logout)
     app.router.add_post("/api/public/account/key/renew/create", handle_public_account_key_renew_create)
     app.router.add_post("/api/public/account/key/renew/check", handle_public_account_key_renew_check)

@@ -2272,10 +2272,8 @@
                 const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
                 const items = [];
                 const contact = [];
-                if (s.phone) contact.push(`<p class="text-xs text-mist">📱 Телефон: <span class="text-ink">${escapeHtml(String(s.phone))}</span></p>`);
                 if (s.email) contact.push(`<p class="text-xs text-mist">✉️ Email: <span class="text-ink">${escapeHtml(String(s.email))}</span></p>`);
                 if (s.account_type !== 'telegram') items.push(`<button onclick="linkTelegram()" class="${btn}">✈️ Привязать Telegram</button>`);
-                if (!s.phone) items.push(`<a href="/shop#account" class="${btn}">📱 Добавить номер телефона</a>`);
                 if (!s.email && providers.length) items.push(`<a href="/shop#account" class="${btn}">🔑 Добавить вход через ${escapeHtml(providers.join(' / '))}</a>`);
                 if (!items.length && !contact.length) return;
                 box.innerHTML = translateHtml(`<div class="card rounded-2xl p-4 space-y-2">
@@ -2297,6 +2295,217 @@
         async function browserLogout() {
             try { await fetch('/api/public/account/logout', { method: 'POST' }); } catch (e) {}
             location.reload();
+        }
+
+        // ===== Телефон в кабинете =====
+        // Mini App открывается без cookie сайта, поэтому те же публичные ручки
+        // вызываются с initData: сервер принимает и cookie, и подписанный
+        // initData (см. _resolve_account_id_for_request в webapp/server.py).
+        const PHONE_CODES = ['998','996','995','994','993','992','972','971','380','375','374','373','372','371','370','90','86','49','48','44','39','33','34','1','7'];
+        function phoneDigitsNormalize(raw) {
+            const hasPlus = String(raw || '').trim().startsWith('+');
+            let d = String(raw || '').replace(/\D/g, '');
+            if (!hasPlus && d) {
+                if (d[0] === '8') d = '7' + d.slice(1);
+                else if (d[0] === '9') d = '7' + d;
+            }
+            return d.slice(0, 15);
+        }
+        function phoneFormat(d) {
+            if (!d) return '';
+            const code = PHONE_CODES.find(c => d.startsWith(c)) || d.slice(0, Math.min(3, d.length));
+            const rest = d.slice(code.length);
+            if (code === '7') {
+                let out = '+7';
+                if (rest.length) out += ' ' + rest.slice(0, 3);
+                if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+                if (rest.length > 6) out += '-' + rest.slice(6, 8);
+                if (rest.length > 8) out += '-' + rest.slice(8, 10);
+                return out;
+            }
+            if (code === '1') {
+                let out = '+1';
+                if (rest.length) out += ' ' + rest.slice(0, 3);
+                if (rest.length > 3) out += ' ' + rest.slice(3, 6);
+                if (rest.length > 6) out += '-' + rest.slice(6, 10);
+                return out;
+            }
+            const groups = rest.match(/.{1,3}/g) || [];
+            return '+' + code + (groups.length ? ' ' + groups.join(' ') : '');
+        }
+        function attachPhoneAutoFormat(input) {
+            if (!input || input.dataset.autofmt) return;
+            input.dataset.autofmt = '1';
+            input.setAttribute('inputmode', 'tel');
+            input.addEventListener('input', function (e) {
+                if (input.value.trim() === '+') { input.dataset.prevDigits = ''; input.value = '+'; return; }
+                const prev = input.dataset.prevDigits || '';
+                let d = phoneDigitsNormalize(input.value);
+                const deleting = (e.inputType || '').startsWith('delete');
+                if (deleting && d === prev && d) d = d.slice(0, -1);
+                if (deleting && !d) { input.value = ''; input.dataset.prevDigits = ''; return; }
+                input.dataset.prevDigits = d;
+                input.value = phoneFormat(d);
+            });
+            input.addEventListener('paste', function () { setTimeout(() => input.dispatchEvent(new Event('input')), 0); });
+        }
+        function phonePretty(raw) {
+            return phoneFormat(phoneDigitsNormalize(String(raw || ''))) || String(raw || '');
+        }
+        // 400/401/409 приходят с понятным текстом в JSON — не выбрасываем его в catch
+        async function postPublicAPI(endpoint, body) {
+            let res;
+            try {
+                res = await fetch(`/api/public/${endpoint}?initData=${encodeURIComponent(initData)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            } catch (e) {
+                return { error: 'network', message: 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.' };
+            }
+            try { return await res.json(); } catch (e) { return { error: 'unknown', message: `HTTP ${res.status}` }; }
+        }
+
+        async function renderPhoneBlock() {
+            const box = document.getElementById('phoneBlock');
+            if (!box) return;
+            let s;
+            try {
+                const res = await fetch(`/api/public/account/session?phone_only=1&initData=${encodeURIComponent(initData)}`);
+                if (!res.ok) return;
+                s = await res.json();
+            } catch (e) { return; }
+            if (!s || !s.logged_in) { box.innerHTML = ''; return; }
+            let site = {};
+            try { site = await siteInfoPromise; } catch (e) { site = {}; }
+            const enabled = site.phone_login_enabled === true;
+            const btn = 'block w-full py-3 btn-secondary rounded-xl font-semibold text-sm text-center transition';
+            const parts = [];
+            if (s.phone) {
+                parts.push(`<p class="text-xs text-mist">📱 Телефон: <span class="text-ink">${escapeHtml(phonePretty(s.phone))}</span></p>`);
+                if (enabled) parts.push(`<button onclick="showPhoneForm()" class="${btn}">Изменить номер</button>`);
+                if (s.phone_unlink_blocked) {
+                    parts.push(`<p class="text-[11px] text-mist-dim">${escapeHtml(s.phone_unlink_blocked)}</p>`);
+                } else {
+                    parts.push(`<button onclick="unlinkPhone()" class="block w-full py-2 text-[11px] text-mist-dim underline transition">Отвязать номер</button>`);
+                }
+            } else if (enabled) {
+                parts.push(`<p class="text-xs text-mist">Добавьте номер телефона — ещё один способ входа, если потеряете доступ к Telegram.</p>`);
+                parts.push(`<button onclick="showPhoneForm()" class="${btn}">📱 Добавить номер телефона</button>`);
+            }
+            if (!parts.length) { box.innerHTML = ''; return; }
+            box.innerHTML = `<div class="card rounded-2xl p-4 space-y-2">${parts.join('')}<div id="phoneFormBody" class="hidden"></div></div>`;
+        }
+
+        function showPhoneForm() {
+            const body = document.getElementById('phoneFormBody');
+            if (!body) return;
+            body.classList.remove('hidden');
+            body.innerHTML = `
+                <input id="phoneInput" type="tel" placeholder="+7 999 123-45-67" autocomplete="tel"
+                    class="w-full rounded-xl px-3.5 py-3 text-sm text-ink mb-2"
+                    style="outline:none; background: var(--panel-2); border: 1px solid var(--hairline);">
+                <p class="text-[11px] text-mist mb-2">Для России начните с 8 или 9, для других стран — «+» и код страны, например +380.</p>
+                <button onclick="requestPhoneBind()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Продолжить</button>
+                <div id="phoneError" class="text-xs text-alert mt-2 text-center"></div>`;
+            attachPhoneAutoFormat(document.getElementById('phoneInput'));
+            document.getElementById('phoneInput').focus();
+        }
+
+        function stopPhonePoll() {
+            if (window._phonePoll) { clearInterval(window._phonePoll); window._phonePoll = null; }
+        }
+        function phoneFormMessage(text) {
+            stopPhonePoll();
+            const body = document.getElementById('phoneFormBody');
+            if (!body) return;
+            body.innerHTML = `<p class="text-xs text-alert text-center py-2">${escapeHtml(text)}</p>
+                <button onclick="renderPhoneBlock()" class="w-full py-2 mt-1 text-xs text-mist">Понятно</button>`;
+        }
+
+        async function requestPhoneBind() {
+            const input = document.getElementById('phoneInput');
+            const err = document.getElementById('phoneError');
+            const phone = (input.value || '').trim();
+            err.textContent = '';
+            if (!phone) { err.textContent = 'Введите номер телефона.'; return; }
+            const body = document.getElementById('phoneFormBody');
+            body.innerHTML = '<div class="flex justify-center py-4"><div class="spinner"></div></div>';
+            const res = await postPublicAPI('auth/phone/request', { phone });
+            if (res.error) { phoneFormMessage(res.message || 'Не удалось начать проверку номера.'); return; }
+            window._phoneValue = phone;
+            window._phoneCallId = res.call_id;
+            renderPhoneVerification(res);
+        }
+
+        function renderPhoneVerification(res) {
+            const body = document.getElementById('phoneFormBody');
+            if (!body) return;
+            stopPhonePoll();  // предыдущая попытка могла оставить опрос
+            if (res.method === 'voice_code' || res.method === 'flashcall_real') {
+                const hint = res.method === 'voice_code'
+                    ? 'Робот продиктует код — введите его после звонка.'
+                    : 'Звонок можно сразу сбросить: введите последние 4 цифры номера, с которого позвонили.';
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">${hint}</p>
+                    <input id="phoneCodeInput" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Код из звонка"
+                        class="w-full rounded-xl px-3.5 py-3 text-sm text-ink mb-2 text-center font-mono text-lg tracking-widest"
+                        style="outline:none; background: var(--panel-2); border: 1px solid var(--hairline);">
+                    <button onclick="checkPhoneCode()" class="w-full py-3 btn-primary rounded-xl font-bold text-sm transition">Подтвердить</button>
+                    <div id="phoneCodeError" class="text-xs text-alert mt-2 text-center"></div>`;
+                return;
+            }
+            if (res.method === 'pincode') {
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — примите его и введите код на клавиатуре телефона:</p>
+                    <div class="card rounded-xl p-4 mb-3 text-center"><div class="font-mono text-3xl font-bold text-gold tracking-widest">${escapeHtml(String(res.pincode || ''))}</div></div>
+                    <div class="flex items-center justify-center gap-2"><div class="spinner" style="width:16px;height:16px;"></div><span class="text-xs text-mist">Ожидаем подтверждение…</span></div>`;
+            } else if (res.method === 'press_digit') {
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">Сейчас поступит звонок — робот попросит нажать определённую цифру на клавиатуре.</p>
+                    <div class="flex items-center justify-center gap-2"><div class="spinner" style="width:16px;height:16px;"></div><span class="text-xs text-mist">Ожидаем подтверждение…</span></div>`;
+            } else {
+                const numbers = (res.allowed_phones_for_call || []).map(p => `<div class="font-mono text-sm font-bold text-gold py-0.5">${escapeHtml(p)}</div>`).join('');
+                body.innerHTML = `
+                    <p class="text-xs text-mist mb-2">Позвоните со своего номера на любой из указанных — звонок бесплатный, можно сбросить.</p>
+                    <div class="card rounded-xl p-3 mb-3 text-center">${numbers}</div>
+                    <div class="flex items-center justify-center gap-2"><div class="spinner" style="width:16px;height:16px;"></div><span class="text-xs text-mist">Ожидаем звонок…</span></div>`;
+            }
+            stopPhonePoll();
+            window._phonePoll = setInterval(pollPhoneBind, 1000);
+            pollPhoneBind();
+        }
+
+        async function pollPhoneBind() {
+            const res = await postPublicAPI('account/link-phone-check', { phone: window._phoneValue, call_id: window._phoneCallId });
+            if (res.verified) { finishPhoneBind(res.telegram_linked ? 'Телефон привязан, и ваш Telegram тоже связан!' : 'Телефон привязан!'); return; }
+            if (res.phone_taken) { phoneFormMessage('Этот номер уже есть у другого аккаунта на сайте. Объединить аккаунты можно в разделе «Способы входа» на /shop#account.'); return; }
+            if (res.ok === false) { phoneFormMessage(res.message || 'Не удалось привязать номер.'); }
+        }
+
+        async function checkPhoneCode() {
+            const code = (document.getElementById('phoneCodeInput').value || '').trim();
+            const err = document.getElementById('phoneCodeError');
+            err.textContent = '';
+            if (!code) { err.textContent = 'Введите код.'; return; }
+            const res = await postPublicAPI('account/link-phone-check', { phone: window._phoneValue, call_id: window._phoneCallId, entered_code: code });
+            if (res.verified) { finishPhoneBind(res.telegram_linked ? 'Телефон привязан, и ваш Telegram тоже связан!' : 'Телефон привязан!'); return; }
+            if (res.phone_taken) { phoneFormMessage('Этот номер уже есть у другого аккаунта на сайте. Объединить аккаунты можно в разделе «Способы входа» на /shop#account.'); return; }
+            err.textContent = res.message || 'Код не совпадает, попробуйте ещё раз.';
+        }
+
+        async function finishPhoneBind(message) {
+            stopPhonePoll();
+            showToast(message);
+            await renderPhoneBlock();
+        }
+
+        async function unlinkPhone() {
+            if (!confirm('Отвязать номер телефона от аккаунта?')) return;
+            const res = await postPublicAPI('account/unlink-phone', {});
+            if (res.ok) { showToast('Номер отвязан'); await renderPhoneBlock(); return; }
+            showToast(res.message || 'Не удалось отвязать номер');
         }
 
         async function init() {
@@ -2382,6 +2591,9 @@
                 }
 
                 if (!initData) html += '<div id="loginHints" class="mt-4"></div>';
+                // Телефон — для всех: в Mini App номер привязывается прямо здесь,
+                // по initData (см. renderPhoneBlock), без перехода в браузер.
+                html += '<div id="phoneBlock" class="mt-4"></div>';
                 if (!initData) html += '<div class="text-center mt-4"><a href="/shop#account" class="py-2.5 text-xs text-mist-dim underline" style="margin-right:24px">Способы входа</a><button onclick="browserLogout()" class="py-2.5 text-xs text-mist-dim underline transition">Выйти</button></div>';
                 html += '<div class="text-center text-[10px] text-mist-dim pt-4 pb-2 font-mono tracking-wide">· ЗАЩИЩЁННОЕ СОЕДИНЕНИЕ ·</div>';
 
@@ -2392,6 +2604,7 @@
                 fetchPings();
                 if (window._appView) fetchDevices();
                 if (!initData) renderLoginHints();
+                renderPhoneBlock();
 
                 if (window._trialAvailable) {
                     const trialBtnEmpty = document.getElementById('trial-btn-empty');

@@ -24,6 +24,8 @@ __all__ = [
     'make_phone_proof',
     'verify_phone_proof',
     'phone_merge_blocker',
+    'phone_unlink_blocker',
+    'clear_account_phone',
     'merge_site_account_into',
     'verify_telegram_link_token',
     'get_site_referrer_code_for_order',
@@ -164,6 +166,8 @@ def merge_site_account_into(keep_id: int, drop_id: int, phone_normalized: str) -
         for placeholder in {drop.get("placeholder_user_id"), keep_placeholder if telegram_id else None} - {None, owner}:
             conn.execute("UPDATE vpn_keys SET user_id = ? WHERE user_id = ?", (owner, placeholder))
         conn.execute("UPDATE anonymous_purchases SET site_account_id = ? WHERE site_account_id = ?", (keep_id, drop_id))
+        # Реестр номеров (его читает бот) не должен указывать на удалённый аккаунт
+        conn.execute("UPDATE trial_verified_phones SET site_account_id = ? WHERE site_account_id = ?", (keep_id, drop_id))
         conn.execute("DELETE FROM site_accounts WHERE id = ?", (drop_id,))
         conn.execute("UPDATE site_accounts SET phone = ?, telegram_id = ? WHERE id = ?", (phone_normalized, telegram_id, keep_id))
     return None
@@ -283,6 +287,38 @@ def set_account_phone(account_id: int, phone_normalized: str) -> bool:
         cursor = conn.execute(
             "UPDATE site_accounts SET phone = ? WHERE id = ?",
             (phone_normalized, account_id),
+        )
+        return cursor.rowcount > 0
+
+
+def phone_unlink_blocker(account: Dict[str, Any]) -> Optional[str]:
+    """Почему номер нельзя отвязать от кабинета (None — можно).
+
+    Отвязка не должна оставить человека без входа: номер может быть
+    единственным способом (provider='phone') или последним
+    подтверждённым контактом.
+    """
+    if not site_account_phone(account):
+        return "К аккаунту не привязан номер телефона."
+    if account.get("provider") == "phone":
+        return "Вы входите по этому номеру. Сначала добавьте почту или Telegram — иначе потеряете доступ."
+    # provider='telegram' без telegram_id — «мостовой» аккаунт, вход кодом из бота
+    # ему недоступен, поэтому сам provider способом входа не считается.
+    if account.get("telegram_id") or account.get("email") or account.get("provider") in ("google", "yandex", "vk"):
+        return None
+    return "Это единственный способ входа в аккаунт. Сначала добавьте почту или Telegram."
+
+
+def clear_account_phone(account_id: int) -> bool:
+    """Отвязывает номер от аккаунта кабинета (site_accounts.phone).
+
+    Общий реестр номеров (trial_verified_phones) чистит вызывающий код —
+    см. bot.services.trial_phone_registry.unregister_site_account_phone.
+    """
+    with get_db() as conn:
+        cursor = conn.execute(
+            "UPDATE site_accounts SET phone = NULL WHERE id = ?",
+            (account_id,),
         )
         return cursor.rowcount > 0
 
